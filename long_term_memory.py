@@ -31,4 +31,4 @@ def forget(key):
         save_memory(memory)
 
 def forget_all():
-    save_memory({})
+    save_memory({})       
