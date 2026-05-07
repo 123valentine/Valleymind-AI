@@ -1,54 +1,59 @@
+
+# intent_classifier.py
+# Marcus Intent Classifier – v1
+
 import re
 
-def classify_intent(text):
-    text = text.lower().strip()
+# Intent labels
+I1_FACT = "I1_FACT"
+I2_PROBLEM = "I2_PROBLEM"
+I3_CREATIVE = "I3_CREATIVE"
+I4_SUPPORT = "I4_SUPPORT"
+I5_STRATEGY = "I5_STRATEGY"
 
-    greetings = [
-        "hello", "hi", "hey", "good morning", "good afternoon", "good evening", 
-        "howdy", "yo", "hi there", "hiya", "what's up", "sup", "greetings"
-    ]
 
-    farewells = [
-        "bye", "goodbye", "see you", "farewell", "later", "see ya", 
-        "talk to you later", "catch you later", "take care", "peace out"
-    ]
+SUPPORT_PATTERNS = [
+    r"\b(i feel|i am feeling|tired|sad|angry|depressed|frustrated|scared|lonely)\b",
+]
 
-    thanks = [
-        "thank you", "thanks", "i appreciate it", "much appreciated", 
-        "cheers", "grateful", "many thanks", "thx", "ty"
-    ]
+FACT_PATTERNS = [
+    r"\b(what is|who is|when did|define|meaning of|explain)\b",
+]
 
-    questions = [
-        "what", "how", "when", "where", "why", "who", "?", 
-        "can you", "could you", "do you know", "is it", "are you", 
-        "would you", "should i", "may i", "help me", "tell me"
-    ]
+PROBLEM_PATTERNS = [
+    r"\b(how do i|how can i|error|not working|fix|issue|bug|failed)\b",
+]
 
-    commands = [
-        "open", "run", "start", "stop", "play", "show", "search", "check", 
-        "turn on", "turn off", "activate", "deactivate", "enable", "disable",
-        "go to", "fetch", "read", "download", "install", "uninstall", 
-        "calculate", "translate", "explain", "write", "summarize", "generate"
-    ]
+CREATIVE_PATTERNS = [
+    r"\b(write|generate|create|design|story|poem|lyrics)\b",
+]
 
-    emotions = [
-        "i'm sad", "i'm happy", "i feel tired", "i'm excited", 
-        "i'm angry", "i feel good", "i'm depressed", "i'm anxious", 
-        "i'm relaxed", "i'm bored", "i'm frustrated", "i'm scared",
-        "i feel great", "i'm confused", "i'm fine"
-    ]
+STRATEGY_PATTERNS = [
+    r"\b(should i|best way|long term|plan|strategy|compare|decide)\b",
+]
 
-    if any(greet in text for greet in greetings):
-        return "greeting"
-    elif any(fare in text for fare in farewells):
-        return "farewell"
-    elif any(thank in text for thank in thanks):
-        return "thanks"
-    elif any(emo in text for emo in emotions):
-        return "emotion"
-    elif any(text.startswith(q) for q in questions) or "?" in text:
-        return "question"
-    elif any(text.startswith(cmd) for cmd in commands):
-        return "command"
-    else:
-        return "unknown"
+
+def _match(patterns, text):
+    return any(re.search(p, text, re.IGNORECASE) for p in patterns)
+
+
+def classify(user_input: str) -> dict:
+    text = user_input.strip()
+
+    if _match(SUPPORT_PATTERNS, text):
+        return {"intent": I4_SUPPORT, "confidence": 0.9}
+
+    if _match(STRATEGY_PATTERNS, text):
+        return {"intent": I5_STRATEGY, "confidence": 0.85}
+
+    if _match(PROBLEM_PATTERNS, text):
+        return {"intent": I2_PROBLEM, "confidence": 0.85}
+
+    if _match(CREATIVE_PATTERNS, text):
+        return {"intent": I3_CREATIVE, "confidence": 0.8}
+
+    if _match(FACT_PATTERNS, text):
+        return {"intent": I1_FACT, "confidence": 0.8}
+
+    # Default fallback
+    return {"intent": I2_PROBLEM, "confidence": 0.6}

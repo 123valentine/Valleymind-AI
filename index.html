@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html class="dark" lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Valley Mind-AI - Quantum v2.4</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
+<script id="tailwind-config">
+  tailwind.config = {
+    darkMode: "class",
+    theme: {
+      extend: {
+        colors: {
+          "on-secondary": "#28332b",
+          "on-background": "#dde3e7",
+          "background": "#0e1417",
+          "primary-container": "#00d4ff",
+          "on-surface-variant": "#bbc9cf",
+          "secondary": "#bdcabe",
+          "on-primary": "#003642",
+          "surface-container-highest": "#2f3639",
+          "on-surface": "#dde3e7"
+        },
+        fontFamily: {
+          "body-lg": ["Inter"], "label-caps": ["Space Grotesk"],
+          "body-md": ["Inter"], "h2": ["Space Grotesk"], "h1": ["Space Grotesk"]
+        },
+        fontSize: {
+          "body-lg": ["18px", { lineHeight: "1.6", fontWeight: "400" }],
+          "label-caps": ["12px", { lineHeight: "1", letterSpacing: "0.1em", fontWeight: "600" }],
+          "body-md": ["16px", { lineHeight: "1.5", fontWeight: "400" }]
+        }
+      }
+    }
+  }
+</script>
+<style>
+  body { background: radial-gradient(circle at top right, #001f27 0%, #0e1417 100%); min-height:100vh; }
+  .glass-panel { background:rgba(255,255,255,0.05); backdrop-filter:blur(30px); border:1px solid rgba(255,255,255,0.1); }
+  .message-ai-inner { box-shadow: inset 0 2px 4px rgba(0,0,0,0.5); }
+  .glow-button { box-shadow: 0 0 15px rgba(0,212,255,0.4); }
+  .scrollbar-custom::-webkit-scrollbar { width:4px; }
+  .scrollbar-custom::-webkit-scrollbar-track { background:transparent; }
+  .scrollbar-custom::-webkit-scrollbar-thumb { background:#00d4ff44; border-radius:10px; }
+  .dot { width:6px; height:6px; background:#00d4ff; border-radius:50%; animation:bounce 1.1s infinite; display:inline-block; }
+  .dot:nth-child(2){animation-delay:0.18s} .dot:nth-child(3){animation-delay:0.36s}
+  @keyframes bounce{0%,100%{transform:translateY(0);opacity:0.4}50%{transform:translateY(-5px);opacity:1}}
+  .nav-active { border-left:4px solid #00d4ff !important; background:rgba(0,212,255,0.1); color:#00d4ff !important; box-shadow:0 0 15px rgba(0,212,255,0.3); }
+  .cs-badge { background:rgba(255,170,0,0.1); color:#ffaa00; border:1px solid rgba(255,170,0,0.3); }
+  .ctx-menu { display:none; position:fixed; z-index:1000; background:rgba(10,20,30,0.95); backdrop-filter:blur(20px); border:1px solid rgba(0,212,255,0.2); border-radius:12px; padding:6px; min-width:170px; box-shadow:0 12px 40px rgba(0,0,0,0.7); }
+  .ctx-menu.open { display:block; }
+  .ctx-item { display:flex; align-items:center; gap:10px; padding:9px 14px; border-radius:8px; font-size:13px; color:#bbc9cf; cursor:pointer; transition:all 0.12s; }
+  .ctx-item:hover { background:rgba(0,212,255,0.08); color:#00d4ff; }
+  .ctx-item.danger:hover { background:rgba(255,45,70,0.08); color:#ff4560; }
+  .ctx-divider { height:1px; background:rgba(255,255,255,0.08); margin:4px 0; }
+  .page { display:none; }
+  .page.active { display:flex; flex-direction:column; flex:1; overflow:hidden; }
+  .hist-dots { opacity:0; transition:opacity 0.15s; }
+  .hist-item:hover .hist-dots { opacity:1; }
+  .hist-item.hist-active { background:rgba(0,212,255,0.08); border-left:3px solid #00d4ff; }
+  .hist-item.hist-active .hist-text { color:#00d4ff; }
+  .ai-content p{margin-bottom:8px} .ai-content p:last-child{margin-bottom:0}
+  .ai-content strong{color:#a8e8ff;font-weight:600}
+  .ai-content code{background:rgba(0,212,255,0.08);border:1px solid rgba(0,212,255,0.2);border-radius:4px;padding:1px 6px;font-family:monospace;font-size:13px;color:#3cd7ff}
+  .ai-content pre{background:#000d14;border:1px solid rgba(0,212,255,0.15);border-radius:8px;padding:14px;overflow-x:auto;margin:10px 0}
+  .ai-content pre code{background:transparent;border:none;color:#a8e8ff}
+  .ai-content ul,.ai-content ol{padding-left:20px;margin:8px 0}
+  .ai-content li{margin-bottom:4px}
+  .ai-content h1,.ai-content h2,.ai-content h3{color:#00d4ff;font-family:'Space Grotesk',sans-serif;margin-bottom:8px}
+  @media(max-width:768px){
+    .sidebar{transform:translateX(-100%);transition:transform 0.3s ease}
+    .sidebar.open{transform:translateX(0)}
+    main{margin-left:0!important}
+    header{left:0!important}
+    .mobile-toggle{display:flex!important}
+  }
+</style>
+</head>
+<body class="text-on-background font-body-md overflow-hidden">
+
+<!-- Context Menu -->
+<div class="ctx-menu" id="ctxMenu">
+  <div class="ctx-item" onclick="ctxDo('rename')"><span class="material-symbols-outlined text-sm">edit</span>Rename</div>
+  <div class="ctx-item" onclick="ctxDo('pin')"><span class="material-symbols-outlined text-sm">push_pin</span>Pin to Top</div>
+  <div class="ctx-item" onclick="ctxDo('archive')"><span class="material-symbols-outlined text-sm">archive</span>Archive</div>
+  <div class="ctx-item" onclick="ctxDo('home')"><span class="material-symbols-outlined text-sm">home</span>Add to Home</div>
+  <div class="ctx-divider"></div>
+  <div class="ctx-item danger" onclick="ctxDo('delete')"><span class="material-symbols-outlined text-sm">delete</span>Delete</div>
+</div>
+
+<!-- SIDEBAR -->
+<aside class="sidebar fixed left-0 top-0 w-[280px] h-full bg-white/10 backdrop-blur-[30px] border-r border-white/10 flex flex-col py-8 z-50 overflow-y-auto shadow-2xl" id="sidebar">
+  <div class="px-8 mb-8">
+    <h1 class="text-cyan-400 font-black text-2xl tracking-widest uppercase font-label-caps">Valley Mind-AI</h1>
+    <p class="text-slate-400 text-[10px] uppercase tracking-[0.2em] mt-1">Quantum v2.4</p>
+  </div>
+  <div class="px-6 mb-6">
+    <button onclick="newChat()" class="w-full py-3 px-4 rounded-xl border border-cyan-400/30 bg-cyan-400/10 text-cyan-400 font-bold flex items-center justify-center gap-2 hover:bg-cyan-400/20 transition-all duration-300">
+      <span class="material-symbols-outlined" style="font-variation-settings:'FILL' 1;">add</span>
+      <span class="font-label-caps text-sm uppercase tracking-wider">New Thread</span>
+    </button>
+  </div>
+  <nav class="space-y-1 mb-4" id="mainNav">
+    <a onclick="goTo('chat')" id="nav-chat" class="nav-active cursor-pointer px-6 py-3 flex items-center gap-4 transition-all duration-300 border-l-4">
+      <span class="material-symbols-outlined">forum</span>
+      <span class="font-label-caps text-sm uppercase tracking-wider">Chat</span>
+    </a>
+    <a onclick="goTo('sketch')" id="nav-sketch" class="cursor-pointer text-slate-400 px-6 py-3 flex items-center gap-4 hover:bg-white/5 hover:text-white transition-all duration-300 border-l-4 border-transparent">
+      <span class="material-symbols-outlined">gesture</span>
+      <span class="font-label-caps text-sm uppercase tracking-wider">Sketch Tool</span>
+    </a>
+    <a onclick="goTo('img-gen')" class="cursor-pointer text-slate-400 px-6 py-3 flex items-center gap-4 hover:bg-white/5 hover:text-white transition-all duration-300 border-l-4 border-transparent">
+      <span class="material-symbols-outlined">image</span>
+      <span class="font-label-caps text-sm uppercase tracking-wider">Generate Images</span>
+      <span class="ml-auto text-[8px] cs-badge px-2 py-0.5 rounded uppercase">Soon</span>
+    </a>
+    <a onclick="goTo('vid-gen')" class="cursor-pointer text-slate-400 px-6 py-3 flex items-center gap-4 hover:bg-white/5 hover:text-white transition-all duration-300 border-l-4 border-transparent">
+      <span class="material-symbols-outlined">smart_display</span>
+      <span class="font-label-caps text-sm uppercase tracking-wider">Videos</span>
+      <span class="ml-auto text-[8px] cs-badge px-2 py-0.5 rounded uppercase">Soon</span>
+    </a>
+    <a onclick="goTo('web-gen')" class="cursor-pointer text-slate-400 px-6 py-3 flex items-center gap-4 hover:bg-white/5 hover:text-white transition-all duration-300 border-l-4 border-transparent">
+      <span class="material-symbols-outlined">language</span>
+      <span class="font-label-caps text-sm uppercase tracking-wider">Website</span>
+      <span class="ml-auto text-[8px] cs-badge px-2 py-0.5 rounded uppercase">Soon</span>
+    </a>
+    <a onclick="goTo('3d-gen')" class="cursor-pointer text-slate-400 px-6 py-3 flex items-center gap-4 hover:bg-white/5 hover:text-white transition-all duration-300 border-l-4 border-transparent">
+      <span class="material-symbols-outlined">view_in_ar</span>
+      <span class="font-label-caps text-sm uppercase tracking-wider">3D Images</span>
+      <span class="ml-auto text-[8px] cs-badge px-2 py-0.5 rounded uppercase">Soon</span>
+    </a>
+    <a onclick="goTo('real-vid')" class="cursor-pointer text-slate-400 px-6 py-3 flex items-center gap-4 hover:bg-white/5 hover:text-white transition-all duration-300 border-l-4 border-transparent">
+      <span class="material-symbols-outlined">movie</span>
+      <span class="font-label-caps text-sm uppercase tracking-wider">Realistic Videos</span>
+      <span class="ml-auto text-[8px] cs-badge px-2 py-0.5 rounded uppercase">Soon</span>
+    </a>
+  </nav>
+  <div id="historySection" class="flex-1 overflow-hidden flex flex-col px-4">
+    <p class="text-[9px] uppercase tracking-[0.2em] text-slate-600 font-label-caps px-2 mb-2">// Recent Sessions</p>
+    <div class="flex-1 overflow-y-auto scrollbar-custom space-y-1" id="historyList"></div>
+  </div>
+  <div class="px-6 mt-auto pt-6 border-t border-white/10">
+    <div class="flex items-center gap-3 px-2">
+      <div class="w-10 h-10 rounded-full bg-surface-container-highest border border-cyan-400/20 flex items-center justify-center">
+        <span class="material-symbols-outlined text-cyan-400 text-sm">smart_toy</span>
+      </div>
+      <div>
+        <p class="text-xs font-bold text-white uppercase tracking-tight">Valley Mind-AI Core</p>
+        <p class="text-[10px] text-cyan-400/60 uppercase" id="statusText">Connecting...</p>
+      </div>
+    </div>
+  </div>
+</aside>
+
+<!-- HEADER -->
+<header class="fixed top-0 right-0 z-40 bg-slate-950/40 backdrop-blur-[30px] border-b border-white/10 flex justify-between items-center px-8 h-16 shadow-[0_4px_20px_rgba(0,0,0,0.3)]" id="topHeader" style="left:280px;">
+  <div class="flex items-center gap-4 flex-1">
+    <button class="mobile-toggle hidden text-slate-400 hover:text-cyan-400 mr-2" onclick="toggleSidebar()">
+      <span class="material-symbols-outlined">menu</span>
+    </button>
+    <span class="material-symbols-outlined text-slate-500">search</span>
+    <span class="text-slate-500 font-label-caps text-xs tracking-widest uppercase">Search global consciousness...</span>
+  </div>
+  <div class="flex items-center gap-6">
+    <button class="text-slate-400 hover:text-cyan-300 transition-colors duration-200"><span class="material-symbols-outlined">settings</span></button>
+    <button class="text-slate-400 hover:text-cyan-300 transition-colors duration-200"><span class="material-symbols-outlined">account_circle</span></button>
+  </div>
+</header>
+
+<!-- MAIN -->
+<main class="flex flex-col h-screen pt-16 overflow-hidden" id="mainArea" style="margin-left:280px;">
+
+  <!-- CHAT PAGE -->
+  <div class="page active" id="page-chat" style="display:flex;flex-direction:column;flex:1;overflow:hidden;">
+
+    <div id="messages" style="flex:1;overflow-y:auto;padding:32px 24px;display:flex;flex-direction:column;gap:24px;">
+      <div id="welcome" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:24px;padding:60px 20px;flex:1;">
+        <div style="width:80px;height:80px;border-radius:50%;border:1px solid rgba(0,212,255,0.4);display:flex;align-items:center;justify-content:center;box-shadow:0 0 40px rgba(0,212,255,0.15);">
+          <span class="material-symbols-outlined" style="color:#00d4ff;font-size:40px;">smart_toy</span>
+        </div>
+        <div style="text-align:center;">
+          <h1 style="color:#00d4ff;font-size:28px;font-weight:900;letter-spacing:0.15em;text-transform:uppercase;font-family:'Space Grotesk',sans-serif;margin-bottom:8px;">Valley Mind-AI</h1>
+          <p style="color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:0.2em;">Quantum v2.4 · Neural Interface Active</p>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:10px;justify-content:center;max-width:500px;">
+          <button onclick="quickSend(this)" style="padding:10px 16px;border-radius:12px;border:1px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.05);color:#cbd5e1;font-size:13px;cursor:pointer;transition:all 0.2s;" onmouseover="this.style.borderColor='rgba(0,212,255,0.4)';this.style.color='#00d4ff';" onmouseout="this.style.borderColor='rgba(255,255,255,0.1)';this.style.color='#cbd5e1';">Who are you?</button>
+          <button onclick="quickSend(this)" style="padding:10px 16px;border-radius:12px;border:1px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.05);color:#cbd5e1;font-size:13px;cursor:pointer;" onmouseover="this.style.borderColor='rgba(0,212,255,0.4)';this.style.color='#00d4ff';" onmouseout="this.style.borderColor='rgba(255,255,255,0.1)';this.style.color='#cbd5e1';">What can you do?</button>
+          <button onclick="quickSend(this)" style="padding:10px 16px;border-radius:12px;border:1px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.05);color:#cbd5e1;font-size:13px;cursor:pointer;" onmouseover="this.style.borderColor='rgba(0,212,255,0.4)';this.style.color='#00d4ff';" onmouseout="this.style.borderColor='rgba(255,255,255,0.1)';this.style.color='#cbd5e1';">Tell me something interesting</button>
+          <button onclick="quickSend(this)" style="padding:10px 16px;border-radius:12px;border:1px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.05);color:#cbd5e1;font-size:13px;cursor:pointer;" onmouseover="this.style.borderColor='rgba(0,212,255,0.4)';this.style.color='#00d4ff';" onmouseout="this.style.borderColor='rgba(255,255,255,0.1)';this.style.color='#cbd5e1';">What do you remember about me?</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- INPUT BAR -->
+    <div style="padding:12px 24px 24px;border-top:1px solid rgba(255,255,255,0.08);background:rgba(5,14,24,0.9);">
+      <div style="max-width:900px;margin:0 auto;">
+        <div style="display:flex;align-items:center;background:#1a1f2e;border:1px solid rgba(255,255,255,0.1);border-radius:24px;padding:8px 12px;gap:8px;">
+
+          <!-- Attach -->
+          <button onclick="alert('File attachment coming soon!')" style="background:none;border:none;cursor:pointer;padding:8px;color:#94a3b8;border-radius:10px;display:flex;align-items:center;" onmouseover="this.style.color='#fff'" onmouseout="this.style.color='#94a3b8'">
+            <span class="material-symbols-outlined">attach_file</span>
+          </button>
+
+          <!-- Textarea -->
+          <textarea id="chatInput" rows="1" placeholder="Message Valley Mind-AI..."
+            style="flex:1;background:transparent;border:none;outline:none;color:white;font-size:15px;line-height:1.6;resize:none;padding:8px 4px;max-height:150px;font-family:'Inter',sans-serif;overflow-y:auto;"></textarea>
+
+          <!-- Mic -->
+          <button id="micBtn" onclick="toggleVoice()" style="background:none;border:none;cursor:pointer;padding:8px;color:#94a3b8;border-radius:10px;display:flex;align-items:center;" onmouseover="this.style.color='#fff'" onmouseout="this.style.color='#94a3b8'">
+            <span class="material-symbols-outlined" id="micIcon">mic</span>
+          </button>
+
+          <!-- SEND -->
+          <button id="sendBtn" onclick="send()" style="width:42px;height:42px;border-radius:50%;background:#00d4ff;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 0 15px rgba(0,212,255,0.4);flex-shrink:0;" onmouseover="this.style.transform='scale(1.08)'" onmouseout="this.style.transform='scale(1)'" onmousedown="this.style.transform='scale(0.95)'" onmouseup="this.style.transform='scale(1)'">
+            <span class="material-symbols-outlined" style="color:#003642;font-size:20px;font-variation-settings:'FILL' 1;">send</span>
+          </button>
+
+        </div>
+        <p style="text-align:center;font-size:10px;color:#334155;margin-top:10px;text-transform:uppercase;letter-spacing:0.15em;font-family:'Space Grotesk',sans-serif;">Valley Mind-AI can make mistakes. Verify critical information.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- SKETCH PAGE -->
+  <div class="page" id="page-sketch">
+    <div style="flex:1;display:flex;flex-direction:column;padding:24px;overflow:hidden;">
+      <div style="margin-bottom:16px;">
+        <h2 style="color:#00d4ff;font-family:'Space Grotesk',sans-serif;font-size:12px;letter-spacing:0.3em;text-transform:uppercase;margin-bottom:6px;">// Sketch Tool</h2>
+        <p style="color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:0.1em;">Draw · Label · Biology · Chemistry · Engineering · Architecture</p>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+        <button onclick="setTool(this,'pen')" class="sketch-tool" style="padding:7px 14px;border-radius:10px;border:1px solid rgba(0,212,255,0.4);background:rgba(0,212,255,0.1);color:#00d4ff;font-size:11px;cursor:pointer;font-family:'Space Grotesk',sans-serif;letter-spacing:0.05em;">✏️ Pen</button>
+        <button onclick="setTool(this,'eraser')" class="sketch-tool" style="padding:7px 14px;border-radius:10px;border:1px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.05);color:#94a3b8;font-size:11px;cursor:pointer;font-family:'Space Grotesk',sans-serif;">⬜ Eraser</button>
+        <button onclick="setColor('#00d4ff')" style="padding:7px 14px;border-radius:10px;border:1px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.05);color:#00d4ff;font-size:11px;cursor:pointer;">🔵 Cyan</button>
+        <button onclick="setColor('#00ff88')" style="padding:7px 14px;border-radius:10px;border:1px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.05);color:#00ff88;font-size:11px;cursor:pointer;">🟢 Green</button>
+        <button onclick="setColor('#ff2d78')" style="padding:7px 14px;border-radius:10px;border:1px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.05);color:#ff2d78;font-size:11px;cursor:pointer;">🔴 Pink</button>
+        <button onclick="setColor('#ffffff')" style="padding:7px 14px;border-radius:10px;border:1px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.05);color:#fff;font-size:11px;cursor:pointer;">⚪ White</button>
+        <button onclick="clearCanvas()" style="padding:7px 14px;border-radius:10px;border:1px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.05);color:#94a3b8;font-size:11px;cursor:pointer;">🗑 Clear</button>
+      </div>
+      <div id="canvasWrap" style="flex:1;border:1px solid rgba(0,212,255,0.15);border-radius:16px;background:#010810;position:relative;overflow:hidden;min-height:200px;background-image:linear-gradient(rgba(0,212,255,0.03) 1px,transparent 1px),linear-gradient(90deg,rgba(0,212,255,0.03) 1px,transparent 1px);background-size:32px 32px;">
+        <canvas id="sketchCanvas" style="display:block;width:100%;height:100%;cursor:crosshair;touch-action:none;"></canvas>
+      </div>
+      <div style="display:flex;gap:10px;margin-top:12px;">
+        <input id="sketchPrompt" type="text" placeholder="// Describe what to draw and label..." style="flex:1;background:#1a1f2e;border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:12px 16px;color:white;font-size:13px;outline:none;font-family:'Space Grotesk',sans-serif;letter-spacing:0.05em;" onfocus="this.style.borderColor='rgba(0,212,255,0.4)'">
+ 
+
+</body><script>
+/* 1. MESSAGE FUNCTION */
+function addMessage(text, type = "ai") {
+    const container = document.getElementById("messages");
+    if (!container) return;
+
+    const div = document.createElement("div");
+    div.textContent = text;
+    container.appendChild(div);
+}
+
+
+/* 2. SEND FUNCTION (GLOBAL) */
+window.send = function () {
+    const input = document.getElementById("chatInput");
+    const text = input.value.trim();
+
+    if (!text) return;
+
+    addMessage(text, "user");
+    input.value = "";
+
+    fetch("http://127.0.0.1:5000/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: text })
+    })
+    .then(res => res.json())
+    .then(data => addMessage(data.reply || "No response", "ai"))
+    .catch(err => console.error(err));
+};
+
+
+/* 3. SAFE BUTTON BINDING */
+document.addEventListener("DOMContentLoaded", () => {
+    const btn = document.getElementById("sendBtn");
+    if (btn) btn.addEventListener("click", send);
+});
+</script>
+</html>
