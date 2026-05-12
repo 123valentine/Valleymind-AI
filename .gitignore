@@ -1,0 +1,12 @@
+.env
+.env.*
+env/
+env311/
+
+memory_data/
+character/*/chats/
+*.tmp
+__pycache__/
+*.pyc
+.vscode/
+.DS_Store

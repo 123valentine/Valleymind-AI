@@ -1,7 +1,9 @@
-# eleven_config.py
-API_KEY = "sk_8b4ac5ead44ced8ac4a350035d85fd580b8120075cb0cfca"  # Replace this key if needed
-VOICE_IDS = {
-    "elena": "your_elena_voice_id",
-    "angelina": "your_angelina_voice_id",
-    "marcos": "your_marcos_voice_id"
-}
+"""Deprecated voice config.
+
+ValleyMind-AI is currently centered on Marcus and local/offline TTS only.
+No ElevenLabs API key or voice IDs are configured here.
+"""
+
+API_KEY = ""
+VOICE_IDS = {"marcus": ""}
+

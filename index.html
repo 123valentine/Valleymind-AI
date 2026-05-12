@@ -39,6 +39,7 @@
 </script>
 <style>
   body { background: radial-gradient(circle at top right, #001f27 0%, #0e1417 100%); min-height:100vh; }
+  #sidebar, #topHeader, #mainArea { display:none; }
   .glass-panel { background:rgba(255,255,255,0.05); backdrop-filter:blur(30px); border:1px solid rgba(255,255,255,0.1); }
   .message-ai-inner { box-shadow: inset 0 2px 4px rgba(0,0,0,0.5); }
   .glow-button { box-shadow: 0 0 15px rgba(0,212,255,0.4); }
@@ -48,6 +49,10 @@
   .dot { width:6px; height:6px; background:#00d4ff; border-radius:50%; animation:bounce 1.1s infinite; display:inline-block; }
   .dot:nth-child(2){animation-delay:0.18s} .dot:nth-child(3){animation-delay:0.36s}
   @keyframes bounce{0%,100%{transform:translateY(0);opacity:0.4}50%{transform:translateY(-5px);opacity:1}}
+  .thinking-dot { width:7px; height:7px; background:#00d4ff; border-radius:50%; display:inline-block; animation:swimDots 1.25s ease-in-out infinite; box-shadow:0 0 10px rgba(0,212,255,0.55); }
+  .thinking-dot:nth-child(2){animation-delay:0.16s}
+  .thinking-dot:nth-child(3){animation-delay:0.32s}
+  @keyframes swimDots{0%,100%{transform:translateY(0) translateX(0);opacity:0.35}35%{transform:translateY(-5px) translateX(2px);opacity:1}70%{transform:translateY(2px) translateX(-1px);opacity:0.65}}
   .nav-active { border-left:4px solid #00d4ff !important; background:rgba(0,212,255,0.1); color:#00d4ff !important; box-shadow:0 0 15px rgba(0,212,255,0.3); }
   .cs-badge { background:rgba(255,170,0,0.1); color:#ffaa00; border:1px solid rgba(255,170,0,0.3); }
   .ctx-menu { display:none; position:fixed; z-index:1000; background:rgba(10,20,30,0.95); backdrop-filter:blur(20px); border:1px solid rgba(0,212,255,0.2); border-radius:12px; padding:6px; min-width:170px; box-shadow:0 12px 40px rgba(0,0,0,0.7); }
@@ -58,6 +63,7 @@
   .ctx-divider { height:1px; background:rgba(255,255,255,0.08); margin:4px 0; }
   .page { display:none; }
   .page.active { display:flex; flex-direction:column; flex:1; overflow:hidden; }
+  #loginView { min-height:100vh; display:flex; align-items:center; justify-content:center; padding:24px; }
   .hist-dots { opacity:0; transition:opacity 0.15s; }
   .hist-item:hover .hist-dots { opacity:1; }
   .hist-item.hist-active { background:rgba(0,212,255,0.08); border-left:3px solid #00d4ff; }
@@ -91,8 +97,27 @@
   <div class="ctx-item danger" onclick="ctxDo('delete')"><span class="material-symbols-outlined text-sm">delete</span>Delete</div>
 </div>
 
+<!-- LOGIN -->
+<section id="loginView">
+  <form id="loginForm" class="glass-panel" style="width:min(420px,100%);border-radius:16px;padding:28px;display:flex;flex-direction:column;gap:16px;">
+    <div>
+      <h1 class="text-cyan-400 font-black text-2xl tracking-widest uppercase font-label-caps">Valley Mind-AI</h1>
+      <p class="text-slate-400 text-[10px] uppercase tracking-[0.2em] mt-1">Login Required</p>
+    </div>
+    <input id="loginEmail" type="email" autocomplete="email" placeholder="Email" required
+      style="background:#1a1f2e;border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:12px 14px;color:white;outline:none;">
+    <input id="loginPassword" type="password" autocomplete="current-password" placeholder="Password" required
+      style="background:#1a1f2e;border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:12px 14px;color:white;outline:none;">
+    <button type="submit" class="glow-button"
+      style="border:none;border-radius:12px;background:#00d4ff;color:#003642;font-weight:800;padding:12px 16px;cursor:pointer;text-transform:uppercase;letter-spacing:0.12em;font-family:'Space Grotesk',sans-serif;">
+      Login
+    </button>
+    <p id="loginError" style="min-height:18px;color:#ff6b7a;font-size:12px;"></p>
+  </form>
+</section>
+
 <!-- SIDEBAR -->
-<aside class="sidebar fixed left-0 top-0 w-[280px] h-full bg-white/10 backdrop-blur-[30px] border-r border-white/10 flex flex-col py-8 z-50 overflow-y-auto shadow-2xl" id="sidebar">
+<aside class="sidebar fixed left-0 top-0 w-[280px] h-full bg-white/10 backdrop-blur-[30px] border-r border-white/10 flex flex-col py-8 z-50 overflow-y-auto shadow-2xl" id="sidebar" style="display:none;">
   <div class="px-8 mb-8">
     <h1 class="text-cyan-400 font-black text-2xl tracking-widest uppercase font-label-caps">Valley Mind-AI</h1>
     <p class="text-slate-400 text-[10px] uppercase tracking-[0.2em] mt-1">Quantum v2.4</p>
@@ -138,6 +163,18 @@
       <span class="ml-auto text-[8px] cs-badge px-2 py-0.5 rounded uppercase">Soon</span>
     </a>
   </nav>
+  <div class="px-6 mb-4">
+    <button onclick="toggleSuggestionBox()" class="w-full py-2.5 px-4 rounded-xl border border-cyan-400/20 bg-white/5 text-slate-300 font-bold flex items-center justify-center gap-2 hover:text-cyan-300 hover:border-cyan-400/40 transition-all duration-300">
+      <span class="material-symbols-outlined text-base">lightbulb</span>
+      <span class="font-label-caps text-xs uppercase tracking-wider">Suggestion Box</span>
+    </button>
+    <div id="suggestionBox" style="display:none;margin-top:10px;">
+      <textarea id="suggestionInput" rows="3" placeholder="Share an idea or issue..."
+        style="width:100%;background:#1a1f2e;border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:10px;color:white;font-size:12px;outline:none;resize:none;"></textarea>
+      <button onclick="submitSuggestion()" style="margin-top:8px;width:100%;border:none;border-radius:10px;background:#00d4ff;color:#003642;font-weight:800;padding:9px 12px;cursor:pointer;text-transform:uppercase;letter-spacing:0.08em;font-family:'Space Grotesk',sans-serif;font-size:11px;">Submit</button>
+      <p id="suggestionStatus" style="min-height:16px;color:#94a3b8;font-size:10px;margin-top:6px;"></p>
+    </div>
+  </div>
   <div id="historySection" class="flex-1 overflow-hidden flex flex-col px-4">
     <p class="text-[9px] uppercase tracking-[0.2em] text-slate-600 font-label-caps px-2 mb-2">// Recent Sessions</p>
     <div class="flex-1 overflow-y-auto scrollbar-custom space-y-1" id="historyList"></div>
@@ -156,7 +193,7 @@
 </aside>
 
 <!-- HEADER -->
-<header class="fixed top-0 right-0 z-40 bg-slate-950/40 backdrop-blur-[30px] border-b border-white/10 flex justify-between items-center px-8 h-16 shadow-[0_4px_20px_rgba(0,0,0,0.3)]" id="topHeader" style="left:280px;">
+<header class="fixed top-0 right-0 z-40 bg-slate-950/40 backdrop-blur-[30px] border-b border-white/10 flex justify-between items-center px-8 h-16 shadow-[0_4px_20px_rgba(0,0,0,0.3)]" id="topHeader" style="left:280px;display:none;">
   <div class="flex items-center gap-4 flex-1">
     <button class="mobile-toggle hidden text-slate-400 hover:text-cyan-400 mr-2" onclick="toggleSidebar()">
       <span class="material-symbols-outlined">menu</span>
@@ -166,12 +203,12 @@
   </div>
   <div class="flex items-center gap-6">
     <button class="text-slate-400 hover:text-cyan-300 transition-colors duration-200"><span class="material-symbols-outlined">settings</span></button>
-    <button class="text-slate-400 hover:text-cyan-300 transition-colors duration-200"><span class="material-symbols-outlined">account_circle</span></button>
+    <button onclick="logout()" class="text-slate-400 hover:text-cyan-300 transition-colors duration-200"><span class="material-symbols-outlined">account_circle</span></button>
   </div>
 </header>
 
 <!-- MAIN -->
-<main class="flex flex-col h-screen pt-16 overflow-hidden" id="mainArea" style="margin-left:280px;">
+<main class="flex flex-col h-screen pt-16 overflow-hidden" id="mainArea" style="margin-left:280px;display:none;">
 
   <!-- CHAT PAGE -->
   <div class="page active" id="page-chat" style="display:flex;flex-direction:column;flex:1;overflow:hidden;">
@@ -248,19 +285,340 @@
  
 
 </body><script>
-/* 1. MESSAGE FUNCTION */
-function addMessage(text, type = "ai") {
-    const container = document.getElementById("messages");
-    if (!container) return;
-
-    const div = document.createElement("div");
-    div.textContent = text;
-    container.appendChild(div);
+function resolveApiBaseUrl() {
+    if (window.VALLEYMIND_API_BASE_URL) {
+        return window.VALLEYMIND_API_BASE_URL.replace(/\/$/, "");
+    }
+    const localHosts = new Set(["localhost", "127.0.0.1", "0.0.0.0"]);
+    const isLocal = localHosts.has(window.location.hostname);
+    const isBackendPort = window.location.port === "8000";
+    if (window.location.protocol === "file:" || (isLocal && !isBackendPort)) {
+        return "http://127.0.0.1:8000";
+    }
+    return window.location.origin;
 }
 
+const API_BASE_URL = resolveApiBaseUrl();
+const AUTH_TOKEN_KEY = "valleymind_session_token";
+let authCheckComplete = false;
 
-/* 2. SEND FUNCTION (GLOBAL) */
-window.send = function () {
+function apiUrl(path) {
+    return API_BASE_URL + path;
+}
+
+function networkErrorMessage(err, url) {
+    const reason = err && err.message ? err.message : String(err || "unknown error");
+    return `Network error reaching backend at ${url}: ${reason}`;
+}
+
+async function apiFetch(path, options = {}) {
+    const url = apiUrl(path);
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), options.timeoutMs || 30000);
+    try {
+        return await fetch(url, {
+            ...options,
+            signal: controller.signal
+        });
+    } catch (err) {
+        console.error("[ValleyMind network]", {
+            url,
+            apiBaseUrl: API_BASE_URL,
+            pageOrigin: window.location.origin,
+            message: err && err.message ? err.message : String(err)
+        });
+        throw new Error(networkErrorMessage(err, url));
+    } finally {
+        window.clearTimeout(timeout);
+    }
+}
+
+function getAuthToken() {
+    return sessionStorage.getItem(AUTH_TOKEN_KEY) || "";
+}
+
+function setAuthToken(token) {
+    if (token) sessionStorage.setItem(AUTH_TOKEN_KEY, token);
+}
+
+function clearAuthToken() {
+    sessionStorage.removeItem(AUTH_TOKEN_KEY);
+}
+
+function authHeaders(extra = {}) {
+    const headers = { ...extra };
+    const token = getAuthToken();
+    if (token) {
+        headers["X-Session-Token"] = token;
+        headers["Authorization"] = "Bearer " + token;
+    }
+    return headers;
+}
+
+function setAppVisible(isVisible) {
+    const login = document.getElementById("loginView");
+    const sidebar = document.getElementById("sidebar");
+    const header = document.getElementById("topHeader");
+    const main = document.getElementById("mainArea");
+
+    if (login) login.style.display = isVisible ? "none" : "flex";
+    if (sidebar) sidebar.style.display = isVisible ? "flex" : "none";
+    if (header) header.style.display = isVisible ? "flex" : "none";
+    if (main) main.style.display = isVisible ? "flex" : "none";
+}
+
+function addMessage(text, type = "ai") {
+    const container = document.getElementById("messages");
+    const welcome = document.getElementById("welcome");
+    if (!container) return;
+    if (welcome) welcome.style.display = "none";
+
+    const div = document.createElement("div");
+    div.className = type === "user" ? "self-end" : "self-start";
+    div.style.maxWidth = "780px";
+    div.style.padding = "12px 16px";
+    div.style.borderRadius = "14px";
+    div.style.whiteSpace = "pre-wrap";
+    div.style.background = type === "user" ? "rgba(0,212,255,0.16)" : "rgba(255,255,255,0.06)";
+    div.style.border = "1px solid rgba(255,255,255,0.1)";
+    div.style.color = "#dde3e7";
+    div.textContent = text;
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+}
+
+function clearVisibleMessages() {
+    const messages = document.getElementById("messages");
+    const welcome = document.getElementById("welcome");
+    if (!messages) return;
+    Array.from(messages.children).forEach(child => {
+        if (child.id !== "welcome") child.remove();
+    });
+    if (welcome) welcome.style.display = "flex";
+}
+
+function renderChatHistory(messages) {
+    clearVisibleMessages();
+    if (!Array.isArray(messages) || messages.length === 0) return;
+    messages.forEach(message => {
+        const role = message.role === "assistant" ? "ai" : "user";
+        addMessage(message.content || "", role);
+    });
+}
+
+async function loadChatHistory() {
+    try {
+        const res = await apiFetch("/chat/history", {
+            credentials: "include",
+            headers: authHeaders()
+        });
+        if (!res.ok) return false;
+        const data = await res.json();
+        if (data.status === "success") {
+            renderChatHistory(data.messages || []);
+            return true;
+        }
+    } catch (err) {
+        console.warn("Chat history unavailable.", err);
+    }
+    return false;
+}
+
+function addThinkingIndicator() {
+    const container = document.getElementById("messages");
+    const welcome = document.getElementById("welcome");
+    if (!container) return null;
+    if (welcome) welcome.style.display = "none";
+
+    const div = document.createElement("div");
+    div.className = "self-start";
+    div.dataset.thinking = "true";
+    div.style.maxWidth = "120px";
+    div.style.padding = "13px 16px";
+    div.style.borderRadius = "14px";
+    div.style.background = "rgba(255,255,255,0.06)";
+    div.style.border = "1px solid rgba(0,212,255,0.18)";
+    div.style.display = "flex";
+    div.style.gap = "7px";
+    div.style.alignItems = "center";
+    div.innerHTML = '<span class="thinking-dot"></span><span class="thinking-dot"></span><span class="thinking-dot"></span>';
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+    return div;
+}
+
+function removeThinkingIndicator(indicator) {
+    if (indicator && indicator.parentNode) indicator.remove();
+}
+
+function browserSpeak(text) {
+    if (!("speechSynthesis" in window)) return;
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = 0.95;
+    utterance.pitch = 0.9;
+    window.speechSynthesis.speak(utterance);
+}
+
+async function playMarcusVoice(text, voice) {
+    if (voice && voice.url) {
+        try {
+            const audio = new Audio(apiUrl(voice.url));
+            await audio.play();
+            return;
+        } catch (err) {
+            console.warn("Audio playback failed; using browser speech synthesis.", err);
+        }
+    }
+    browserSpeak(text);
+}
+
+function quickSend(button) {
+    const input = document.getElementById("chatInput");
+    if (!input || !button) return;
+    input.value = button.textContent.trim();
+    send();
+}
+
+function goTo(page) {
+    document.querySelectorAll(".page").forEach(el => el.classList.remove("active"));
+    const active = document.getElementById("page-" + page);
+    if (active) active.classList.add("active");
+}
+
+function newChat() {
+    const messages = document.getElementById("messages");
+    const welcome = document.getElementById("welcome");
+    if (!messages) return;
+    Array.from(messages.children).forEach(child => {
+        if (child.id !== "welcome") child.remove();
+    });
+    if (welcome) welcome.style.display = "flex";
+}
+
+function toggleSidebar() {
+    const sidebar = document.getElementById("sidebar");
+    if (sidebar) sidebar.classList.toggle("open");
+}
+
+function toggleSuggestionBox() {
+    const box = document.getElementById("suggestionBox");
+    if (box) box.style.display = box.style.display === "none" ? "block" : "none";
+}
+
+async function submitSuggestion() {
+    const input = document.getElementById("suggestionInput");
+    const status = document.getElementById("suggestionStatus");
+    const text = input ? input.value.trim() : "";
+    if (status) status.textContent = "";
+    if (!text) {
+        if (status) status.textContent = "Enter a suggestion first.";
+        return;
+    }
+    try {
+        const res = await apiFetch("/suggestions", {
+            method: "POST",
+            credentials: "include",
+            headers: authHeaders({ "Content-Type": "application/json" }),
+            body: JSON.stringify({ text })
+        });
+        const data = await res.json();
+        if (!res.ok || data.status !== "success") throw new Error(data.message || "Could not submit");
+        if (input) input.value = "";
+        if (status) status.textContent = "Saved. Thank you.";
+        if (data.whatsapp_url) window.open(data.whatsapp_url, "_blank", "noopener,noreferrer");
+    } catch (err) {
+        if (status) status.textContent = err.message || "Could not submit";
+    }
+}
+
+function toggleVoice() {}
+function setTool() {}
+function setColor() {}
+function clearCanvas() {}
+function ctxDo() {}
+
+async function checkSession() {
+    authCheckComplete = false;
+    setAppVisible(false);
+    try {
+        const res = await apiFetch("/auth/status", {
+            credentials: "include",
+            headers: authHeaders()
+        });
+        const data = await res.json();
+        if (!res.ok || !data.authenticated) {
+            clearAuthToken();
+            setAppVisible(false);
+            authCheckComplete = true;
+            const status = document.getElementById("statusText");
+            if (status) status.textContent = "Login Required";
+            return false;
+        }
+        const historyLoaded = await loadChatHistory();
+        if (!historyLoaded) {
+            clearAuthToken();
+            setAppVisible(false);
+            authCheckComplete = true;
+            const error = document.getElementById("loginError");
+            if (error) error.textContent = "Could not load session memory";
+            return false;
+        }
+        setAppVisible(true);
+        authCheckComplete = true;
+        const status = document.getElementById("statusText");
+        if (status) status.textContent = "Memory Online";
+        return true;
+    } catch (err) {
+        clearAuthToken();
+        setAppVisible(false);
+        authCheckComplete = true;
+        const error = document.getElementById("loginError");
+        if (error) error.textContent = err.message || "Backend unavailable";
+        return false;
+    }
+}
+
+async function login(event) {
+    event.preventDefault();
+    const error = document.getElementById("loginError");
+    const email = document.getElementById("loginEmail").value.trim();
+    const password = document.getElementById("loginPassword").value;
+    if (error) error.textContent = "";
+
+    try {
+        const res = await apiFetch("/auth/login", {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email, password })
+        });
+        const data = await res.json();
+        if (!res.ok || data.status !== "success") {
+            throw new Error(data.message || "Login failed");
+        }
+        setAuthToken(data.session_token || "");
+        const authenticated = await checkSession();
+        if (!authenticated) throw new Error("Session validation failed");
+        const status = document.getElementById("statusText");
+        if (status) status.textContent = "Memory Online";
+    } catch (err) {
+        if (error) error.textContent = err.message || "Login failed";
+    }
+}
+
+async function logout() {
+    await apiFetch("/auth/logout", {
+        method: "POST",
+        credentials: "include",
+        headers: authHeaders()
+    });
+    clearAuthToken();
+    setAppVisible(false);
+}
+
+window.send = async function () {
+    if (!authCheckComplete) return;
     const input = document.getElementById("chatInput");
     const text = input.value.trim();
 
@@ -268,22 +626,49 @@ window.send = function () {
 
     addMessage(text, "user");
     input.value = "";
+    const thinking = addThinkingIndicator();
 
-    fetch("http://127.0.0.1:5000/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text })
-    })
-    .then(res => res.json())
-    .then(data => addMessage(data.reply || "No response", "ai"))
-    .catch(err => console.error(err));
+    try {
+        const res = await apiFetch("/chat", {
+            method: "POST",
+            credentials: "include",
+            headers: authHeaders({ "Content-Type": "application/json" }),
+            body: JSON.stringify({ message: text })
+        });
+        const data = await res.json();
+        removeThinkingIndicator(thinking);
+        if (res.status === 401) {
+            clearAuthToken();
+            setAppVisible(false);
+            const error = document.getElementById("loginError");
+            if (error) error.textContent = "Please log in to continue";
+            return;
+        }
+        const reply = data.reply || data.message || "No response";
+        addMessage(reply, "ai");
+        playMarcusVoice(reply, data.voice);
+    } catch (err) {
+        removeThinkingIndicator(thinking);
+        addMessage(err.message || "Connection error. Please try again.", "ai");
+    }
 };
 
-
-/* 3. SAFE BUTTON BINDING */
 document.addEventListener("DOMContentLoaded", () => {
-    const btn = document.getElementById("sendBtn");
-    if (btn) btn.addEventListener("click", send);
+    setAppVisible(false);
+    checkSession();
+
+    const form = document.getElementById("loginForm");
+    if (form) form.addEventListener("submit", login);
+
+    const input = document.getElementById("chatInput");
+    if (input) {
+        input.addEventListener("keydown", event => {
+            if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault();
+                send();
+            }
+        });
+    }
 });
 </script>
 </html>
