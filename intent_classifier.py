@@ -1,6 +1,7 @@
 """Compatibility wrapper for the restored core intent classifier."""
 
 from core.intent_classifier import (
+    I0_CONVERSATION,
     I1_FACT,
     I2_PROBLEM,
     I3_CREATIVE,
@@ -10,6 +11,7 @@ from core.intent_classifier import (
 )
 
 __all__ = [
+    "I0_CONVERSATION",
     "I1_FACT",
     "I2_PROBLEM",
     "I3_CREATIVE",
@@ -17,4 +19,3 @@ __all__ = [
     "I5_STRATEGY",
     "classify",
 ]
-

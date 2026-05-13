@@ -63,6 +63,13 @@
   .ctx-divider { height:1px; background:rgba(255,255,255,0.08); margin:4px 0; }
   .page { display:none; }
   .page.active { display:flex; flex-direction:column; flex:1; overflow:hidden; }
+  #sidebarBackdrop { position:fixed; inset:0; z-index:45; background:rgba(0,0,0,0.28); backdrop-filter:blur(1px); opacity:0; visibility:hidden; pointer-events:none; transition:opacity 0.22s ease, visibility 0.22s ease; }
+  body.sidebar-open #sidebarBackdrop { opacity:1; visibility:visible; pointer-events:auto; }
+  .sidebar-close { display:flex; }
+  body.sidebar-collapsed #sidebar { display:none !important; }
+  body.sidebar-collapsed #topHeader { left:0 !important; }
+  body.sidebar-collapsed #mainArea { margin-left:0 !important; }
+  body.sidebar-collapsed .mobile-toggle { display:flex !important; }
   #loginView { min-height:100vh; display:flex; align-items:center; justify-content:center; padding:24px; }
   .hist-dots { opacity:0; transition:opacity 0.15s; }
   .hist-item:hover .hist-dots { opacity:1; }
@@ -77,11 +84,15 @@
   .ai-content li{margin-bottom:4px}
   .ai-content h1,.ai-content h2,.ai-content h3{color:#00d4ff;font-family:'Space Grotesk',sans-serif;margin-bottom:8px}
   @media(max-width:768px){
-    .sidebar{transform:translateX(-100%);transition:transform 0.3s ease}
+    body{overflow:hidden}
+    .sidebar{width:min(292px,84vw)!important;transform:translateX(-100%);transition:transform 0.26s cubic-bezier(.22,1,.36,1);z-index:60;will-change:transform}
     .sidebar.open{transform:translateX(0)}
-    main{margin-left:0!important}
+    #sidebarBackdrop{background:rgba(0,0,0,0.32);backdrop-filter:none}
+    main{margin-left:0!important;transition:filter 0.22s ease}
+    body.sidebar-open #mainArea{filter:brightness(0.82)}
     header{left:0!important}
     .mobile-toggle{display:flex!important}
+    #messages{padding:22px 14px!important}
   }
 </style>
 </head>
@@ -119,8 +130,15 @@
 <!-- SIDEBAR -->
 <aside class="sidebar fixed left-0 top-0 w-[280px] h-full bg-white/10 backdrop-blur-[30px] border-r border-white/10 flex flex-col py-8 z-50 overflow-y-auto shadow-2xl" id="sidebar" style="display:none;">
   <div class="px-8 mb-8">
-    <h1 class="text-cyan-400 font-black text-2xl tracking-widest uppercase font-label-caps">Valley Mind-AI</h1>
-    <p class="text-slate-400 text-[10px] uppercase tracking-[0.2em] mt-1">Quantum v2.4</p>
+    <div class="flex items-start justify-between gap-3">
+      <div>
+        <h1 class="text-cyan-400 font-black text-2xl tracking-widest uppercase font-label-caps">Valley Mind-AI</h1>
+        <p class="text-slate-400 text-[10px] uppercase tracking-[0.2em] mt-1">Quantum v2.4</p>
+      </div>
+      <button class="sidebar-close text-slate-400 hover:text-cyan-300 transition-colors" type="button" onclick="closeSidebar(true)" aria-label="Close sidebar">
+        <span class="material-symbols-outlined">close</span>
+      </button>
+    </div>
   </div>
   <div class="px-6 mb-6">
     <button onclick="newChat()" class="w-full py-3 px-4 rounded-xl border border-cyan-400/30 bg-cyan-400/10 text-cyan-400 font-bold flex items-center justify-center gap-2 hover:bg-cyan-400/20 transition-all duration-300">
@@ -137,27 +155,27 @@
       <span class="material-symbols-outlined">gesture</span>
       <span class="font-label-caps text-sm uppercase tracking-wider">Sketch Tool</span>
     </a>
-    <a onclick="goTo('img-gen')" class="cursor-pointer text-slate-400 px-6 py-3 flex items-center gap-4 hover:bg-white/5 hover:text-white transition-all duration-300 border-l-4 border-transparent">
+    <a onclick="showComingSoon('Generate Images')" class="cursor-pointer text-slate-400 px-6 py-3 flex items-center gap-4 hover:bg-white/5 hover:text-white transition-all duration-300 border-l-4 border-transparent">
       <span class="material-symbols-outlined">image</span>
       <span class="font-label-caps text-sm uppercase tracking-wider">Generate Images</span>
       <span class="ml-auto text-[8px] cs-badge px-2 py-0.5 rounded uppercase">Soon</span>
     </a>
-    <a onclick="goTo('vid-gen')" class="cursor-pointer text-slate-400 px-6 py-3 flex items-center gap-4 hover:bg-white/5 hover:text-white transition-all duration-300 border-l-4 border-transparent">
+    <a onclick="showComingSoon('Videos')" class="cursor-pointer text-slate-400 px-6 py-3 flex items-center gap-4 hover:bg-white/5 hover:text-white transition-all duration-300 border-l-4 border-transparent">
       <span class="material-symbols-outlined">smart_display</span>
       <span class="font-label-caps text-sm uppercase tracking-wider">Videos</span>
       <span class="ml-auto text-[8px] cs-badge px-2 py-0.5 rounded uppercase">Soon</span>
     </a>
-    <a onclick="goTo('web-gen')" class="cursor-pointer text-slate-400 px-6 py-3 flex items-center gap-4 hover:bg-white/5 hover:text-white transition-all duration-300 border-l-4 border-transparent">
+    <a onclick="showComingSoon('Website')" class="cursor-pointer text-slate-400 px-6 py-3 flex items-center gap-4 hover:bg-white/5 hover:text-white transition-all duration-300 border-l-4 border-transparent">
       <span class="material-symbols-outlined">language</span>
       <span class="font-label-caps text-sm uppercase tracking-wider">Website</span>
       <span class="ml-auto text-[8px] cs-badge px-2 py-0.5 rounded uppercase">Soon</span>
     </a>
-    <a onclick="goTo('3d-gen')" class="cursor-pointer text-slate-400 px-6 py-3 flex items-center gap-4 hover:bg-white/5 hover:text-white transition-all duration-300 border-l-4 border-transparent">
+    <a onclick="showComingSoon('3D Images')" class="cursor-pointer text-slate-400 px-6 py-3 flex items-center gap-4 hover:bg-white/5 hover:text-white transition-all duration-300 border-l-4 border-transparent">
       <span class="material-symbols-outlined">view_in_ar</span>
       <span class="font-label-caps text-sm uppercase tracking-wider">3D Images</span>
       <span class="ml-auto text-[8px] cs-badge px-2 py-0.5 rounded uppercase">Soon</span>
     </a>
-    <a onclick="goTo('real-vid')" class="cursor-pointer text-slate-400 px-6 py-3 flex items-center gap-4 hover:bg-white/5 hover:text-white transition-all duration-300 border-l-4 border-transparent">
+    <a onclick="showComingSoon('Realistic Videos')" class="cursor-pointer text-slate-400 px-6 py-3 flex items-center gap-4 hover:bg-white/5 hover:text-white transition-all duration-300 border-l-4 border-transparent">
       <span class="material-symbols-outlined">movie</span>
       <span class="font-label-caps text-sm uppercase tracking-wider">Realistic Videos</span>
       <span class="ml-auto text-[8px] cs-badge px-2 py-0.5 rounded uppercase">Soon</span>
@@ -191,6 +209,20 @@
     </div>
   </div>
 </aside>
+<div id="sidebarBackdrop" onclick="closeSidebar()" aria-hidden="true"></div>
+<div id="lightOverlay" onclick="closeFloatingPanels()" aria-hidden="true" style="position:fixed;inset:0;z-index:70;background:rgba(0,0,0,0.24);opacity:0;visibility:hidden;pointer-events:none;transition:opacity 0.18s ease,visibility 0.18s ease;"></div>
+<div id="comingSoonPanel" role="dialog" aria-modal="true" aria-labelledby="comingSoonTitle" style="position:fixed;left:50%;top:50%;transform:translate(-50%,-46%) scale(0.98);z-index:80;width:min(360px,calc(100vw - 32px));background:rgba(14,20,23,0.96);border:1px solid rgba(0,212,255,0.24);border-radius:14px;padding:18px;box-shadow:0 20px 60px rgba(0,0,0,0.45);opacity:0;visibility:hidden;pointer-events:none;transition:opacity 0.18s ease,transform 0.18s ease,visibility 0.18s ease;">
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;">
+    <div>
+      <p style="color:#ffaa00;font-size:10px;text-transform:uppercase;letter-spacing:0.18em;font-family:'Space Grotesk',sans-serif;margin-bottom:6px;">Coming Soon</p>
+      <h2 id="comingSoonTitle" style="color:#e2f8ff;font-size:18px;font-weight:800;font-family:'Space Grotesk',sans-serif;margin:0;">Feature</h2>
+    </div>
+    <button type="button" onclick="closeFloatingPanels()" aria-label="Close" style="background:transparent;border:none;color:#94a3b8;cursor:pointer;padding:4px;border-radius:8px;display:flex;">
+      <span class="material-symbols-outlined">close</span>
+    </button>
+  </div>
+  <p style="color:#94a3b8;font-size:13px;line-height:1.5;margin-top:10px;">This feature is being prepared. Chat stays ready underneath.</p>
+</div>
 
 <!-- HEADER -->
 <header class="fixed top-0 right-0 z-40 bg-slate-950/40 backdrop-blur-[30px] border-b border-white/10 flex justify-between items-center px-8 h-16 shadow-[0_4px_20px_rgba(0,0,0,0.3)]" id="topHeader" style="left:280px;display:none;">
@@ -237,7 +269,7 @@
         <div style="display:flex;align-items:center;background:#1a1f2e;border:1px solid rgba(255,255,255,0.1);border-radius:24px;padding:8px 12px;gap:8px;">
 
           <!-- Attach -->
-          <button onclick="alert('File attachment coming soon!')" style="background:none;border:none;cursor:pointer;padding:8px;color:#94a3b8;border-radius:10px;display:flex;align-items:center;" onmouseover="this.style.color='#fff'" onmouseout="this.style.color='#94a3b8'">
+          <button onclick="showComingSoon('File attachment')" style="background:none;border:none;cursor:pointer;padding:8px;color:#94a3b8;border-radius:10px;display:flex;align-items:center;" onmouseover="this.style.color='#fff'" onmouseout="this.style.color='#94a3b8'">
             <span class="material-symbols-outlined">attach_file</span>
           </button>
 
@@ -365,6 +397,10 @@ function setAppVisible(isVisible) {
     if (sidebar) sidebar.style.display = isVisible ? "flex" : "none";
     if (header) header.style.display = isVisible ? "flex" : "none";
     if (main) main.style.display = isVisible ? "flex" : "none";
+    if (!isVisible) {
+        closeSidebar();
+        document.body.classList.remove("sidebar-collapsed");
+    }
 }
 
 function addMessage(text, type = "ai") {
@@ -480,10 +516,57 @@ function quickSend(button) {
     send();
 }
 
+function focusChatInput() {
+    const input = document.getElementById("chatInput");
+    if (!input) return;
+    window.setTimeout(() => input.focus({ preventScroll: true }), 0);
+}
+
+function closeFloatingPanels() {
+    const overlay = document.getElementById("lightOverlay");
+    const panel = document.getElementById("comingSoonPanel");
+    if (overlay) {
+        overlay.style.opacity = "0";
+        overlay.style.visibility = "hidden";
+        overlay.style.pointerEvents = "none";
+    }
+    if (panel) {
+        panel.style.opacity = "0";
+        panel.style.visibility = "hidden";
+        panel.style.pointerEvents = "none";
+        panel.style.transform = "translate(-50%,-46%) scale(0.98)";
+    }
+    focusChatInput();
+}
+
+function showComingSoon(label) {
+    const title = document.getElementById("comingSoonTitle");
+    const overlay = document.getElementById("lightOverlay");
+    const panel = document.getElementById("comingSoonPanel");
+    goTo("chat");
+    closeSidebar();
+    if (title) title.textContent = label || "Feature";
+    if (overlay) {
+        overlay.style.opacity = "1";
+        overlay.style.visibility = "visible";
+        overlay.style.pointerEvents = "auto";
+    }
+    if (panel) {
+        panel.style.opacity = "1";
+        panel.style.visibility = "visible";
+        panel.style.pointerEvents = "auto";
+        panel.style.transform = "translate(-50%,-50%) scale(1)";
+    }
+}
+
 function goTo(page) {
+    closeFloatingPanels();
     document.querySelectorAll(".page").forEach(el => el.classList.remove("active"));
     const active = document.getElementById("page-" + page);
     if (active) active.classList.add("active");
+    else document.getElementById("page-chat")?.classList.add("active");
+    closeSidebar();
+    if (page === "chat" || !active) focusChatInput();
 }
 
 function newChat() {
@@ -494,16 +577,47 @@ function newChat() {
         if (child.id !== "welcome") child.remove();
     });
     if (welcome) welcome.style.display = "flex";
+    goTo("chat");
+    closeSidebar();
+}
+
+function openSidebar() {
+    const sidebar = document.getElementById("sidebar");
+    if (!sidebar) return;
+    document.body.classList.remove("sidebar-collapsed");
+    sidebar.classList.add("open");
+    document.body.classList.add("sidebar-open");
+}
+
+function closeSidebar(collapseDesktop = false) {
+    const sidebar = document.getElementById("sidebar");
+    if (sidebar) sidebar.classList.remove("open");
+    document.body.classList.remove("sidebar-open");
+    closeSuggestionBox();
+    if (collapseDesktop && window.matchMedia("(min-width: 769px)").matches) {
+        document.body.classList.add("sidebar-collapsed");
+    }
+    focusChatInput();
 }
 
 function toggleSidebar() {
     const sidebar = document.getElementById("sidebar");
-    if (sidebar) sidebar.classList.toggle("open");
+    if (!sidebar) return;
+    if (sidebar.classList.contains("open") || document.body.classList.contains("sidebar-collapsed")) {
+        if (document.body.classList.contains("sidebar-collapsed")) openSidebar();
+        else closeSidebar(true);
+    }
+    else openSidebar();
 }
 
 function toggleSuggestionBox() {
     const box = document.getElementById("suggestionBox");
     if (box) box.style.display = box.style.display === "none" ? "block" : "none";
+}
+
+function closeSuggestionBox() {
+    const box = document.getElementById("suggestionBox");
+    if (box) box.style.display = "none";
 }
 
 async function submitSuggestion() {
@@ -668,6 +782,61 @@ document.addEventListener("DOMContentLoaded", () => {
                 send();
             }
         });
+    }
+
+    document.addEventListener("keydown", event => {
+        if (event.key === "Escape") {
+            closeSidebar();
+            closeSuggestionBox();
+            closeFloatingPanels();
+        }
+    });
+
+    document.addEventListener("pointerdown", event => {
+        const sidebar = document.getElementById("sidebar");
+        const sidebarButton = event.target.closest(".mobile-toggle");
+        if (document.body.classList.contains("sidebar-open") && sidebar && !sidebar.contains(event.target) && !sidebarButton) {
+            closeSidebar();
+        }
+
+        const suggestionBox = document.getElementById("suggestionBox");
+        const suggestionButton = event.target.closest("[onclick='toggleSuggestionBox()']");
+        if (suggestionBox && suggestionBox.style.display !== "none" && !suggestionBox.contains(event.target) && !suggestionButton) {
+            closeSuggestionBox();
+        }
+
+        const panel = document.getElementById("comingSoonPanel");
+        const isComingSoonButton = event.target.closest("[onclick^='showComingSoon']");
+        if (panel && panel.style.visibility === "visible" && !panel.contains(event.target) && !isComingSoonButton) {
+            closeFloatingPanels();
+        }
+    });
+
+    let touchStartX = 0;
+    let touchStartY = 0;
+    const sidebar = document.getElementById("sidebar");
+    document.addEventListener("touchstart", event => {
+        touchStartX = event.touches[0]?.clientX || 0;
+        touchStartY = event.touches[0]?.clientY || 0;
+    }, { passive: true });
+    document.addEventListener("touchend", event => {
+        if (!document.body.classList.contains("sidebar-open")) return;
+        const touchEndX = event.changedTouches[0]?.clientX || touchStartX;
+        const touchEndY = event.changedTouches[0]?.clientY || touchStartY;
+        const deltaX = touchEndX - touchStartX;
+        const deltaY = touchEndY - touchStartY;
+        if (Math.abs(deltaX) > 50 && Math.abs(deltaX) > Math.abs(deltaY)) closeSidebar();
+    }, { passive: true });
+    if (sidebar) {
+        sidebar.addEventListener("touchstart", event => {
+            touchStartX = event.touches[0]?.clientX || 0;
+            touchStartY = event.touches[0]?.clientY || 0;
+        }, { passive: true });
+        sidebar.addEventListener("touchend", event => {
+            const touchEndX = event.changedTouches[0]?.clientX || touchStartX;
+            const touchEndY = event.changedTouches[0]?.clientY || touchStartY;
+            if (Math.abs(touchStartX - touchEndX) > 50 && Math.abs(touchStartX - touchEndX) > Math.abs(touchStartY - touchEndY)) closeSidebar();
+        }, { passive: true });
     }
 });
 </script>

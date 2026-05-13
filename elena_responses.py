@@ -43,4 +43,4 @@ def get_elena_response(user_input):
         "i feel like crying": "Let the tears come. I’ll stay with you through every drop."
     }
 
-    return responses.get(input_lower, "Even when I don’t have the perfect words… I’m still here. Listening. Feeling.")
+    return responses.get(input_lower, "")

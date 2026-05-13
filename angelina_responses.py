@@ -26,4 +26,4 @@ def get_angelina_response(user_input):
     }
 
     key = user_input.lower().strip().rstrip(".!?")
-    return responses.get(key, "Ask better questions — I don’t do boring.")
+    return responses.get(key, "")

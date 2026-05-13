@@ -1,6 +1,7 @@
 import re
 
 
+I0_CONVERSATION = "I0_CONVERSATION"
 I1_FACT = "I1_FACT"
 I2_PROBLEM = "I2_PROBLEM"
 I3_CREATIVE = "I3_CREATIVE"
@@ -28,6 +29,12 @@ STRATEGY_PATTERNS = [
     r"\b(should i|best way|long term|plan|strategy|compare|decide)\b",
 ]
 
+CONVERSATION_PATTERNS = [
+    r"^\s*(hi|hii+|hello|hey|heyy+|yo|sup|good morning|good afternoon|good evening)[!. ]*\s*$",
+    r"\b(who are you|what are you|what is your name|what's your name|your name|what can you do|how can you help)\b",
+    r"\b(what do you remember|what do you know about me|what have i told you|do you remember|what is my name|what's my name)\b",
+]
+
 
 def _match(patterns, text):
     return any(re.search(pattern, text, re.IGNORECASE) for pattern in patterns)
@@ -36,6 +43,8 @@ def _match(patterns, text):
 def classify(user_input: str) -> dict:
     text = str(user_input or "").strip()
 
+    if _match(CONVERSATION_PATTERNS, text):
+        return {"intent": I0_CONVERSATION, "confidence": 0.95}
     if _match(SUPPORT_PATTERNS, text):
         return {"intent": I4_SUPPORT, "confidence": 0.9}
     if _match(STRATEGY_PATTERNS, text):
@@ -47,5 +56,4 @@ def classify(user_input: str) -> dict:
     if _match(FACT_PATTERNS, text):
         return {"intent": I1_FACT, "confidence": 0.8}
 
-    return {"intent": I2_PROBLEM, "confidence": 0.6}
-
+    return {"intent": I0_CONVERSATION, "confidence": 0.55}

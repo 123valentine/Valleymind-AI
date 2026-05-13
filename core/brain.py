@@ -14,6 +14,12 @@ from core.memory import MemorySystem
 
 
 FALLBACK_RESPONSE = "I'm having trouble responding right now. Please try again."
+LOCAL_FALLBACK_REPLIES = [
+    "I'm here. Say that another way and I'll follow you.",
+    "I caught the signal, but not the shape of it yet. Try me again.",
+    "I'm listening. Give me a little more context and I'll work with it.",
+    "Stay with me. What do you want to figure out from here?",
+]
 
 _FALLBACK_ENVELOPE = {
     "reply": FALLBACK_RESPONSE,
@@ -270,9 +276,39 @@ def _is_conversation_recall_request(message: str) -> bool:
     return bool(re.search(r"\b(what did i ask|what were we talking about|what was our last conversation)\b", text))
 
 
+def _normalized_message(message: str) -> str:
+    return re.sub(r"\s+", " ", str(message or "").strip().lower())
+
+
+def _is_greeting(message: str) -> bool:
+    text = _normalized_message(message)
+    return bool(re.fullmatch(r"(hi|hii+|hello|hey|heyy+|yo|sup|good morning|good afternoon|good evening)[!. ]*", text))
+
+
+def _is_identity_question(message: str) -> bool:
+    text = _normalized_message(message)
+    return bool(re.search(
+        r"\b(who are you|what are you|what is your name|what's your name|your name|are you marcus|who created you)\b",
+        text,
+    ))
+
+
+def _is_capability_question(message: str) -> bool:
+    text = _normalized_message(message)
+    return bool(re.search(
+        r"\b(what can you do|what do you do|how can you help|what are your capabilities|help me with|what can i ask you)\b",
+        text,
+    ))
+
+
 def _is_stale_fallback_text(text: str) -> bool:
     lowered = str(text or "").strip().lower()
     return lowered in {
+        "i hear you. speak freely. no filter, no fear. i'm listening.",
+        "even when i don't have the perfect words... i'm still here. listening. feeling.",
+        "even when i donâ€™t have the perfect wordsâ€¦ iâ€™m still here. listening. feeling.",
+        "ask better questions - i don't do boring.",
+        "ask better questions â€” i donâ€™t do boring.",
         "i can't retrieve live data at the moment. please try again shortly.",
         "i'm having trouble responding right now. please try again.",
         "i don't have your name saved yet.",
@@ -319,6 +355,9 @@ class MarcusBrain:
         self.knowledge: dict = {}
         self.knowledge_file = os.path.join(PROJECT_ROOT, "knowledge.json")
         self._model_name: str = ""
+        self._last_fallback_reply: str = ""
+        self._fallback_index: int = 0
+        self._last_local_reply: str = ""
 
         config = get_config()
         if not config.groq_api_key:
@@ -391,11 +430,69 @@ class MarcusBrain:
             print(f"[ERROR] _handle_name_question failed: {exc}")
             return "I couldn't retrieve your name right now."
 
+    def _choose_variant(self, variants: list[str]) -> str:
+        cleaned = [str(item).strip() for item in variants if str(item).strip()]
+        if not cleaned:
+            return FALLBACK_RESPONSE
+        for _ in range(len(cleaned)):
+            reply = cleaned[self._fallback_index % len(cleaned)]
+            self._fallback_index += 1
+            if reply != self._last_local_reply:
+                self._last_local_reply = reply
+                return reply
+        self._last_local_reply = cleaned[0]
+        return cleaned[0]
+
+    def _next_fallback_reply(self) -> str:
+        for _ in range(len(LOCAL_FALLBACK_REPLIES)):
+            reply = self._choose_variant(LOCAL_FALLBACK_REPLIES)
+            if reply != self._last_fallback_reply:
+                self._last_fallback_reply = reply
+                return reply
+        return LOCAL_FALLBACK_REPLIES[0]
+
+    def _handle_greeting(self) -> str:
+        return self._choose_variant([
+            "Hey. I'm here with you. What's on your mind?",
+            "Hi. Good to see you. What are we working through today?",
+            "Hey there. Talk to me.",
+            "Hello. I'm listening.",
+        ])
+
+    def _handle_identity_question(self, message: str) -> str:
+        lowered = _normalized_message(message)
+        if "created" in lowered:
+            return "I was created by EGBUJIE Valentine (K) for ValleyMind-AI."
+        return self._choose_variant([
+            "I'm Marcus, the ValleyMind-AI guide for conversation, memory continuity, reasoning, and practical support.",
+            "My name is Marcus. I help you think, remember useful context, talk things through, and work on ideas.",
+            "I'm Marcus inside ValleyMind-AI: a calm AI companion built for clear reasoning, memory, and conversation.",
+        ])
+
+    def _handle_capability_question(self) -> str:
+        return self._choose_variant([
+            "I can chat naturally, remember details you choose to share, answer questions, help solve problems, draft ideas, and think through plans with you.",
+            "You can ask me to explain things, brainstorm, write, debug ideas, recall saved memory, or help you make a decision.",
+            "I help with conversation, memory questions, practical reasoning, creative drafts, troubleshooting, and planning.",
+        ])
+
+    def _local_intent_reply(self, message: str) -> str:
+        if _is_greeting(message):
+            return self._handle_greeting()
+        if _is_identity_question(message):
+            return self._handle_identity_question(message)
+        if _is_capability_question(message):
+            return self._handle_capability_question()
+        return ""
+
     def _local_fallback_reply(self, message: str) -> str:
+        local_reply = self._local_intent_reply(message)
+        if local_reply:
+            return local_reply
         scripted = self.profile.scripted_response(message)
         if scripted:
             return scripted
-        return FALLBACK_RESPONSE
+        return self._next_fallback_reply()
 
     def _handle_continue_conversation(self, chat_id: str) -> str:
         try:
@@ -490,7 +587,10 @@ class MarcusBrain:
             recent_live_context = "\n".join(
                 str(item.get("content") or "")
                 for item in live_history[-6:]
-                if item.get("content")
+                if item.get("content") and not (
+                    item.get("role") == "assistant"
+                    and _is_stale_fallback_text(item.get("content", ""))
+                )
             )
         except Exception:
             recent_live_context = ""
@@ -602,6 +702,8 @@ class MarcusBrain:
             role = msg.get("role", "user")
             content = msg.get("content", "")
             if content and isinstance(content, str):
+                if role == "assistant" and _is_stale_fallback_text(content):
+                    continue
                 messages.append({"role": role, "content": content})
 
         messages.append({"role": "user", "content": user_message})
@@ -676,6 +778,14 @@ class MarcusBrain:
                 except Exception as exc:
                     print(f"[ERROR] Memory add_message (assistant) failed: {exc}")
                 return reply
+
+            local_reply = self._local_intent_reply(message)
+            if local_reply:
+                try:
+                    self.memory.add_message(chat_id, "assistant", local_reply, timestamp)
+                except Exception as exc:
+                    print(f"[ERROR] Memory add_message (assistant) failed: {exc}")
+                return local_reply
 
             envelope = self._think(chat_id, message)
             local_memory = _extract_memory_fact(message)

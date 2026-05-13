@@ -1,8 +1,14 @@
 
 def get_marcos_response(user_input):
-    input_lower = user_input.lower()
+    input_lower = str(user_input or "").lower().strip()
 
-    if "who are you" in input_lower:
+    if input_lower in {"hi", "hello", "hey", "yo", "good morning", "good afternoon", "good evening"}:
+        return "Hey. I'm here with you. What's on your mind?"
+
+    if "what can you do" in input_lower or "how can you help" in input_lower:
+        return "I can chat, remember useful details, answer questions, help solve problems, write drafts, and think through plans with you."
+
+    if "who are you" in input_lower or "what is your name" in input_lower or "what's your name" in input_lower:
         return "I am Marcus, a supportive AI guide inside ValleyMind-AI. I help with conversation, memory continuity, and contextual reasoning."
 
     elif "are you okay" in input_lower:
@@ -41,5 +47,4 @@ def get_marcos_response(user_input):
     elif "who created you" in input_lower:
         return "I was created by EGBUJIE Valentine (K)."
 
-    else:
-        return "I hear you. Speak freely. No filter, no fear. I'm listening."
+    return ""
