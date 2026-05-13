@@ -7,6 +7,8 @@ I2_PROBLEM = "I2_PROBLEM"
 I3_CREATIVE = "I3_CREATIVE"
 I4_SUPPORT = "I4_SUPPORT"
 I5_STRATEGY = "I5_STRATEGY"
+I6_NEWS = "I6_NEWS"
+I7_SPORTS = "I7_SPORTS"
 
 
 SUPPORT_PATTERNS = [
@@ -15,6 +17,7 @@ SUPPORT_PATTERNS = [
 
 FACT_PATTERNS = [
     r"\b(what is|who is|when did|define|meaning of|explain)\b",
+    r"^\s*(physics|quantum physics|chemistry|biology|mathematics|math|history|geography|programming|computer science|machine learning|artificial intelligence)\s*[?.!]*\s*$",
 ]
 
 PROBLEM_PATTERNS = [
@@ -35,6 +38,15 @@ CONVERSATION_PATTERNS = [
     r"\b(what do you remember|what do you know about me|what have i told you|do you remember|what is my name|what's my name)\b",
 ]
 
+NEWS_PATTERNS = [
+    r"\b(news|headline|headlines|breaking|latest|current events|today's news|world news|bbc news|market news|tech news|ai news)\b",
+    r"\b(latest|current|recent|today)\b.*\b(news|update|updates|headline|headlines)\b",
+]
+
+SPORTS_PATTERNS = [
+    r"\b(sports|score|scores|fixture|fixtures|match|matches|standings|nba|nfl|mlb|nhl|epl|premier league|champions league|football|soccer|liverpool|arsenal|chelsea|manchester city|man united)\b",
+]
+
 
 def _match(patterns, text):
     return any(re.search(pattern, text, re.IGNORECASE) for pattern in patterns)
@@ -43,6 +55,10 @@ def _match(patterns, text):
 def classify(user_input: str) -> dict:
     text = str(user_input or "").strip()
 
+    if _match(SPORTS_PATTERNS, text):
+        return {"intent": I7_SPORTS, "confidence": 0.95}
+    if _match(NEWS_PATTERNS, text):
+        return {"intent": I6_NEWS, "confidence": 0.95}
     if _match(CONVERSATION_PATTERNS, text):
         return {"intent": I0_CONVERSATION, "confidence": 0.95}
     if _match(SUPPORT_PATTERNS, text):

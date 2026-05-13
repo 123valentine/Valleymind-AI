@@ -9,16 +9,42 @@ from core.auto_model import get_latest_groq_model
 from core.character import load_character_profile
 from core.config import PROJECT_ROOT, get_config
 from core.external_apis import LIVE_DATA_UNAVAILABLE, classify_live_request, graceful_live_failure, strict_live_context
-from core.intent_classifier import classify
+from core.intent_classifier import I1_FACT, I6_NEWS, I7_SPORTS, classify
 from core.memory import MemorySystem
 
 
 FALLBACK_RESPONSE = "I'm having trouble responding right now. Please try again."
 LOCAL_FALLBACK_REPLIES = [
-    "I'm here. Say that another way and I'll follow you.",
-    "I caught the signal, but not the shape of it yet. Try me again.",
-    "I'm listening. Give me a little more context and I'll work with it.",
-    "Stay with me. What do you want to figure out from here?",
+    "Give me one more detail and I can answer that properly.",
+    "I need a little more context to make the answer useful.",
+    "That can go a few directions. What part should I focus on?",
+    "I can work with that, but I need the specific question first.",
+]
+
+UI_RESPONSE_BLOCKLIST = [
+    "attach_file",
+    "material-symbols-outlined",
+    "toggleSidebar",
+    "chatInput",
+    "sendBtn",
+    "<button",
+    "</button",
+    "<aside",
+    "<nav",
+    "<textarea",
+    "onclick=",
+]
+
+MIDDLEWARE_OUTPUT_PATTERNS = [
+    r"\bbackend context\b",
+    r"\braw api\b",
+    r"\bprovider data\b",
+    r"\bjson envelope\b",
+    r"\bapi[- ]?sports\b",
+    r"\bnewscatcher\b",
+    r"\bcurrents api\b",
+    r"\bnewsapi\b",
+    r"^\s*live (news|sports) results\s*:",
 ]
 
 _FALLBACK_ENVELOPE = {
@@ -149,7 +175,7 @@ def _parse_envelope(raw: str) -> dict:
         print(f"[WARNING] Envelope parse failed. Raw: {cleaned[:300]}")
         if cleaned:
             envelope = _FALLBACK_ENVELOPE.copy()
-            envelope["reply"] = cleaned
+            envelope["reply"] = _sanitize_reply_for_chat(cleaned)
             return envelope
         return _FALLBACK_ENVELOPE.copy()
 
@@ -163,6 +189,7 @@ def _parse_envelope(raw: str) -> dict:
     if not reply:
         reply = FALLBACK_RESPONSE
 
+    reply = _sanitize_reply_for_chat(reply)
     return {"reply": reply, "intent": intent, "entity": entity, "value": value}
 
 
@@ -273,7 +300,29 @@ def _is_continue_request(message: str) -> bool:
 
 def _is_conversation_recall_request(message: str) -> bool:
     text = str(message or "").strip().lower()
-    return bool(re.search(r"\b(what did i ask|what were we talking about|what was our last conversation)\b", text))
+    return bool(re.search(
+        r"\b(what did i ask|what were we talking about|what was our last conversation|before that what were we talking about|what were we discussing before that)\b",
+        text,
+    ))
+
+
+def _is_before_that_recall_request(message: str) -> bool:
+    text = str(message or "").strip().lower()
+    return bool(re.search(r"\b(before that|prior to that|earlier than that)\b.*\b(talking about|discussing|conversation|chat)\b", text))
+
+
+def _is_short_followup(message: str) -> bool:
+    text = str(message or "").strip().lower()
+    return bool(re.fullmatch(r"(yes|yeah|yep|sure|ok|okay|go on|continue|do it|please do|that one|both|no|nope)", text))
+
+
+def _is_conversation_control_message(message: str) -> bool:
+    return _is_continue_request(message) or _is_conversation_recall_request(message) or _is_short_followup(message)
+
+
+def _is_conversation_control_reply(message: str) -> bool:
+    text = str(message or "").strip().lower()
+    return text.startswith("we were talking about") or text.startswith("before that, we were talking about")
 
 
 def _normalized_message(message: str) -> str:
@@ -301,6 +350,52 @@ def _is_capability_question(message: str) -> bool:
     ))
 
 
+def _is_ui_leak(text: str) -> bool:
+    lowered = str(text or "").lower()
+    if re.search(r"<\s*(button|aside|nav|textarea|script|style|span|div)\b", lowered):
+        return True
+    if re.search(r"\bonclick\s*=", lowered):
+        return True
+    return any(token.lower() in lowered for token in UI_RESPONSE_BLOCKLIST)
+
+
+def _has_middleware_leak(text: str) -> bool:
+    return any(re.search(pattern, str(text or ""), re.IGNORECASE | re.MULTILINE) for pattern in MIDDLEWARE_OUTPUT_PATTERNS)
+
+
+def _strip_ui_leakage(text: str) -> str:
+    cleaned = str(text or "")
+    cleaned = re.sub(r"<(button|aside|nav|textarea|span|div)\b[^>]*>.*?</\1>", "", cleaned, flags=re.IGNORECASE | re.DOTALL)
+    cleaned = re.sub(r"\b(attach_file|material-symbols-outlined|toggleSidebar|chatInput|sendBtn)\b", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned
+
+
+def _strip_middleware_leakage(text: str) -> str:
+    cleaned = str(text or "")
+    for _ in range(2):
+        cleaned = re.sub(r"\b(API[- ]?SPORTS|Newscatcher|Currents API|NewsAPI)\b:?\s*", "", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"^\s*live (news|sports) results\s*:\s*", "", cleaned, flags=re.IGNORECASE | re.MULTILINE)
+        cleaned = re.sub(r"\b(backend context|raw API|provider data|JSON envelope)\b:?\s*", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
+    return cleaned
+
+
+def _sanitize_reply_for_chat(reply: str, replacement: str = "") -> str:
+    cleaned = str(reply or "").strip()
+    if not cleaned:
+        return replacement or FALLBACK_RESPONSE
+    if _is_ui_leak(cleaned):
+        cleaned = _strip_ui_leakage(cleaned)
+    if _has_middleware_leak(cleaned):
+        cleaned = _strip_middleware_leakage(cleaned)
+    if not cleaned:
+        return replacement or "I could not produce a clean response for that."
+    if _is_ui_leak(cleaned):
+        return replacement or "I could not produce a clean response for that."
+    return cleaned
+
+
 def _is_stale_fallback_text(text: str) -> bool:
     lowered = str(text or "").strip().lower()
     return lowered in {
@@ -312,6 +407,10 @@ def _is_stale_fallback_text(text: str) -> bool:
         "i can't retrieve live data at the moment. please try again shortly.",
         "i'm having trouble responding right now. please try again.",
         "i don't have your name saved yet.",
+        "give me one more detail and i can answer that properly.",
+        "i need a little more context to make the answer useful.",
+        "that can go a few directions. what part should i focus on?",
+        "i can work with that, but i need the specific question first.",
     }
 
 
@@ -476,6 +575,25 @@ class MarcusBrain:
             "I help with conversation, memory questions, practical reasoning, creative drafts, troubleshooting, and planning.",
         ])
 
+    def _local_knowledge_reply(self, message: str) -> str:
+        text = _normalized_message(message).strip(" ?.!")
+        if text in {"physics", "what is physics", "define physics", "explain physics"}:
+            return (
+                "Physics is the science of matter, energy, motion, forces, space, and time. "
+                "It studies how the universe behaves, from everyday motion and electricity to atoms, light, gravity, and galaxies."
+            )
+        if text in {"quantum physics", "what is quantum physics", "define quantum physics", "explain quantum physics"}:
+            return (
+                "Quantum physics is the branch of physics that explains how matter and energy behave at very small scales, "
+                "such as atoms and subatomic particles. It includes ideas like quantized energy, wave-particle behavior, uncertainty, and superposition."
+            )
+        if text in {"relativity", "what is relativity", "define relativity", "explain relativity", "what about relativity"}:
+            return (
+                "Relativity is Einstein's framework for understanding space, time, motion, and gravity. "
+                "Special relativity explains how time and distance change at very high speeds, while general relativity describes gravity as the curvature of spacetime."
+            )
+        return ""
+
     def _local_intent_reply(self, message: str) -> str:
         if _is_greeting(message):
             return self._handle_greeting()
@@ -484,6 +602,15 @@ class MarcusBrain:
         if _is_capability_question(message):
             return self._handle_capability_question()
         return ""
+
+    def _local_error_reply(self, message: str, route: dict) -> str:
+        knowledge = self._local_knowledge_reply(message)
+        if knowledge:
+            return knowledge
+        intent = (route or {}).get("intent")
+        if intent == I1_FACT:
+            return "I could not reach the reasoning model, but this is a knowledge request. Please ask it as a complete question so I can give a precise answer."
+        return self._next_fallback_reply()
 
     def _local_fallback_reply(self, message: str) -> str:
         local_reply = self._local_intent_reply(message)
@@ -495,6 +622,9 @@ class MarcusBrain:
         return self._next_fallback_reply()
 
     def _handle_continue_conversation(self, chat_id: str) -> str:
+        return self._handle_conversation_recall(chat_id, depth=1)
+
+    def _conversation_pairs(self, chat_id: str) -> list[dict]:
         try:
             history = self.memory.get_chat(chat_id) or []
         except Exception as exc:
@@ -511,37 +641,70 @@ class MarcusBrain:
             item for item in previous
             if not (item.get("role") == "assistant" and _is_stale_fallback_text(item.get("content", "")))
         ]
-        if not previous:
+
+        pairs = []
+        pending_user = None
+        for item in previous:
+            role = item.get("role")
+            content = str(item.get("content") or "").strip()
+            if not content:
+                continue
+            if role == "user":
+                if _is_conversation_control_message(content):
+                    continue
+                if pending_user:
+                    pairs.append({"user": pending_user, "assistant": ""})
+                pending_user = content
+            elif role == "assistant" and pending_user:
+                if _is_conversation_control_reply(content):
+                    continue
+                pairs.append({"user": pending_user, "assistant": content})
+                pending_user = None
+        if pending_user:
+            pairs.append({"user": pending_user, "assistant": ""})
+        return pairs
+
+    def _handle_conversation_recall(self, chat_id: str, depth: int = 1) -> str:
+        pairs = self._conversation_pairs(chat_id)
+        if not pairs:
             return "I don't see an earlier conversation to continue yet."
-
-        recent = previous[-12:]
-        last_assistant_index = next(
-            (index for index in range(len(recent) - 1, -1, -1) if recent[index].get("role") == "assistant"),
-            -1,
-        )
-        if last_assistant_index >= 0:
-            last_assistant = recent[last_assistant_index]
-            last_user = next(
-                (item for item in reversed(recent[:last_assistant_index]) if item.get("role") == "user"),
-                {},
-            )
-        else:
-            last_assistant = {}
-            last_user = next((item for item in reversed(recent) if item.get("role") == "user"), {})
-        user_text = str(last_user.get("content") or "").strip()
-        assistant_text = str(last_assistant.get("content") or "").strip()
-
+        index = max(0, len(pairs) - max(1, depth))
+        pair = pairs[index]
+        user_text = pair.get("user", "")
+        assistant_text = pair.get("assistant", "")
+        label = "Before that, we were talking about" if depth > 1 else "We were talking about"
         if user_text and assistant_text:
             return (
-                "We were talking about this: "
+                label
+                + ": "
                 + user_text
                 + "\n\nMy last reply was: "
                 + assistant_text
-                + "\n\nTell me what part you want to continue from."
             )
         if user_text:
-            return "We were talking about this: " + user_text
-        return "I found the previous chat. Tell me where you want me to continue."
+            return label + ": " + user_text
+        return "I found the earlier chat, but there was no clear topic attached to it."
+
+    def _handle_short_followup(self, chat_id: str, message: str) -> str:
+        pairs = self._conversation_pairs(chat_id)
+        if not pairs:
+            return ""
+        last = pairs[-1]
+        user_text = last.get("user", "")
+        assistant_text = last.get("assistant", "")
+        lowered = _normalized_message(message)
+        if lowered in {"no", "nope"}:
+            return "Understood. What direction do you want to take instead?"
+        if assistant_text:
+            return (
+                "Got it. Continuing from your last point about "
+                + user_text
+                + ".\n\n"
+                + "What part should I expand or act on next?"
+            )
+        if user_text:
+            return "Got it. We are still on: " + user_text
+        return ""
 
     def _groq_sports_fallback(self, user_message: str) -> dict:
         config = get_config()
@@ -579,6 +742,54 @@ class MarcusBrain:
                 "value": "",
             }
 
+    def _format_with_groq(self, user_message: str, source_context: str, route_type: str) -> dict:
+        config = get_config()
+        model = self._get_model()
+        if not config.groq_api_key or not model:
+            return {
+                "reply": graceful_live_failure(route_type),
+                "intent": "general",
+                "entity": "",
+                "value": "",
+            }
+
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    _SYSTEM_PROMPT
+                    + "\n\nFormatting layer: convert the supplied backend context into a clean human answer. "
+                    + "Do not expose raw API output, JSON, provider names, HTML, CSS, buttons, icons, menus, microphone labels, attachment labels, or frontend code. "
+                    + "Do not use phrases such as backend context, API response, raw results, middleware, provider, JSON, NewsAPI, Newscatcher, Currents, or API-SPORTS in the reply. "
+                    + "Use only the provided context for live data. If the context does not support a claim, say it is not confirmed."
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"Route: {route_type}\n"
+                    f"Question: {user_message}\n\n"
+                    f"Backend context:\n{source_context}\n\n"
+                    "Return the final user-facing answer as the required JSON envelope."
+                ),
+            },
+        ]
+        envelope = _parse_envelope(_call_groq(messages, model))
+        envelope["reply"] = _sanitize_reply_for_chat(
+            envelope.get("reply", ""),
+            graceful_live_failure(route_type),
+        )
+        return envelope
+
+    def _route_request(self, message: str) -> dict:
+        route = classify(message)
+        live_type = classify_live_request(message)
+        if live_type == "sports":
+            route = {**route, "intent": I7_SPORTS, "live_type": "sports", "confidence": max(route.get("confidence", 0), 0.95)}
+        elif live_type in {"news", "live"}:
+            route = {**route, "intent": I6_NEWS, "live_type": live_type, "confidence": max(route.get("confidence", 0), 0.95)}
+        return route
+
     def _think(self, chat_id: str, user_message: str) -> dict:
         try:
             live_history = self.memory.get_chat(chat_id) or []
@@ -600,7 +811,8 @@ class MarcusBrain:
             if recent_live_context
             else user_message
         )
-        live_type = classify_live_request(user_message)
+        route_hint = self._route_request(user_message)
+        live_type = route_hint.get("live_type") or classify_live_request(user_message)
         if live_type in {"news", "sports", "live"}:
             route = strict_live_context(live_context_query if live_type == "sports" else user_message)
             external_context = route.get("context", "")
@@ -609,37 +821,8 @@ class MarcusBrain:
                     return self._groq_sports_fallback(user_message)
                 reply = graceful_live_failure(route.get("intent") or live_type)
                 return {"reply": reply, "intent": "general", "entity": "", "value": ""}
-            config = get_config()
-            model = self._get_model()
-            if not config.groq_api_key or not model:
-                return {
-                    "reply": graceful_live_failure(route.get("intent") or live_type),
-                    "intent": "general",
-                    "entity": "",
-                    "value": "",
-                }
-            messages = [
-                {
-                    "role": "system",
-                    "content": (
-                        _SYSTEM_PROMPT
-                        + "\n\nYou are answering a live-data question. Use only the provided live context and the user's question. "
-                        + "Do not mention APIs, tools, keys, backend logic, or internal fetching. "
-                        + "Do not include unrelated fixtures, teams, or articles. If the context does not support a claim, say it is not confirmed. "
-                        + "Write a natural Marcus reply. Do not expose raw provider data or JSON."
-                    ),
-                },
-                {
-                    "role": "user",
-                    "content": (
-                        f"Question: {user_message}\n\n"
-                        f"Relevant live context:\n{external_context}\n\n"
-                        "Answer naturally and concisely using only this relevant context."
-                    ),
-                },
-            ]
             try:
-                return _parse_envelope(_call_groq(messages, model))
+                return self._format_with_groq(user_message, external_context, route.get("intent") or live_type)
             except Exception as exc:
                 print(f"[ERROR] Groq live summary failed. Fallback reason: {exc}")
                 return {
@@ -654,12 +837,12 @@ class MarcusBrain:
         if not model:
             print("[API] Fallback triggered: no Groq model available")
             fallback = _FALLBACK_ENVELOPE.copy()
-            fallback["reply"] = self._local_fallback_reply(user_message)
+            fallback["reply"] = self._local_error_reply(user_message, route_hint)
             return fallback
         if not config.groq_api_key:
             print("[API] Fallback triggered: GROQ_API_KEY is not configured")
             fallback = _FALLBACK_ENVELOPE.copy()
-            fallback["reply"] = self._local_fallback_reply(user_message)
+            fallback["reply"] = self._local_error_reply(user_message, route_hint)
             return fallback
 
         try:
@@ -680,7 +863,7 @@ class MarcusBrain:
             identity_str = "{}"
             prefs_str = "{}"
 
-        route = classify(user_message)
+        route = route_hint
         system_with_context = (
             _SYSTEM_PROMPT
             + "\n\nCharacter profile:\n"
@@ -720,7 +903,7 @@ class MarcusBrain:
             print(f"[ERROR] Groq call failed. Fallback reason: {exc}")
 
         fallback = _FALLBACK_ENVELOPE.copy()
-        fallback["reply"] = self._local_fallback_reply(user_message)
+        fallback["reply"] = self._local_error_reply(user_message, route)
         print("[API] Local fallback triggered after Groq failure")
         return fallback
 
@@ -764,7 +947,10 @@ class MarcusBrain:
                 return reply
 
             if _is_continue_request(message) or _is_conversation_recall_request(message):
-                reply = self._handle_continue_conversation(chat_id)
+                reply = self._handle_conversation_recall(
+                    chat_id,
+                    depth=2 if _is_before_that_recall_request(message) else 1,
+                )
                 try:
                     self.memory.add_message(chat_id, "assistant", reply, timestamp)
                 except Exception as exc:
@@ -778,6 +964,15 @@ class MarcusBrain:
                 except Exception as exc:
                     print(f"[ERROR] Memory add_message (assistant) failed: {exc}")
                 return reply
+
+            if _is_short_followup(message):
+                reply = self._handle_short_followup(chat_id, message)
+                if reply:
+                    try:
+                        self.memory.add_message(chat_id, "assistant", reply, timestamp)
+                    except Exception as exc:
+                        print(f"[ERROR] Memory add_message (assistant) failed: {exc}")
+                    return reply
 
             local_reply = self._local_intent_reply(message)
             if local_reply:
@@ -793,7 +988,10 @@ class MarcusBrain:
                 envelope = {**envelope, **local_memory}
             envelope = _sanitize_memory_fact(envelope, message)
 
-            reply = str(envelope.get("reply") or "").strip() or FALLBACK_RESPONSE
+            reply = _sanitize_reply_for_chat(
+                str(envelope.get("reply") or "").strip(),
+                self._local_error_reply(message, self._route_request(message)),
+            )
             intent = str(envelope.get("intent") or "general").strip()
             entity = str(envelope.get("entity") or "").strip()
             value = str(envelope.get("value") or "").strip()

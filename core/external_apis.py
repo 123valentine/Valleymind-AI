@@ -126,10 +126,10 @@ def _log_sports_response(response=None, data=None):
 
 def graceful_live_failure(intent: str) -> str:
     if intent == "sports":
-        return "I tried to check the live sports data, but I couldn't reach the sports service right now. Please try again shortly."
+        return "Live sports data is unavailable right now, so I cannot verify the current result or fixture."
     if intent in {"news", "live"}:
-        return "I tried to check the latest updates, but I couldn't reach the news service right now. Please try again shortly."
-    return "I couldn't reach the live data service right now. Please try again shortly."
+        return "Live news data is unavailable right now, so I cannot verify the latest update."
+    return "Live data is unavailable right now, so I cannot verify the current information."
 
 
 def needs_external_context(message: str) -> bool:

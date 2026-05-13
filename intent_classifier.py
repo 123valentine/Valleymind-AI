@@ -7,6 +7,8 @@ from core.intent_classifier import (
     I3_CREATIVE,
     I4_SUPPORT,
     I5_STRATEGY,
+    I6_NEWS,
+    I7_SPORTS,
     classify,
 )
 
@@ -17,5 +19,7 @@ __all__ = [
     "I3_CREATIVE",
     "I4_SUPPORT",
     "I5_STRATEGY",
+    "I6_NEWS",
+    "I7_SPORTS",
     "classify",
 ]
