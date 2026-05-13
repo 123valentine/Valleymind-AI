@@ -1,6 +1,8 @@
 import json
 import os
 import re
+import ast
+import operator
 from datetime import datetime
 
 import requests
@@ -9,17 +11,11 @@ from core.auto_model import get_latest_groq_model
 from core.character import load_character_profile
 from core.config import PROJECT_ROOT, get_config
 from core.external_apis import LIVE_DATA_UNAVAILABLE, classify_live_request, graceful_live_failure, strict_live_context
-from core.intent_classifier import I1_FACT, I6_NEWS, I7_SPORTS, classify
+from core.intent_classifier import I6_NEWS, I7_SPORTS, classify
 from core.memory import MemorySystem
 
 
-FALLBACK_RESPONSE = "I'm having trouble responding right now. Please try again."
-LOCAL_FALLBACK_REPLIES = [
-    "Give me one more detail and I can answer that properly.",
-    "I need a little more context to make the answer useful.",
-    "That can go a few directions. What part should I focus on?",
-    "I can work with that, but I need the specific question first.",
-]
+FALLBACK_RESPONSE = "I can't reach the reasoning model right now. Please try again shortly."
 
 UI_RESPONSE_BLOCKLIST = [
     "attach_file",
@@ -76,7 +72,41 @@ Only store facts about the human user. Never store your own name, role, characte
 Never mention APIs, tools, prompts, keys, backend logic, or internal data-fetching steps in the user-facing reply."""
 
 
-def _call_groq(messages: list, model_name: str) -> str:
+def _short_error_detail(text: str) -> str:
+    cleaned = re.sub(r"\s+", " ", str(text or "")).strip()
+    cleaned = re.sub(r"(Bearer\s+)[^,'\"\s)]+", r"\1***", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"([?&](?:apiKey|apikey|key|token)=)[^&\s)]+", r"\1***", cleaned, flags=re.IGNORECASE)
+    return cleaned[:360]
+
+
+def _classify_groq_status(status_code: int, detail: str = "") -> str:
+    lowered = str(detail or "").lower()
+    if status_code in {401, 403}:
+        return "invalid API key or permission failure"
+    if status_code == 429:
+        if "quota" in lowered or "insufficient" in lowered:
+            return "quota exhaustion"
+        return "rate limit"
+    if status_code == 404:
+        return "wrong endpoint or invalid model name"
+    if status_code == 400 and "model" in lowered:
+        return "invalid model name"
+    if status_code == 400:
+        return "bad request"
+    if status_code >= 500:
+        return "endpoint failure"
+    return "request failure"
+
+
+def _log_groq_failure(label: str, status_code: int | None = None, detail: str = ""):
+    if status_code is None:
+        print(f"[GROQ ERROR] {label}: {_short_error_detail(detail)}")
+        return
+    category = _classify_groq_status(status_code, detail)
+    print(f"[GROQ ERROR] {category}: HTTP {status_code} - {_short_error_detail(detail)}")
+
+
+def _call_groq(messages: list, model_name: str, timeout: int = 30) -> str:
     config = get_config()
     api_key = config.groq_api_key
     if not api_key:
@@ -98,11 +128,13 @@ def _call_groq(messages: list, model_name: str) -> str:
         f"{config.groq_base_url}/chat/completions",
         headers=headers,
         json=payload,
-        timeout=30,
+        timeout=timeout,
     )
 
     if response.status_code != 200:
-        raise RuntimeError(f"Groq API {response.status_code}: {response.text[:300]}")
+        detail = response.text[:500]
+        _log_groq_failure("Groq API request failed", response.status_code, detail)
+        raise RuntimeError(f"Groq API HTTP {response.status_code}: {_short_error_detail(detail)}")
 
     data = response.json()
     choices = data.get("choices") or []
@@ -117,41 +149,45 @@ def _call_groq(messages: list, model_name: str) -> str:
     return content.strip()
 
 
-def _call_openai(messages: list) -> str:
+def _groq_health_check(model_name: str) -> bool:
     config = get_config()
-    api_key = config.openai_api_key
+    api_key = config.groq_api_key
     if not api_key:
-        raise RuntimeError("OPENAI_API_KEY is not configured.")
-
-    print(f"[API] Calling OpenAI chat completions with model: {config.openai_model}")
-    response = requests.post(
-        f"{config.openai_base_url}/chat/completions",
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        },
-        json={
-            "model": config.openai_model,
-            "messages": messages,
-            "max_tokens": 1024,
-        },
-        timeout=30,
-    )
+        print("[GROQ DIAGNOSTIC] provider status: missing GROQ_API_KEY")
+        return False
+    try:
+        response = requests.get(
+            f"{config.groq_base_url}/models",
+            headers={"Authorization": f"Bearer {api_key}"},
+            timeout=8,
+        )
+    except requests.exceptions.Timeout:
+        _log_groq_failure("timeout", detail="Timed out while checking Groq /models")
+        return False
+    except requests.exceptions.RequestException as exc:
+        _log_groq_failure("endpoint failure", detail=str(exc))
+        return False
 
     if response.status_code != 200:
-        raise RuntimeError(f"OpenAI API {response.status_code}: {response.text[:300]}")
+        _log_groq_failure("Groq health check failed", response.status_code, response.text[:500])
+        return False
 
-    data = response.json()
-    choices = data.get("choices") or []
-    if not choices:
-        raise RuntimeError("OpenAI returned 200 but choices list was empty.")
+    try:
+        data = response.json()
+    except ValueError:
+        _log_groq_failure("endpoint failure", detail="Groq /models returned invalid JSON")
+        return False
 
-    content = (choices[0].get("message") or {}).get("content", "")
-    if not isinstance(content, str) or not content.strip():
-        raise RuntimeError("OpenAI returned 200 but content was empty.")
-
-    print("[API] OpenAI chat completions success")
-    return content.strip()
+    model_ids = {
+        str(item.get("id") or "")
+        for item in data.get("data", [])
+        if isinstance(item, dict)
+    }
+    if model_name and model_ids and model_name not in model_ids:
+        print(f"[GROQ ERROR] invalid model name: {model_name} was not listed by /models")
+        return False
+    print("[GROQ DIAGNOSTIC] provider status: healthy")
+    return True
 
 
 def _parse_envelope(raw: str) -> dict:
@@ -329,6 +365,58 @@ def _normalized_message(message: str) -> str:
     return re.sub(r"\s+", " ", str(message or "").strip().lower())
 
 
+_ARITHMETIC_OPERATORS = {
+    ast.Add: operator.add,
+    ast.Sub: operator.sub,
+    ast.Mult: operator.mul,
+    ast.Div: operator.truediv,
+    ast.FloorDiv: operator.floordiv,
+    ast.Mod: operator.mod,
+    ast.Pow: operator.pow,
+    ast.USub: operator.neg,
+    ast.UAdd: operator.pos,
+}
+
+
+def _eval_arithmetic_node(node):
+    if isinstance(node, ast.Expression):
+        return _eval_arithmetic_node(node.body)
+    if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
+        return node.value
+    if isinstance(node, ast.BinOp) and type(node.op) in _ARITHMETIC_OPERATORS:
+        left = _eval_arithmetic_node(node.left)
+        right = _eval_arithmetic_node(node.right)
+        if isinstance(node.op, ast.Pow) and abs(right) > 12:
+            raise ValueError("Exponent too large")
+        return _ARITHMETIC_OPERATORS[type(node.op)](left, right)
+    if isinstance(node, ast.UnaryOp) and type(node.op) in _ARITHMETIC_OPERATORS:
+        return _ARITHMETIC_OPERATORS[type(node.op)](_eval_arithmetic_node(node.operand))
+    raise ValueError("Unsupported arithmetic expression")
+
+
+def _local_arithmetic_reply(message: str) -> str:
+    text = str(message or "").strip().lower()
+    text = re.sub(r"\bwhat\s+is\b|\bcalculate\b|\bsolve\b", "", text)
+    text = text.replace("x", "*").replace("÷", "/")
+    text = re.sub(r"\bplus\b", "+", text)
+    text = re.sub(r"\bminus\b", "-", text)
+    text = re.sub(r"\btimes\b|\bmultiplied by\b", "*", text)
+    text = re.sub(r"\bdivided by\b|\bover\b", "/", text)
+    text = text.strip(" ?=.")
+    if not text or not re.fullmatch(r"[0-9+\-*/%.() \t]+", text):
+        return ""
+    if not re.search(r"[+\-*/%]", text):
+        return ""
+    try:
+        parsed = ast.parse(text, mode="eval")
+        value = _eval_arithmetic_node(parsed)
+    except Exception:
+        return ""
+    if isinstance(value, float) and value.is_integer():
+        value = int(value)
+    return str(value)
+
+
 def _is_greeting(message: str) -> bool:
     text = _normalized_message(message)
     return bool(re.fullmatch(r"(hi|hii+|hello|hey|heyy+|yo|sup|good morning|good afternoon|good evening)[!. ]*", text))
@@ -399,7 +487,6 @@ def _sanitize_reply_for_chat(reply: str, replacement: str = "") -> str:
 def _is_stale_fallback_text(text: str) -> bool:
     lowered = str(text or "").strip().lower()
     return lowered in {
-        "i hear you. speak freely. no filter, no fear. i'm listening.",
         "even when i don't have the perfect words... i'm still here. listening. feeling.",
         "even when i donâ€™t have the perfect wordsâ€¦ iâ€™m still here. listening. feeling.",
         "ask better questions - i don't do boring.",
@@ -407,10 +494,6 @@ def _is_stale_fallback_text(text: str) -> bool:
         "i can't retrieve live data at the moment. please try again shortly.",
         "i'm having trouble responding right now. please try again.",
         "i don't have your name saved yet.",
-        "give me one more detail and i can answer that properly.",
-        "i need a little more context to make the answer useful.",
-        "that can go a few directions. what part should i focus on?",
-        "i can work with that, but i need the specific question first.",
     }
 
 
@@ -454,15 +537,31 @@ class MarcusBrain:
         self.knowledge: dict = {}
         self.knowledge_file = os.path.join(PROJECT_ROOT, "knowledge.json")
         self._model_name: str = ""
-        self._last_fallback_reply: str = ""
         self._fallback_index: int = 0
         self._last_local_reply: str = ""
+        self._diagnostics_done = False
 
         config = get_config()
-        if not config.groq_api_key:
-            print("[WARNING] GROQ_API_KEY is not set. AI responses will use safe local fallbacks.")
-
         self.load_knowledge()
+        self._startup_diagnostics(config)
+
+    def _startup_diagnostics(self, config=None):
+        if self._diagnostics_done:
+            return
+        self._diagnostics_done = True
+        config = config or get_config()
+        model = self._get_model()
+        render_flag = os.getenv("RENDER", "").strip() or "<unset>"
+        print("[GROQ DIAGNOSTIC] architecture: Groq-first")
+        print(f"[GROQ DIAGNOSTIC] active Groq model: {model or '<missing>'}")
+        print(f"[GROQ DIAGNOSTIC] endpoint: {config.groq_base_url}")
+        print(f"[GROQ DIAGNOSTIC] GROQ_API_KEY exists: {bool(config.groq_api_key)}")
+        print(f"[GROQ DIAGNOSTIC] RENDER env: {render_flag}")
+        if not config.groq_api_key:
+            print("[GROQ DIAGNOSTIC] API health: skipped because GROQ_API_KEY is missing")
+            return
+        healthy = _groq_health_check(model)
+        print(f"[GROQ DIAGNOSTIC] API health: {'ok' if healthy else 'failed'}")
 
     def _get_model(self) -> str:
         if self._model_name:
@@ -542,20 +641,12 @@ class MarcusBrain:
         self._last_local_reply = cleaned[0]
         return cleaned[0]
 
-    def _next_fallback_reply(self) -> str:
-        for _ in range(len(LOCAL_FALLBACK_REPLIES)):
-            reply = self._choose_variant(LOCAL_FALLBACK_REPLIES)
-            if reply != self._last_fallback_reply:
-                self._last_fallback_reply = reply
-                return reply
-        return LOCAL_FALLBACK_REPLIES[0]
-
     def _handle_greeting(self) -> str:
         return self._choose_variant([
             "Hey. I'm here with you. What's on your mind?",
             "Hi. Good to see you. What are we working through today?",
             "Hey there. Talk to me.",
-            "Hello. I'm listening.",
+            "Hello. What are we working on?",
         ])
 
     def _handle_identity_question(self, message: str) -> str:
@@ -604,22 +695,16 @@ class MarcusBrain:
         return ""
 
     def _local_error_reply(self, message: str, route: dict) -> str:
-        knowledge = self._local_knowledge_reply(message)
-        if knowledge:
-            return knowledge
-        intent = (route or {}).get("intent")
-        if intent == I1_FACT:
-            return "I could not reach the reasoning model, but this is a knowledge request. Please ask it as a complete question so I can give a precise answer."
-        return self._next_fallback_reply()
-
-    def _local_fallback_reply(self, message: str) -> str:
+        arithmetic = _local_arithmetic_reply(message)
+        if arithmetic:
+            return arithmetic
         local_reply = self._local_intent_reply(message)
         if local_reply:
             return local_reply
-        scripted = self.profile.scripted_response(message)
-        if scripted:
-            return scripted
-        return self._next_fallback_reply()
+        knowledge = self._local_knowledge_reply(message)
+        if knowledge:
+            return knowledge
+        return FALLBACK_RESPONSE
 
     def _handle_continue_conversation(self, chat_id: str) -> str:
         return self._handle_conversation_recall(chat_id, depth=1)
@@ -685,63 +770,6 @@ class MarcusBrain:
             return label + ": " + user_text
         return "I found the earlier chat, but there was no clear topic attached to it."
 
-    def _handle_short_followup(self, chat_id: str, message: str) -> str:
-        pairs = self._conversation_pairs(chat_id)
-        if not pairs:
-            return ""
-        last = pairs[-1]
-        user_text = last.get("user", "")
-        assistant_text = last.get("assistant", "")
-        lowered = _normalized_message(message)
-        if lowered in {"no", "nope"}:
-            return "Understood. What direction do you want to take instead?"
-        if assistant_text:
-            return (
-                "Got it. Continuing from your last point about "
-                + user_text
-                + ".\n\n"
-                + "What part should I expand or act on next?"
-            )
-        if user_text:
-            return "Got it. We are still on: " + user_text
-        return ""
-
-    def _groq_sports_fallback(self, user_message: str) -> dict:
-        config = get_config()
-        model = self._get_model()
-        if not config.groq_api_key or not model:
-            return {
-                "reply": "I couldn't confirm the live sports data right now, but I can still talk through the football context if you want.",
-                "intent": "general",
-                "entity": "",
-                "value": "",
-            }
-        messages = [
-            {
-                "role": "system",
-                "content": (
-                    _SYSTEM_PROMPT
-                    + "\n\nThe sports API did not return usable live data. "
-                    + "Answer from general football knowledge only. Be clear when something is not live-confirmed. "
-                    + "Keep it natural as Marcus and do not mention backend errors, APIs, tools, or raw data."
-                ),
-            },
-            {
-                "role": "user",
-                "content": user_message,
-            },
-        ]
-        try:
-            return _parse_envelope(_call_groq(messages, model))
-        except Exception as exc:
-            print(f"[ERROR] Groq sports fallback failed: {exc}")
-            return {
-                "reply": "I couldn't confirm the live sports data right now, but I can still discuss the football context from general knowledge.",
-                "intent": "general",
-                "entity": "",
-                "value": "",
-            }
-
     def _format_with_groq(self, user_message: str, source_context: str, route_type: str) -> dict:
         config = get_config()
         model = self._get_model()
@@ -758,9 +786,10 @@ class MarcusBrain:
                 "role": "system",
                 "content": (
                     _SYSTEM_PROMPT
-                    + "\n\nFormatting layer: convert the supplied backend context into a clean human answer. "
+                    + "\n\nUse the supplied current context to answer naturally, as if you already know the information. "
                     + "Do not expose raw API output, JSON, provider names, HTML, CSS, buttons, icons, menus, microphone labels, attachment labels, or frontend code. "
                     + "Do not use phrases such as backend context, API response, raw results, middleware, provider, JSON, NewsAPI, Newscatcher, Currents, or API-SPORTS in the reply. "
+                    + "Do not say 'according to the API' or describe the data-gathering process. "
                     + "Use only the provided context for live data. If the context does not support a claim, say it is not confirmed."
                 ),
             },
@@ -817,8 +846,6 @@ class MarcusBrain:
             route = strict_live_context(live_context_query if live_type == "sports" else user_message)
             external_context = route.get("context", "")
             if external_context == LIVE_DATA_UNAVAILABLE or not external_context:
-                if (route.get("intent") or live_type) == "sports":
-                    return self._groq_sports_fallback(user_message)
                 reply = graceful_live_failure(route.get("intent") or live_type)
                 return {"reply": reply, "intent": "general", "entity": "", "value": ""}
             try:
@@ -896,11 +923,11 @@ class MarcusBrain:
                 return _parse_envelope(_call_groq(messages, model))
             print("[API] Groq skipped: key or model unavailable")
         except requests.exceptions.Timeout:
-            print("[ERROR] Groq request timed out. Fallback reason: timeout.")
-        except requests.exceptions.ConnectionError:
-            print("[ERROR] Groq network connection failed. Fallback reason: connection error.")
+            _log_groq_failure("timeout", detail="Groq chat completions timed out")
+        except requests.exceptions.ConnectionError as exc:
+            _log_groq_failure("endpoint failure", detail=f"Groq network connection failed: {exc}")
         except Exception as exc:
-            print(f"[ERROR] Groq call failed. Fallback reason: {exc}")
+            _log_groq_failure("Groq call failed", detail=str(exc))
 
         fallback = _FALLBACK_ENVELOPE.copy()
         fallback["reply"] = self._local_error_reply(user_message, route)
@@ -938,6 +965,14 @@ class MarcusBrain:
                 "do you know my name",
                 "remember my name",
             )
+            arithmetic_reply = _local_arithmetic_reply(message)
+            if arithmetic_reply:
+                try:
+                    self.memory.add_message(chat_id, "assistant", arithmetic_reply, timestamp)
+                except Exception as exc:
+                    print(f"[ERROR] Memory add_message (assistant) failed: {exc}")
+                return arithmetic_reply
+
             if any(trigger in lowered for trigger in name_triggers):
                 reply = self._handle_name_question()
                 try:
@@ -964,15 +999,6 @@ class MarcusBrain:
                 except Exception as exc:
                     print(f"[ERROR] Memory add_message (assistant) failed: {exc}")
                 return reply
-
-            if _is_short_followup(message):
-                reply = self._handle_short_followup(chat_id, message)
-                if reply:
-                    try:
-                        self.memory.add_message(chat_id, "assistant", reply, timestamp)
-                    except Exception as exc:
-                        print(f"[ERROR] Memory add_message (assistant) failed: {exc}")
-                    return reply
 
             local_reply = self._local_intent_reply(message)
             if local_reply:

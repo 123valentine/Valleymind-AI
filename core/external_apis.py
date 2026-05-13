@@ -397,6 +397,35 @@ def _search_duckduckgo(query: str) -> str:
     return _format_items("Live search results", items)
 
 
+def _search_wikipedia(query: str) -> str:
+    _log("Calling Wikipedia fallback")
+    try:
+        import wikipedia
+    except ImportError as exc:
+        raise RuntimeError(f"wikipedia is not installed: {exc}") from exc
+
+    try:
+        titles = wikipedia.search(query, results=3)
+    except Exception as exc:
+        raise RuntimeError(f"Wikipedia search failed: {_safe_error(exc)}") from exc
+
+    items = []
+    for title in titles[:3]:
+        try:
+            page = wikipedia.page(title, auto_suggest=False)
+            summary = wikipedia.summary(title, sentences=3, auto_suggest=False)
+            items.append({
+                "title": page.title,
+                "summary": summary,
+                "url": page.url,
+                "published": "",
+            })
+        except Exception as exc:
+            _log(f"Wikipedia result skipped for '{title}': {_safe_error(exc)}")
+    _log(f"Wikipedia success: {len(items)} results")
+    return _format_items("Reference context", items)
+
+
 def _search_api_sports(query: str) -> str:
     try:
         api_key = _require_sports_key()
@@ -689,11 +718,47 @@ def _search_news_only(query: str) -> str:
         return "\n\n".join(contexts)
     if failures:
         _log("News fallback trigger reason: " + " | ".join(failures))
+
+    fallback_contexts = []
+    for name, provider in (
+        ("Wikipedia", _search_wikipedia),
+        ("DuckDuckGo", _search_duckduckgo),
+    ):
+        try:
+            context = provider(query)
+            if context and context != LIVE_DATA_UNAVAILABLE:
+                fallback_contexts.append(context)
+        except Exception as exc:
+            _log(f"{name} fallback failed: {_safe_error(exc)}")
+        if fallback_contexts:
+            break
+    if fallback_contexts:
+        return "\n\n".join(fallback_contexts)
     return LIVE_DATA_UNAVAILABLE
 
 
 def _search_sports_only(query: str) -> str:
-    return sports_context_for_question(query)
+    context = sports_context_for_question(query)
+    if context and context != LIVE_DATA_UNAVAILABLE:
+        return context
+
+    fallback_contexts = []
+    for name, provider in (
+        ("DuckDuckGo", _search_duckduckgo),
+        ("Wikipedia", _search_wikipedia),
+    ):
+        try:
+            fallback_query = query if name == "Wikipedia" else f"{query} sports latest"
+            context = provider(fallback_query)
+            if context and context != LIVE_DATA_UNAVAILABLE:
+                fallback_contexts.append(context)
+        except Exception as exc:
+            _log(f"{name} sports fallback failed: {_safe_error(exc)}")
+        if fallback_contexts:
+            break
+    if fallback_contexts:
+        return "\n\n".join(fallback_contexts)
+    return LIVE_DATA_UNAVAILABLE
 
 
 def strict_live_context(message: str) -> dict:

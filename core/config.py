@@ -21,9 +21,6 @@ class APIConfig:
     groq_api_key: str
     groq_model: str
     groq_base_url: str
-    openai_api_key: str
-    openai_model: str
-    openai_base_url: str
     newscatcher_api_key: str
     currents_api_key: str
     api_sports_key: str
@@ -39,12 +36,6 @@ def get_config() -> APIConfig:
         groq_base_url=os.getenv(
             "GROQ_BASE_URL",
             "https://api.groq.com/openai/v1",
-        ).rstrip("/"),
-        openai_api_key=os.getenv("OPENAI_API_KEY", "").strip(),
-        openai_model=os.getenv("OPENAI_MODEL", "gpt-4o-mini").strip(),
-        openai_base_url=os.getenv(
-            "OPENAI_BASE_URL",
-            "https://api.openai.com/v1",
         ).rstrip("/"),
         newscatcher_api_key=os.getenv("NEWSCATCHER_API_KEY", "").strip(),
         currents_api_key=os.getenv("CURRENTS_API_KEY", "").strip(),
