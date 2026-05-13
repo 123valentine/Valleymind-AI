@@ -10,7 +10,15 @@ import requests
 from core.auto_model import get_latest_groq_model
 from core.character import load_character_profile
 from core.config import PROJECT_ROOT, get_config
-from core.external_apis import LIVE_DATA_UNAVAILABLE, classify_live_request, graceful_live_failure, strict_live_context
+from core.external_apis import (
+    LIVE_DATA_UNAVAILABLE,
+    _search_duckduckgo,
+    _search_wikipedia,
+    classify_live_request,
+    graceful_live_failure,
+    live_api_answer,
+    strict_live_context,
+)
 from core.intent_classifier import I6_NEWS, I7_SPORTS, classify
 from core.memory import MemorySystem
 
@@ -141,11 +149,20 @@ def _call_groq(messages: list, model_name: str, timeout: int = 30, timeout_retri
                 json=payload,
                 timeout=timeout,
             )
+            if response.status_code == 200:
+                break
+            if attempt < attempts:
+                _log_groq_failure("Groq API request failed; retrying once", response.status_code, response.text[:500])
+                continue
             break
         except requests.exceptions.Timeout:
             if attempt >= attempts:
                 raise
             print("[GROQ ERROR] timeout: retrying Groq chat completions once")
+        except requests.exceptions.RequestException as exc:
+            if attempt >= attempts:
+                raise
+            _log_groq_failure("request failure; retrying once", detail=str(exc))
 
     if response is None:
         raise RuntimeError("Groq request did not produce a response.")
@@ -564,6 +581,11 @@ class MarcusBrain:
         self._fallback_index: int = 0
         self._last_local_reply: str = ""
         self._diagnostics_done = False
+        self.last_response_meta = {
+            "groq_used": False,
+            "fallback_used": False,
+            "fallback_source": "",
+        }
 
         config = get_config()
         self.load_knowledge()
@@ -851,7 +873,168 @@ class MarcusBrain:
             route = {**route, "intent": I6_NEWS, "live_type": live_type, "confidence": max(route.get("confidence", 0), 0.95)}
         return route
 
+    def _metadata(self, groq_used: bool, fallback_used: bool, fallback_source: str) -> dict:
+        return {
+            "groq_used": bool(groq_used),
+            "fallback_used": bool(fallback_used),
+            "fallback_source": str(fallback_source or ""),
+        }
+
+    def _envelope(self, reply: str, meta: dict, intent: str = "general", entity: str = "", value: str = "") -> dict:
+        return {
+            "reply": _sanitize_reply_for_chat(reply, ""),
+            "intent": intent,
+            "entity": entity,
+            "value": value,
+            "meta": meta,
+        }
+
+    def _groq_messages(self, chat_id: str, user_message: str) -> list:
+        try:
+            self.memory.reload()
+            long_term = self.memory.get_full_memory() or {}
+            history = self.memory.get_chat(chat_id) or []
+            user_name = self.memory.get_user_name() or ""
+            identity_str = json.dumps(_filtered_user_identity(long_term.get("identity", {})))
+            prefs_str = json.dumps(long_term.get("preferences", {}))
+        except Exception as exc:
+            print(f"[ERROR] Failed to load prompt memory context: {exc}")
+            history = []
+            user_name = ""
+            identity_str = "{}"
+            prefs_str = "{}"
+
+        system_with_context = (
+            _CHAT_SYSTEM_PROMPT
+            + "\n\nCharacter profile:\n"
+            + self.profile.to_prompt()
+            + "\n\nKnown user context, if useful:\n"
+            + f"User name: {user_name}\n"
+            + f"Identity: {identity_str}\n"
+            + f"Preferences: {prefs_str}\n"
+            + "Answer the user's current message first. Do not route away from Groq."
+        )
+
+        messages = [{"role": "system", "content": system_with_context}]
+        recent = history[-20:]
+        if recent and recent[-1].get("role") == "user":
+            recent = recent[:-1]
+        for msg in recent:
+            role = msg.get("role", "user")
+            content = msg.get("content", "")
+            if content and isinstance(content, str):
+                if role == "assistant" and _is_stale_fallback_text(content):
+                    continue
+                messages.append({"role": role, "content": content})
+        messages.append({"role": "user", "content": user_message})
+        return messages
+
+    def _try_groq_first(self, chat_id: str, user_message: str) -> dict:
+        config = get_config()
+        model = self._get_model()
+        if not config.groq_api_key or not model:
+            print("[API] Groq unavailable before request: key or model missing")
+            return {}
+        try:
+            raw = _call_groq(self._groq_messages(chat_id, user_message), model)
+            envelope = _parse_envelope(raw)
+            reply = str(envelope.get("reply") or "").strip()
+            if not reply:
+                raise RuntimeError("Groq returned no usable reply after parsing.")
+            envelope["meta"] = self._metadata(True, False, "groq")
+            return envelope
+        except requests.exceptions.Timeout:
+            _log_groq_failure("timeout", detail="Groq chat completions timed out after retry")
+        except requests.exceptions.ConnectionError as exc:
+            _log_groq_failure("endpoint failure", detail=f"Groq network connection failed after retry: {exc}")
+        except Exception as exc:
+            _log_groq_failure("Groq call failed after retry", detail=str(exc))
+        return {}
+
+    def _memory_fallback_reply(self, chat_id: str, message: str) -> str:
+        lowered = message.lower()
+        memory_triggers = (
+            "what do you remember",
+            "what do you know about me",
+            "what have i told you",
+            "do you remember",
+            "recall",
+            "my info",
+            "my data",
+        )
+        name_triggers = (
+            "what is my name",
+            "what's my name",
+            "do you know my name",
+            "remember my name",
+        )
+        if any(trigger in lowered for trigger in name_triggers):
+            return self._handle_name_question()
+        if _is_continue_request(message) or _is_conversation_recall_request(message):
+            return self._handle_conversation_recall(
+                chat_id,
+                depth=2 if _is_before_that_recall_request(message) else 1,
+            )
+        if any(trigger in lowered for trigger in memory_triggers):
+            return self._handle_memory_question()
+        return ""
+
+    def _web_lookup_fallback_reply(self, message: str) -> str:
+        for provider in (_search_wikipedia, _search_duckduckgo):
+            try:
+                context = provider(message)
+                if context and context != LIVE_DATA_UNAVAILABLE:
+                    return _clean_live_context_fallback(context)
+            except Exception as exc:
+                _log_groq_failure("fallback lookup failed", detail=str(exc))
+        return ""
+
+    def _local_last_resort_reply(self, message: str) -> str:
+        arithmetic = _local_arithmetic_reply(message)
+        if arithmetic:
+            return arithmetic
+        knowledge = self._local_knowledge_reply(message)
+        if knowledge:
+            return knowledge
+        local_reply = self._local_intent_reply(message)
+        if local_reply:
+            return local_reply
+        scripted = self.profile.scripted_response(message)
+        if scripted:
+            return scripted
+        return FALLBACK_RESPONSE
+
+    def _fallback_pipeline(self, chat_id: str, user_message: str) -> dict:
+        memory_reply = self._memory_fallback_reply(chat_id, user_message)
+        if memory_reply:
+            return self._envelope(memory_reply, self._metadata(False, True, "memory"))
+
+        live_type = classify_live_request(user_message)
+        if live_type in {"news", "live"}:
+            news_reply = live_api_answer(user_message)
+            if news_reply and news_reply != graceful_live_failure(live_type):
+                return self._envelope(news_reply, self._metadata(False, True, "news"))
+        if live_type == "sports":
+            sports_reply = live_api_answer(user_message)
+            if sports_reply and sports_reply != graceful_live_failure("sports"):
+                return self._envelope(sports_reply, self._metadata(False, True, "sports"))
+
+        lookup_reply = self._web_lookup_fallback_reply(user_message)
+        if lookup_reply:
+            return self._envelope(lookup_reply, self._metadata(False, True, "wiki"))
+
+        return self._envelope(
+            self._local_last_resort_reply(user_message),
+            self._metadata(False, True, "local"),
+        )
+
     def _think(self, chat_id: str, user_message: str) -> dict:
+        groq_envelope = self._try_groq_first(chat_id, user_message)
+        if groq_envelope:
+            return groq_envelope
+        return self._fallback_pipeline(chat_id, user_message)
+
+    def _legacy_think(self, chat_id: str, user_message: str) -> dict:
         try:
             live_history = self.memory.get_chat(chat_id) or []
             if live_history and live_history[-1].get("role") == "user":
@@ -985,71 +1168,14 @@ class MarcusBrain:
             except Exception as exc:
                 print(f"[ERROR] Memory add_message (user) failed: {exc}")
 
-            lowered = message.lower()
-            memory_triggers = (
-                "what do you remember",
-                "what do you know about me",
-                "what have i told you",
-                "do you remember",
-                "recall",
-                "my info",
-                "my data",
-            )
-            name_triggers = (
-                "what is my name",
-                "what's my name",
-                "do you know my name",
-                "remember my name",
-            )
-            arithmetic_reply = _local_arithmetic_reply(message)
-            if arithmetic_reply:
-                try:
-                    self.memory.add_message(chat_id, "assistant", arithmetic_reply, timestamp)
-                except Exception as exc:
-                    print(f"[ERROR] Memory add_message (assistant) failed: {exc}")
-                return arithmetic_reply
-
-            if any(trigger in lowered for trigger in name_triggers):
-                reply = self._handle_name_question()
-                try:
-                    self.memory.add_message(chat_id, "assistant", reply, timestamp)
-                except Exception as exc:
-                    print(f"[ERROR] Memory add_message (assistant) failed: {exc}")
-                return reply
-
-            if _is_continue_request(message) or _is_conversation_recall_request(message):
-                reply = self._handle_conversation_recall(
-                    chat_id,
-                    depth=2 if _is_before_that_recall_request(message) else 1,
-                )
-                try:
-                    self.memory.add_message(chat_id, "assistant", reply, timestamp)
-                except Exception as exc:
-                    print(f"[ERROR] Memory add_message (assistant) failed: {exc}")
-                return reply
-
-            if any(trigger in lowered for trigger in memory_triggers):
-                reply = self._handle_memory_question()
-                try:
-                    self.memory.add_message(chat_id, "assistant", reply, timestamp)
-                except Exception as exc:
-                    print(f"[ERROR] Memory add_message (assistant) failed: {exc}")
-                return reply
-
-            local_reply = self._local_intent_reply(message)
-            if local_reply:
-                try:
-                    self.memory.add_message(chat_id, "assistant", local_reply, timestamp)
-                except Exception as exc:
-                    print(f"[ERROR] Memory add_message (assistant) failed: {exc}")
-                return local_reply
-
             envelope = self._think(chat_id, message)
+            self.last_response_meta = envelope.get("meta") or self._metadata(False, True, "local")
             raw_reply = str(envelope.get("reply") or "").strip()
             if raw_reply:
                 reply = _sanitize_reply_for_chat(raw_reply, "")
             else:
                 reply = self._local_error_reply(message, self._route_request(message))
+                self.last_response_meta = self._metadata(False, True, "local")
 
             try:
                 memory_envelope = dict(envelope)
@@ -1079,4 +1205,5 @@ class MarcusBrain:
 
         except Exception as exc:
             print(f"[CRITICAL] Unhandled error in respond(): {exc}")
+            self.last_response_meta = self._metadata(False, True, "local")
             return FALLBACK_RESPONSE

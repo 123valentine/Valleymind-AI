@@ -417,13 +417,21 @@ def chat():
         _debug_user_memory(user_id, marcus)
 
         reply = marcus.respond(message)
-        voice = speak_marcus(reply)
+        response_meta = getattr(marcus, "last_response_meta", {}) or {}
+        voice = (
+            {"enabled": True, "spoken": False, "engine": "browser", "reason": "reply too long for blocking server TTS"}
+            if len(reply) > 900
+            else speak_marcus(reply)
+        )
 
         return jsonify({
             "status": "success",
             "character": "marcus",
             "reply": reply,
             "voice": voice,
+            "groq_used": bool(response_meta.get("groq_used")),
+            "fallback_used": bool(response_meta.get("fallback_used")),
+            "fallback_source": str(response_meta.get("fallback_source") or ""),
         })
 
     except Exception as e:

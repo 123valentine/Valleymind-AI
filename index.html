@@ -340,6 +340,9 @@ function apiUrl(path) {
 
 function networkErrorMessage(err, url) {
     const reason = err && err.message ? err.message : String(err || "unknown error");
+    if ((err && err.name === "AbortError") || /aborted/i.test(reason)) {
+        return "That answer is taking longer than usual. Please try a shorter version, or send it again and I’ll continue from there.";
+    }
     return `Network error reaching backend at ${url}: ${reason}`;
 }
 
@@ -747,7 +750,8 @@ window.send = async function () {
             method: "POST",
             credentials: "include",
             headers: authHeaders({ "Content-Type": "application/json" }),
-            body: JSON.stringify({ message: text })
+            body: JSON.stringify({ message: text }),
+            timeoutMs: 120000
         });
         const data = await res.json();
         removeThinkingIndicator(thinking);
