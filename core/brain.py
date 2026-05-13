@@ -51,7 +51,7 @@ _FALLBACK_ENVELOPE = {
 }
 
 _SYSTEM_PROMPT = """You are a ValleyMind-AI character. Stay natural, warm, and conversational.
-You MUST output ONLY a single JSON object, no markdown, no code fences, no explanation.
+Prefer outputting a single JSON object, no markdown, no code fences, no explanation.
 Use exactly this structure:
 
 {
@@ -67,9 +67,16 @@ Intent rules:
 - memory_question: user is asking what you remember about them.
 - general: everything else.
 
-Never leave reply empty. Never output anything outside the JSON object.
+Never leave reply empty.
 Only store facts about the human user. Never store your own name, role, character, or assistant metadata as user memory.
 Never mention APIs, tools, prompts, keys, backend logic, or internal data-fetching steps in the user-facing reply."""
+
+_CHAT_SYSTEM_PROMPT = """You are Marcus, the ValleyMind-AI character. Answer naturally, warmly, and directly.
+Do not mention APIs, tools, prompts, keys, backend logic, or internal data-fetching steps.
+For normal knowledge questions, answer immediately and intelligently without asking for unnecessary clarification.
+If the user shares a memory-worthy personal fact, acknowledge it naturally; memory extraction is handled separately."""
+
+_GROQ_STARTUP_DIAGNOSTICS_DONE = False
 
 
 def _short_error_detail(text: str) -> str:
@@ -106,7 +113,7 @@ def _log_groq_failure(label: str, status_code: int | None = None, detail: str = 
     print(f"[GROQ ERROR] {category}: HTTP {status_code} - {_short_error_detail(detail)}")
 
 
-def _call_groq(messages: list, model_name: str, timeout: int = 30) -> str:
+def _call_groq(messages: list, model_name: str, timeout: int = 30, timeout_retries: int = 1) -> str:
     config = get_config()
     api_key = config.groq_api_key
     if not api_key:
@@ -124,12 +131,24 @@ def _call_groq(messages: list, model_name: str, timeout: int = 30) -> str:
         "max_tokens": 1024,
     }
 
-    response = requests.post(
-        f"{config.groq_base_url}/chat/completions",
-        headers=headers,
-        json=payload,
-        timeout=timeout,
-    )
+    response = None
+    attempts = max(1, timeout_retries + 1)
+    for attempt in range(1, attempts + 1):
+        try:
+            response = requests.post(
+                f"{config.groq_base_url}/chat/completions",
+                headers=headers,
+                json=payload,
+                timeout=timeout,
+            )
+            break
+        except requests.exceptions.Timeout:
+            if attempt >= attempts:
+                raise
+            print("[GROQ ERROR] timeout: retrying Groq chat completions once")
+
+    if response is None:
+        raise RuntimeError("Groq request did not produce a response.")
 
     if response.status_code != 200:
         detail = response.text[:500]
@@ -191,7 +210,7 @@ def _groq_health_check(model_name: str) -> bool:
 
 
 def _parse_envelope(raw: str) -> dict:
-    cleaned = raw.replace("```json", "").replace("```", "").strip()
+    cleaned = str(raw or "").replace("```json", "").replace("```", "").strip()
     parsed = None
 
     try:
@@ -208,10 +227,10 @@ def _parse_envelope(raw: str) -> dict:
                 pass
 
     if not isinstance(parsed, dict):
-        print(f"[WARNING] Envelope parse failed. Raw: {cleaned[:300]}")
+        print("[WARNING] Envelope parse failed; using sanitized raw Groq text")
         if cleaned:
             envelope = _FALLBACK_ENVELOPE.copy()
-            envelope["reply"] = _sanitize_reply_for_chat(cleaned)
+            envelope["reply"] = _sanitize_reply_for_chat(cleaned, FALLBACK_RESPONSE)
             return envelope
         return _FALLBACK_ENVELOPE.copy()
 
@@ -223,9 +242,14 @@ def _parse_envelope(raw: str) -> dict:
     if intent not in {"identity", "preference", "memory_question", "general"}:
         intent = "general"
     if not reply:
-        reply = FALLBACK_RESPONSE
+        for key in ("answer", "content", "message", "text"):
+            reply = str(parsed.get(key) or "").strip()
+            if reply:
+                break
+    if not reply and cleaned:
+        reply = cleaned
 
-    reply = _sanitize_reply_for_chat(reply)
+    reply = _sanitize_reply_for_chat(reply, FALLBACK_RESPONSE)
     return {"reply": reply, "intent": intent, "entity": entity, "value": value}
 
 
@@ -546,9 +570,12 @@ class MarcusBrain:
         self._startup_diagnostics(config)
 
     def _startup_diagnostics(self, config=None):
-        if self._diagnostics_done:
+        global _GROQ_STARTUP_DIAGNOSTICS_DONE
+        if self._diagnostics_done or _GROQ_STARTUP_DIAGNOSTICS_DONE:
+            self._diagnostics_done = True
             return
         self._diagnostics_done = True
+        _GROQ_STARTUP_DIAGNOSTICS_DONE = True
         config = config or get_config()
         model = self._get_model()
         render_flag = os.getenv("RENDER", "").strip() or "<unset>"
@@ -785,7 +812,7 @@ class MarcusBrain:
             {
                 "role": "system",
                 "content": (
-                    _SYSTEM_PROMPT
+                    _CHAT_SYSTEM_PROMPT
                     + "\n\nUse the supplied current context to answer naturally, as if you already know the information. "
                     + "Do not expose raw API output, JSON, provider names, HTML, CSS, buttons, icons, menus, microphone labels, attachment labels, or frontend code. "
                     + "Do not use phrases such as backend context, API response, raw results, middleware, provider, JSON, NewsAPI, Newscatcher, Currents, or API-SPORTS in the reply. "
@@ -798,8 +825,8 @@ class MarcusBrain:
                 "content": (
                     f"Route: {route_type}\n"
                     f"Question: {user_message}\n\n"
-                    f"Backend context:\n{source_context}\n\n"
-                    "Return the final user-facing answer as the required JSON envelope."
+                    f"Current context:\n{source_context}\n\n"
+                    "Return only the final user-facing answer."
                 ),
             },
         ]
@@ -852,8 +879,12 @@ class MarcusBrain:
                 return self._format_with_groq(user_message, external_context, route.get("intent") or live_type)
             except Exception as exc:
                 print(f"[ERROR] Groq live summary failed. Fallback reason: {exc}")
+                reply = _sanitize_reply_for_chat(
+                    _clean_live_context_fallback(external_context),
+                    graceful_live_failure(route.get("intent") or live_type),
+                )
                 return {
-                    "reply": graceful_live_failure(route.get("intent") or live_type),
+                    "reply": reply,
                     "intent": "general",
                     "entity": "",
                     "value": "",
@@ -892,7 +923,7 @@ class MarcusBrain:
 
         route = route_hint
         system_with_context = (
-            _SYSTEM_PROMPT
+            _CHAT_SYSTEM_PROMPT
             + "\n\nCharacter profile:\n"
             + self.profile.to_prompt()
             + "\n\nWhat you already know about this user:\n"
@@ -1009,25 +1040,30 @@ class MarcusBrain:
                 return local_reply
 
             envelope = self._think(chat_id, message)
-            local_memory = _extract_memory_fact(message)
-            if local_memory:
-                envelope = {**envelope, **local_memory}
-            envelope = _sanitize_memory_fact(envelope, message)
+            raw_reply = str(envelope.get("reply") or "").strip()
+            if raw_reply:
+                reply = _sanitize_reply_for_chat(raw_reply, "")
+            else:
+                reply = self._local_error_reply(message, self._route_request(message))
 
-            reply = _sanitize_reply_for_chat(
-                str(envelope.get("reply") or "").strip(),
-                self._local_error_reply(message, self._route_request(message)),
-            )
-            intent = str(envelope.get("intent") or "general").strip()
-            entity = str(envelope.get("entity") or "").strip()
-            value = str(envelope.get("value") or "").strip()
+            try:
+                memory_envelope = dict(envelope)
+                local_memory = _extract_memory_fact(message)
+                if local_memory:
+                    memory_envelope.update(local_memory)
+                memory_envelope = _sanitize_memory_fact(memory_envelope, message)
+                intent = str(memory_envelope.get("intent") or "general").strip()
+                entity = str(memory_envelope.get("entity") or "").strip()
+                value = str(memory_envelope.get("value") or "").strip()
 
-            if intent == "identity" and entity and value:
-                self.memory.remember_identity(entity, value)
-            elif intent == "preference" and entity and value:
-                self.memory.remember_preference(entity, value)
-            elif intent == "memory_question":
-                reply = self._handle_memory_question()
+                if intent == "identity" and entity and value:
+                    self.memory.remember_identity(entity, value)
+                elif intent == "preference" and entity and value:
+                    self.memory.remember_preference(entity, value)
+                elif intent == "memory_question":
+                    reply = self._handle_memory_question()
+            except Exception as exc:
+                print(f"[ERROR] Memory extraction/storage skipped: {exc}")
 
             try:
                 self.memory.add_message(chat_id, "assistant", reply, timestamp)
