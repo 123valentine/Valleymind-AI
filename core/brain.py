@@ -700,6 +700,11 @@ class MarcusBrain:
                 "Physics is the science of matter, energy, motion, forces, space, and time. "
                 "It studies how the universe behaves, from everyday motion and electricity to atoms, light, gravity, and galaxies."
             )
+        if text in {"biology", "is biology", "what is biology", "define biology", "explain biology"}:
+            return (
+                "Biology is the science of life. It studies living things, including cells, plants, animals, humans, "
+                "genes, evolution, ecosystems, and how organisms grow, survive, reproduce, and interact with their environment."
+            )
         if text in {"quantum physics", "what is quantum physics", "define quantum physics", "explain quantum physics"}:
             return (
                 "Quantum physics is the branch of physics that explains how matter and energy behave at very small scales, "
