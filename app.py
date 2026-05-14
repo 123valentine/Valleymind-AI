@@ -429,7 +429,9 @@ def chat():
             "character": "marcus",
             "reply": reply,
             "voice": voice,
+            "detected_route": str(response_meta.get("detected_route") or ""),
             "groq_used": bool(response_meta.get("groq_used")),
+            "live_routing_used": bool(response_meta.get("live_routing_used")),
             "fallback_used": bool(response_meta.get("fallback_used")),
             "fallback_source": str(response_meta.get("fallback_source") or ""),
         })

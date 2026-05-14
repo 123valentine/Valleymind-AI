@@ -19,7 +19,7 @@ from core.external_apis import (
     live_api_answer,
     strict_live_context,
 )
-from core.intent_classifier import I6_NEWS, I7_SPORTS, classify
+from core.intent_classifier import I0_CONVERSATION, I1_FACT, I6_NEWS, I7_SPORTS, classify
 from core.memory import MemorySystem
 
 
@@ -497,6 +497,61 @@ def _is_greeting(message: str) -> bool:
     return bool(re.fullmatch(r"(hi|hii+|hello|hey|heyy+|yo|sup|good morning|good afternoon|good evening)[!. ]*", text))
 
 
+def _is_casual_conversation_request(message: str) -> bool:
+    text = _normalized_message(message)
+    if _is_greeting(text):
+        return True
+    return bool(re.search(
+        r"\b(how are you|how are things|what'?s up|wassup|how'?s it going|tell me a joke|joke|make me laugh|"
+        r"casual chat|let'?s chat|talk to me|relationship|my girlfriend|my boyfriend|my wife|my husband|"
+        r"i feel|i am feeling|i'm feeling|sad|lonely|angry|tired|depressed|frustrated)\b",
+        text,
+    ))
+
+
+def _detected_route(message: str) -> dict:
+    route = classify(message)
+    intent = route.get("intent") or I0_CONVERSATION
+    live_type = classify_live_request(message)
+
+    if _is_casual_conversation_request(message):
+        return {
+            **route,
+            "detected_route": "conversation",
+            "live_type": "",
+            "live_routing_used": False,
+        }
+
+    if (
+        live_type in {"news", "sports", "live"}
+        and _is_live_freshness_request(message)
+        and not (live_type == "sports" and _is_historical_sports_request(message))
+    ):
+        return {
+            **route,
+            "intent": I7_SPORTS if live_type == "sports" else I6_NEWS,
+            "detected_route": f"live_{live_type}",
+            "live_type": live_type,
+            "live_routing_used": True,
+            "confidence": max(route.get("confidence", 0), 0.95),
+        }
+
+    if intent == I1_FACT or re.search(r"\b(what is|define|explain|meaning of|how does|why does)\b", _normalized_message(message)):
+        return {
+            **route,
+            "detected_route": "reasoning",
+            "live_type": "",
+            "live_routing_used": False,
+        }
+
+    return {
+        **route,
+        "detected_route": "conversation",
+        "live_type": "",
+        "live_routing_used": False,
+    }
+
+
 def _is_identity_question(message: str) -> bool:
     text = _normalized_message(message)
     return bool(re.search(
@@ -941,19 +996,22 @@ class MarcusBrain:
         return envelope
 
     def _route_request(self, message: str) -> dict:
-        route = classify(message)
-        live_type = classify_live_request(message)
-        if live_type == "sports":
-            route = {**route, "intent": I7_SPORTS, "live_type": "sports", "confidence": max(route.get("confidence", 0), 0.95)}
-        elif live_type in {"news", "live"}:
-            route = {**route, "intent": I6_NEWS, "live_type": live_type, "confidence": max(route.get("confidence", 0), 0.95)}
-        return route
+        return _detected_route(message)
 
-    def _metadata(self, groq_used: bool, fallback_used: bool, fallback_source: str) -> dict:
+    def _metadata(
+        self,
+        groq_used: bool,
+        fallback_used: bool,
+        fallback_source: str,
+        detected_route: str = "",
+        live_routing_used: bool = False,
+    ) -> dict:
         return {
             "groq_used": bool(groq_used),
             "fallback_used": bool(fallback_used),
             "fallback_source": str(fallback_source or ""),
+            "detected_route": str(detected_route or ""),
+            "live_routing_used": bool(live_routing_used),
         }
 
     def _envelope(self, reply: str, meta: dict, intent: str = "general", entity: str = "", value: str = "") -> dict:
@@ -1008,6 +1066,10 @@ class MarcusBrain:
     def _try_groq_first(self, chat_id: str, user_message: str) -> dict:
         config = get_config()
         model = self._get_model()
+        route_hint = self._route_request(user_message)
+        detected_route = str(route_hint.get("detected_route") or "conversation")
+        live_type = str(route_hint.get("live_type") or "")
+        live_routing_used = bool(route_hint.get("live_routing_used"))
         if not config.groq_api_key or not model:
             print("[API] Groq unavailable before request: key or model missing")
             return {}
@@ -1017,11 +1079,7 @@ class MarcusBrain:
             reply = str(envelope.get("reply") or "").strip()
             if not reply:
                 raise RuntimeError("Groq returned no usable reply after parsing.")
-            live_type = classify_live_request(user_message)
-            if live_type in {"news", "sports", "live"} and _is_live_freshness_request(user_message):
-                if live_type == "sports" and _is_historical_sports_request(user_message):
-                    envelope["meta"] = self._metadata(True, False, "groq")
-                    return envelope
+            if live_routing_used and live_type in {"news", "sports", "live"}:
                 try:
                     route = strict_live_context(user_message)
                     context = route.get("context", "")
@@ -1034,10 +1092,16 @@ class MarcusBrain:
                         )
                         live_reply = str(live_envelope.get("reply") or "").strip()
                         if live_reply:
-                            live_envelope["meta"] = self._metadata(True, False, "groq")
+                            live_envelope["meta"] = self._metadata(True, False, "groq", detected_route, True)
                             return live_envelope
+                    envelope["reply"] = graceful_live_failure(route.get("intent") or live_type)
+                    envelope["meta"] = self._metadata(True, True, "live_unavailable", detected_route, True)
+                    return envelope
                 except Exception as exc:
                     print(f"[ERROR] Live context Groq refinement skipped: {exc}")
+                    envelope["reply"] = graceful_live_failure(live_type)
+                    envelope["meta"] = self._metadata(True, True, "live_error", detected_route, True)
+                    return envelope
             if _needs_reference_context(user_message):
                 try:
                     context = _search_wikipedia(_reference_context_query(user_message))
@@ -1050,11 +1114,11 @@ class MarcusBrain:
                         )
                         reference_reply = str(reference_envelope.get("reply") or "").strip()
                         if reference_reply:
-                            reference_envelope["meta"] = self._metadata(True, False, "groq")
+                            reference_envelope["meta"] = self._metadata(True, False, "groq", "reference", False)
                             return reference_envelope
                 except Exception as exc:
                     print(f"[ERROR] Reference context Groq refinement skipped: {exc}")
-            envelope["meta"] = self._metadata(True, False, "groq")
+            envelope["meta"] = self._metadata(True, False, "groq", detected_route, False)
             return envelope
         except requests.exceptions.Timeout:
             _log_groq_failure("timeout", detail="Groq chat completions timed out after retry")
@@ -1118,27 +1182,31 @@ class MarcusBrain:
         return FALLBACK_RESPONSE
 
     def _fallback_pipeline(self, chat_id: str, user_message: str) -> dict:
+        route_hint = self._route_request(user_message)
+        detected_route = str(route_hint.get("detected_route") or "conversation")
+        live_type = str(route_hint.get("live_type") or "")
+        live_routing_used = bool(route_hint.get("live_routing_used"))
         memory_reply = self._memory_fallback_reply(chat_id, user_message)
         if memory_reply:
-            return self._envelope(memory_reply, self._metadata(False, True, "memory"))
+            return self._envelope(memory_reply, self._metadata(False, True, "memory", detected_route, False))
 
-        live_type = classify_live_request(user_message)
-        if live_type in {"news", "live"}:
+        if live_routing_used and live_type in {"news", "live"}:
             news_reply = live_api_answer(user_message)
             if news_reply and news_reply != graceful_live_failure(live_type):
-                return self._envelope(news_reply, self._metadata(False, True, "news"))
-        if live_type == "sports":
+                return self._envelope(news_reply, self._metadata(False, True, "news", detected_route, True))
+        if live_routing_used and live_type == "sports":
             sports_reply = live_api_answer(user_message)
             if sports_reply and sports_reply != graceful_live_failure("sports"):
-                return self._envelope(sports_reply, self._metadata(False, True, "sports"))
+                return self._envelope(sports_reply, self._metadata(False, True, "sports", detected_route, True))
 
-        lookup_reply = self._web_lookup_fallback_reply(user_message)
-        if lookup_reply:
-            return self._envelope(lookup_reply, self._metadata(False, True, "wiki"))
+        if detected_route == "reference":
+            lookup_reply = self._web_lookup_fallback_reply(user_message)
+            if lookup_reply:
+                return self._envelope(lookup_reply, self._metadata(False, True, "wiki", detected_route, False))
 
         return self._envelope(
             self._local_last_resort_reply(user_message),
-            self._metadata(False, True, "local"),
+            self._metadata(False, True, "local", detected_route, live_routing_used),
         )
 
     def _think(self, chat_id: str, user_message: str) -> dict:
