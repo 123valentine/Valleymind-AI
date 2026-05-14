@@ -16,7 +16,7 @@ CURRENT_PATTERNS = [
 ]
 
 SPORTS_PATTERNS = [
-    r"\b(sports|score|fixture|fixtures|match|game|league|team|player|players|transfer|nba|nfl|mlb|nhl|soccer|football|liverpool|epl|premier league|champions league)\b",
+    r"\b(sports|score|fixture|fixtures|match|game|league|team|player|players|transfer|injury|injuries|standings|table|nba|nfl|mlb|nhl|soccer|football|liverpool|epl|premier league|champions league)\b",
 ]
 
 NEWS_PATTERNS = [
@@ -160,6 +160,10 @@ def classify_live_request(message: str) -> str:
 
 def _sports_topic(message: str) -> str:
     text = str(message or "").lower()
+    if re.search(r"\b(history|historical|old|past|previous|all[- ]time|career|legend|won in|final in|season \d{4}|19\d{2}|20[0-2]\d)\b", text):
+        return "history"
+    if re.search(r"\b(table|standings|rankings?)\b", text):
+        return "standings"
     if re.search(r"\b(training|train|session|practice)\b", text):
         return "training"
     if re.search(r"\b(injury|injured|return|coming back|fitness|available)\b", text):
@@ -659,7 +663,7 @@ def sports_context_for_question(message: str) -> str:
         sections.append(team_search)
 
     try:
-        if entities["topic"] not in {"next_match", "live_score", "prediction", "general"}:
+        if entities["topic"] not in {"next_match", "live_score", "prediction", "general", "standings"}:
             for team in entities["teams"][:2]:
                 fixtures = _team_fixtures_context(team, entities["topic"])
                 if fixtures:
@@ -668,7 +672,7 @@ def sports_context_for_question(message: str) -> str:
                 standings = _premier_league_standings_context()
                 if standings:
                     sections.append(standings)
-        if entities["topic"] in {"next_match", "live_score", "prediction", "general"}:
+        if entities["topic"] in {"next_match", "live_score", "prediction", "general", "standings"}:
             for team in entities["teams"][:2]:
                 fixtures = _team_fixtures_context(team, entities["topic"])
                 if fixtures:
@@ -677,7 +681,7 @@ def sports_context_for_question(message: str) -> str:
                 live_scores = _search_api_sports(message)
                 if live_scores and live_scores != LIVE_DATA_UNAVAILABLE:
                     sections.append(live_scores)
-            if any(comp.get("id") == PREMIER_LEAGUE_ID for comp in entities["competitions"]) or entities["topic"] == "prediction":
+            if any(comp.get("id") == PREMIER_LEAGUE_ID for comp in entities["competitions"]) or entities["topic"] in {"prediction", "standings"}:
                 standings = _premier_league_standings_context()
                 if standings:
                     sections.append(standings)
@@ -698,8 +702,8 @@ def _search_news_only(query: str) -> str:
     contexts = []
     failures = []
     providers = [
-        ("Currents", _search_currents),
         ("Newscatcher", _search_newscatcher),
+        ("Currents", _search_currents),
     ]
     if _configured_news_key():
         providers.insert(0, ("Primary news API", _search_newsapi))
@@ -738,6 +742,10 @@ def _search_news_only(query: str) -> str:
 
 
 def _search_sports_only(query: str) -> str:
+    entities = extract_sports_entities(query)
+    if entities.get("topic") == "history":
+        return LIVE_DATA_UNAVAILABLE
+
     context = sports_context_for_question(query)
     if context and context != LIVE_DATA_UNAVAILABLE:
         return context

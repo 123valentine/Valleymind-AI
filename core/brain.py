@@ -82,6 +82,9 @@ Never mention APIs, tools, prompts, keys, backend logic, or internal data-fetchi
 _CHAT_SYSTEM_PROMPT = """You are Marcus, the ValleyMind-AI character. Answer naturally, warmly, and directly.
 Do not mention APIs, tools, prompts, keys, backend logic, or internal data-fetching steps.
 For normal knowledge questions, answer immediately and intelligently without asking for unnecessary clarification.
+If the user asks for a short answer, be concise. If they ask for detail, depth, continuation, or "explain more", expand in clear sections.
+For huge multi-topic prompts, start with a compact organized answer, cover the main points, and invite follow-up expansion without stalling.
+If the user asks for simple words, avoid jargon. If they asks for a summary, prioritize the essentials.
 If the user shares a memory-worthy personal fact, acknowledge it naturally; memory extraction is handled separately."""
 
 _GROQ_STARTUP_DIAGNOSTICS_DONE = False
@@ -458,6 +461,37 @@ def _local_arithmetic_reply(message: str) -> str:
     return str(value)
 
 
+def _is_live_freshness_request(message: str) -> bool:
+    text = _normalized_message(message)
+    return bool(re.search(
+        r"\b(today|now|latest|current|currently|right now|recent|breaking|live|updates?|news|headlines?|scores?|fixtures?|standings|table|injur(?:y|ies)|transfer|results?)\b",
+        text,
+    ))
+
+
+def _is_historical_sports_request(message: str) -> bool:
+    text = _normalized_message(message)
+    return bool(re.search(
+        r"\b(history|historical|old|past|previous|all[- ]time|career|legend|won in|final in|season \d{4}|19\d{2}|20[0-2]\d)\b",
+        text,
+    )) and not _is_live_freshness_request(message)
+
+
+def _needs_reference_context(message: str) -> bool:
+    text = _normalized_message(message)
+    return _is_historical_sports_request(message) or bool(re.search(
+        r"\b(history of|historical|old match|past match|who won|final|career history|player history)\b",
+        text,
+    ))
+
+
+def _reference_context_query(message: str) -> str:
+    text = _normalized_message(message)
+    if "liverpool" in text and "champions league" in text and "2005" in text:
+        return "2005 UEFA Champions League final Liverpool AC Milan"
+    return message
+
+
 def _is_greeting(message: str) -> bool:
     text = _normalized_message(message)
     return bool(re.fullmatch(r"(hi|hii+|hello|hey|heyy+|yo|sup|good morning|good afternoon|good evening)[!. ]*", text))
@@ -556,6 +590,9 @@ def _clean_live_context_fallback(external_context: str) -> str:
     for line in str(external_context or "").splitlines():
         cleaned = line.strip()
         if cleaned.startswith("- "):
+            cleaned = re.sub(r"\s+Source:\s*\S+", "", cleaned, flags=re.IGNORECASE)
+            cleaned = re.sub(r"https?://\S+", "", cleaned)
+            cleaned = re.sub(r"\s+", " ", cleaned).strip()
             lines.append(cleaned)
         if len(lines) >= 5:
             break
@@ -864,6 +901,45 @@ class MarcusBrain:
         )
         return envelope
 
+    def _format_live_with_groq(
+        self,
+        user_message: str,
+        source_context: str,
+        route_type: str,
+        initial_groq_reply: str = "",
+    ) -> dict:
+        config = get_config()
+        model = self._get_model()
+        if not config.groq_api_key or not model:
+            return {}
+
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    _CHAT_SYSTEM_PROMPT
+                    + "\n\nYou are improving an answer using current context. "
+                    + "Blend the context naturally with your reasoning. "
+                    + "If the initial draft conflicts with the supplied context, correct the draft and trust the context. "
+                    + "Do not reveal provider names, raw snippets, JSON, middleware labels, or backend wording. "
+                    + "For sports history or older facts, you may use general knowledge; for latest/current claims, rely on the supplied context. "
+                    + "If the current context is thin, be honest about what is and is not confirmed while still answering usefully."
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"User question: {user_message}\n\n"
+                    f"Initial reasoning draft:\n{initial_groq_reply}\n\n"
+                    f"Current context:\n{source_context}\n\n"
+                    "Write one final natural answer."
+                ),
+            },
+        ]
+        envelope = _parse_envelope(_call_groq(messages, model))
+        envelope["reply"] = _sanitize_reply_for_chat(envelope.get("reply", ""), "")
+        return envelope
+
     def _route_request(self, message: str) -> dict:
         route = classify(message)
         live_type = classify_live_request(message)
@@ -941,6 +1017,43 @@ class MarcusBrain:
             reply = str(envelope.get("reply") or "").strip()
             if not reply:
                 raise RuntimeError("Groq returned no usable reply after parsing.")
+            live_type = classify_live_request(user_message)
+            if live_type in {"news", "sports", "live"} and _is_live_freshness_request(user_message):
+                if live_type == "sports" and _is_historical_sports_request(user_message):
+                    envelope["meta"] = self._metadata(True, False, "groq")
+                    return envelope
+                try:
+                    route = strict_live_context(user_message)
+                    context = route.get("context", "")
+                    if context and context != LIVE_DATA_UNAVAILABLE:
+                        live_envelope = self._format_live_with_groq(
+                            user_message,
+                            context,
+                            route.get("intent") or live_type,
+                            reply,
+                        )
+                        live_reply = str(live_envelope.get("reply") or "").strip()
+                        if live_reply:
+                            live_envelope["meta"] = self._metadata(True, False, "groq")
+                            return live_envelope
+                except Exception as exc:
+                    print(f"[ERROR] Live context Groq refinement skipped: {exc}")
+            if _needs_reference_context(user_message):
+                try:
+                    context = _search_wikipedia(_reference_context_query(user_message))
+                    if context and context != LIVE_DATA_UNAVAILABLE:
+                        reference_envelope = self._format_live_with_groq(
+                            user_message,
+                            context,
+                            "reference",
+                            "",
+                        )
+                        reference_reply = str(reference_envelope.get("reply") or "").strip()
+                        if reference_reply:
+                            reference_envelope["meta"] = self._metadata(True, False, "groq")
+                            return reference_envelope
+                except Exception as exc:
+                    print(f"[ERROR] Reference context Groq refinement skipped: {exc}")
             envelope["meta"] = self._metadata(True, False, "groq")
             return envelope
         except requests.exceptions.Timeout:
