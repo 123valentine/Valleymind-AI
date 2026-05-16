@@ -15,3 +15,26 @@ C:\Users\EGBUJIE VALENTINE\Desktop\Valleymind-AI\core\external_apis.py:392: Runt
   with DDGS(timeout=10) as ddgs:
 127.0.0.1 - - [14/May/2026 13:36:10] "POST /chat HTTP/1.1" 200 -
 127.0.0.1 - - [14/May/2026 13:36:36] "POST /chat HTTP/1.1" 200 -
+127.0.0.1 - - [14/May/2026 13:37:16] "POST /auth/login HTTP/1.1" 200 -
+127.0.0.1 - - [14/May/2026 13:37:21] "POST /chat HTTP/1.1" 200 -
+127.0.0.1 - - [14/May/2026 13:37:26] "POST /chat HTTP/1.1" 200 -
+127.0.0.1 - - [14/May/2026 13:52:11] "GET / HTTP/1.1" 304 -
+127.0.0.1 - - [14/May/2026 13:52:20] "GET /auth/status HTTP/1.1" 200 -
+127.0.0.1 - - [14/May/2026 13:52:20] "GET /chat/history HTTP/1.1" 200 -
+127.0.0.1 - - [14/May/2026 13:52:44] "GET / HTTP/1.1" 304 -
+127.0.0.1 - - [14/May/2026 13:52:46] "GET /auth/status HTTP/1.1" 200 -
+127.0.0.1 - - [14/May/2026 13:52:46] "GET /chat/history HTTP/1.1" 200 -
+127.0.0.1 - - [14/May/2026 13:53:15] "POST /chat HTTP/1.1" 200 -
+127.0.0.1 - - [14/May/2026 13:53:15] "GET /tts/marcus_1778759592396.mp3 HTTP/1.1" 206 -
+127.0.0.1 - - [14/May/2026 13:53:16] "GET /favicon.ico HTTP/1.1" 404 -
+127.0.0.1 - - [14/May/2026 14:04:49] "POST /chat HTTP/1.1" 200 -
+127.0.0.1 - - [14/May/2026 14:05:13] "POST /chat HTTP/1.1" 200 -
+127.0.0.1 - - [14/May/2026 14:05:14] "GET /tts/marcus_1778760309098.mp3 HTTP/1.1" 206 -
+127.0.0.1 - - [14/May/2026 14:05:49] "POST /chat HTTP/1.1" 200 -
+127.0.0.1 - - [14/May/2026 14:05:49] "GET /tts/marcus_1778760345689.mp3 HTTP/1.1" 206 -
+127.0.0.1 - - [14/May/2026 14:08:43] "POST /chat HTTP/1.1" 200 -
+127.0.0.1 - - [14/May/2026 14:08:43] "GET /tts/marcus_1778760517988.mp3 HTTP/1.1" 206 -
+127.0.0.1 - - [14/May/2026 14:10:50] "POST /chat HTTP/1.1" 200 -
+127.0.0.1 - - [14/May/2026 14:10:50] "GET /tts/marcus_1778760646390.mp3 HTTP/1.1" 206 -
+127.0.0.1 - - [14/May/2026 14:15:20] "POST /chat HTTP/1.1" 200 -
+127.0.0.1 - - [14/May/2026 14:16:16] "POST /chat HTTP/1.1" 200 -

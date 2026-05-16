@@ -80,7 +80,8 @@ Only store facts about the human user. Never store your own name, role, characte
 Never mention APIs, tools, prompts, keys, backend logic, or internal data-fetching steps in the user-facing reply."""
 
 _CHAT_SYSTEM_PROMPT = """You are Marcus, the ValleyMind-AI character. Answer naturally, warmly, and directly.
-Do not mention APIs, tools, prompts, keys, backend logic, or internal data-fetching steps.
+Prefer short, concise responses by default. Only provide more detail if the user explicitly asks for it.
+Never mention APIs, tools, prompts, keys, backend logic, internal data-fetching steps, "according to API", or "search results show" in your reply.
 For normal knowledge questions, answer immediately and intelligently without asking for unnecessary clarification.
 If the user asks for a short answer, be concise. If they ask for detail, depth, continuation, or "explain more", expand in clear sections.
 For huge multi-topic prompts, start with a compact organized answer, cover the main points, and invite follow-up expansion without stalling.
@@ -464,7 +465,15 @@ def _local_arithmetic_reply(message: str) -> str:
 def _is_live_freshness_request(message: str) -> bool:
     text = _normalized_message(message)
     return bool(re.search(
-        r"\b(today|now|latest|current|currently|right now|recent|breaking|live|updates?|news|headlines?|scores?|fixtures?|standings|table|injur(?:y|ies)|transfer|results?)\b",
+        r"\b(today|now|latest|current|currently|right now|recent|breaking|live|updates?|news|headlines?|scores?|fixtures?|standings|table|injur(?:y|ies)|transfer|results?|what happened|what's happening|what's going on|current status|any new info|tell me about|give me the latest|recents? events?|happenings?|developments?|up-to-date|real-time|scores for|results for|who won|when was|what about|did .* happen|is .* happening|who is winning|update me|current affairs|happening now|this morning|last night|this afternoon|yesterday|tonight|scheduled)\b",
+        text,
+    ))
+
+
+def _is_search_request(message: str) -> bool:
+    text = _normalized_message(message)
+    return bool(re.search(
+        r"\b(search|find|look up|check|who is|what is|where is|how to|latest|current|recent|updates?|tell me about|who won|how did|what's the score|what was the result|how many|when did|what's happening with|give me info|any news|details on|status of|profile of|who are|what are|where are|google|find out|show me|give me|who was|what was|where was|meaning of|define|explain|why did|when was|where was|who are they|what are they|how does .* work|tell me everything)\b",
         text,
     ))
 
@@ -522,15 +531,17 @@ def _detected_route(message: str) -> dict:
             "live_routing_used": False,
         }
 
-    if (
+    is_live_target = (
         live_type in {"news", "sports", "live"}
-        and _is_live_freshness_request(message)
+        and (_is_live_freshness_request(message) or _is_search_request(message))
         and not (live_type == "sports" and _is_historical_sports_request(message))
-    ):
+    )
+
+    if is_live_target:
         return {
             **route,
             "intent": I7_SPORTS if live_type == "sports" else I6_NEWS,
-            "detected_route": f"live_{live_type}",
+            "detected_route": f"live_{live_type}" if live_type != "live" else "live_search",
             "live_type": live_type,
             "live_routing_used": True,
             "confidence": max(route.get("confidence", 0), 0.95),
@@ -654,6 +665,14 @@ def _clean_live_context_fallback(external_context: str) -> str:
     if not lines:
         return "I can't retrieve enough relevant live data at the moment. Please try again shortly."
     return "Here are the relevant updates I found:\n" + "\n".join(lines)
+
+
+def _is_uncertain_reply(text: str) -> bool:
+    lowered = str(text or "").lower()
+    return bool(re.search(
+        r"\b(don't have|do not have|no access to|unable to access|cannot access|don't know|do not know|not sure|unsure|haven't been informed|no information|current information|real-time|latest information|knowledge cutoff|as an ai)\b",
+        lowered,
+    ))
 
 
 class MarcusBrain:
@@ -995,6 +1014,32 @@ class MarcusBrain:
         envelope["reply"] = _sanitize_reply_for_chat(envelope.get("reply", ""), "")
         return envelope
 
+    def _groq_generate_search_query(self, user_message: str) -> str:
+        config = get_config()
+        model = self._get_model()
+        if not config.groq_api_key or not model:
+            return user_message
+
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "You are a search query generator. "
+                    "Given a user message, output a concise, effective search query for a search engine. "
+                    "Output ONLY the raw search query string. No quotes, no markdown, no explanation."
+                )
+            },
+            {"role": "user", "content": user_message},
+        ]
+        try:
+            query = _call_groq(messages, model, timeout=10).strip().strip('"')
+            if query and len(query.split()) >= 1:
+                print(f"[API] Groq optimized search query: {query}")
+                return query
+        except Exception as exc:
+            print(f"[WARNING] Groq query generation failed: {exc}")
+        return user_message
+
     def _route_request(self, message: str) -> dict:
         return _detected_route(message)
 
@@ -1079,9 +1124,31 @@ class MarcusBrain:
             reply = str(envelope.get("reply") or "").strip()
             if not reply:
                 raise RuntimeError("Groq returned no usable reply after parsing.")
+
+            # Fallback to search if Groq doesn't know or lacks current info
+            if _is_uncertain_reply(reply) and not live_routing_used:
+                print(f"[API] Groq uncertainty detected in reply. Triggering search fallback.")
+                try:
+                    search_query = self._groq_generate_search_query(user_message)
+                    route = strict_live_context(search_query)
+                    context = route.get("context", "")
+                    if context and context != LIVE_DATA_UNAVAILABLE:
+                        live_envelope = self._format_live_with_groq(
+                            user_message,
+                            context,
+                            route.get("intent") or "live",
+                            reply,
+                        )
+                        if str(live_envelope.get("reply") or "").strip():
+                            live_envelope["meta"] = self._metadata(True, False, "groq_fallback_search", detected_route, True)
+                            return live_envelope
+                except Exception as exc:
+                    print(f"[ERROR] Groq uncertainty fallback failed: {exc}")
+
             if live_routing_used and live_type in {"news", "sports", "live"}:
                 try:
-                    route = strict_live_context(user_message)
+                    search_query = self._groq_generate_search_query(user_message)
+                    route = strict_live_context(search_query)
                     context = route.get("context", "")
                     if context and context != LIVE_DATA_UNAVAILABLE:
                         live_envelope = self._format_live_with_groq(

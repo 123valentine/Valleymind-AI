@@ -3,7 +3,9 @@ import os
 import re
 from datetime import datetime
 import requests
+from groq import Groq
 
+from core.auto_model import get_latest_groq_model
 from core.config import get_config
 
 
@@ -60,6 +62,53 @@ def _safe_error(error) -> str:
     text = re.sub(r"(x-api-key['\"]?\s*:\s*['\"]?)[^,'\"\s)]+", r"\1***", text, flags=re.IGNORECASE)
     text = re.sub(r"(Authorization['\"]?\s*:\s*['\"]?Bearer\s+)[^,'\"\s)]+", r"\1***", text, flags=re.IGNORECASE)
     return text
+
+
+def _summarize_with_groq(query: str, context: str, intent: str) -> str:
+    config = get_config()
+    model = get_latest_groq_model()
+    api_key = config.groq_api_key
+    if not api_key or not model:
+        _log(f"Groq summarization skipped: API key or model missing for intent '{intent}'")
+        return ""
+
+    try:
+        client = Groq(api_key=api_key, base_url=config.groq_base_url)
+        chat_completion = client.chat.completions.create(
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        """You are Marcus, the ValleyMind-AI character. "
+                                                "Summarize the provided context in your natural, warm, and direct voice. "
+                                                "NEVER mention any news source names. "
+                                                "NEVER say "reputable sources" or "you can find". "
+                                                "Strictly 3-4 sentences maximum. "
+                                                "Speak as Marcus who already knows this information. "
+                                                "Do not suggest where to find more info. "
+                                                "If the context is insufficient, state that the information is not currently available or confirmed. "
+                                                "End your summary with a natural sentence: 'Want me to go deeper on any of these?'"""                    ),
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        f"Original user query: {query}\n"
+                        f"Context intent: {intent}\n"
+                        f"Information to summarize:\n{context}\n\n"
+                        "Summarize this in 6-8 lines, in Marcus' voice, without mentioning any APIs or backend."
+                    ),
+                },
+            ],
+            model=model,
+            temperature=0.3,
+            max_tokens=256,
+        )
+        summary = chat_completion.choices[0].message.content
+        _log(f"Groq summarization successful for intent '{intent}'")
+        return summary
+    except Exception as exc:
+        _log(f"Groq summarization failed for intent '{intent}': {_safe_error(exc)}")
+        return ""
 
 
 def _configured_news_key() -> str:
@@ -799,16 +848,34 @@ def strict_live_context(message: str) -> dict:
 def live_api_answer(message: str) -> str:
     message = str(message or "").strip()
     request_type = classify_live_request(message)
+    initial_context = ""
     if request_type == "sports":
-        context = _search_sports_only(message)
+        initial_context = _search_sports_only(message)
     elif request_type == "news":
-        context = _search_news_only(message)
+        initial_context = _search_news_only(message)
     else:
-        context = get_external_context(message)
+        initial_context = get_external_context(message)
+
+    context = initial_context
+    if context == LIVE_DATA_UNAVAILABLE or not context:
+        _log(f"Initial {request_type} context unavailable. Attempting DuckDuckGo fallback.")
+        try:
+            duckduckgo_context = _search_duckduckgo(message)
+            if duckduckgo_context and duckduckgo_context != LIVE_DATA_UNAVAILABLE:
+                context = duckduckgo_context
+            else:
+                _log("DuckDuckGo fallback also returned no usable data.")
+        except Exception as exc:
+            _log(f"DuckDuckGo fallback failed: {_safe_error(exc)}")
 
     if context == LIVE_DATA_UNAVAILABLE or not context:
         return graceful_live_failure(request_type)
 
+    summarized_context = _summarize_with_groq(message, context, request_type)
+    if summarized_context:
+        return summarized_context
+
+    # Fallback to simple line parsing if Groq summarization fails
     lines = []
     for line in context.splitlines():
         cleaned = line.strip()
