@@ -6,10 +6,7 @@ gunicorn
 aiohttp
 httpx
 pydantic
-uvicorn
-starlette
 duckduckgo_search
-edge-tts
 feedparser
 wikipedia
-sentence-transformers
+groq
