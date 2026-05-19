@@ -10,3 +10,4 @@ duckduckgo_search
 feedparser
 wikipedia
 groq
+pymongo
