@@ -1,0 +1,18 @@
+
+# 2026-05-18 09:47:13.647952
++y
+
+# 2026-05-18 11:33:10.346885
++Problem: Marcus loses memory when 
++server restarts on Vercel.
++
++Check core/memory.py and app.py:
++1. How is conversation memory currently saved?
++2. Why does it reset on server restart?
++3. Fix it so memory persists permanently
++   even after server restarts
++
++Show plan first.
+
+# 2026-05-18 11:35:00.206662
++y

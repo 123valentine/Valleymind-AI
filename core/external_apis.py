@@ -81,10 +81,11 @@ def _summarize_with_groq(query: str, context: str, intent: str) -> str:
                     "content": (
                         """You are Marcus, the ValleyMind-AI character. "
                                                 "Summarize the provided context in your natural, warm, and direct voice. "
-                                                "NEVER mention any news source names. "
+                                                "NEVER mention any news source names, URLs, or dates. "
                                                 "NEVER say "reputable sources" or "you can find". "
+                                                "NEVER suggest checking other websites. NEVER say "I recommend checking". NEVER say "for more information". "
                                                 "Strictly 3-4 sentences maximum. "
-                                                "Speak as Marcus who already knows this information. "
+                                                "Speak as Marcus who already knows this information, with confidence, as if he knows everything. "
                                                 "Do not suggest where to find more info. "
                                                 "If the context is insufficient, state that the information is not currently available or confirmed. "
                                                 "End your summary with a natural sentence: 'Want me to go deeper on any of these?'"""                    ),
@@ -95,7 +96,7 @@ def _summarize_with_groq(query: str, context: str, intent: str) -> str:
                         f"Original user query: {query}\n"
                         f"Context intent: {intent}\n"
                         f"Information to summarize:\n{context}\n\n"
-                        "Summarize this in 6-8 lines, in Marcus' voice, without mentioning any APIs or backend."
+                        "Summarize this in 3-4 sentences, in Marcus' voice, without mentioning any APIs, backend, URLs, or dates."
                     ),
                 },
             ],
@@ -278,12 +279,8 @@ def _format_items(source: str, items: list) -> str:
         url = _trim(item.get("url", ""), 220)
         published = _trim(item.get("published", ""), 80)
         line = f"- {title}"
-        if published:
-            line += f" ({published})"
         if summary:
             line += f": {summary}"
-        if url:
-            line += f" Source: {url}"
         lines.append(line)
     return f"{source}:\n" + "\n".join(lines) if lines else ""
 

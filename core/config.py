@@ -24,6 +24,7 @@ class APIConfig:
     newscatcher_api_key: str
     currents_api_key: str
     api_sports_key: str
+    mongodb_uri: str
 
 
 def get_config() -> APIConfig:
@@ -40,6 +41,7 @@ def get_config() -> APIConfig:
         newscatcher_api_key=os.getenv("NEWSCATCHER_API_KEY", "").strip(),
         currents_api_key=os.getenv("CURRENTS_API_KEY", "").strip(),
         api_sports_key=os.getenv("API_SPORTS_KEY", "").strip(),
+        mongodb_uri=os.getenv("MONGODB_URI", "").strip(),
     )
 
 

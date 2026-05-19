@@ -4,6 +4,7 @@ import threading
 from datetime import datetime
 
 from core.config import PROJECT_ROOT
+from core.db import get_db
 
 
 ASSISTANT_IDENTITY_NAMES = {"marcus"}
@@ -37,6 +38,7 @@ class MemorySystem:
         self._locks_lock = threading.Lock()
         self._long_term_lock = threading.Lock()
         self._long_term_changed = False
+        self.db = get_db()
 
         try:
             os.makedirs(self.chat_folder, exist_ok=True)
@@ -59,6 +61,24 @@ class MemorySystem:
             return self._locks[chat_id]
 
     def load_long_term(self) -> dict:
+        if self.db is not None:
+            try:
+                data = self.db.long_term.find_one({"_id": "main"})
+                if data:
+                    data.pop("_id", None)
+                    # Check for identity
+                    identity = data.setdefault("identity", {})
+                    removed = False
+                    for key, value in list(identity.items()):
+                        if _looks_like_assistant_identity(key, value):
+                            identity.pop(key, None)
+                            removed = True
+                    if removed:
+                        self.save_long_term()
+                    return data
+            except Exception as exc:
+                print(f"[ERROR] Failed to load long-term memory from MongoDB: {exc}")
+
         try:
             if os.path.exists(self.long_term_file):
                 with open(self.long_term_file, "r", encoding="utf-8") as file:
@@ -92,6 +112,15 @@ class MemorySystem:
             return self.long_term
 
     def save_long_term(self):
+        # Always try to save to DB first if configured
+        if self.db is not None:
+            try:
+                data = self.long_term.copy()
+                data["_id"] = "main"
+                self.db.long_term.replace_one({"_id": "main"}, data, upsert=True)
+            except Exception as exc:
+                print(f"[ERROR] Failed to save long-term memory to MongoDB: {exc}")
+
         tmp = self.long_term_file + ".tmp"
         try:
             os.makedirs(os.path.dirname(self.long_term_file), exist_ok=True)
@@ -156,6 +185,14 @@ class MemorySystem:
         return os.path.join(self.chat_folder, f"{safe_id}.json")
 
     def _load_chat_from_disk(self, chat_id: str) -> list:
+        if self.db is not None:
+            try:
+                data = self.db.chats.find_one({"chat_id": chat_id})
+                if data:
+                    return data.get("messages", [])
+            except Exception as exc:
+                print(f"[ERROR] Failed to load chat '{chat_id}' from MongoDB: {exc}")
+
         file_path = self.get_chat_file(chat_id)
         try:
             if os.path.exists(file_path):
@@ -169,6 +206,16 @@ class MemorySystem:
         return []
 
     def _save_chat_to_disk(self, chat_id: str, messages: list):
+        if self.db is not None:
+            try:
+                self.db.chats.replace_one(
+                    {"chat_id": chat_id},
+                    {"chat_id": chat_id, "messages": messages},
+                    upsert=True
+                )
+            except Exception as exc:
+                print(f"[ERROR] Failed to save chat '{chat_id}' to MongoDB: {exc}")
+
         file_path = self.get_chat_file(chat_id)
         tmp = file_path + ".tmp"
         try:
@@ -216,6 +263,13 @@ class MemorySystem:
         lock = self._get_lock(chat_id)
         with lock:
             self._cache.pop(chat_id, None)
+
+            if self.db is not None:
+                try:
+                    self.db.chats.delete_one({"chat_id": chat_id})
+                except Exception as exc:
+                    print(f"[ERROR] Failed to clear chat '{chat_id}' from MongoDB: {exc}")
+
             file_path = self.get_chat_file(chat_id)
             try:
                 if os.path.exists(file_path):

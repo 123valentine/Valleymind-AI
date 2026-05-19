@@ -110,6 +110,7 @@ def _save_users(users: dict):
 
 
 def _current_auth() -> dict:
+    print(f"[DEBUG] _current_auth: Session: {dict(session)}")
     user_id = str(session.get("user_id") or "").strip()
     email = str(session.get("email") or "").strip()
     if user_id:
@@ -220,13 +221,17 @@ def load_marcus(user_id: str):
         print(f"[ERROR] Marcus behavior.json not found at {behavior_path}")
         return None
 
-    brain = MarcusBrain(
-        memory_file=str(memory_path),
-        behavior_file=str(behavior_path),
-    )
-    with _marcus_lock:
-        _marcus_by_user[user_id] = brain
-    return brain
+    try:
+        brain = MarcusBrain(
+            memory_file=str(memory_path),
+            behavior_file=str(behavior_path),
+        )
+        with _marcus_lock:
+            _marcus_by_user[user_id] = brain
+        return brain
+    except Exception as exc:
+        print(f"[ERROR] Failed to instantiate Marcus brain: {exc}")
+        return None
 
 
 def _refresh_marcus_memory(marcus):
@@ -282,6 +287,7 @@ def auth_status():
 @app.route("/chat/history", methods=["GET"])
 def chat_history():
     user_id, error = _require_login()
+    print(f"[DEBUG] ChatHistory: user_id: {user_id}, error: {error}")
     if error:
         return error
 
@@ -359,6 +365,7 @@ def login():
     session["user_id"] = user_id
     session["email"] = email
     session["user"] = {"id": user_id, "email": email}
+    print(f"[DEBUG] Login: Session after set: {dict(session)}")
 
     token = secrets.token_urlsafe(32)
     _auth_tokens[token] = {"user_id": user_id, "email": email}

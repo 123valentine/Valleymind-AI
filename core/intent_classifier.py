@@ -16,7 +16,7 @@ SUPPORT_PATTERNS = [
 ]
 
 FACT_PATTERNS = [
-    r"\b(what is|who is|when did|define|meaning of|explain)\b",
+    r"\b(what is|who is|when did|define|meaning of|explain|jamb)\b",
     r"^\s*(physics|quantum physics|chemistry|biology|mathematics|math|history|geography|programming|computer science|machine learning|artificial intelligence)\s*[?.!]*\s*$",
 ]
 
