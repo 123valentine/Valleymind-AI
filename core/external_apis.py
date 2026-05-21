@@ -115,10 +115,24 @@ def _summarize_with_groq(query: str, context: str, intent: str) -> str:
 def _configured_news_key() -> str:
     config = get_config()
     return (
-        os.getenv("NEWS_API_KEY", "").strip()
+        os.getenv("NEWS_API_1", "").strip()
+        or os.getenv("NEWS_API_KEY", "").strip()
         or os.getenv("API_KEY", "").strip()
+        or config.news_api_1
         or config.news_api_key
         or config.api_key
+    )
+
+
+def _configured_news_key_2() -> str:
+    config = get_config()
+    return (
+        os.getenv("NEWS_API_2", "").strip()
+        or os.getenv("NEWSCATCHER_API_KEY", "").strip()
+        or os.getenv("CURRENTS_API_KEY", "").strip()
+        or config.news_api_2
+        or config.newscatcher_api_key
+        or config.currents_api_key
     )
 
 
@@ -745,45 +759,54 @@ def sports_context_for_question(message: str) -> str:
 
 
 def _search_news_only(query: str) -> str:
-    contexts = []
     failures = []
-    providers = [
-        ("Newscatcher", _search_newscatcher),
-        ("Currents", _search_currents),
-    ]
+
+    # Layer 1: NEWS_API_1 (primary news API)
     if _configured_news_key():
-        providers.insert(0, ("Primary news API", _search_newsapi))
-    for name, provider in providers:
         try:
-            context = provider(query)
+            _log("[NEWS PIPELINE] Layer 1: NEWS_API_1")
+            context = _search_newsapi(query)
             if context and context != LIVE_DATA_UNAVAILABLE:
-                contexts.append(context)
-                if len(contexts) >= 2:
-                    break
+                return context
         except Exception as exc:
-            reason = f"{name} failed: {_safe_error(exc)}"
+            reason = f"NEWS_API_1 failed: {_safe_error(exc)}"
             failures.append(reason)
             _log(reason)
-    if contexts:
-        return "\n\n".join(contexts)
-    if failures:
-        _log("News fallback trigger reason: " + " | ".join(failures))
+    else:
+        _log("[NEWS PIPELINE] Layer 1 skipped: NEWS_API_1 not configured")
 
-    fallback_contexts = []
+    # Layer 2: NEWS_API_2 (secondary news API — Currents / Newscatcher)
+    if _configured_news_key_2():
+        for name, provider in (("Currents", _search_currents), ("Newscatcher", _search_newscatcher)):
+            try:
+                _log(f"[NEWS PIPELINE] Layer 2: {name} (NEWS_API_2)")
+                context = provider(query)
+                if context and context != LIVE_DATA_UNAVAILABLE:
+                    return context
+            except Exception as exc:
+                reason = f"{name} (NEWS_API_2) failed: {_safe_error(exc)}"
+                failures.append(reason)
+                _log(reason)
+    else:
+        _log("[NEWS PIPELINE] Layer 2 skipped: NEWS_API_2 not configured")
+
+    # Layer 3: DuckDuckGo + Wikipedia fallback
+    _log("[NEWS PIPELINE] Layer 3: Web search fallback (DuckDuckGo → Wikipedia)")
     for name, provider in (
-        ("Wikipedia", _search_wikipedia),
         ("DuckDuckGo", _search_duckduckgo),
+        ("Wikipedia", _search_wikipedia),
     ):
         try:
             context = provider(query)
             if context and context != LIVE_DATA_UNAVAILABLE:
-                fallback_contexts.append(context)
+                return context
         except Exception as exc:
-            _log(f"{name} fallback failed: {_safe_error(exc)}")
-        if fallback_contexts:
-            break
-    if fallback_contexts:
-        return "\n\n".join(fallback_contexts)
+            reason = f"{name} fallback failed: {_safe_error(exc)}"
+            failures.append(reason)
+            _log(reason)
+
+    if failures:
+        _log("[NEWS PIPELINE] All layers failed: " + " | ".join(failures))
     return LIVE_DATA_UNAVAILABLE
 
 
@@ -792,26 +815,36 @@ def _search_sports_only(query: str) -> str:
     if entities.get("topic") == "history":
         return LIVE_DATA_UNAVAILABLE
 
-    context = sports_context_for_question(query)
-    if context and context != LIVE_DATA_UNAVAILABLE:
-        return context
-
-    fallback_contexts = []
-    for name, provider in (
-        ("DuckDuckGo", _search_duckduckgo),
-        ("Wikipedia", _search_wikipedia),
-    ):
+    # Layer 1: SPORTS_API_KEY (dedicated sports API — API-SPORTS / football)
+    if _configured_sports_key():
         try:
-            fallback_query = query if name == "Wikipedia" else f"{query} sports latest"
-            context = provider(fallback_query)
+            _log("[SPORTS PIPELINE] Layer 1: SPORTS_API_KEY")
+            context = sports_context_for_question(query)
             if context and context != LIVE_DATA_UNAVAILABLE:
-                fallback_contexts.append(context)
+                return context
         except Exception as exc:
-            _log(f"{name} sports fallback failed: {_safe_error(exc)}")
-        if fallback_contexts:
-            break
-    if fallback_contexts:
-        return "\n\n".join(fallback_contexts)
+            _log(f"[SPORTS PIPELINE] Layer 1 (SPORTS_API_KEY) failed: {_safe_error(exc)}")
+    else:
+        _log("[SPORTS PIPELINE] Layer 1 skipped: SPORTS_API_KEY not configured")
+
+    # Layer 2: DuckDuckGo sports fallback
+    _log("[SPORTS PIPELINE] Layer 2: DuckDuckGo fallback")
+    try:
+        ddg_context = _search_duckduckgo(f"{query} sports latest")
+        if ddg_context and ddg_context != LIVE_DATA_UNAVAILABLE:
+            return ddg_context
+    except Exception as exc:
+        _log(f"[SPORTS PIPELINE] DuckDuckGo fallback failed: {_safe_error(exc)}")
+
+    # Layer 3: Wikipedia fallback
+    _log("[SPORTS PIPELINE] Layer 3: Wikipedia fallback")
+    try:
+        wiki_context = _search_wikipedia(query)
+        if wiki_context and wiki_context != LIVE_DATA_UNAVAILABLE:
+            return wiki_context
+    except Exception as exc:
+        _log(f"[SPORTS PIPELINE] Wikipedia fallback failed: {_safe_error(exc)}")
+
     return LIVE_DATA_UNAVAILABLE
 
 

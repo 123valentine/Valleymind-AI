@@ -36,15 +36,21 @@ CONVERSATION_PATTERNS = [
     r"^\s*(hi|hii+|hello|hey|heyy+|yo|sup|good morning|good afternoon|good evening)[!. ]*\s*$",
     r"\b(who are you|what are you|what is your name|what's your name|your name|what can you do|how can you help)\b",
     r"\b(what do you remember|what do you know about me|what have i told you|do you remember|what is my name|what's my name)\b",
+    r"\b(how are you|how'?s it going|what'?s up|wassup|tell me a joke|make me laugh)\b",
+    r"\b(i feel|i am feeling|tired|sad|angry|depressed|frustrated|scared|lonely)\b",
 ]
 
 NEWS_PATTERNS = [
-    r"\b(news|headline|headlines|breaking|latest|current events|today's news|world news|bbc news|market news|tech news|ai news)\b",
-    r"\b(latest|current|recent|today)\b.*\b(news|update|updates|headline|headlines)\b",
+    r"\b(breaking news|headlines?|current events|world news)\b",
+    r"\bwhat'?s\s+happening\s+(in|with)\s+(the\s+)?(world|tech|politics|market)\b",
+    r"\bgive\s+me\s+the\s+(latest|recent|current)\s+(news|updates?|headlines?)\b",
 ]
 
 SPORTS_PATTERNS = [
-    r"\b(sports|score|scores|fixture|fixtures|match|matches|standings|nba|nfl|mlb|nhl|epl|premier league|champions league|football|soccer|liverpool|arsenal|chelsea|manchester city|man united)\b",
+    r"\b(nba|nfl|mlb|nhl|epl|champions league|premier league|la liga|serie a|bundesliga)\b",
+    r"\b(liverpool|arsenal|chelsea|manchester city|man united|tottenham|spurs)\b",
+    r"\b(score|scores)\s+(for|of|in|today|now|latest|current|live)\b",
+    r"\bwho\s+(won|is winning|plays?|play(ed|ing))\b.*\b(match|game|fixture|tournament)\b",
 ]
 
 
@@ -55,10 +61,6 @@ def _match(patterns, text):
 def classify(user_input: str) -> dict:
     text = str(user_input or "").strip()
 
-    if _match(SPORTS_PATTERNS, text):
-        return {"intent": I7_SPORTS, "confidence": 0.95}
-    if _match(NEWS_PATTERNS, text):
-        return {"intent": I6_NEWS, "confidence": 0.95}
     if _match(CONVERSATION_PATTERNS, text):
         return {"intent": I0_CONVERSATION, "confidence": 0.95}
     if _match(SUPPORT_PATTERNS, text):
@@ -71,5 +73,9 @@ def classify(user_input: str) -> dict:
         return {"intent": I3_CREATIVE, "confidence": 0.8}
     if _match(FACT_PATTERNS, text):
         return {"intent": I1_FACT, "confidence": 0.8}
+    if _match(NEWS_PATTERNS, text):
+        return {"intent": I6_NEWS, "confidence": 0.95}
+    if _match(SPORTS_PATTERNS, text):
+        return {"intent": I7_SPORTS, "confidence": 0.95}
 
     return {"intent": I0_CONVERSATION, "confidence": 0.55}

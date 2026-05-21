@@ -17,6 +17,8 @@ load_dotenv(ENV_FILE)
 class APIConfig:
     api_key: str
     news_api_key: str
+    news_api_1: str
+    news_api_2: str
     sports_api_key: str
     groq_api_key: str
     groq_model: str
@@ -27,10 +29,13 @@ class APIConfig:
     mongodb_uri: str
 
 
+
 def get_config() -> APIConfig:
     return APIConfig(
         api_key=os.getenv("API_KEY", "").strip(),
         news_api_key=os.getenv("NEWS_API_KEY", "").strip(),
+        news_api_1=os.getenv("NEWS_API_1", "").strip(),
+        news_api_2=os.getenv("NEWS_API_2", "").strip(),
         sports_api_key=os.getenv("SPORTS_API_KEY", "").strip(),
         groq_api_key=os.getenv("GROQ_API_KEY", "").strip(),
         groq_model=os.getenv("GROQ_MODEL", "").strip(),
@@ -42,6 +47,24 @@ def get_config() -> APIConfig:
         currents_api_key=os.getenv("CURRENTS_API_KEY", "").strip(),
         api_sports_key=os.getenv("API_SPORTS_KEY", "").strip(),
         mongodb_uri=os.getenv("MONGODB_URI", "").strip(),
+        openrouter_api_key=os.getenv("OPENROUTER_API_KEY", "").strip(),
+        openrouter_base_url=os.getenv(
+            "OPENROUTER_BASE_URL",
+            "https://openrouter.ai/api/v1",
+        ).rstrip("/"),
+        openrouter_model=os.getenv("OPENROUTER_MODEL", "openai/gpt-4o-mini").strip(),
+        nvidia_api_key=os.getenv("NVIDIA_API_KEY", "").strip(),
+        nvidia_base_url=os.getenv(
+            "NVIDIA_BASE_URL",
+            "https://integrate.api.nvidia.com/v1",
+        ).rstrip("/"),
+        nvidia_model=os.getenv("NVIDIA_MODEL", "nvidia/llama-3.1-nv-8b-instruct").strip(),
+        gemini_api_key=os.getenv("GEMINI_API_KEY", "").strip(),
+        gemini_base_url=os.getenv(
+            "GEMINI_BASE_URL",
+            "https://generativelanguage.googleapis.com/v1beta",
+        ).rstrip("/"),
+        gemini_model=os.getenv("GEMINI_MODEL", "gemini-2.0-flash").strip(),
     )
 
 

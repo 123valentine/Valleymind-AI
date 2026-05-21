@@ -16,7 +16,6 @@ from core.external_apis import (
     _search_wikipedia,
     classify_live_request,
     graceful_live_failure,
-    live_api_answer,
     strict_live_context,
 )
 from core.intent_classifier import I0_CONVERSATION, I1_FACT, I6_NEWS, I7_SPORTS, classify
@@ -187,6 +186,182 @@ def _call_groq(messages: list, model_name: str, timeout: int = 30, timeout_retri
 
     print("[API] Groq chat completions success")
     return content.strip()
+
+
+def _call_openai_compat(
+    messages: list,
+    model: str,
+    api_key: str,
+    base_url: str,
+    provider_label: str,
+    timeout: int = 30,
+) -> str:
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": model,
+        "messages": messages,
+        "max_tokens": 1024,
+    }
+
+    print(f"[API] Calling {provider_label} chat completions with model: {model}")
+
+    response = requests.post(
+        f"{base_url}/chat/completions",
+        headers=headers,
+        json=payload,
+        timeout=timeout,
+    )
+
+    if response.status_code != 200:
+        raise RuntimeError(
+            f"{provider_label} API HTTP {response.status_code}: "
+            f"{_short_error_detail(response.text[:500])}"
+        )
+
+    data = response.json()
+    choices = data.get("choices") or []
+    if not choices:
+        raise RuntimeError(f"{provider_label} returned 200 but choices list was empty.")
+
+    content = (choices[0].get("message") or {}).get("content", "")
+    if not isinstance(content, str) or not content.strip():
+        raise RuntimeError(f"{provider_label} returned 200 but content was empty.")
+
+    print(f"[API] {provider_label} chat completions success")
+    return content.strip()
+
+
+def _call_gemini(
+    messages: list,
+    model: str,
+    api_key: str,
+    base_url: str = "",
+    timeout: int = 30,
+) -> str:
+    if not base_url:
+        base_url = "https://generativelanguage.googleapis.com/v1beta"
+
+    print(f"[API] Calling Gemini chat completions with model: {model}")
+
+    system_instruction = None
+    contents = []
+
+    for msg in messages:
+        role = msg.get("role", "")
+        content = msg.get("content", "")
+        if not content:
+            continue
+        if role == "system":
+            system_instruction = {"parts": [{"text": content}]}
+        elif role == "assistant":
+            contents.append({"role": "model", "parts": [{"text": content}]})
+        else:
+            contents.append({"role": "user", "parts": [{"text": content}]})
+
+    payload: dict[str, Any] = {"contents": contents}
+    if system_instruction:
+        payload["system_instruction"] = system_instruction
+
+    response = requests.post(
+        f"{base_url}/models/{model}:generateContent?key={api_key}",
+        json=payload,
+        timeout=timeout,
+    )
+
+    if response.status_code != 200:
+        raise RuntimeError(
+            f"Gemini API HTTP {response.status_code}: "
+            f"{_short_error_detail(response.text[:500])}"
+        )
+
+    data = response.json()
+    candidates = data.get("candidates") or []
+    if not candidates:
+        raise RuntimeError("Gemini returned 200 but candidates list was empty.")
+
+    parts = (candidates[0].get("content") or {}).get("parts") or []
+    if not parts:
+        raise RuntimeError("Gemini returned 200 but parts list was empty.")
+
+    text = parts[0].get("text", "")
+    if not isinstance(text, str) or not text.strip():
+        raise RuntimeError("Gemini returned 200 but text was empty.")
+
+    print("[API] Gemini chat completions success")
+    return text.strip()
+
+
+def _call_llm_cluster(
+    messages: list,
+    timeout: int = 30,
+) -> str:
+    config = get_config()
+    last_error: Optional[Exception] = None
+
+    groq_key = config.groq_api_key
+    if groq_key:
+        try:
+            groq_model = get_latest_groq_model()
+            if groq_model:
+                return _call_groq(messages, groq_model, timeout=timeout)
+            print("[LLM CLUSTER] Groq skipped: no model resolved")
+        except Exception as exc:
+            last_error = exc
+            print(f"[LLM CLUSTER] Groq failed: {_short_error_detail(str(exc))}. Rotating.")
+    else:
+        print("[LLM CLUSTER] Groq unavailable: no API key")
+
+    openrouter_key = config.openrouter_api_key
+    if openrouter_key:
+        openrouter_model = config.openrouter_model or "openai/gpt-4o-mini"
+        openrouter_url = config.openrouter_base_url or "https://openrouter.ai/api/v1"
+        try:
+            return _call_openai_compat(
+                messages, openrouter_model, openrouter_key,
+                openrouter_url, "OpenRouter", timeout,
+            )
+        except Exception as exc:
+            last_error = exc
+            print(f"[LLM CLUSTER] OpenRouter failed: {_short_error_detail(str(exc))}. Rotating.")
+    else:
+        print("[LLM CLUSTER] OpenRouter unavailable: no API key")
+
+    nvidia_key = config.nvidia_api_key
+    if nvidia_key:
+        nvidia_model = config.nvidia_model or "nvidia/llama-3.1-nv-8b-instruct"
+        nvidia_url = config.nvidia_base_url or "https://integrate.api.nvidia.com/v1"
+        try:
+            return _call_openai_compat(
+                messages, nvidia_model, nvidia_key,
+                nvidia_url, "Nvidia", timeout,
+            )
+        except Exception as exc:
+            last_error = exc
+            print(f"[LLM CLUSTER] Nvidia failed: {_short_error_detail(str(exc))}. Rotating.")
+    else:
+        print("[LLM CLUSTER] Nvidia unavailable: no API key")
+
+    gemini_key = config.gemini_api_key
+    if gemini_key:
+        gemini_model = config.gemini_model or "gemini-2.0-flash"
+        gemini_url = config.gemini_base_url or ""
+        try:
+            return _call_gemini(
+                messages, gemini_model, gemini_key,
+                gemini_url, timeout,
+            )
+        except Exception as exc:
+            last_error = exc
+            print(f"[LLM CLUSTER] Gemini failed: {_short_error_detail(str(exc))}.")
+    else:
+        print("[LLM CLUSTER] Gemini unavailable: no API key")
+
+    raise RuntimeError(
+        f"All LLM providers failed. Last error: {_short_error_detail(str(last_error))}"
+    )
 
 
 def _groq_health_check(model_name: str) -> bool:
@@ -712,16 +887,26 @@ class MarcusBrain:
         config = config or get_config()
         model = self._get_model()
         render_flag = os.getenv("RENDER", "").strip() or "<unset>"
-        print("[GROQ DIAGNOSTIC] architecture: Groq-first")
-        print(f"[GROQ DIAGNOSTIC] active Groq model: {model or '<missing>'}")
-        print(f"[GROQ DIAGNOSTIC] endpoint: {config.groq_base_url}")
-        print(f"[GROQ DIAGNOSTIC] GROQ_API_KEY exists: {bool(config.groq_api_key)}")
-        print(f"[GROQ DIAGNOSTIC] RENDER env: {render_flag}")
+        print("[BRAIN] architecture: 4-LLM Cooperative Cluster (Groq → OpenRouter → Nvidia → Gemini)")
+        print(f"[BRAIN] active Groq model: {model or '<missing>'}")
+        print(f"[BRAIN] endpoint: {config.groq_base_url}")
+        print(f"[BRAIN] GROQ_API_KEY exists: {bool(config.groq_api_key)}")
+        print(f"[BRAIN] RENDER env: {render_flag}")
+        print(f"[BRAIN] OpenRouter configured: {bool(config.openrouter_api_key)}")
+        print(f"[BRAIN] Nvidia configured: {bool(config.nvidia_api_key)}")
+        print(f"[BRAIN] Gemini configured: {bool(config.gemini_api_key)}")
+        print(f"[BRAIN] Sports pipeline: SPORTS_API_KEY → DuckDuckGo → Wikipedia")
+        print(f"[BRAIN] News pipeline: NEWS_API_1 → NEWS_API_2 → DuckDuckGo → Wikipedia")
+        print(f"[BRAIN] SPORTS_API_KEY configured: {bool(config.sports_api_key or config.api_sports_key)}")
+        print(f"[BRAIN] NEWS_API_1 configured: {bool(config.news_api_1 or config.news_api_key)}")
+        print(f"[BRAIN] NEWS_API_2 configured: {bool(config.news_api_2 or config.newscatcher_api_key or config.currents_api_key)}")
         if not config.groq_api_key:
-            print("[GROQ DIAGNOSTIC] API health: skipped because GROQ_API_KEY is missing")
+            print("[BRAIN] Groq health: skipped because GROQ_API_KEY is missing")
+            print("[BRAIN] Cluster operating in degraded mode (other providers may serve).")
             return
         healthy = _groq_health_check(model)
-        print(f"[GROQ DIAGNOSTIC] API health: {'ok' if healthy else 'failed'}")
+        print(f"[BRAIN] Groq health: {'ok' if healthy else 'failed'}")
+        print("[BRAIN] All systems ready. 4-LLM cluster online.")
 
     def _get_model(self) -> str:
         if self._model_name:
@@ -936,16 +1121,6 @@ class MarcusBrain:
         return "I found the earlier chat, but there was no clear topic attached to it."
 
     def _format_with_groq(self, user_message: str, source_context: str, route_type: str) -> dict:
-        config = get_config()
-        model = self._get_model()
-        if not config.groq_api_key or not model:
-            return {
-                "reply": graceful_live_failure(route_type),
-                "intent": "general",
-                "entity": "",
-                "value": "",
-            }
-
         messages = [
             {
                 "role": "system",
@@ -968,7 +1143,16 @@ class MarcusBrain:
                 ),
             },
         ]
-        envelope = _parse_envelope(_call_groq(messages, model))
+        try:
+            raw = _call_llm_cluster(messages)
+            envelope = _parse_envelope(raw)
+        except Exception:
+            return {
+                "reply": graceful_live_failure(route_type),
+                "intent": "general",
+                "entity": "",
+                "value": "",
+            }
         envelope["reply"] = _sanitize_reply_for_chat(
             envelope.get("reply", ""),
             graceful_live_failure(route_type),
@@ -982,11 +1166,6 @@ class MarcusBrain:
         route_type: str,
         initial_groq_reply: str = "",
     ) -> dict:
-        config = get_config()
-        model = self._get_model()
-        if not config.groq_api_key or not model:
-            return {}
-
         messages = [
             {
                 "role": "system",
@@ -1010,7 +1189,11 @@ class MarcusBrain:
                 ),
             },
         ]
-        envelope = _parse_envelope(_call_groq(messages, model))
+        try:
+            raw = _call_llm_cluster(messages)
+            envelope = _parse_envelope(raw)
+        except Exception:
+            return {}
         envelope["reply"] = _sanitize_reply_for_chat(envelope.get("reply", ""), "")
         return envelope
 
@@ -1108,18 +1291,14 @@ class MarcusBrain:
         messages.append({"role": "user", "content": user_message})
         return messages
 
-    def _try_groq_first(self, chat_id: str, user_message: str) -> dict:
+    def _try_llm_first(self, chat_id: str, user_message: str) -> dict:
         config = get_config()
-        model = self._get_model()
         route_hint = self._route_request(user_message)
         detected_route = str(route_hint.get("detected_route") or "conversation")
         live_type = str(route_hint.get("live_type") or "")
         live_routing_used = bool(route_hint.get("live_routing_used"))
-        if not config.groq_api_key or not model:
-            print("[API] Groq unavailable before request: key or model missing")
-            return {}
         try:
-            raw = _call_groq(self._groq_messages(chat_id, user_message), model)
+            raw = _call_llm_cluster(self._groq_messages(chat_id, user_message))
             envelope = _parse_envelope(raw)
             reply = str(envelope.get("reply") or "").strip()
             if not reply:
@@ -1188,11 +1367,11 @@ class MarcusBrain:
             envelope["meta"] = self._metadata(True, False, "groq", detected_route, False)
             return envelope
         except requests.exceptions.Timeout:
-            _log_groq_failure("timeout", detail="Groq chat completions timed out after retry")
+            _log_groq_failure("timeout", detail="LLM cluster chat completions timed out after retry")
         except requests.exceptions.ConnectionError as exc:
-            _log_groq_failure("endpoint failure", detail=f"Groq network connection failed after retry: {exc}")
+            _log_groq_failure("endpoint failure", detail=f"LLM cluster network connection failed after retry: {exc}")
         except Exception as exc:
-            _log_groq_failure("Groq call failed after retry", detail=str(exc))
+            _log_groq_failure("LLM cluster call failed after retry", detail=str(exc))
         return {}
 
     def _memory_fallback_reply(self, chat_id: str, message: str) -> str:
@@ -1224,14 +1403,24 @@ class MarcusBrain:
         return ""
 
     def _web_lookup_fallback_reply(self, message: str) -> str:
+        context = ""
         for provider in (_search_wikipedia, _search_duckduckgo):
             try:
                 context = provider(message)
                 if context and context != LIVE_DATA_UNAVAILABLE:
-                    return _clean_live_context_fallback(context)
+                    break
             except Exception as exc:
                 _log_groq_failure("fallback lookup failed", detail=str(exc))
-        return ""
+        if not context or context == LIVE_DATA_UNAVAILABLE:
+            return ""
+        try:
+            envelope = self._format_with_groq(message, context, "reference")
+            reply = str(envelope.get("reply") or "").strip()
+            if reply:
+                return reply
+        except Exception as exc:
+            _log_groq_failure("LLM synthesis of web lookup failed", detail=str(exc))
+        return _clean_live_context_fallback(context)
 
     def _local_last_resort_reply(self, message: str) -> str:
         arithmetic = _local_arithmetic_reply(message)
@@ -1253,153 +1442,70 @@ class MarcusBrain:
         detected_route = str(route_hint.get("detected_route") or "conversation")
         live_type = str(route_hint.get("live_type") or "")
         live_routing_used = bool(route_hint.get("live_routing_used"))
+
+        # --- 1. Local memory / reference (no external data) ---
         memory_reply = self._memory_fallback_reply(chat_id, user_message)
         if memory_reply:
             return self._envelope(memory_reply, self._metadata(False, True, "memory", detected_route, False))
 
-        if live_routing_used and live_type in {"news", "live"}:
-            news_reply = live_api_answer(user_message)
-            if news_reply and news_reply != graceful_live_failure(live_type):
-                return self._envelope(news_reply, self._metadata(False, True, "news", detected_route, True))
-        if live_routing_used and live_type == "sports":
-            sports_reply = live_api_answer(user_message)
-            if sports_reply and sports_reply != graceful_live_failure("sports"):
-                return self._envelope(sports_reply, self._metadata(False, True, "sports", detected_route, True))
+        # --- 2. Live data — always gather THEN synthesize via LLM cluster ---
+        external_context = ""
+        route_type = ""
 
-        if detected_route == "reference":
-            lookup_reply = self._web_lookup_fallback_reply(user_message)
-            if lookup_reply:
-                return self._envelope(lookup_reply, self._metadata(False, True, "wiki", detected_route, False))
+        if live_routing_used and live_type in {"news", "sports", "live"}:
+            try:
+                search_query = self._groq_generate_search_query(user_message)
+                route = strict_live_context(search_query)
+                external_context = route.get("context", "")
+                route_type = route.get("intent") or live_type
+            except Exception as exc:
+                print(f"[ERROR] Live context gather failed in fallback: {exc}")
 
+        if external_context and external_context != LIVE_DATA_UNAVAILABLE:
+            try:
+                live_envelope = self._format_with_groq(user_message, external_context, route_type)
+                live_reply = str(live_envelope.get("reply") or "").strip()
+                if live_reply:
+                    live_envelope["meta"] = self._metadata(False, True, f"live_{route_type}", detected_route, True)
+                    return live_envelope
+            except Exception as exc:
+                print(f"[ERROR] LLM cluster synthesis of live data failed in fallback: {exc}")
+
+        # --- 3. Reference / web lookup — always synthesize via LLM cluster ---
+        if detected_route == "reference" or live_routing_used:
+            try:
+                lookup_context = ""
+                for provider in (_search_wikipedia, _search_duckduckgo):
+                    try:
+                        lookup_context = provider(user_message)
+                        if lookup_context and lookup_context != LIVE_DATA_UNAVAILABLE:
+                            break
+                    except Exception:
+                        continue
+                if lookup_context and lookup_context != LIVE_DATA_UNAVAILABLE:
+                    reference_envelope = self._format_with_groq(
+                        user_message,
+                        lookup_context,
+                        "reference",
+                    )
+                    reference_reply = str(reference_envelope.get("reply") or "").strip()
+                    if reference_reply:
+                        reference_envelope["meta"] = self._metadata(False, True, "wiki_synthesized", detected_route, False)
+                        return reference_envelope
+            except Exception as exc:
+                print(f"[ERROR] LLM cluster synthesis of web lookup failed: {exc}")
+
+        # --- 4. Last resort — local JSON backup (no network / no keys ever worked) ---
         return self._envelope(
             self._local_last_resort_reply(user_message),
             self._metadata(False, True, "local", detected_route, live_routing_used),
         )
 
     def _think(self, chat_id: str, user_message: str) -> dict:
-        groq_envelope = self._try_groq_first(chat_id, user_message)
-        if groq_envelope:
-            return groq_envelope
+        llm_envelope = self._try_llm_first(chat_id, user_message)
+        if llm_envelope:
+            return llm_envelope
         return self._fallback_pipeline(chat_id, user_message)
-
-    def _legacy_think(self, chat_id: str, user_message: str) -> dict:
-        try:
-            live_history = self.memory.get_chat(chat_id) or []
-            if live_history and live_history[-1].get("role") == "user":
-                live_history = live_history[:-1]
-            recent_live_context = "\n".join(
-                str(item.get("content") or "")
-                for item in live_history[-6:]
-                if item.get("content") and not (
-                    item.get("role") == "assistant"
-                    and _is_stale_fallback_text(item.get("content", ""))
-                )
-            )
-        except Exception:
-            recent_live_context = ""
-
-        live_context_query = (
-            f"Recent conversation:\n{recent_live_context}\nCurrent question: {user_message}"
-            if recent_live_context
-            else user_message
-        )
-        route_hint = self._route_request(user_message)
-        live_type = route_hint.get("live_type") or classify_live_request(user_message)
-        if live_type in {"news", "sports", "live"}:
-            route = strict_live_context(live_context_query if live_type == "sports" else user_message)
-            external_context = route.get("context", "")
-            if external_context == LIVE_DATA_UNAVAILABLE or not external_context:
-                reply = graceful_live_failure(route.get("intent") or live_type)
-                return {"reply": reply, "intent": "general", "entity": "", "value": ""}
-            try:
-                return self._format_with_groq(user_message, external_context, route.get("intent") or live_type)
-            except Exception as exc:
-                print(f"[ERROR] Groq live summary failed. Fallback reason: {exc}")
-                reply = _sanitize_reply_for_chat(
-                    _clean_live_context_fallback(external_context),
-                    graceful_live_failure(route.get("intent") or live_type),
-                )
-                return {
-                    "reply": reply,
-                    "intent": "general",
-                    "entity": "",
-                    "value": "",
-                }
-
-        config = get_config()
-        model = self._get_model()
-        if not model:
-            print("[API] Fallback triggered: no Groq model available")
-            fallback = _FALLBACK_ENVELOPE.copy()
-            fallback["reply"] = self._local_error_reply(user_message, route_hint)
-            return fallback
-        if not config.groq_api_key:
-            print("[API] Fallback triggered: GROQ_API_KEY is not configured")
-            fallback = _FALLBACK_ENVELOPE.copy()
-            fallback["reply"] = self._local_error_reply(user_message, route_hint)
-            return fallback
-
-        try:
-            self.memory.reload()
-            long_term = self.memory.get_full_memory() or {}
-            history = self.memory.get_chat(chat_id) or []
-            prompt_context = {
-                "user": self.memory.get_user_name() or "",
-                "chat_history": history,
-                "system": self.profile.name,
-            }
-            identity_str = json.dumps(_filtered_user_identity(long_term.get("identity", {})))
-            prefs_str = json.dumps(long_term.get("preferences", {}))
-        except Exception as exc:
-            print(f"[ERROR] Failed to load prompt memory context: {exc}")
-            prompt_context = {"user": "", "chat_history": [], "system": self.profile.name}
-            history = []
-            identity_str = "{}"
-            prefs_str = "{}"
-
-        route = route_hint
-        system_with_context = (
-            _CHAT_SYSTEM_PROMPT
-            + "\n\nCharacter profile:\n"
-            + self.profile.to_prompt()
-            + "\n\nWhat you already know about this user:\n"
-            + f"Prompt context: {json.dumps({'user': prompt_context['user'], 'system': prompt_context['system']})}\n"
-            + f"Identity: {identity_str}\n"
-            + f"Preferences: {prefs_str}\n"
-            + f"Chat history messages loaded: {len(prompt_context['chat_history'])}\n"
-            + f"Rule-based intent hint: {route.get('intent')} ({route.get('confidence')})"
-        )
-
-        messages = [{"role": "system", "content": system_with_context}]
-        recent = history[-20:]
-        if recent and recent[-1].get("role") == "user":
-            recent = recent[:-1]
-
-        for msg in recent:
-            role = msg.get("role", "user")
-            content = msg.get("content", "")
-            if content and isinstance(content, str):
-                if role == "assistant" and _is_stale_fallback_text(content):
-                    continue
-                messages.append({"role": role, "content": content})
-
-        messages.append({"role": "user", "content": user_message})
-
-        try:
-            if config.groq_api_key and model:
-                return _parse_envelope(_call_groq(messages, model))
-            print("[API] Groq skipped: key or model unavailable")
-        except requests.exceptions.Timeout:
-            _log_groq_failure("timeout", detail="Groq chat completions timed out")
-        except requests.exceptions.ConnectionError as exc:
-            _log_groq_failure("endpoint failure", detail=f"Groq network connection failed: {exc}")
-        except Exception as exc:
-            _log_groq_failure("Groq call failed", detail=str(exc))
-
-        fallback = _FALLBACK_ENVELOPE.copy()
-        fallback["reply"] = self._local_error_reply(user_message, route)
-        print("[API] Local fallback triggered after Groq failure")
-        return fallback
 
     def respond(self, message: str) -> str:
         try:

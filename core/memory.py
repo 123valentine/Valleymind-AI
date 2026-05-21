@@ -1,10 +1,9 @@
-import json
 import os
 import threading
 from datetime import datetime
 
 from core.config import PROJECT_ROOT
-from core.db import get_db
+from core.db import get_db, get_db_manager
 
 
 ASSISTANT_IDENTITY_NAMES = {"marcus"}
@@ -32,27 +31,24 @@ class MemorySystem:
             self.base_folder = os.path.abspath(base_folder or os.path.join(PROJECT_ROOT, "memory_data"))
             self.long_term_file = os.path.join(self.base_folder, "long_term.json")
 
-        self.chat_folder = os.path.join(self.base_folder, "chats")
         self._cache: dict = {}
         self._locks: dict = {}
         self._locks_lock = threading.Lock()
         self._long_term_lock = threading.Lock()
-        self._long_term_changed = False
         self.db = get_db()
+        self.db_manager = get_db_manager()
 
-        try:
-            os.makedirs(self.chat_folder, exist_ok=True)
-        except OSError as exc:
-            print(f"[ERROR] Could not create memory directories: {exc}")
+        if os.path.basename(self.base_folder) == "memory_data":
+            self.user_id = "default"
+        else:
+            self.user_id = os.path.basename(os.path.dirname(self.base_folder))
 
         self.long_term = self.load_long_term()
         self.initialize_long_term_file()
 
     def initialize_long_term_file(self):
-        if os.path.exists(self.long_term_file) and not self._long_term_changed:
-            return
-        self.save_long_term()
-        self._long_term_changed = False
+        if self.long_term == _fresh_long_term():
+            self.save_long_term()
 
     def _get_lock(self, chat_id: str) -> threading.Lock:
         with self._locks_lock:
@@ -63,10 +59,9 @@ class MemorySystem:
     def load_long_term(self) -> dict:
         if self.db is not None:
             try:
-                data = self.db.long_term.find_one({"_id": "main"})
+                data = self.db.long_term.find_one({"_id": self.user_id})
                 if data:
                     data.pop("_id", None)
-                    # Check for identity
                     identity = data.setdefault("identity", {})
                     removed = False
                     for key, value in list(identity.items()):
@@ -78,61 +73,21 @@ class MemorySystem:
                     return data
             except Exception as exc:
                 print(f"[ERROR] Failed to load long-term memory from MongoDB: {exc}")
-
-        try:
-            if os.path.exists(self.long_term_file):
-                with open(self.long_term_file, "r", encoding="utf-8") as file:
-                    data = json.load(file)
-                if isinstance(data, dict):
-                    identity = data.setdefault("identity", {})
-                    if not isinstance(identity, dict):
-                        identity = {}
-                        data["identity"] = identity
-                    preferences = data.setdefault("preferences", {})
-                    if not isinstance(preferences, dict):
-                        data["preferences"] = {}
-                    removed = []
-                    for key, value in list(identity.items()):
-                        if _looks_like_assistant_identity(key, value):
-                            removed.append(key)
-                            identity.pop(key, None)
-                    if removed:
-                        self._long_term_changed = True
-                        print("[WARNING] Removed assistant identity from user memory.")
-                    return data
-                print("[WARNING] long-term memory had unexpected format; resetting.")
-        except (json.JSONDecodeError, OSError) as exc:
-            print(f"[ERROR] Failed to load long-term memory: {exc}")
         return _fresh_long_term()
 
     def reload(self) -> dict:
         with self._long_term_lock:
             self.long_term = self.load_long_term()
-            self.initialize_long_term_file()
             return self.long_term
 
     def save_long_term(self):
-        # Always try to save to DB first if configured
         if self.db is not None:
             try:
                 data = self.long_term.copy()
-                data["_id"] = "main"
-                self.db.long_term.replace_one({"_id": "main"}, data, upsert=True)
+                data["_id"] = self.user_id
+                self.db.long_term.replace_one({"_id": self.user_id}, data, upsert=True)
             except Exception as exc:
                 print(f"[ERROR] Failed to save long-term memory to MongoDB: {exc}")
-
-        tmp = self.long_term_file + ".tmp"
-        try:
-            os.makedirs(os.path.dirname(self.long_term_file), exist_ok=True)
-            with open(tmp, "w", encoding="utf-8") as file:
-                json.dump(self.long_term, file, indent=2)
-            os.replace(tmp, self.long_term_file)
-        except OSError as exc:
-            print(f"[ERROR] Failed to save long-term memory: {exc}")
-            try:
-                os.remove(tmp)
-            except OSError:
-                pass
 
     def remember_identity(self, key: str, value: str):
         if not key or not isinstance(key, str):
@@ -178,13 +133,7 @@ class MemorySystem:
     def get_full_memory(self) -> dict:
         return self.long_term
 
-    def get_chat_file(self, chat_id: str) -> str:
-        safe_id = "".join(char for char in str(chat_id) if char.isalnum() or char in ("_", "-"))
-        if not safe_id:
-            safe_id = "default"
-        return os.path.join(self.chat_folder, f"{safe_id}.json")
-
-    def _load_chat_from_disk(self, chat_id: str) -> list:
+    def load_chat(self, chat_id: str) -> list:
         if self.db is not None:
             try:
                 data = self.db.chats.find_one({"chat_id": chat_id})
@@ -192,47 +141,14 @@ class MemorySystem:
                     return data.get("messages", [])
             except Exception as exc:
                 print(f"[ERROR] Failed to load chat '{chat_id}' from MongoDB: {exc}")
-
-        file_path = self.get_chat_file(chat_id)
-        try:
-            if os.path.exists(file_path):
-                with open(file_path, "r", encoding="utf-8") as file:
-                    data = json.load(file)
-                if isinstance(data, list):
-                    return data
-                print(f"[WARNING] Chat file for '{chat_id}' was not a list; resetting.")
-        except (json.JSONDecodeError, OSError) as exc:
-            print(f"[ERROR] Failed to load chat '{chat_id}' from disk: {exc}")
         return []
 
-    def _save_chat_to_disk(self, chat_id: str, messages: list):
-        if self.db is not None:
-            try:
-                self.db.chats.replace_one(
-                    {"chat_id": chat_id},
-                    {"chat_id": chat_id, "messages": messages},
-                    upsert=True
-                )
-            except Exception as exc:
-                print(f"[ERROR] Failed to save chat '{chat_id}' to MongoDB: {exc}")
-
-        file_path = self.get_chat_file(chat_id)
-        tmp = file_path + ".tmp"
-        try:
-            os.makedirs(os.path.dirname(file_path), exist_ok=True)
-            with open(tmp, "w", encoding="utf-8") as file:
-                json.dump(messages, file, indent=2)
-            os.replace(tmp, file_path)
-        except OSError as exc:
-            print(f"[ERROR] Failed to save chat '{chat_id}': {exc}")
-            try:
-                os.remove(tmp)
-            except OSError:
-                pass
+    def save_chat(self, chat_id: str, messages: list):
+        self.db_manager.background_chat_write(chat_id, messages)
 
     def _get_cached(self, chat_id: str) -> list:
         if chat_id not in self._cache:
-            self._cache[chat_id] = self._load_chat_from_disk(chat_id)
+            self._cache[chat_id] = self.load_chat(chat_id)
         return self._cache[chat_id]
 
     def add_message(self, chat_id: str, role: str, content: str, timestamp=None):
@@ -252,7 +168,7 @@ class MemorySystem:
             })
             if len(messages) > 50:
                 del messages[:-50]
-            self._save_chat_to_disk(chat_id, messages)
+            self.save_chat(chat_id, messages)
 
     def get_chat(self, chat_id: str) -> list:
         lock = self._get_lock(chat_id)
@@ -269,10 +185,3 @@ class MemorySystem:
                     self.db.chats.delete_one({"chat_id": chat_id})
                 except Exception as exc:
                     print(f"[ERROR] Failed to clear chat '{chat_id}' from MongoDB: {exc}")
-
-            file_path = self.get_chat_file(chat_id)
-            try:
-                if os.path.exists(file_path):
-                    os.remove(file_path)
-            except OSError as exc:
-                print(f"[ERROR] Failed to clear chat '{chat_id}': {exc}")
