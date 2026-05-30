@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from threading import Lock
 from urllib.parse import quote
 
-from flask import Flask, jsonify, request, send_from_directory, session
+from flask import Flask, Response, jsonify, request, send_from_directory, session, stream_with_context
 from flask_cors import CORS
 from werkzeug.security import check_password_hash, generate_password_hash
 
@@ -191,7 +191,21 @@ def _whatsapp_url(email: str, text: str) -> str:
     return f"https://wa.me/{_admin_whatsapp_number}?text={quote(message)}"
 
 
+CREATOR_EMAIL = "egbujievalentine@gmail.com"
+CREATOR_NAME = "Egbujie Valentine (K)"
+CREATOR_TITLE = "Founder and Head of Valley Mind-AI"
+
+DEFAULT_SECURITY_QUESTION = "What is your creator code project?"
+DEFAULT_SECURITY_ANSWER = "valley mind-ai"
+
+
+def _is_creator(email: str) -> bool:
+    return str(email or "").strip().lower() == CREATOR_EMAIL
+
+
 def _derive_initial_user_name(email: str) -> str:
+    if _is_creator(email):
+        return CREATOR_NAME
     local = str(email or "").split("@", 1)[0].strip().lower()
     if not local:
         return ""
@@ -275,13 +289,19 @@ def auth_status():
     marcus = load_marcus(user_id)
     if marcus:
         _initialize_user_memory(marcus, auth.get("email", ""))
+    email_auth = auth.get("email", "")
     return jsonify({
         "authenticated": True,
-        "email": auth.get("email", ""),
+        "email": email_auth,
         "user_id": user_id,
         "character": "marcus",
         "memory_loaded": bool(marcus),
+        "is_creator": _is_creator(email_auth),
     })
+
+
+def _new_chat_id() -> str:
+    return f"marcus_{secrets.token_hex(8)}"
 
 
 @app.route("/chat/history", methods=["GET"])
@@ -296,9 +316,122 @@ def chat_history():
         return jsonify({"status": "error", "message": "Marcus is not configured"}), 404
     _refresh_marcus_memory(marcus)
 
-    chat_id = f"{marcus.profile.key}_main_chat"
+    chat_id = str(request.args.get("chat_id") or "").strip() or f"{marcus.profile.key}_main_chat"
     messages = marcus.memory.get_chat(chat_id)
     return jsonify({"status": "success", "messages": messages})
+
+
+@app.route("/chat/sessions", methods=["GET"])
+def chat_sessions():
+    user_id, error = _require_login()
+    if error:
+        return error
+    marcus = load_marcus(user_id)
+    if not marcus:
+        return jsonify({"status": "error", "message": "Marcus not configured"}), 404
+    try:
+        sessions = marcus.memory.list_sessions()
+        return jsonify({"status": "success", "sessions": sessions})
+    except Exception as exc:
+        print(f"[ERROR] Failed to list sessions: {exc}")
+        return jsonify({"status": "error", "message": "Failed to list sessions"}), 500
+
+
+@app.route("/chat/sessions", methods=["POST"])
+def chat_create_session():
+    user_id, error = _require_login()
+    if error:
+        return error
+    marcus = load_marcus(user_id)
+    if not marcus:
+        return jsonify({"status": "error", "message": "Marcus not configured"}), 404
+
+    data = request.get_json(silent=True) or {}
+    title = str(data.get("title") or "New Chat").strip()
+    chat_id = str(data.get("chat_id") or "").strip() or _new_chat_id()
+
+    try:
+        session = marcus.memory.create_session(chat_id, title)
+        return jsonify({"status": "success", "session": {
+            "chat_id": session["chat_id"],
+            "title": session["title"],
+            "created_at": session["created_at"],
+            "last_activity": session["last_activity"],
+            "message_count": 0,
+        }})
+    except Exception as exc:
+        print(f"[ERROR] Failed to create session: {exc}")
+        return jsonify({"status": "error", "message": "Failed to create session"}), 500
+
+
+@app.route("/chat/session/rename", methods=["POST"])
+def rename_chat_session():
+    user_id, error = _require_login()
+    if error:
+        return error
+    marcus = load_marcus(user_id)
+    if not marcus:
+        return jsonify({"status": "error", "message": "Marcus not configured"}), 404
+
+    data = request.get_json(silent=True) or {}
+    chat_id = str(data.get("chat_id") or "").strip()
+    new_title = str(data.get("title") or "").strip()
+
+    if not chat_id or not new_title:
+        return jsonify({"status": "error", "message": "chat_id and title are required"}), 400
+
+    try:
+        if hasattr(marcus.memory, "set_title"):
+            marcus.memory.set_title(chat_id, new_title)
+        elif hasattr(marcus.memory, "db_manager"):
+            marcus.memory.db_manager.update_session_title(chat_id, new_title)
+        return jsonify({"status": "success", "message": "Session renamed"})
+    except Exception as exc:
+        print(f"[ERROR] Failed to rename session '{chat_id}': {exc}")
+        return jsonify({"status": "error", "message": "Failed to rename session"}), 500
+
+
+@app.route("/chat/sessions/<chat_id>", methods=["DELETE"])
+def chat_delete_session(chat_id):
+    user_id, error = _require_login()
+    if error:
+        return error
+    marcus = load_marcus(user_id)
+    if not marcus:
+        return jsonify({"status": "error", "message": "Marcus not configured"}), 404
+    try:
+        marcus.memory.delete_session(chat_id)
+        return jsonify({"status": "success"})
+    except Exception as exc:
+        print(f"[ERROR] Failed to delete session '{chat_id}': {exc}")
+        return jsonify({"status": "error", "message": "Failed to delete session"}), 500
+
+
+@app.route("/chat/sessions/<chat_id>/reaction", methods=["POST"])
+def chat_session_reaction(chat_id):
+    user_id, error = _require_login()
+    if error:
+        return error
+    marcus = load_marcus(user_id)
+    if not marcus:
+        return jsonify({"status": "error", "message": "Marcus not configured"}), 404
+
+    data = request.get_json(silent=True) or {}
+    message_index = data.get("message_index")
+    if message_index is None or not isinstance(message_index, int):
+        return jsonify({"status": "error", "message": "message_index (int) is required"}), 400
+    reaction = str(data.get("reaction") or "").strip() or ""
+    if reaction not in ("up", "down", ""):
+        return jsonify({"status": "error", "message": "reaction must be 'up', 'down', or empty"}), 400
+
+    try:
+        ok = marcus.memory.update_reaction(chat_id, message_index, reaction)
+        if not ok:
+            return jsonify({"status": "error", "message": "Invalid message_index"}), 404
+        return jsonify({"status": "success"})
+    except Exception as exc:
+        print(f"[ERROR] Failed to update reaction: {exc}")
+        return jsonify({"status": "error", "message": "Failed to update reaction"}), 500
 
 
 @app.route("/suggestions", methods=["POST"])
@@ -345,6 +478,7 @@ def login():
         return jsonify({"status": "error", "message": "Password is required"}), 400
 
     user_id = _safe_user_id(email)
+    is_creator = _is_creator(email)
     with _users_lock:
         users = _load_users()
         user = users.get(email)
@@ -353,32 +487,50 @@ def login():
             stored_hash = str(user.get("password_hash") or "")
             if not check_password_hash(stored_hash, password):
                 return jsonify({"status": "error", "message": "Invalid email or password"}), 401
+            if is_creator:
+                user["identity_name"] = CREATOR_NAME
+                user["title"] = CREATOR_TITLE
+                _save_users(users)
         else:
             users[email] = {
                 "user_id": user_id,
                 "password_hash": generate_password_hash(password),
+                "security_question": DEFAULT_SECURITY_QUESTION,
+                "security_answer_hash": generate_password_hash(DEFAULT_SECURITY_ANSWER),
             }
+            if is_creator:
+                users[email]["identity_name"] = CREATOR_NAME
+                users[email]["title"] = CREATOR_TITLE
             _save_users(users)
 
     session.clear()
     session.permanent = True
     session["user_id"] = user_id
     session["email"] = email
-    session["user"] = {"id": user_id, "email": email}
-    print(f"[DEBUG] Login: Session after set: {dict(session)}")
+    session["is_creator"] = is_creator
+    session["user"] = {"id": user_id, "email": email, "is_creator": is_creator}
+    if is_creator:
+        session["user"]["identity_name"] = CREATOR_NAME
+        session["user"]["title"] = CREATOR_TITLE
 
     token = secrets.token_urlsafe(32)
-    _auth_tokens[token] = {"user_id": user_id, "email": email}
+    _auth_tokens[token] = {"user_id": user_id, "email": email, "is_creator": is_creator}
 
     marcus = load_marcus(user_id)
     if marcus:
         _initialize_user_memory(marcus, email)
+        if is_creator:
+            try:
+                marcus.memory.set_creator_identity(CREATOR_NAME, CREATOR_TITLE)
+            except Exception as exc:
+                print(f"[WARN] Failed to set creator identity in memory: {exc}")
     return jsonify({
         "status": "success",
         "authenticated": True,
         "email": email,
         "character": "marcus",
         "session_token": token,
+        "is_creator": is_creator,
     })
 
 
@@ -396,6 +548,91 @@ def logout():
     return jsonify({"status": "success", "authenticated": False})
 
 
+@app.route("/api/auth/forgot-password", methods=["POST"])
+def forgot_password():
+    data = request.get_json(silent=True) or {}
+    email = str(data.get("email") or "").strip().lower()
+
+    if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email):
+        return jsonify({"status": "error", "message": "Valid email is required"}), 400
+
+    with _users_lock:
+        users = _load_users()
+        user = users.get(email)
+
+        if not user:
+            return jsonify({"status": "error", "message": "No account found with that email."}), 404
+
+        question = user.get("security_question", DEFAULT_SECURITY_QUESTION)
+
+    return jsonify({"status": "success", "question": question})
+
+
+@app.route("/api/auth/reset-password", methods=["POST"])
+def reset_password():
+    data = request.get_json(silent=True) or {}
+    email = str(data.get("email") or "").strip().lower()
+    answer = str(data.get("answer") or "").strip().lower()
+    new_password = str(data.get("new_password") or "")
+
+    if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email):
+        return jsonify({"status": "error", "message": "Valid email is required"}), 400
+    if not answer:
+        return jsonify({"status": "error", "message": "Security answer is required."}), 400
+    if not new_password or len(new_password) < 4:
+        return jsonify({"status": "error", "message": "Password must be at least 4 characters."}), 400
+
+    with _users_lock:
+        users = _load_users()
+        user = users.get(email)
+
+        if not user:
+            return jsonify({"status": "error", "message": "No account found with that email."}), 404
+
+        stored_hash = user.get("security_answer_hash")
+        if not stored_hash:
+            return jsonify({"status": "error", "message": "Security question not set for this account."}), 400
+
+        if not check_password_hash(stored_hash, answer):
+            return jsonify({"status": "error", "message": "Incorrect answer."}), 401
+
+        user["password_hash"] = generate_password_hash(new_password)
+        _save_users(users)
+
+    return jsonify({"status": "success", "message": "Password reset successfully."})
+
+
+@app.route("/auth/change-password", methods=["POST"])
+def change_password():
+    user_id, error = _require_login()
+    if error:
+        return error
+    data = request.get_json(silent=True) or {}
+    current_password = str(data.get("current_password") or "")
+    new_password = str(data.get("new_password") or "")
+
+    if not current_password:
+        return jsonify({"status": "error", "message": "Current password required."}), 400
+    if not new_password or len(new_password) < 4:
+        return jsonify({"status": "error", "message": "New password must be at least 4 characters."}), 400
+
+    auth = _current_auth()
+    email = str(auth.get("email") or "").strip().lower()
+
+    with _users_lock:
+        users = _load_users()
+        user = users.get(email)
+        if not user:
+            return jsonify({"status": "error", "message": "User not found."}), 404
+        stored_hash = str(user.get("password_hash") or "")
+        if not check_password_hash(stored_hash, current_password):
+            return jsonify({"status": "error", "message": "Current password is incorrect."}), 401
+        user["password_hash"] = generate_password_hash(new_password)
+        _save_users(users)
+
+    return jsonify({"status": "success", "message": "Password changed successfully."})
+
+
 @app.route("/chat", methods=["POST"])
 def chat():
     try:
@@ -409,8 +646,11 @@ def chat():
             return jsonify({"status": "error", "message": "No JSON body received"}), 400
 
         message = (data.get("message") or "").strip()
-        if not message:
-            return jsonify({"status": "error", "message": "message field is required"}), 400
+        if not message and not data.get("image"):
+            return jsonify({"status": "error", "message": "message or image is required"}), 400
+
+        chat_id = str(data.get("chat_id") or "").strip()
+        image_data = str(data.get("image") or "").strip()
 
         marcus = load_marcus(user_id)
 
@@ -423,7 +663,7 @@ def chat():
         _initialize_user_memory(marcus, auth.get("email", ""))
         _debug_user_memory(user_id, marcus)
 
-        reply = marcus.respond(message)
+        reply = marcus.respond(message, chat_id=chat_id, image_data=image_data)
         response_meta = getattr(marcus, "last_response_meta", {}) or {}
         voice = (
             {"enabled": True, "spoken": False, "engine": "browser", "reason": "reply too long for blocking server TTS"}
@@ -431,11 +671,32 @@ def chat():
             else speak_marcus(reply)
         )
 
+        resolved_chat_id = chat_id or f"{marcus.profile.key}_main_chat"
+
+        updated_title = None
+        if message and resolved_chat_id and resolved_chat_id != f"{marcus.profile.key}_main_chat":
+            try:
+                session_info = marcus.memory.db_manager.get_session(resolved_chat_id)
+                if session_info:
+                    current_title = str(session_info.get("title") or "")
+                    if current_title in ("", "New Chat", "Untitled Thread"):
+                        words = message.split()
+                        if len(words) >= 3:
+                            title = " ".join(words[:5]).rstrip(".,!?;:")
+                            if len(title) > 40:
+                                title = title[:40].rsplit(" ", 1)[0] if " " in title[:40] else title[:40]
+                            marcus.memory.set_title(resolved_chat_id, title)
+                            updated_title = title
+            except Exception as exc:
+                print(f"[WARN] Auto-title fallback failed: {exc}")
+
         return jsonify({
             "status": "success",
+            "chat_id": resolved_chat_id,
             "character": "marcus",
             "reply": reply,
             "voice": voice,
+            "updated_title": updated_title,
             "detected_route": str(response_meta.get("detected_route") or ""),
             "groq_used": bool(response_meta.get("groq_used")),
             "live_routing_used": bool(response_meta.get("live_routing_used")),
@@ -449,6 +710,75 @@ def chat():
             "status": "error",
             "message": "Internal server error",
         }), 500
+
+
+@app.route("/chat/stream", methods=["POST"])
+def chat_stream():
+    try:
+        user_id, error = _require_login()
+        if error:
+            return error
+
+        data = request.get_json(silent=True)
+        if not data:
+            return jsonify({"status": "error", "message": "No JSON body received"}), 400
+
+        message = (data.get("message") or "").strip()
+        if not message and not data.get("image"):
+            return jsonify({"status": "error", "message": "message or image is required"}), 400
+
+        chat_id = str(data.get("chat_id") or "").strip()
+        image_data = str(data.get("image") or "").strip()
+
+        marcus = load_marcus(user_id)
+        if not marcus:
+            return jsonify({"status": "error", "message": "Marcus not configured"}), 404
+
+        auth = _current_auth()
+        _initialize_user_memory(marcus, auth.get("email", ""))
+
+        resolved_chat_id = chat_id or f"{marcus.profile.key}_main_chat"
+
+        def generate():
+            updated_title = None
+            if message and resolved_chat_id != f"{marcus.profile.key}_main_chat":
+                try:
+                    session_info = marcus.memory.db_manager.get_session(resolved_chat_id)
+                    if session_info:
+                        current_title = str(session_info.get("title") or "")
+                        if current_title in ("", "New Chat", "Untitled Thread"):
+                            words = message.split()
+                            if len(words) >= 3:
+                                title = " ".join(words[:5]).rstrip(".,!?;:")
+                                if len(title) > 40:
+                                    title = title[:40].rsplit(" ", 1)[0] if " " in title[:40] else title[:40]
+                                marcus.memory.set_title(resolved_chat_id, title)
+                                updated_title = title
+                except Exception as exc:
+                    print(f"[WARN] Auto-title fallback failed: {exc}")
+
+            try:
+                for token in marcus.stream_respond(message, chat_id=chat_id, image_data=image_data):
+                    if token:
+                        yield f"data: {json.dumps({'token': token})}\n\n"
+            except Exception as exc:
+                yield f"data: {json.dumps({'error': str(exc)})}\n\n"
+
+            yield f"data: {json.dumps({'done': True, 'chat_id': resolved_chat_id, 'updated_title': updated_title})}\n\n"
+
+        return Response(
+            stream_with_context(generate()),
+            mimetype='text/event-stream',
+            headers={
+                'Cache-Control': 'no-cache',
+                'X-Accel-Buffering': 'no',
+                'Connection': 'keep-alive',
+            }
+        )
+
+    except Exception as e:
+        print(f"[CRITICAL] /chat/stream crashed: {e}")
+        return jsonify({"status": "error", "message": "Internal server error"}), 500
 
 
 if __name__ == "__main__":

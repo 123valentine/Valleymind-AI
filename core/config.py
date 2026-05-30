@@ -27,6 +27,15 @@ class APIConfig:
     currents_api_key: str
     api_sports_key: str
     mongodb_uri: str
+    openrouter_api_key: str
+    openrouter_base_url: str
+    openrouter_model: str
+    nvidia_api_key: str
+    nvidia_base_url: str
+    nvidia_model: str
+    gemini_api_key: str
+    gemini_base_url: str
+    gemini_model: str
 
 
 
@@ -41,8 +50,8 @@ def get_config() -> APIConfig:
         groq_model=os.getenv("GROQ_MODEL", "").strip(),
         groq_base_url=os.getenv(
             "GROQ_BASE_URL",
-            "https://api.groq.com/openai/v1",
-        ).rstrip("/"),
+            "https://api.groq.com",
+        ).rstrip("/").removesuffix("/openai/v1"),
         newscatcher_api_key=os.getenv("NEWSCATCHER_API_KEY", "").strip(),
         currents_api_key=os.getenv("CURRENTS_API_KEY", "").strip(),
         api_sports_key=os.getenv("API_SPORTS_KEY", "").strip(),

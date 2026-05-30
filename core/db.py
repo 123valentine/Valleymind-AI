@@ -277,15 +277,55 @@ class DatabaseManager:
         future = self.executor.submit(fn, *args, **kwargs)
         return future
 
-    def _local_json_chat_write(self, chat_id: str, messages: list):
+    def _local_json_chat_write(self, chat_id: str, messages: list, user_id: str = "", title: str = ""):
         dir_path = os.path.join("memory_data", "chats")
         os.makedirs(dir_path, exist_ok=True)
         file_path = os.path.join(dir_path, f"{chat_id}.json")
+        existing = None
+        if os.path.exists(file_path):
+            try:
+                with open(file_path, "r", encoding="utf-8") as f:
+                    existing = json.load(f)
+            except (json.JSONDecodeError, OSError):
+                pass
+        now = datetime.now(timezone.utc).isoformat()
         data = {
             "chat_id": chat_id,
             "messages": messages,
-            "last_activity": datetime.now(timezone.utc).isoformat(),
+            "last_activity": now,
         }
+        if user_id:
+            data["user_id"] = user_id
+        if title:
+            data["title"] = title
+        elif existing and existing.get("title"):
+            data["title"] = existing["title"]
+        if existing and "created_at" in existing:
+            data["created_at"] = existing["created_at"]
+        else:
+            data["created_at"] = now
+        # Update sessions index
+        if user_id:
+            idx = self._load_sessions_index(user_id)
+            found = False
+            for s in idx:
+                if s.get("chat_id") == chat_id:
+                    s["last_activity"] = now
+                    s["title"] = title or s.get("title", "")
+                    s["message_count"] = len(messages)
+                    found = True
+                    break
+            if not found:
+                idx.append({
+                    "chat_id": chat_id,
+                    "title": title or "New Chat",
+                    "user_id": user_id,
+                    "created_at": now,
+                    "last_activity": now,
+                    "message_count": len(messages),
+                })
+            idx.sort(key=lambda x: x.get("last_activity", ""), reverse=True)
+            self._save_sessions_index(user_id, idx)
         with open(file_path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
 
@@ -298,26 +338,161 @@ class DatabaseManager:
         with open(file_path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
 
-    def background_chat_write(self, chat_id: str, messages: list):
+    def _chats_dir(self):
+        return os.path.join("memory_data", "chats")
+
+    def _sessions_index_file(self, user_id: str):
+        os.makedirs(os.path.join("memory_data", "users", user_id), exist_ok=True)
+        return os.path.join("memory_data", "users", user_id, "sessions_index.json")
+
+    def _load_sessions_index(self, user_id: str) -> list:
+        fpath = self._sessions_index_file(user_id)
+        try:
+            if os.path.exists(fpath):
+                with open(fpath, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                if isinstance(data, list):
+                    return data
+        except (json.JSONDecodeError, OSError) as exc:
+            print(f"[DB] Failed to load sessions index: {exc}")
+        return []
+
+    def _save_sessions_index(self, user_id: str, sessions: list):
+        try:
+            fpath = self._sessions_index_file(user_id)
+            os.makedirs(os.path.dirname(fpath), exist_ok=True)
+            tmp = fpath + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(sessions, f, indent=2, ensure_ascii=False)
+            os.replace(tmp, fpath)
+        except OSError as exc:
+            print(f"[DB] Failed to save sessions index: {exc}")
+
+    def list_sessions(self, user_id: str) -> list:
+        if not user_id:
+            return []
         if USE_LOCAL_JSON:
-            self._local_json_chat_write(chat_id, messages)
+            return self._load_sessions_index(user_id)
+        db = self.get_db()
+        if db is None:
+            return self._load_sessions_index(user_id)
+        try:
+            cursor = db.chats.find(
+                {"user_id": user_id},
+                {"messages": 0},
+            ).sort("last_activity", -1)
+            return list(cursor)
+        except Exception as exc:
+            print(f"[DB] Failed to list sessions for '{user_id}': {exc}")
+            return self._load_sessions_index(user_id)
+
+    def get_session(self, chat_id: str) -> dict:
+        if not USE_LOCAL_JSON:
+            db = self.get_db()
+            if db is not None:
+                try:
+                    doc = db.chats.find_one({"chat_id": chat_id})
+                    if doc:
+                        return doc
+                except Exception as exc:
+                    print(f"[DB] Failed to get session '{chat_id}': {exc}")
+        fpath = os.path.join(self._chats_dir(), f"{chat_id}.json")
+        try:
+            if os.path.exists(fpath):
+                with open(fpath, "r", encoding="utf-8") as f:
+                    return json.load(f)
+        except (json.JSONDecodeError, OSError) as exc:
+            print(f"[DB] Failed to load session '{chat_id}': {exc}")
+        return {}
+
+    def delete_session(self, chat_id: str, user_id: str = ""):
+        if USE_LOCAL_JSON:
+            fpath = os.path.join(self._chats_dir(), f"{chat_id}.json")
+            try:
+                if os.path.exists(fpath):
+                    os.remove(fpath)
+            except OSError as exc:
+                print(f"[DB] Failed to delete session file '{chat_id}': {exc}")
+            if user_id:
+                idx = self._load_sessions_index(user_id)
+                idx = [s for s in idx if s.get("chat_id") != chat_id]
+                self._save_sessions_index(user_id, idx)
+            return
+        db = self.get_db()
+        if db is None:
+            return
+        try:
+            db.chats.delete_one({"chat_id": chat_id})
+        except Exception as exc:
+            print(f"[DB] Failed to delete session '{chat_id}': {exc}")
+
+    def background_chat_write(self, chat_id: str, messages: list, user_id: str = "", title: str = ""):
+        if USE_LOCAL_JSON:
+            self._local_json_chat_write(chat_id, messages, user_id, title)
             return
         db = self.get_db()
         if db is None:
             return
         try:
             sanitized = sanitize_document(messages)
+            existing = db.chats.find_one({"chat_id": chat_id})
+            now = datetime.now(timezone.utc)
+            doc = {
+                "chat_id": chat_id,
+                "messages": sanitized,
+                "last_activity": now,
+            }
+            if user_id:
+                doc["user_id"] = user_id
+            if title:
+                doc["title"] = title
+            elif existing and existing.get("title"):
+                doc["title"] = existing["title"]
+            if not existing:
+                doc["created_at"] = now
+            elif "created_at" in existing:
+                doc["created_at"] = existing["created_at"]
+            doc["message_count"] = len(messages)
             db.chats.replace_one(
                 {"chat_id": chat_id},
-                {
-                    "chat_id": chat_id,
-                    "messages": sanitized,
-                    "last_activity": datetime.now(timezone.utc),
-                },
+                doc,
                 upsert=True,
             )
         except Exception as exc:
             print(f"[DB] Background chat write failed for '{chat_id}': {exc}")
+
+    def update_session_title(self, chat_id: str, title: str):
+        if USE_LOCAL_JSON:
+            fpath = os.path.join(self._chats_dir(), f"{chat_id}.json")
+            user_id = ""
+            try:
+                if os.path.exists(fpath):
+                    with open(fpath, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                    data["title"] = title
+                    user_id = str(data.get("user_id") or "")
+                    with open(fpath, "w", encoding="utf-8") as f:
+                        json.dump(data, f, indent=2, ensure_ascii=False)
+            except (json.JSONDecodeError, OSError) as exc:
+                print(f"[DB] Failed to update session title '{chat_id}': {exc}")
+            if user_id:
+                idx = self._load_sessions_index(user_id)
+                for s in idx:
+                    if s.get("chat_id") == chat_id:
+                        s["title"] = title
+                        break
+                self._save_sessions_index(user_id, idx)
+            return
+        db = self.get_db()
+        if db is None:
+            return
+        try:
+            db.chats.update_one(
+                {"chat_id": chat_id},
+                {"$set": {"title": title, "last_activity": datetime.now(timezone.utc)}},
+            )
+        except Exception as exc:
+            print(f"[DB] Failed to update session title '{chat_id}': {exc}")
 
     def background_long_term_write(self, data: dict):
         if USE_LOCAL_JSON:

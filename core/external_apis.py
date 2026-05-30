@@ -9,25 +9,8 @@ from core.auto_model import get_latest_groq_model
 from core.config import get_config
 
 
-CURRENT_PATTERNS = [
-    r"\b(today|now|latest|current|currently|right now|recent|breaking|news|headline|live|score|sports|match|game)\b",
-    r"\b(what happened|who won|bbc news|bbc|updates?|this week|this month|202[5-9]|203[0-9])\b",
-    r"\b(ai|tech|technology|politics|finance|market|stocks|crypto)\s+(news|updates?|latest|today|now|current)\b",
-    r"\b(who is|who's|where is|what is|what's)\s+(the\s+)?(president|prime minister|ceo|leader|governor|mayor|price|rate|weather|score)\b",
-    r"\b(stock price|share price|exchange rate|weather in|forecast for)\b",
-]
-
-SPORTS_PATTERNS = [
-    r"\b(sports|score|fixture|fixtures|match|game|league|team|player|players|transfer|injury|injuries|standings|table|nba|nfl|mlb|nhl|soccer|football|liverpool|epl|premier league|champions league)\b",
-]
-
-NEWS_PATTERNS = [
-    r"\b(news|headline|breaking|latest|updates?|current events|today|recent|bbc news|bbc|politics|finance|tech|technology|ai|world events|market|stocks|crypto)\b",
-]
-
-
 LIVE_DATA_UNAVAILABLE = "__LIVE_DATA_UNAVAILABLE__"
-CURRENT_SEASON = 2025
+CURRENT_SEASON = datetime.now().year
 PREMIER_LEAGUE_ID = 39
 
 TEAM_ALIASES = {
@@ -191,35 +174,53 @@ def _log_sports_response(response=None, data=None):
 def graceful_live_failure(intent: str) -> str:
     if intent == "sports":
         return "Live sports data is unavailable right now, so I cannot verify the current result or fixture."
-    if intent in {"news", "live"}:
+    if intent == "search":
+        return "I'm having trouble looking that up right now. The information might not be currently available, or I could be experiencing a temporary connection issue."
+    if intent == "news":
         return "Live news data is unavailable right now, so I cannot verify the latest update."
     return "Live data is unavailable right now, so I cannot verify the current information."
 
 
-def needs_external_context(message: str) -> bool:
-    text = str(message or "").lower()
-    return any(re.search(pattern, text, re.IGNORECASE) for pattern in CURRENT_PATTERNS)
-
-
-def _is_sports(message: str) -> bool:
-    return any(re.search(pattern, message, re.IGNORECASE) for pattern in SPORTS_PATTERNS)
-
-
-def _is_news(message: str) -> bool:
-    return any(re.search(pattern, message, re.IGNORECASE) for pattern in NEWS_PATTERNS)
-
-
 def classify_live_request(message: str) -> str:
-    sports_entities = extract_sports_entities(message)
-    if sports_entities["teams"] or sports_entities["players"] or sports_entities["competitions"]:
-        return "sports"
-    if _is_sports(message):
-        return "sports"
-    if _is_news(message):
-        return "news"
-    if needs_external_context(message):
-        return "live"
-    return ""
+    config = get_config()
+    model = get_latest_groq_model()
+    api_key = config.groq_api_key
+    if not api_key or not model:
+        _log("LLM classification skipped: API key or model missing")
+        return "CHAT"
+
+    SYSTEM_PROMPT = (
+        "You classify user messages as 'CHAT' or 'SEARCH'.\n\n"
+        "Return 'SEARCH' for any query regarding news, current events, sports "
+        "transfers or scores, technology updates, recent developments, or any "
+        "time-sensitive information.\n"
+        "Return 'CHAT' only for basic greetings, casual conversation, identity "
+        "questions, or static general knowledge that has no dependency on "
+        "current timeline events.\n\n"
+        "Respond with exactly ONE word: either 'CHAT' or 'SEARCH'. "
+        "Do not include punctuation, brackets, or any extra text."
+    )
+
+    try:
+        client = Groq(api_key=api_key, base_url=config.groq_base_url)
+        chat_completion = client.chat.completions.create(
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": message},
+            ],
+            model=model,
+            temperature=0.1,
+            max_tokens=10,
+        )
+        result = chat_completion.choices[0].message.content.strip().upper()
+        print(f"[ROUTER AGENT] Classified user intent as: {result}")
+        _log(f"LLM classification result: '{result}'")
+        if result == "SEARCH":
+            return "search"
+        return "none"
+    except Exception as exc:
+        _log(f"LLM classification failed, defaulting to CHAT: {_safe_error(exc)}")
+        return "none"
 
 
 def _sports_topic(message: str) -> str:
@@ -441,53 +442,82 @@ def _search_newsapi(query: str) -> str:
     return _format_items("Live news results", items)
 
 
-def _search_duckduckgo(query: str) -> str:
-    _log("Calling DuckDuckGo search")
-    try:
-        from duckduckgo_search import DDGS
-    except ImportError as exc:
-        raise RuntimeError(f"duckduckgo_search is not installed: {exc}") from exc
+def _tinyfish_api_key() -> str:
+    return os.getenv("TINYFISH_API_KEY", "").strip() or os.getenv("TF_API_KEY", "").strip()
 
-    items = []
-    with DDGS(timeout=10) as ddgs:
-        for result in ddgs.text(query, max_results=5):
-            items.append({
-                "title": result.get("title"),
-                "summary": result.get("body"),
-                "url": result.get("href"),
-                "published": "",
-            })
-    _log(f"DuckDuckGo success: {len(items)} results")
+
+def _search_tinyfish(query: str) -> str:
+    api_key = _tinyfish_api_key()
+    if not api_key:
+        _log("TinyFish skipped: TINYFISH_API_KEY not set")
+        return ""
+
+    current_date_str = datetime.now().strftime("%B %Y")
+    execution_query = f"{query} {current_date_str} news updates"
+    _log(f"TinyFish query: {execution_query}")
+
+    import urllib.request as _urllib_req
+    import urllib.parse as _urllib_parse
+
+    encoded = _urllib_parse.quote(execution_query)
+    url = f"https://api.search.tinyfish.ai?query={encoded}&location=US&language=en"
+
+    raw = None
+    # Attempt 1: urllib.request (native, lightweight)
+    try:
+        req = _urllib_req.Request(url, headers={"X-API-Key": api_key})
+        with _urllib_req.urlopen(req, timeout=25) as resp:
+            raw = resp.read().decode("utf-8", errors="replace")
+        _log("TinyFish urllib success")
+    except Exception as exc:
+        _log(f"TinyFish urllib failed ({_safe_error(exc)[:80]}), trying requests fallback")
+        try:
+            import requests as _requests_fb
+            resp = _requests_fb.get(
+                "https://api.search.tinyfish.ai",
+                params={"query": execution_query, "location": "US", "language": "en"},
+                headers={"X-API-Key": api_key},
+                timeout=25,
+            )
+            if resp.status_code == 200:
+                raw = resp.text
+                _log("TinyFish requests fallback success")
+            else:
+                raise RuntimeError(f"HTTP {resp.status_code}: {resp.text[:240]}")
+        except Exception as exc2:
+            raise RuntimeError(f"TinyFish failed (urllib + requests fallback): {_safe_error(exc2)}") from exc2
+
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"TinyFish invalid JSON: {_safe_error(exc)}") from exc
+
+    results = data.get("results") or []
+    if not results:
+        raise RuntimeError("TinyFish returned no results")
+
+    items = [
+        {
+            "title": r.get("title", ""),
+            "summary": r.get("snippet", ""),
+            "url": r.get("url", ""),
+            "published": "",
+        }
+        for r in results[:5]
+    ]
+    _log(f"TinyFish success: {len(items)} results")
     return _format_items("Live search results", items)
 
 
-def _search_wikipedia(query: str) -> str:
-    _log("Calling Wikipedia fallback")
+def _search_general_web(query: str) -> str:
     try:
-        import wikipedia
-    except ImportError as exc:
-        raise RuntimeError(f"wikipedia is not installed: {exc}") from exc
-
-    try:
-        titles = wikipedia.search(query, results=3)
+        tf_context = _search_tinyfish(query)
+        if tf_context and tf_context != LIVE_DATA_UNAVAILABLE:
+            return tf_context
     except Exception as exc:
-        raise RuntimeError(f"Wikipedia search failed: {_safe_error(exc)}") from exc
+        _log(f"TinyFish failed: {_safe_error(exc)}")
 
-    items = []
-    for title in titles[:3]:
-        try:
-            page = wikipedia.page(title, auto_suggest=False)
-            summary = wikipedia.summary(title, sentences=3, auto_suggest=False)
-            items.append({
-                "title": page.title,
-                "summary": summary,
-                "url": page.url,
-                "published": "",
-            })
-        except Exception as exc:
-            _log(f"Wikipedia result skipped for '{title}': {_safe_error(exc)}")
-    _log(f"Wikipedia success: {len(items)} results")
-    return _format_items("Reference context", items)
+    return LIVE_DATA_UNAVAILABLE
 
 
 def _search_api_sports(query: str) -> str:
@@ -790,20 +820,16 @@ def _search_news_only(query: str) -> str:
     else:
         _log("[NEWS PIPELINE] Layer 2 skipped: NEWS_API_2 not configured")
 
-    # Layer 3: DuckDuckGo + Wikipedia fallback
-    _log("[NEWS PIPELINE] Layer 3: Web search fallback (DuckDuckGo → Wikipedia)")
-    for name, provider in (
-        ("DuckDuckGo", _search_duckduckgo),
-        ("Wikipedia", _search_wikipedia),
-    ):
-        try:
-            context = provider(query)
-            if context and context != LIVE_DATA_UNAVAILABLE:
-                return context
-        except Exception as exc:
-            reason = f"{name} fallback failed: {_safe_error(exc)}"
-            failures.append(reason)
-            _log(reason)
+    # Layer 3: TinyFish web search fallback
+    _log("[NEWS PIPELINE] Layer 3: TinyFish web search")
+    try:
+        tf_context = _search_tinyfish(query)
+        if tf_context and tf_context != LIVE_DATA_UNAVAILABLE:
+            return tf_context
+    except Exception as exc:
+        reason = f"TinyFish (news fallback) failed: {_safe_error(exc)}"
+        failures.append(reason)
+        _log(reason)
 
     if failures:
         _log("[NEWS PIPELINE] All layers failed: " + " | ".join(failures))
@@ -827,50 +853,32 @@ def _search_sports_only(query: str) -> str:
     else:
         _log("[SPORTS PIPELINE] Layer 1 skipped: SPORTS_API_KEY not configured")
 
-    # Layer 2: DuckDuckGo sports fallback
-    _log("[SPORTS PIPELINE] Layer 2: DuckDuckGo fallback")
+    # Layer 2: TinyFish web search
+    _log("[SPORTS PIPELINE] Layer 2: TinyFish web search")
     try:
-        ddg_context = _search_duckduckgo(f"{query} sports latest")
-        if ddg_context and ddg_context != LIVE_DATA_UNAVAILABLE:
-            return ddg_context
+        tf_context = _search_tinyfish(query)
+        if tf_context and tf_context != LIVE_DATA_UNAVAILABLE:
+            return tf_context
     except Exception as exc:
-        _log(f"[SPORTS PIPELINE] DuckDuckGo fallback failed: {_safe_error(exc)}")
-
-    # Layer 3: Wikipedia fallback
-    _log("[SPORTS PIPELINE] Layer 3: Wikipedia fallback")
-    try:
-        wiki_context = _search_wikipedia(query)
-        if wiki_context and wiki_context != LIVE_DATA_UNAVAILABLE:
-            return wiki_context
-    except Exception as exc:
-        _log(f"[SPORTS PIPELINE] Wikipedia fallback failed: {_safe_error(exc)}")
+        _log(f"[SPORTS PIPELINE] TinyFish failed: {_safe_error(exc)}")
 
     return LIVE_DATA_UNAVAILABLE
 
 
 def strict_live_context(message: str) -> dict:
     message = str(message or "").strip()
-    intent = classify_live_request(message)
-    if not intent:
-        return {"intent": "", "context": "", "error": ""}
-
     try:
-        if intent == "sports":
-            context = _search_sports_only(message)
-        elif intent in {"news", "live"}:
-            context = _search_news_only(message)
-        else:
-            context = ""
+        context = _search_general_web(message)
     except Exception as exc:
         reason = _safe_error(exc)
-        _log(f"Strict {intent} route failed: {reason}")
-        return {"intent": intent, "context": LIVE_DATA_UNAVAILABLE, "error": reason}
+        _log(f"Strict search route failed: {reason}")
+        return {"intent": "search", "context": LIVE_DATA_UNAVAILABLE, "error": reason}
 
     if not context or context == LIVE_DATA_UNAVAILABLE:
-        return {"intent": intent, "context": LIVE_DATA_UNAVAILABLE, "error": "No API provider returned usable data"}
+        return {"intent": "search", "context": LIVE_DATA_UNAVAILABLE, "error": "No API provider returned usable data"}
     return {
-        "intent": intent,
-        "context": f"Live {intent} context gathered at {datetime.now().isoformat()}.\n{context}",
+        "intent": "search",
+        "context": f"Live search context gathered at {datetime.now().isoformat()}.\n{context}",
         "error": "",
     }
 
@@ -878,25 +886,15 @@ def strict_live_context(message: str) -> dict:
 def live_api_answer(message: str) -> str:
     message = str(message or "").strip()
     request_type = classify_live_request(message)
-    initial_context = ""
+    context = ""
     if request_type == "sports":
-        initial_context = _search_sports_only(message)
+        context = _search_sports_only(message)
+    elif request_type == "search":
+        context = _search_general_web(message)
     elif request_type == "news":
-        initial_context = _search_news_only(message)
+        context = _search_news_only(message)
     else:
-        initial_context = get_external_context(message)
-
-    context = initial_context
-    if context == LIVE_DATA_UNAVAILABLE or not context:
-        _log(f"Initial {request_type} context unavailable. Attempting DuckDuckGo fallback.")
-        try:
-            duckduckgo_context = _search_duckduckgo(message)
-            if duckduckgo_context and duckduckgo_context != LIVE_DATA_UNAVAILABLE:
-                context = duckduckgo_context
-            else:
-                _log("DuckDuckGo fallback also returned no usable data.")
-        except Exception as exc:
-            _log(f"DuckDuckGo fallback failed: {_safe_error(exc)}")
+        context = _search_general_web(message)
 
     if context == LIVE_DATA_UNAVAILABLE or not context:
         return graceful_live_failure(request_type)
@@ -921,9 +919,11 @@ def live_api_answer(message: str) -> str:
     if not lines:
         return "I found live results, but there were no clear details to summarize yet."
 
-    intro = "Here are the latest updates I found:"
+    intro = "Here's what I found:"
     if request_type == "sports":
         intro = "Here are the latest sports updates I found:"
+    elif request_type == "search":
+        intro = "Here's what I found on that topic:"
     elif request_type == "news":
         intro = "Here are the latest news updates I found:"
     return intro + "\n" + "\n".join(f"- {line}" for line in lines)
@@ -931,8 +931,8 @@ def live_api_answer(message: str) -> str:
 
 def get_external_context(message: str) -> str:
     message = str(message or "").strip()
-    if not message or not needs_external_context(message):
-        _log("External context skipped: prompt does not require live data")
+    if not message:
+        _log("External context skipped: empty prompt")
         return ""
 
     contexts = []
@@ -945,7 +945,7 @@ def get_external_context(message: str) -> str:
     providers = []
     if request_type == "sports":
         providers.append(("Context-aware sports", sports_context_for_question))
-    elif request_type in {"news", "live"}:
+    elif request_type == "news":
         providers.append(("News route", _search_news_only))
 
     for name, provider in providers:
