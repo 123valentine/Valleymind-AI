@@ -4,8 +4,10 @@ import os
 import re
 import secrets
 from datetime import datetime, timedelta
-from threading import Lock
+from threading import Lock, Timer
 from urllib.parse import quote
+
+import webbrowser
 
 from flask import Flask, Response, jsonify, request, send_from_directory, session, stream_with_context
 from flask_cors import CORS
@@ -276,6 +278,25 @@ def _debug_user_memory(user_id: str, marcus):
 @app.route("/")
 def home():
     return send_from_directory(PROJECT_ROOT, "index.html")
+
+
+@app.route("/valleymind-ai")
+def valleymind_ai():
+    return send_from_directory(PROJECT_ROOT, "phone-studio.html")
+
+
+@app.route("/manifest.json")
+def manifest():
+    response = send_from_directory(PROJECT_ROOT, "manifest.json")
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
+
+
+@app.route("/sw.js")
+def service_worker():
+    return send_from_directory(PROJECT_ROOT, "sw.js")
 
 
 @app.route("/auth/status", methods=["GET"])
@@ -781,6 +802,16 @@ def chat_stream():
         return jsonify({"status": "error", "message": "Internal server error"}), 500
 
 
+def _auto_launch_chrome():
+    try:
+        webbrowser.get('chrome').open_new_tab('http://127.0.0.1:8000/valleymind-ai')
+    except Exception:
+        try:
+            webbrowser.open_new_tab('http://127.0.0.1:8000/valleymind-ai')
+        except Exception:
+            pass
+
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "8000"))
+    Timer(1.5, _auto_launch_chrome).start()
     app.run(host="0.0.0.0", port=port, debug=os.getenv("FLASK_DEBUG", "").lower() == "true")

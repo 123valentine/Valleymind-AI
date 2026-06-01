@@ -1,0 +1,2186 @@
+<!DOCTYPE html>
+<html class="dark" lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Phone Studio — Valley Mind-AI</title>
+<link rel="manifest" href="/manifest.json">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script src="https://unpkg.com/lucide@latest"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style>
+  *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+
+  body {
+    width:100vw;
+    height:100vh;
+    overflow:hidden;
+    background: radial-gradient(circle at top right, #001f27 0%, #0e1417 100%);
+    font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
+  }
+
+  .screen {
+    width:100vw;
+    height:100vh;
+    display:flex;
+    flex-direction:column;
+    overflow:hidden;
+    background: radial-gradient(circle at top right, #001f27 0%, #0e1417 100%);
+  }
+
+  .status-bar {
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:12px 16px 8px;
+    font-size:13px;
+    font-weight:600;
+    color:#dde3e7;
+    font-family: 'Inter', sans-serif;
+    letter-spacing:0.2px;
+    z-index:5;
+    flex-shrink:0;
+    position:relative;
+  }
+  .status-bar .time { font-weight:600; font-size:14px; }
+  .status-icons { display:flex; align-items:center; gap:6px; }
+  .status-icons svg { width:16px; height:16px; fill:currentColor; }
+
+  /* ── Message styles ── */
+  .user-message{align-self:flex-end;max-width:100%;display:flex;flex-direction:column;align-items:flex-end}
+  .user-message .bubble{background:rgba(0,212,255,0.16);border:1px solid rgba(255,255,255,0.1);border-radius:14px 14px 4px 14px;padding:10px 14px;color:#dde3e7;white-space:pre-wrap;word-break:break-word;width:100%;font-size:14px;line-height:1.5}
+  .assistant-message{align-self:flex-start;max-width:100%;display:flex;flex-direction:column;align-items:flex-start}
+  .assistant-message .bubble{background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:14px 14px 14px 4px;padding:10px 14px;color:#dde3e7;white-space:pre-wrap;word-break:break-word;width:100%;font-size:14px;line-height:1.5}
+   .msg-toolbar{display:flex;align-items:center;gap:4px;margin-top:8px;padding-left:4px;flex-wrap:wrap}
+  .msg-toolbar button{background:none;border:none;cursor:pointer;padding:4px;border-radius:6px;display:flex;align-items:center;color:#64748b;transition:all 0.15s;touch-action:manipulation}
+  .msg-toolbar button:hover{background:rgba(0,212,255,0.1)}
+  .msg-toolbar .up-active{color:#00ff88 !important;background:rgba(0,255,136,0.1) !important}
+  .msg-toolbar .down-active{color:#ff6b7a !important;background:rgba(255,45,70,0.1) !important}
+  .msg-pin-badge { font-size:11px; margin-left:6px; display:inline; }
+
+  #messages::-webkit-scrollbar { width:3px; }
+  #messages::-webkit-scrollbar-track { background:transparent; }
+  #messages::-webkit-scrollbar-thumb { background:#00d4ff33; border-radius:10px; }
+
+  .thinking-dot { width:7px; height:7px; background:#00d4ff; border-radius:50%; display:inline-block; animation:swimDots 1.25s ease-in-out infinite; box-shadow:0 0 10px rgba(0,212,255,0.55); }
+  .thinking-dot:nth-child(2){animation-delay:0.16s}
+  .thinking-dot:nth-child(3){animation-delay:0.32s}
+  @keyframes swimDots{0%,100%{transform:translateY(0) translateX(0);opacity:0.35}35%{transform:translateY(-5px) translateX(2px);opacity:1}70%{transform:translateY(2px) translateX(-1px);opacity:0.65}}
+
+  .phone-sidebar {
+    position:absolute; top:0; left:0; width:min(292px,78%); height:100%; z-index:50;
+    background:rgba(14,20,23,0.97); backdrop-filter:blur(30px);
+    border-right:1px solid rgba(255,255,255,0.08);
+    display:flex; flex-direction:column;
+    transform:translateX(-100%);
+    transition:transform 0.26s cubic-bezier(.22,1,.36,1);
+    will-change:transform; border-radius:40px 0 0 40px; overflow:hidden;
+  }
+  .phone-sidebar.open { transform:translateX(0); }
+  .phone-sidebar-backdrop { position:absolute; inset:0; z-index:49; background:rgba(0,0,0,0.32); opacity:0; visibility:hidden; pointer-events:none; transition:opacity 0.22s ease, visibility 0.22s ease; }
+  .phone-sidebar-backdrop.visible { opacity:1; visibility:visible; pointer-events:auto; }
+
+  .welcome-section { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:16px; padding:30px 20px; flex:1; }
+
+  .hamburger-btn { background:rgba(255,255,255,0.06); border:none; border-radius:50%; width:32px; height:32px; display:flex; align-items:center; justify-content:center; cursor:pointer; color:#94a3b8; transition:all 0.2s; touch-action:manipulation; }
+  .hamburger-btn:hover, .hamburger-btn:active { color:#00d4ff; background:rgba(0,212,255,0.12); }
+  .hamburger-btn svg { width:18px; height:18px; stroke:currentColor; fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+
+  .cs-badge { background:rgba(255,170,0,0.1); color:#ffaa00; border:1px solid rgba(255,170,0,0.3); }
+
+  .glass-panel { background:rgba(255,255,255,0.05); backdrop-filter:blur(30px); border:1px solid rgba(255,255,255,0.1); }
+  .glow-button { box-shadow: 0 0 15px rgba(0,212,255,0.4); }
+
+  /* ── Logged-out banner ── */
+  .phone-toast {
+    position:absolute; bottom:70px; left:16px; right:16px;
+    z-index:40;
+    background:rgba(239,68,68,0.92);
+    backdrop-filter:blur(12px);
+    border:1px solid rgba(239,68,68,0.3);
+    border-radius:12px;
+    padding:10px 14px;
+    color:#fff;
+    font-size:12px;
+    font-weight:500;
+    display:none;
+    align-items:center;
+    gap:8px;
+    box-shadow:0 8px 24px rgba(0,0,0,0.4);
+  }
+  .phone-toast.show { display:flex; }
+
+  /* ── Connection status dot ── */
+  .conn-dot {
+    width:7px; height:7px; border-radius:50%;
+    display:inline-block; flex-shrink:0;
+  }
+  .conn-dot.online { background:#00ff88; box-shadow: 0 0 8px rgba(0,255,136,0.6); }
+  .conn-dot.offline { background:#ef4444; box-shadow: 0 0 8px rgba(239,68,68,0.6); }
+  .conn-dot.connecting { background:#f59e0b; box-shadow: 0 0 8px rgba(245,158,11,0.6); animation:pulse 1s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
+  @keyframes blink { 0%,100% { opacity:1; } 50% { opacity:0; } }
+
+  .login-overlay {
+    position:absolute; top:0; left:0; width:100%; height:100%;
+    z-index:60;
+    background:rgba(2,6,23,0.92);
+    backdrop-filter:blur(14px);
+    display:none;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    padding:32px 24px;
+  }
+  .login-overlay.show { display:flex; }
+
+  /* ── Context menu ── */
+  .ctx-menu {
+    display:none; position:fixed; z-index:999;
+    background:rgba(10,20,30,0.96); backdrop-filter:blur(20px);
+    border:1px solid rgba(0,212,255,0.2); border-radius:12px;
+    padding:6px; min-width:180px; box-shadow:0 12px 40px rgba(0,0,0,0.7);
+  }
+  .ctx-menu.open { display:block; }
+  .ctx-item { display:flex; align-items:center; gap:10px; padding:9px 14px; border-radius:8px; font-size:12px; color:#bbc9cf; cursor:pointer; transition:all 0.12s; }
+  .ctx-item:hover { background:rgba(0,212,255,0.08); color:#00d4ff; }
+  .ctx-item.danger:hover { background:rgba(255,45,70,0.08); color:#ff4560; }
+  .ctx-divider { height:1px; background:rgba(255,255,255,0.08); margin:4px 0; }
+  .ctx-item svg, .ctx-item i { width:14px; height:14px; flex-shrink:0; }
+
+  /* ── Session context menu ── */
+  .session-ctx-menu {
+    display:none; position:fixed; z-index:999;
+    background:rgba(10,20,30,0.96); backdrop-filter:blur(20px);
+    border:1px solid rgba(0,212,255,0.2); border-radius:12px;
+    padding:6px; min-width:170px; box-shadow:0 12px 40px rgba(0,0,0,0.7);
+  }
+  .session-ctx-menu.open { display:block; }
+  .session-ctx-item { display:flex; align-items:center; gap:10px; padding:9px 14px; border-radius:8px; font-size:12px; color:#bbc9cf; cursor:pointer; transition:all 0.12s; }
+  .session-ctx-item:hover { background:rgba(0,212,255,0.08); color:#00d4ff; }
+  .session-ctx-item.danger:hover { background:rgba(255,45,70,0.08); color:#ff4560; }
+  .session-ctx-item svg { width:14px; height:14px; flex-shrink:0; }
+
+  /* ── Coming Soon panel ── */
+  .coming-soon-overlay { position:fixed; inset:0; z-index:98; background:rgba(0,0,0,0.35); display:none; }
+  .coming-soon-overlay.show { display:block; }
+  .coming-soon-panel { position:fixed; bottom:0; left:0; right:0; z-index:99; background:rgba(10,20,30,0.97); backdrop-filter:blur(24px); border-top:1px solid rgba(255,255,255,0.08); border-radius:20px 20px 0 0; padding:24px 20px 28px; display:none; flex-direction:column; align-items:center; gap:10px; box-shadow:0 -8px 32px rgba(0,0,0,0.5); }
+  .coming-soon-panel.show { display:flex; }
+  .coming-soon-panel h3 { color:#00d4ff; font-size:16px; font-weight:700; font-family:'Space Grotesk',sans-serif; }
+  .coming-soon-panel p { color:#64748b; font-size:11px; text-align:center; }
+
+  /* ── Forgot password link ── */
+  .forgot-link { color:#475569; font-size:10px; text-decoration:none; text-align:center; display:block; margin-top:4px; cursor:pointer; transition:color 0.15s; }
+  .forgot-link:hover { color:#00d4ff; }
+
+  /* ── Recovery modal ── */
+  .recovery-overlay { position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(2,6,23,0.9); backdrop-filter:blur(10px); z-index:70; display:none; align-items:center; justify-content:center; padding:24px; }
+  .recovery-overlay.show { display:flex; }
+  .recovery-modal { background:#0f172a; border:1px solid rgba(34,211,238,0.15); border-radius:16px; padding:24px; width:100%; max-width:340px; display:flex; flex-direction:column; gap:12px; box-shadow:0 20px 60px rgba(0,0,0,0.5); }
+  .recovery-modal h2 { color:#f1f5f9; font-size:17px; font-weight:700; font-family:'Space Grotesk',sans-serif; text-align:center; }
+  .recovery-modal input { width:100%; background:#1a1f2e; border:1px solid rgba(255,255,255,0.1); border-radius:10px; padding:10px 14px; color:white; font-size:13px; outline:none; }
+  .recovery-modal button { width:100%; border:none; border-radius:10px; background:#00d4ff; color:#003642; font-weight:700; padding:10px; cursor:pointer; font-size:13px; font-family:'Space Grotesk',sans-serif; }
+  .recovery-modal .back-link { color:#475569; font-size:10px; text-align:center; cursor:pointer; }
+  .recovery-modal .back-link:hover { color:#00d4ff; }
+
+  /* ── Image preview ── */
+  .img-preview-container { display:none; position:relative; padding:8px 14px 0; }
+  .img-preview-container.show { display:block; }
+  .img-preview-thumb { max-width:120px; max-height:120px; border-radius:10px; border:1px solid rgba(255,255,255,0.1); display:block; }
+  .img-preview-remove { position:absolute; top:2px; left:2px; width:22px; height:22px; border-radius:50%; background:rgba(239,68,68,0.9); border:none; color:white; font-size:14px; cursor:pointer; display:flex; align-items:center; justify-content:center; line-height:1; }
+
+  /* ── Chat header toolbar ── */
+  .chat-header-toolbar {
+    display:flex; align-items:center; justify-content:space-between;
+    padding:6px 16px 2px; flex-shrink:0; z-index:5;
+  }
+  .chat-header-toolbar .left-actions { display:flex; align-items:center; gap:4px; }
+  .chat-header-toolbar .right-actions { display:flex; align-items:center; gap:4px; }
+  .cht-btn {
+    background:rgba(255,255,255,0.05); border:none;
+    width:30px; height:30px; border-radius:8px;
+    display:flex; align-items:center; justify-content:center;
+    color:#94a3b8; cursor:pointer; transition:all 0.15s;
+    touch-action:manipulation;
+  }
+  .cht-btn:hover { background:rgba(0,212,255,0.1); color:#00d4ff; }
+  .cht-btn svg { width:15px; height:15px; stroke:currentColor; fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+
+  /* ── Plus menu overlay ── */
+  .plus-menu {
+    position:absolute; bottom:calc(100% + 8px); left:0;
+    background:#0f172a; border:1px solid rgba(0,212,255,0.2);
+    border-radius:12px; padding:6px; min-width:170px;
+    box-shadow:0 12px 40px rgba(0,0,0,0.7); z-index:30;
+    display:none;
+  }
+  .plus-menu.show { display:block; }
+  .plus-item { display:flex; align-items:center; gap:10px; padding:9px 14px; border-radius:8px; font-size:12px; color:#bbc9cf; cursor:pointer; transition:all 0.12s; }
+  .plus-item:hover { background:rgba(0,212,255,0.08); color:#00d4ff; }
+  .plus-item svg { width:16px; height:16px; flex-shrink:0; stroke:currentColor; fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+
+</style>
+</head>
+<body>
+
+<div class="screen">
+
+    <!-- Brand Header -->
+    <div class="status-bar">
+      <button class="hamburger-btn" id="phoneHamburger" aria-label="Toggle menu">
+        <svg viewBox="0 0 24 24"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+      </button>
+      <div style="flex:1;text-align:center;">
+        <img src="/static/logo.png" alt="Valley Mind-AI Logo" style="width:55px;height:55px;object-fit:contain;margin:0 auto 4px auto;display:block;">
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;">
+        <span class="conn-dot" id="connDot"></span>
+        <span class="time" id="phoneTime" style="font-size:13px;font-weight:500;">9:41</span>
+      </div>
+    </div>
+
+    <!-- LOGIN OVERLAY -->
+    <div class="login-overlay" id="phoneLoginOverlay">
+      <div style="width:100%;max-width:300px;display:flex;flex-direction:column;gap:14px;">
+        <div style="text-align:center;margin-bottom:8px;">
+          <img src="/static/logo.png" alt="Valley Mind-AI Logo" style="width:64px;height:64px;object-fit:contain;margin-bottom:12px;margin-left:auto;margin-right:auto;">
+          <h1 style="color:#00d4ff;font-size:18px;font-weight:700;font-family:'Space Grotesk',sans-serif;">Valley Mind-AI</h1>
+          <p style="color:#64748b;font-size:10px;text-transform:uppercase;letter-spacing:0.2em;margin-top:2px;">Login Required</p>
+        </div>
+        <input id="phoneLoginEmail" type="email" autocomplete="email" placeholder="Email" style="width:100%;background:#1a1f2e;border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:11px 14px;color:white;font-size:13px;outline:none;">
+        <input id="phoneLoginPassword" type="password" autocomplete="current-password" placeholder="Password" style="width:100%;background:#1a1f2e;border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:11px 14px;color:white;font-size:13px;outline:none;">
+        <button id="phoneLoginBtn" class="glow-button" style="width:100%;border:none;border-radius:12px;background:#00d4ff;color:#003642;font-weight:800;padding:11px;cursor:pointer;text-transform:uppercase;letter-spacing:0.12em;font-family:'Space Grotesk',sans-serif;font-size:13px;">Login</button>
+        <p id="phoneLoginError" style="min-height:18px;color:#ff6b7a;font-size:11px;text-align:center;"></p>
+        <a class="forgot-link" id="phoneForgotLink">Forgot password?</a>
+      </div>
+    </div>
+
+    <!-- Toast notification -->
+    <div class="phone-toast" id="phoneToast">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      <span id="phoneToastMsg">Error</span>
+    </div>
+
+    <!-- Phone Sidebar -->
+    <div class="phone-sidebar-backdrop" id="phoneSidebarBackdrop"></div>
+    <aside class="phone-sidebar" id="phoneSidebar">
+      <div style="padding:20px 18px 12px;flex-shrink:0;">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;">
+          <div>
+            <h1 style="color:#00d4ff;font-size:18px;font-weight:700;font-family:'Space Grotesk',sans-serif;letter-spacing:-0.3px;">Valley Mind-AI</h1>
+            <p style="color:#64748b;font-size:9px;text-transform:uppercase;letter-spacing:0.2em;margin-top:2px;">Quantum v2.4</p>
+          </div>
+          <button id="phoneSidebarClose" style="background:transparent;border:none;color:#94a3b8;cursor:pointer;padding:4px;border-radius:8px;display:flex;touch-action:manipulation;">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <div style="padding:0 14px 10px;">
+        <button id="phoneNewChat" style="width:100%;padding:10px;border-radius:10px;border:1px solid rgba(0,212,255,0.3);background:rgba(0,212,255,0.08);color:#00d4ff;font-weight:700;font-size:13px;font-family:'Space Grotesk',sans-serif;display:flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;touch-action:manipulation;">
+          <i data-lucide="plus" style="width:16px;height:16px;"></i>
+          <span>New Thread</span>
+        </button>
+      </div>
+
+      <div style="padding:0 14px 8px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:0 4px;margin-bottom:6px;">
+          <p style="color:#475569;font-size:9px;text-transform:uppercase;letter-spacing:0.2em;font-family:'Space Grotesk',sans-serif;">// Recent Sessions</p>
+          <span id="phoneSessionCount" style="color:#475569;font-size:9px;font-family:'Space Grotesk',sans-serif;"></span>
+        </div>
+        <div id="phoneHistoryList" style="max-height:140px;overflow-y:auto;display:flex;flex-direction:column;gap:2px;"></div>
+        <!-- Session context menu -->
+        <div class="session-ctx-menu" id="sessionCtxMenu">
+          <div class="session-ctx-item" data-session-action="pin"><i data-lucide="pin" style="width:14px;height:14px;"></i> Pin</div>
+          <div class="session-ctx-item" data-session-action="rename"><i data-lucide="edit-3" style="width:14px;height:14px;"></i> Rename</div>
+          <div class="session-ctx-item" data-session-action="archive"><i data-lucide="archive" style="width:14px;height:14px;"></i> Archive</div>
+          <div class="session-ctx-item" data-session-action="share"><i data-lucide="share-2" style="width:14px;height:14px;"></i> Share Thread</div>
+          <div class="session-ctx-item" data-session-action="home"><i data-lucide="home" style="width:14px;height:14px;"></i> Add to Home</div>
+          <div class="session-ctx-item danger" data-session-action="delete"><i data-lucide="trash-2" style="width:14px;height:14px;"></i> Delete Thread</div>
+        </div>
+      </div>
+
+      <nav style="flex:1;padding:0 14px;display:flex;flex-direction:column;gap:2px;">
+        <div>
+          <button id="phoneLibraryToggle" style="width:100%;background:none;border:none;color:#94a3b8;cursor:pointer;padding:10px 8px;display:flex;align-items:center;gap:10px;border-radius:8px;font-size:12px;font-family:'Space Grotesk',sans-serif;text-transform:uppercase;letter-spacing:0.08em;transition:all 0.15s;touch-action:manipulation;">
+            <i data-lucide="folder" style="width:15px;height:15px;flex-shrink:0;"></i>
+            <span style="flex:1;text-align:left;">Library</span>
+            <i data-lucide="chevron-left" id="phoneLibraryArrow" style="width:13px;height:13px;transition:transform 0.3s;"></i>
+          </button>
+          <div id="phoneLibrarySubmenu" style="max-height:0;overflow:hidden;transition:max-height 0.35s ease;">
+            <div style="padding:2px 0 4px 20px;display:flex;flex-direction:column;gap:2px;">
+              <div onclick="showPhoneComingSoon('Sketch Tool')" style="display:flex;align-items:center;gap:10px;padding:8px 8px;border-radius:8px;font-size:11px;color:#94a3b8;cursor:pointer;transition:all 0.15s;"><i data-lucide="gesture" style="width:14px;height:14px;"></i><span style="flex:1;font-family:'Space Grotesk',sans-serif;text-transform:uppercase;letter-spacing:0.06em;">Sketch Tool</span></div>
+              <div onclick="showPhoneComingSoon('Generate Images')" style="display:flex;align-items:center;gap:10px;padding:8px 8px;border-radius:8px;font-size:11px;color:#94a3b8;cursor:pointer;transition:all 0.15s;"><i data-lucide="image" style="width:14px;height:14px;"></i><span style="flex:1;font-family:'Space Grotesk',sans-serif;text-transform:uppercase;letter-spacing:0.06em;">Generate Images</span><span class="cs-badge" style="font-size:7px;padding:1px 6px;border-radius:8px;text-transform:uppercase;">Soon</span></div>
+              <div onclick="showPhoneComingSoon('Realistic Videos')" style="display:flex;align-items:center;gap:10px;padding:8px 8px;border-radius:8px;font-size:11px;color:#94a3b8;cursor:pointer;transition:all 0.15s;"><i data-lucide="smart-display" style="width:14px;height:14px;"></i><span style="flex:1;font-family:'Space Grotesk',sans-serif;text-transform:uppercase;letter-spacing:0.06em;">Realistic Videos</span><span class="cs-badge" style="font-size:7px;padding:1px 6px;border-radius:8px;text-transform:uppercase;">Soon</span></div>
+              <div onclick="showPhoneComingSoon('3D Models')" style="display:flex;align-items:center;gap:10px;padding:8px 8px;border-radius:8px;font-size:11px;color:#94a3b8;cursor:pointer;transition:all 0.15s;"><i data-lucide="box" style="width:14px;height:14px;"></i><span style="flex:1;font-family:'Space Grotesk',sans-serif;text-transform:uppercase;letter-spacing:0.06em;">3D Models</span><span class="cs-badge" style="font-size:7px;padding:1px 6px;border-radius:8px;text-transform:uppercase;">Soon</span></div>
+              <div onclick="showPhoneComingSoon('Website Builder')" style="display:flex;align-items:center;gap:10px;padding:8px 8px;border-radius:8px;font-size:11px;color:#94a3b8;cursor:pointer;transition:all 0.15s;"><i data-lucide="globe" style="width:14px;height:14px;"></i><span style="flex:1;font-family:'Space Grotesk',sans-serif;text-transform:uppercase;letter-spacing:0.06em;">Website Builder</span><span class="cs-badge" style="font-size:7px;padding:1px 6px;border-radius:8px;text-transform:uppercase;">Soon</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <button id="phoneSuggestionToggle" style="width:100%;background:none;border:none;color:#94a3b8;cursor:pointer;padding:10px 8px;display:flex;align-items:center;gap:10px;border-radius:8px;font-size:12px;font-family:'Space Grotesk',sans-serif;text-transform:uppercase;letter-spacing:0.08em;transition:all 0.15s;touch-action:manipulation;">
+            <i data-lucide="lightbulb" style="width:15px;height:15px;flex-shrink:0;"></i>
+            <span style="flex:1;text-align:left;">Suggestion Box</span>
+          </button>
+          <div id="phoneSuggestionPanel" style="display:none;padding:0 8px 8px;">
+            <textarea id="phoneSuggestionInput" rows="2" placeholder="Share an idea or issue..." style="width:100%;background:#1a1f2e;border:1px solid rgba(255,255,255,0.1);border-radius:10px;padding:8px 10px;color:white;font-size:11px;outline:none;resize:none;font-family:'Inter',sans-serif;"></textarea>
+            <button id="phoneSuggestionSubmit" style="margin-top:6px;width:100%;border:none;border-radius:8px;background:#00d4ff;color:#003642;font-weight:700;padding:8px 10px;cursor:pointer;text-transform:uppercase;letter-spacing:0.06em;font-family:'Space Grotesk',sans-serif;font-size:10px;touch-action:manipulation;">Submit</button>
+            <p id="phoneSuggestionStatus" style="min-height:14px;color:#94a3b8;font-size:9px;margin-top:4px;"></p>
+          </div>
+        </div>
+
+        <button id="phoneSettingsToggle" style="width:100%;background:none;border:none;color:#94a3b8;cursor:pointer;padding:10px 8px;display:flex;align-items:center;gap:10px;border-radius:8px;font-size:12px;font-family:'Space Grotesk',sans-serif;text-transform:uppercase;letter-spacing:0.08em;transition:all 0.15s;touch-action:manipulation;">
+          <i data-lucide="settings" style="width:15px;height:15px;flex-shrink:0;"></i>
+          <span style="flex:1;text-align:left;">Settings</span>
+        </button>
+
+        <!-- Valley Mind-AI Core status -->
+        <div style="padding:12px 8px 8px;border-top:1px solid rgba(255,255,255,0.06);margin-top:auto;">
+          <div style="display:flex;align-items:center;gap:12px;padding:6px 4px;">
+            <div style="width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,0.06);border:1px solid rgba(0,212,255,0.2);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+              <i data-lucide="bot" style="width:18px;height:18px;color:#00d4ff;"></i>
+            </div>
+            <div style="min-width:0;">
+              <div style="font-size:12px;font-weight:700;color:#f8fafc;font-family:'Space Grotesk',sans-serif;text-transform:uppercase;letter-spacing:0.03em;">Valley Mind-AI Core</div>
+              <div id="phoneStatusText" style="font-size:9px;color:rgba(0,212,255,0.5);text-transform:uppercase;letter-spacing:0.12em;font-family:'Space Grotesk',sans-serif;">Connecting...</div>
+            </div>
+          </div>
+        </div>
+      </nav>
+
+      <div style="padding:12px 14px;border-top:1px solid rgba(255,255,255,0.08);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;">
+        <div id="phoneProfileArea" onclick="phoneLogout()" style="display:flex;align-items:center;gap:10px;flex:1;min-width:0;cursor:pointer;" title="Click to Logout / Manage Account">
+          <div id="phoneAvatar" style="width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,#22d3ee,#0ea5e9);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:16px;flex-shrink:0;">U</div>
+          <div style="min-width:0;">
+            <div id="phoneUserName" style="font-size:13px;font-weight:600;color:#f8fafc;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">User</div>
+            <div id="phoneUserBadge" style="font-size:10px;color:#64748b;font-family:'Space Grotesk',sans-serif;text-transform:uppercase;letter-spacing:0.05em;">Active Creator</div>
+          </div>
+        </div>
+        <button id="phoneSettingsGearBtn" onclick="closePhoneSidebar();openSettings();" style="background:none;border:none;color:#94a3b8;cursor:pointer;padding:8px;display:flex;align-items:center;justify-content:center;transition:color 0.2s;flex-shrink:0;">
+          <i data-lucide="settings" style="width:20px;height:20px;"></i>
+        </button>
+      </div>
+    </aside>
+
+    <!-- Context Menu (three-dot per-message) -->
+    <div class="ctx-menu" id="phoneCtxMenu">
+      <div class="ctx-item" onclick="phoneCtxDo('draft')">
+        <i data-lucide="volume-2" style="width:16px;height:16px;flex-shrink:0;"></i> Response Draft
+      </div>
+      <div class="ctx-item" onclick="phoneCtxDo('email')">
+        <i data-lucide="mail" style="width:16px;height:16px;flex-shrink:0;"></i> Draft in Email
+      </div>
+      <div class="ctx-item" onclick="phoneCtxDo('detail')">
+        <i data-lucide="info" style="width:16px;height:16px;flex-shrink:0;"></i> Response details
+      </div>
+      <div class="ctx-item" onclick="phoneCtxDo('report')">
+        <i data-lucide="alert-triangle" style="width:16px;height:16px;flex-shrink:0;"></i> Report issue
+      </div>
+      <div class="ctx-item" onclick="phoneCtxDo('pin')">
+        <i data-lucide="pin" style="width:16px;height:16px;flex-shrink:0;"></i> Pin Message
+      </div>
+    </div>
+
+    <!-- Chat Header Toolbar -->
+    <div class="chat-header-toolbar">
+      <div class="left-actions">
+        <span style="font-size:10px;color:#475569;font-family:'Space Grotesk',sans-serif;text-transform:uppercase;letter-spacing:0.08em;" id="phoneChatTitle">New Thread</span>
+      </div>
+    </div>
+
+    <!-- Messages Area -->
+    <div id="messages" style="flex:1;overflow-y:auto;padding:16px 16px 8px;display:flex;flex-direction:column;gap:12px;z-index:5;position:relative;">
+      <div id="phoneWelcome" class="welcome-section">
+        <div onclick="togglePhoneSidebar()" style="width:72px;height:72px;border-radius:50%;border:1px solid rgba(0,212,255,0.4);display:flex;align-items:center;justify-content:center;box-shadow:0 0 40px rgba(0,212,255,0.15);cursor:pointer;transition:all 0.2s;margin-bottom:8px;">
+          <i data-lucide="bot" style="width:40px;height:40px;color:#00d4ff;"></i>
+        </div>
+        <h2 style="color:#00d4ff;font-size:18px;font-weight:700;font-family:'Space Grotesk',sans-serif;letter-spacing:-0.3px;">Valley Mind-AI</h2>
+        <p style="color:#64748b;font-size:10px;text-transform:uppercase;letter-spacing:0.2em;">Quantum v2.4 · Neural Interface Active</p>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center;">
+          <button onclick="phoneQuickSend(this)" style="padding:7px 12px;border-radius:10px;border:1px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.05);color:#cbd5e1;font-size:11px;cursor:pointer;transition:all 0.2s;touch-action:manipulation;">Who are you?</button>
+          <button onclick="phoneQuickSend(this)" style="padding:7px 12px;border-radius:10px;border:1px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.05);color:#cbd5e1;font-size:11px;cursor:pointer;transition:all 0.2s;touch-action:manipulation;">What can you do?</button>
+          <button onclick="phoneQuickSend(this)" style="padding:7px 12px;border-radius:10px;border:1px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.05);color:#cbd5e1;font-size:11px;cursor:pointer;transition:all 0.2s;touch-action:manipulation;">Tell me something interesting</button>
+          <button onclick="phoneQuickSend(this)" style="padding:7px 12px;border-radius:10px;border:1px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.05);color:#cbd5e1;font-size:11px;cursor:pointer;transition:all 0.2s;touch-action:manipulation;">What do you remember about me?</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Image preview -->
+    <div class="img-preview-container" id="phoneImagePreview">
+      <img class="img-preview-thumb" id="phoneImagePreviewThumb" alt="Preview">
+      <button class="img-preview-remove" id="phoneImagePreviewRemove">&times;</button>
+    </div>
+
+    <!-- Chat Input Bar -->
+    <div style="padding:8px 14px 14px;border-top:1px solid rgba(255,255,255,0.08);background:rgba(5,14,24,0.9);z-index:5;position:relative;">
+      <div style="display:flex;align-items:center;background:#1a1f2e;border:1px solid rgba(255,255,255,0.1);border-radius:22px;padding:5px 6px;gap:4px;">
+        <!-- [+] Plus button with floating attachment tray -->
+        <div style="position:relative;flex-shrink:0;">
+          <button id="phonePlusBtn" style="width:32px;height:32px;border-radius:50%;background:rgba(255,255,255,0.06);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#94a3b8;transition:all 0.2s;touch-action:manipulation;">
+            <i data-lucide="plus" style="width:16px;height:16px;"></i>
+          </button>
+          <div class="plus-menu" id="phonePlusMenu">
+            <div class="plus-item" id="phoneAttachCamera">
+              <svg viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg> Camera
+            </div>
+            <div class="plus-item" id="phoneAttachFile">
+              <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14,2 14,8 20,8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg> Local File
+            </div>
+            <div class="plus-item" id="phoneAttachDrive">
+              <svg viewBox="0 0 24 24"><path d="M6 2L18 2 22 8 18 14 6 14 2 8 6 2z"/><path d="M6 14L10 22 18 22 22 14"/><polyline points="6,14 10,22 2,8"/></svg> Google Drive
+            </div>
+            <div class="plus-item" id="phoneAttachLink">
+              <svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg> Web Link
+            </div>
+          </div>
+        </div>
+        <!-- Hidden file inputs -->
+        <input type="file" id="phoneImageInput" accept="image/*" style="display:none;">
+        <input type="file" id="phoneFileInput" style="display:none;">
+
+        <textarea id="phoneChatInput" rows="1" placeholder="Message Valley Mind-AI..."
+          style="flex:1;background:transparent;border:none;outline:none;color:white;font-size:14px;line-height:1.5;resize:none;padding:6px 4px;max-height:80px;font-family:'Inter',sans-serif;overflow-y:auto;"></textarea>
+        <div style="display:flex;align-items:center;gap:2px;flex-shrink:0;">
+          <button id="phoneMicBtn" style="width:34px;height:34px;border-radius:50%;background:transparent;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#94a3b8;transition:all 0.2s;touch-action:manipulation;">
+            <i data-lucide="mic" style="width:16px;height:16px;"></i>
+          </button>
+          <button id="phoneSendBtn" style="width:34px;height:34px;border-radius:50%;background:#00d4ff;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 0 10px rgba(0,212,255,0.3);transition:all 0.15s;touch-action:manipulation;">
+            <i id="phoneSendIcon" data-lucide="send" style="width:16px;height:16px;color:#003642;"></i>
+          </button>
+        </div>
+      </div>
+      <p style="text-align:center;font-size:9px;color:#334155;margin-top:6px;text-transform:uppercase;letter-spacing:0.12em;font-family:'Space Grotesk',sans-serif;">Valley Mind-AI can make mistakes. Verify critical information.</p>
+    </div>
+
+</div>
+
+<script>
+function resolveApiBaseUrl() {
+    if (window.VALLEYMIND_API_BASE_URL) return window.VALLEYMIND_API_BASE_URL.replace(/\/$/, "");
+    var localHosts = new Set(["localhost", "127.0.0.1", "0.0.0.0"]);
+    var isLocal = localHosts.has(window.location.hostname);
+    var isBackendPort = window.location.port === "8000";
+    if (window.location.protocol === "file:" || (isLocal && !isBackendPort)) return "http://127.0.0.1:8000";
+    return window.location.origin;
+}
+
+var API_BASE_URL = resolveApiBaseUrl();
+var AUTH_TOKEN_KEY = "valleymind_session_token";
+var currentChatId = "";
+var sessionList = [];
+var messageStore = [];
+var isThinking = false;
+var isVoiceMuted = false;
+var authCheckComplete = false;
+var phoneMicStream = null;
+var connMonitorInterval = null;
+var _pendingImageData = null;
+
+function apiUrl(path) { return API_BASE_URL + path; }
+
+function networkErrorMessage(err, url) {
+    var reason = err && err.message ? err.message : String(err || "unknown error");
+    if ((err && err.name === "AbortError") || /aborted/i.test(reason))
+        return "That answer is taking longer than usual. Please try a shorter version, or send it again and I'll continue from there.";
+    return "Network error reaching backend at " + url + ": " + reason;
+}
+
+async function apiFetch(path, options) {
+    options = options || {};
+    var url = apiUrl(path);
+    var controller = new AbortController();
+    var timeout = window.setTimeout(function () { controller.abort(); }, options.timeoutMs || 30000);
+    try {
+        return await fetch(url, Object.assign({}, options, { signal: controller.signal }));
+    } catch (err) {
+        console.error("[PhoneStudio network]", { url: url, apiBaseUrl: API_BASE_URL, pageOrigin: window.location.origin, message: err && err.message ? err.message : String(err) });
+        throw new Error(networkErrorMessage(err, url));
+    } finally {
+        window.clearTimeout(timeout);
+    }
+}
+
+function getAuthToken() { return sessionStorage.getItem(AUTH_TOKEN_KEY) || ""; }
+function setAuthToken(token) { if (token) sessionStorage.setItem(AUTH_TOKEN_KEY, token); }
+function clearAuthToken() { sessionStorage.removeItem(AUTH_TOKEN_KEY); }
+
+function authHeaders(extra) {
+    extra = extra || {};
+    var headers = Object.assign({}, extra);
+    var token = getAuthToken();
+    if (token) { headers["X-Session-Token"] = token; headers["Authorization"] = "Bearer " + token; }
+    return headers;
+}
+
+// ── Toast ──
+function showPhoneToast(msg, isError) {
+    var toast = document.getElementById("phoneToast");
+    var msgEl = document.getElementById("phoneToastMsg");
+    if (!toast || !msgEl) return;
+    msgEl.textContent = msg;
+    if (isError !== false) toast.style.background = "rgba(239,68,68,0.92)";
+    else toast.style.background = "rgba(16,185,129,0.92)";
+    toast.classList.add("show");
+    clearTimeout(toast._hideTimer);
+    toast._hideTimer = setTimeout(function () { toast.classList.remove("show"); }, 5000);
+}
+
+function hidePhoneToast() {
+    var toast = document.getElementById("phoneToast");
+    if (toast) toast.classList.remove("show");
+}
+
+// ── Connection status ──
+function setConnStatus(state) {
+    var dot = document.getElementById("connDot");
+    if (!dot) return;
+    dot.className = "conn-dot";
+    if (state === "online") dot.classList.add("online");
+    else if (state === "offline") dot.classList.add("offline");
+    else dot.classList.add("connecting");
+    var stEl = document.getElementById("phoneStatusText");
+    if (stEl) {
+        if (state === "online") stEl.textContent = "Memory Online";
+        else if (state === "offline") stEl.textContent = "Login Required";
+        else stEl.textContent = "Connecting...";
+    }
+}
+
+// ── Live clock ──
+function updateClock() {
+    var now = new Date();
+    var h = now.getHours();
+    var m = now.getMinutes();
+    var el = document.getElementById("phoneTime");
+    if (el) el.textContent = (h % 12 || 12) + ":" + (m < 10 ? "0" : "") + m;
+}
+updateClock();
+setInterval(updateClock, 30000);
+
+// ── Login overlay ──
+function showPhoneLogin() {
+    var overlay = document.getElementById("phoneLoginOverlay");
+    if (overlay) overlay.classList.add("show");
+    setConnStatus("offline");
+    var stEl = document.getElementById("phoneStatusText");
+    if (stEl) stEl.textContent = "Login Required";
+}
+
+function hidePhoneLogin() {
+    var overlay = document.getElementById("phoneLoginOverlay");
+    if (overlay) overlay.classList.remove("show");
+    setConnStatus("online");
+    var stEl = document.getElementById("phoneStatusText");
+    if (stEl) stEl.textContent = "Memory Online";
+}
+
+async function phoneLogin(event) {
+    if (event) event.preventDefault();
+    var errorEl = document.getElementById("phoneLoginError");
+    if (errorEl) errorEl.textContent = "";
+    var email = document.getElementById("phoneLoginEmail").value.trim();
+    var password = document.getElementById("phoneLoginPassword").value;
+    if (!email) { if (errorEl) errorEl.textContent = "Enter your email."; return; }
+    if (!password) { if (errorEl) errorEl.textContent = "Enter your password."; return; }
+
+    setConnStatus("connecting");
+
+    try {
+        var res = await apiFetch("/auth/login", {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: email, password: password })
+        });
+        var data = await res.json();
+        if (!res.ok || data.status !== "success") {
+            throw new Error(data.message || "Login failed");
+        }
+        setAuthToken(data.session_token || "");
+        var ok = await phoneCheckSession();
+        if (ok) {
+            localStorage.setItem('isLoggedIn', 'true');
+            hidePhoneLogin();
+            showPhoneToast("Connected. Memory online.", false);
+            if (errorEl) errorEl.textContent = "";
+            document.getElementById("phoneLoginEmail").value = "";
+            document.getElementById("phoneLoginPassword").value = "";
+        } else {
+            throw new Error("Session validation failed");
+        }
+    } catch (err) {
+        setConnStatus("offline");
+        if (errorEl) errorEl.textContent = err.message || "Login failed";
+        showPhoneToast(err.message || "Login failed");
+    }
+}
+
+// ── Sidebar ──
+function openPhoneSidebar() {
+    var sidebar = document.getElementById("phoneSidebar");
+    var backdrop = document.getElementById("phoneSidebarBackdrop");
+    if (sidebar) sidebar.classList.add("open");
+    if (backdrop) backdrop.classList.add("visible");
+}
+function closePhoneSidebar() {
+    var sidebar = document.getElementById("phoneSidebar");
+    var backdrop = document.getElementById("phoneSidebarBackdrop");
+    if (sidebar) sidebar.classList.remove("open");
+    if (backdrop) backdrop.classList.remove("visible");
+}
+function togglePhoneSidebar() {
+    var sidebar = document.getElementById("phoneSidebar");
+    if (sidebar && sidebar.classList.contains("open")) { closePhoneSidebar(); }
+    else { openPhoneSidebar(); if (getAuthToken()) phoneLoadSessions(); }
+}
+
+function togglePhoneLibrary() {
+    var sub = document.getElementById("phoneLibrarySubmenu");
+    var arrow = document.getElementById("phoneLibraryArrow");
+    if (!sub) return;
+    var isOpen = sub.style.maxHeight !== "0px" && sub.style.maxHeight !== "";
+    sub.style.maxHeight = isOpen ? "0px" : "400px";
+    if (arrow) arrow.style.transform = isOpen ? "rotate(0deg)" : "rotate(-90deg)";
+}
+
+function togglePhoneSuggestion() {
+    var panel = document.getElementById("phoneSuggestionPanel");
+    if (panel) panel.style.display = panel.style.display === "none" ? "block" : "none";
+}
+
+async function submitPhoneSuggestion() {
+    var input = document.getElementById("phoneSuggestionInput");
+    var status = document.getElementById("phoneSuggestionStatus");
+    var text = input ? input.value.trim() : "";
+    if (status) status.textContent = "";
+    if (!text) { if (status) status.textContent = "Enter a suggestion first."; return; }
+    try {
+        var res = await apiFetch("/suggestions", { method: "POST", credentials: "include", headers: authHeaders({ "Content-Type": "application/json" }), body: JSON.stringify({ text: text }) });
+        var d = await res.json();
+        if (!res.ok || d.status !== "success") throw new Error(d.message || "Could not submit");
+        if (input) input.value = "";
+        if (status) status.textContent = "Saved. Thank you.";
+        if (d.whatsapp_url) window.open(d.whatsapp_url, "_blank", "noopener,noreferrer");
+    } catch (err) { if (status) status.textContent = err.message || "Could not submit"; }
+}
+
+function showPhoneComingSoon(label) {
+    closePhoneSidebar();
+    var overlay = document.getElementById("phoneComingSoonOverlay");
+    var panel = document.getElementById("phoneComingSoonPanel");
+    var title = document.getElementById("phoneComingSoonTitle");
+    if (overlay) overlay.classList.add("show");
+    if (panel) panel.classList.add("show");
+    if (title) title.textContent = label + " — Coming Soon";
+}
+function hidePhoneComingSoon() {
+    var overlay = document.getElementById("phoneComingSoonOverlay");
+    var panel = document.getElementById("phoneComingSoonPanel");
+    if (overlay) overlay.classList.remove("show");
+    if (panel) panel.classList.remove("show");
+}
+
+// ── Session management ──
+async function phoneNewChat() {
+    try {
+        var res = await apiFetch("/chat/sessions", { method: "POST", credentials: "include", headers: authHeaders({ "Content-Type": "application/json" }), body: JSON.stringify({ title: "New Chat" }) });
+        if (!res.ok) return;
+        var data = await res.json();
+        if (data.status === "success") {
+            currentChatId = data.session.chat_id;
+            phoneClearMessages(); messageStore.length = 0;
+            var welcome = document.getElementById("phoneWelcome");
+            if (welcome) welcome.style.display = "flex";
+            await phoneLoadSessions(); closePhoneSidebar(); phoneFocusInput();
+        }
+    } catch (err) {
+        console.warn("Failed to create new session.", err);
+        phoneClearMessages();
+        var welcome = document.getElementById("phoneWelcome");
+        if (welcome) welcome.style.display = "flex";
+        closePhoneSidebar();
+    }
+}
+
+async function phoneSwitchSession(chatId) {
+    if (chatId === currentChatId) return;
+    currentChatId = chatId;
+    await phoneLoadChatHistory(chatId);
+    phoneRenderSessionList();
+    closePhoneSidebar();
+    // Update header title
+    var titleEl = document.getElementById("phoneChatTitle");
+    if (titleEl) {
+        var found = sessionList.find(function (s) { return s.chat_id === chatId; });
+        titleEl.textContent = (found && found.title) || "New Thread";
+    }
+    phoneFocusInput();
+}
+
+async function phoneLoadChatHistory(chatId) {
+    try {
+        var params = chatId ? "?chat_id=" + encodeURIComponent(chatId) : "";
+        var res = await apiFetch("/chat/history" + params, { credentials: "include", headers: authHeaders() });
+        if (!res.ok) return false;
+        var data = await res.json();
+        if (data.status === "success") { phoneRenderMessages(data.messages || []); return true; }
+    } catch (err) { console.warn("Chat history unavailable.", err); }
+    return false;
+}
+
+async function phoneLoadSessions() {
+    try {
+        var res = await apiFetch("/chat/sessions", { credentials: "include", headers: authHeaders() });
+        if (!res.ok) return;
+        var data = await res.json();
+        if (data.status === "success") { sessionList = data.sessions || []; phoneRenderSessionList(); }
+    } catch (err) { console.warn("Failed to load sessions.", err); }
+}
+
+function phoneRenderSessionList() {
+    var list = document.getElementById("phoneHistoryList");
+    if (!list) return;
+    list.innerHTML = "";
+    var sessions = Array.isArray(sessionList) ? sessionList : [];
+    var visible = sessions.filter(function (s) {
+        var title = (s.title || "").trim();
+        var isGeneric = title === "" || title === "New Chat" || title === "Untitled Thread";
+        var isEmpty = !s.message_count || s.message_count === 0;
+        if (isGeneric && isEmpty && s.chat_id !== currentChatId) return false;
+        return true;
+    });
+    var countEl = document.getElementById("phoneSessionCount");
+    if (countEl) countEl.textContent = visible.length + " session" + (visible.length !== 1 ? "s" : "");
+    if (visible.length === 0) {
+        list.innerHTML = '<div style="padding:10px 6px;color:#475569;font-size:10px;text-align:center;">No previous sessions</div>';
+        return;
+    }
+    var pinnedIds = phoneGetPinnedIds();
+    var sorted = visible.slice().sort(function (a, b) {
+        var aP = pinnedIds.indexOf(a.chat_id) !== -1 ? 1 : 0;
+        var bP = pinnedIds.indexOf(b.chat_id) !== -1 ? 1 : 0;
+        return bP - aP;
+    });
+    sorted.forEach(function (session) {
+        var isPinned = pinnedIds.indexOf(session.chat_id) !== -1;
+        var isActive = session.chat_id === currentChatId;
+        var item = document.createElement("div");
+        item.style.cssText = "display:flex;justify-content:space-between;align-items:center;width:100%;position:relative;padding:8px 10px;border-radius:8px;cursor:pointer;transition:all 0.15s;background:" + (isActive ? "rgba(0,212,255,0.08)" : "transparent") + ";border-left:" + (isActive ? "3px solid #00d4ff" : "3px solid transparent") + ";";
+        item.onclick = function () { phoneSwitchSession(session.chat_id); };
+        var leftSpan = document.createElement("span");
+        leftSpan.style.cssText = "display:flex;align-items:center;gap:6px;flex:1;overflow:hidden;";
+        if (isPinned) {
+            var pinBadge = document.createElement("span");
+            pinBadge.textContent = "📌";
+            pinBadge.style.cssText = "font-size:11px;flex-shrink:0;";
+            leftSpan.appendChild(pinBadge);
+        }
+        var text = document.createElement("span");
+        text.style.cssText = "font-size:12px;color:" + (isActive ? "#00d4ff" : "#cbd5e1") + ";font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
+        text.textContent = session.title || "Untitled Thread";
+        leftSpan.appendChild(text);
+        var dotsBtn = document.createElement("button");
+        dotsBtn.innerHTML = '<i data-lucide="more-vertical" style="width:14px;height:14px;"></i>';
+        dotsBtn.title = "More options";
+        dotsBtn.style.cssText = "background:none;border:none;cursor:pointer;padding:4px;border-radius:6px;color:#64748b;display:flex;align-items:center;touch-action:manipulation;flex-shrink:0;";
+        dotsBtn.dataset.sessionId = session.chat_id;
+        dotsBtn.onclick = function (e) {
+            e.stopPropagation();
+            phoneOpenSessionCtxMenu(e, session);
+        };
+        item.appendChild(leftSpan);
+        item.appendChild(dotsBtn);
+        list.appendChild(item);
+    });
+    if (typeof lucide !== "undefined" && lucide.createIcons) lucide.createIcons();
+}
+
+function phoneRenamePrompt(session) {
+    if (!session || !session.chat_id) return;
+    var curTitle = session.title || "";
+    var newTitle = prompt("Rename session:", curTitle);
+    if (newTitle && newTitle.trim() !== "" && newTitle.trim() !== curTitle) {
+        apiFetch("/chat/session/rename", {
+            method: "POST",
+            headers: authHeaders({ "Content-Type": "application/json" }),
+            body: JSON.stringify({ chat_id: session.chat_id, title: newTitle.trim() })
+        }).then(function (res) {
+            if (res.ok) { phoneLoadSessions(); return res.json(); }
+        }).then(function () {
+            if (session.chat_id === currentChatId) {
+                var titleEl = document.getElementById("phoneChatTitle");
+                if (titleEl) titleEl.textContent = newTitle.trim();
+            }
+            showPhoneToast("Session renamed.", false);
+        }).catch(function () {
+            showPhoneToast("Rename failed.");
+        });
+    }
+}
+
+function phoneShareThreadFromId(chatId) {
+    if (!chatId) { showPhoneToast("No thread to share."); return; }
+    var shareUrl = window.location.origin + "/share/" + chatId;
+    navigator.clipboard.writeText(shareUrl).then(function () {
+        showPhoneToast("Share link copied!", false);
+    }).catch(function () {
+        showPhoneToast("Could not copy link.");
+    });
+}
+
+// ── Session context menu ──
+var _sessionCtxTarget = null;
+function phoneOpenSessionCtxMenu(e, session) {
+    e.preventDefault();
+    phoneCloseSessionCtxMenu();
+    var menu = document.getElementById("sessionCtxMenu");
+    if (!menu) return;
+    _sessionCtxTarget = session;
+    menu.classList.add("open");
+    var x = e.clientX || e.touches?.[0]?.clientX || 0;
+    var y = e.clientY || e.touches?.[0]?.clientY || 0;
+    var winW = window.innerWidth;
+    var winH = window.innerHeight;
+    var menuW = 170;
+    var menuH = menu.offsetHeight || 180;
+    if (x + menuW > winW - 8) x = winW - menuW - 8;
+    if (y + menuH > winH - 8) y = winH - menuH - 8;
+    if (x < 4) x = 4;
+    if (y < 4) y = 4;
+    menu.style.left = x + "px";
+    menu.style.top = y + "px";
+    if (typeof lucide !== "undefined" && lucide.createIcons) lucide.createIcons();
+}
+function phoneCloseSessionCtxMenu() {
+    var menu = document.getElementById("sessionCtxMenu");
+    if (!menu) return;
+    menu.classList.remove("open");
+    menu.style.left = "";
+    menu.style.top = "";
+    _sessionCtxTarget = null;
+}
+function phoneSessionCtxDo(action) {
+    var session = _sessionCtxTarget;
+    phoneCloseSessionCtxMenu();
+    if (!session) return;
+    if (action === "pin") { phoneTogglePinSession(session.chat_id); phoneRenderSessionList(); }
+    else if (action === "rename") { phoneRenamePrompt(session); }
+    else if (action === "share") { phoneShareThreadFromId(session.chat_id); }
+    else if (action === "delete") { if (confirm("Delete this thread?")) phoneDeleteSession(session.chat_id); }
+}
+
+function phoneClearMessages() {
+    var messages = document.getElementById("messages");
+    var welcome = document.getElementById("phoneWelcome");
+    if (!messages) return;
+    Array.from(messages.children).forEach(function (child) { if (child.id !== "phoneWelcome") child.remove(); });
+    if (welcome) welcome.style.display = "flex";
+    var titleEl = document.getElementById("phoneChatTitle");
+    if (titleEl) titleEl.textContent = "New Thread";
+}
+
+function phoneRenderMessages(messages) {
+    phoneClearMessages();
+    messageStore.length = 0;
+    if (!Array.isArray(messages) || messages.length === 0) return;
+    messages.forEach(function (message) {
+        var role = message.role === "assistant" ? "ai" : "user";
+        phoneAddMessage(message.content || "", role, message.image_data || null);
+        if (message.reaction) { var idx = messageStore.length - 1; messageStore[idx].reaction = message.reaction; }
+    });
+    setTimeout(function () {
+        document.querySelectorAll('#messages .msg-toolbar').forEach(function (toolbar) {
+            var upBtn = toolbar.querySelector('[data-reaction="up"]');
+            var downBtn = toolbar.querySelector('[data-reaction="down"]');
+            if (!upBtn || !downBtn) return;
+            var idx = parseInt(upBtn.dataset.index, 10);
+            var msg = messageStore[idx];
+            if (!msg || !msg.reaction) return;
+            if (msg.reaction === "up") upBtn.classList.add("up-active");
+            else if (msg.reaction === "down") downBtn.classList.add("down-active");
+        });
+        phoneRestorePinBadges();
+    }, 50);
+}
+
+function phoneRestorePinBadges() {
+    var pinnedIds = phoneGetPinnedMsgIds();
+    if (pinnedIds.length === 0) return;
+    var msgs = document.querySelectorAll('#messages .assistant-message');
+    msgs.forEach(function (el, idx) {
+        var toolbarBtns = el.querySelectorAll('button');
+        var msgIdx = -1;
+        for (var j = 0; j < toolbarBtns.length; j++) {
+            var di = toolbarBtns[j].dataset.index;
+            if (di !== undefined) { msgIdx = parseInt(di, 10); break; }
+        }
+        if (msgIdx !== -1 && pinnedIds.indexOf(String(msgIdx)) !== -1) {
+            var bub = el.querySelector('.bubble');
+            if (bub && !bub.querySelector('.msg-pin-badge')) {
+                var badge = document.createElement("span");
+                badge.className = "msg-pin-badge";
+                badge.textContent = " 📌";
+                badge.style.cssText = "font-size:11px;margin-left:6px;";
+                bub.appendChild(badge);
+            }
+        }
+    });
+}
+
+function phoneAddMessage(text, type, imageData) {
+    var container = document.getElementById("messages");
+    var welcome = document.getElementById("phoneWelcome");
+    if (!container) return;
+    if (welcome) welcome.style.display = "none";
+
+    var msgIndex = messageStore.length;
+    var msgObj = { role: type === "user" ? "user" : "assistant", content: text, reaction: null };
+    if (imageData) msgObj.image_data = imageData;
+    messageStore.push(msgObj);
+
+    var wrapper = document.createElement("div");
+    wrapper.className = type === "user" ? "user-message" : "assistant-message";
+
+    var bubble = document.createElement("div");
+    bubble.className = "bubble";
+    if (imageData) {
+        var img = document.createElement("img");
+        img.src = imageData; img.alt = "Uploaded image";
+        img.style.cssText = "max-width:100%;max-height:150px;border-radius:8px;margin-bottom:6px;display:block;";
+        bubble.appendChild(img);
+    }
+    if (text) {
+        var txtSpan = document.createElement("span");
+        txtSpan.textContent = text;
+        bubble.appendChild(txtSpan);
+    }
+    wrapper.appendChild(bubble);
+
+    if (type === "ai") {
+        var toolbar = document.createElement("div");
+        toolbar.className = "msg-toolbar";
+
+        var upBtn = document.createElement("button");
+        upBtn.innerHTML = '<i data-lucide="thumbs-up" style="width:14px;height:14px;"></i>';
+        upBtn.title = "Thumbs up"; upBtn.dataset.reaction = "up"; upBtn.dataset.index = msgIndex;
+        upBtn.onclick = function () { phoneToggleReaction(this, msgIndex, "up"); };
+        toolbar.appendChild(upBtn);
+
+        var downBtn = document.createElement("button");
+        downBtn.innerHTML = '<i data-lucide="thumbs-down" style="width:14px;height:14px;"></i>';
+        downBtn.title = "Thumbs down"; downBtn.dataset.reaction = "down"; downBtn.dataset.index = msgIndex;
+        downBtn.onclick = function () { phoneToggleReaction(this, msgIndex, "down"); };
+        toolbar.appendChild(downBtn);
+
+        var playbackBtn = document.createElement("button");
+        playbackBtn.innerHTML = '<i data-lucide="play" style="width:14px;height:14px;"></i>';
+        playbackBtn.title = "Play response aloud";
+        playbackBtn.onclick = function () { phoneToggleVoicePlayback(this); };
+        toolbar.appendChild(playbackBtn);
+
+        var copyBtn = document.createElement("button");
+        copyBtn.innerHTML = '<i data-lucide="copy" style="width:14px;height:14px;"></i>';
+        copyBtn.title = "Copy response";
+        copyBtn.onclick = function () { phoneCopyMessage(this); };
+        toolbar.appendChild(copyBtn);
+
+        var separator = document.createElement("span");
+        separator.style.cssText = "width:1px;height:14px;background:rgba(255,255,255,0.08);margin:0 2px;";
+        toolbar.appendChild(separator);
+
+        var reloadBtn = document.createElement("button");
+        reloadBtn.innerHTML = '<i data-lucide="rotate-ccw" style="width:14px;height:14px;"></i>';
+        reloadBtn.title = "Regenerate response";
+        reloadBtn.onclick = function () { phoneRegenerateMessage(msgIndex); };
+        toolbar.appendChild(reloadBtn);
+
+        var shareBtn = document.createElement("button");
+        shareBtn.innerHTML = '<i data-lucide="share-2" style="width:14px;height:14px;"></i>';
+        shareBtn.title = "Share response";
+        shareBtn.onclick = function () { phoneShareMessage(msgIndex); };
+        toolbar.appendChild(shareBtn);
+
+        var dotsBtn = document.createElement("button");
+        dotsBtn.innerHTML = '<i data-lucide="more-horizontal" style="width:14px;height:14px;"></i>';
+        dotsBtn.title = "More options";
+        dotsBtn.dataset.msgIndex = msgIndex;
+        dotsBtn.onclick = function (e) {
+            e.stopPropagation();
+            phoneOpenCtxMenu(e, msgIndex);
+        };
+        toolbar.appendChild(dotsBtn);
+
+        wrapper.appendChild(toolbar);
+    }
+
+    container.appendChild(wrapper);
+    container.scrollTop = container.scrollHeight;
+    if (typeof lucide !== "undefined" && lucide.createIcons) lucide.createIcons();
+}
+
+function phoneToggleReaction(btn, msgIndex, reaction) {
+    var toolbar = btn.parentElement;
+    var upBtn = toolbar.querySelector('[data-reaction="up"]');
+    var downBtn = toolbar.querySelector('[data-reaction="down"]');
+    var isActive = btn.classList.contains("up-active") || btn.classList.contains("down-active");
+    var newReaction = isActive ? "" : reaction;
+    upBtn.classList.remove("up-active", "down-active");
+    downBtn.classList.remove("up-active", "down-active");
+    if (newReaction === "up") upBtn.classList.add("up-active");
+    else if (newReaction === "down") downBtn.classList.add("down-active");
+    messageStore[msgIndex].reaction = newReaction || null;
+    if (currentChatId) {
+        apiFetch("/chat/sessions/" + encodeURIComponent(currentChatId) + "/reaction", { method: "POST", credentials: "include", headers: authHeaders({ "Content-Type": "application/json" }), body: JSON.stringify({ message_index: msgIndex, reaction: newReaction }) }).catch(function (err) { console.warn("Failed to save reaction:", err); });
+    }
+}
+
+function phoneCopyMessage(btn) {
+    var wrapper = btn.closest('.assistant-message');
+    var bubble = wrapper ? wrapper.querySelector('.bubble') : null;
+    var text = bubble ? bubble.textContent : '';
+    if (!text) { showPhoneToast("Nothing to copy."); return; }
+    function doCopy(cb) {
+        navigator.clipboard.writeText(text).then(cb).catch(function () {
+            var ta = document.createElement("textarea"); ta.value = text;
+            document.body.appendChild(ta); ta.select(); document.execCommand("copy"); document.body.removeChild(ta); cb();
+        });
+    }
+    doCopy(function () {
+        var icon = btn.querySelector('i');
+        if (icon) { icon.setAttribute('data-lucide', 'check'); icon.style.color = '#00ff88'; }
+        btn.style.color = '#00ff88';
+        showPhoneToast("Copied to clipboard.", false);
+        setTimeout(function () {
+            if (icon) { icon.setAttribute('data-lucide', 'copy'); icon.style.color = ''; }
+            btn.style.color = '';
+            if (typeof lucide !== 'undefined' && lucide.createIcons) lucide.createIcons();
+        }, 1500);
+        if (typeof lucide !== 'undefined' && lucide.createIcons) lucide.createIcons();
+    });
+}
+
+function phoneToggleVoicePlayback(btn) {
+    var icon = btn.querySelector('i');
+    var isPlaying = btn.dataset.playing === 'true';
+    if (isPlaying && window.speechSynthesis.speaking) {
+        window.speechSynthesis.pause(); btn.dataset.playing = 'false';
+        if (icon) icon.setAttribute('data-lucide', 'play');
+        if (typeof lucide !== 'undefined' && lucide.createIcons) lucide.createIcons();
+        return;
+    }
+    if (window.speechSynthesis.paused) {
+        window.speechSynthesis.resume(); btn.dataset.playing = 'true';
+        if (icon) icon.setAttribute('data-lucide', 'pause');
+        if (typeof lucide !== 'undefined' && lucide.createIcons) lucide.createIcons();
+        return;
+    }
+    var wrapper = btn.closest('.assistant-message');
+    var bubble = wrapper ? wrapper.querySelector('.bubble') : null;
+    var text = bubble ? bubble.textContent : '';
+    if (!text) return;
+    window.speechSynthesis.cancel();
+    var utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = 1.0; utterance.pitch = 0.85;
+    utterance.onend = function () {
+        btn.dataset.playing = 'false';
+        if (icon) icon.setAttribute('data-lucide', 'play');
+        if (typeof lucide !== 'undefined' && lucide.createIcons) lucide.createIcons();
+    };
+    window.speechSynthesis.speak(utterance);
+    btn.dataset.playing = 'true';
+    if (icon) icon.setAttribute('data-lucide', 'pause');
+    if (typeof lucide !== 'undefined' && lucide.createIcons) lucide.createIcons();
+}
+
+function phoneAddThinkingIndicator() {
+    var container = document.getElementById("messages");
+    var welcome = document.getElementById("phoneWelcome");
+    if (!container) return null;
+    if (welcome) welcome.style.display = "none";
+    var div = document.createElement("div");
+    div.style.cssText = "align-self:flex-start;max-width:80px;padding:11px 14px;border-radius:14px;background:rgba(255,255,255,0.06);border:1px solid rgba(0,212,255,0.18);display:flex;gap:6px;align-items:center;";
+    div.innerHTML = '<span class="thinking-dot"></span><span class="thinking-dot"></span><span class="thinking-dot"></span>';
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+    return div;
+}
+
+function phoneRemoveThinkingIndicator(indicator) {
+    if (indicator && indicator.parentNode) indicator.remove();
+}
+
+function phoneSetThinking(thinking) {
+    isThinking = thinking;
+    var input = document.getElementById("phoneChatInput");
+    var sendBtn = document.getElementById("phoneSendBtn");
+    var sendIcon = document.getElementById("phoneSendIcon");
+    if (input) input.disabled = thinking;
+    if (sendBtn) sendBtn.disabled = thinking;
+    if (sendIcon) {
+        sendIcon.setAttribute("data-lucide", thinking ? "circle-stop" : "send");
+        if (typeof lucide !== "undefined" && lucide.createIcons) lucide.createIcons();
+    }
+    if (typeof window.applyIconFallback === 'function') window.applyIconFallback();
+}
+
+function phoneToggleMic() {
+    var micBtn = document.getElementById("phoneMicBtn");
+    if (phoneMicStream) {
+        phoneMicStream.getTracks().forEach(function (t) { t.stop(); });
+        phoneMicStream = null;
+        if (micBtn) { micBtn.style.background = "transparent"; micBtn.style.color = "#94a3b8"; }
+        return;
+    }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        showPhoneComingSoon("Voice Input (mic not available)");
+        return;
+    }
+    navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
+        phoneMicStream = stream;
+        if (micBtn) { micBtn.style.background = "rgba(0,212,255,0.15)"; micBtn.style.color = "#00d4ff"; }
+        showPhoneComingSoon("Voice Recording Active");
+    }).catch(function () { showPhoneComingSoon("Mic Permission Denied"); });
+}
+
+function browserSpeak(text) {
+    if (!("speechSynthesis" in window)) return;
+    window.speechSynthesis.cancel();
+    var utterance = new SpeechSynthesisUtterance(text);
+    var voices = window.speechSynthesis.getVoices();
+    var selectedVoice = voices.find(function (v) { return v.name.includes("Microsoft David"); });
+    if (!selectedVoice) selectedVoice = voices.find(function (v) { return v.name.toLowerCase().includes("male") && v.lang.startsWith("en"); });
+    if (!selectedVoice) selectedVoice = voices.find(function (v) { return v.name.includes("Google US English"); });
+    if (!selectedVoice) selectedVoice = voices.find(function (v) { return v.lang.startsWith("en-"); });
+    if (selectedVoice) utterance.voice = selectedVoice;
+    utterance.rate = 1.0; utterance.pitch = 0.85;
+    window.speechSynthesis.speak(utterance);
+}
+
+function phoneQuickSend(button) {
+    var input = document.getElementById("phoneChatInput");
+    if (!input || !button) return;
+    input.value = button.textContent.trim();
+    phoneSend();
+}
+
+function phoneFocusInput() {
+    var input = document.getElementById("phoneChatInput");
+    if (input) setTimeout(function () { input.focus({ preventScroll: true }); }, 0);
+}
+
+// ── Plus menu (attachment tray) ──
+function phoneTogglePlusMenu() {
+    var menu = document.getElementById("phonePlusMenu");
+    if (!menu) return;
+    menu.classList.toggle("show");
+}
+
+function phoneClosePlusMenu() {
+    var menu = document.getElementById("phonePlusMenu");
+    if (menu) menu.classList.remove("show");
+}
+
+// ── Three-dot context menu ──
+var _phoneCtxMsgIndex = -1;
+
+function phoneOpenCtxMenu(e, msgIndex) {
+    e.preventDefault();
+    phoneCloseCtxMenu();
+    var menu = document.getElementById("phoneCtxMenu");
+    if (!menu) return;
+    _phoneCtxMsgIndex = msgIndex;
+    menu.classList.add("open");
+
+    var x = e.clientX || e.touches?.[0]?.clientX || 0;
+    var y = e.clientY || e.touches?.[0]?.clientY || 0;
+    var winW = window.innerWidth;
+    var winH = window.innerHeight;
+    var menuW = 180;
+    var menuH = menu.offsetHeight || 260;
+
+    if (x + menuW > winW - 8) x = winW - menuW - 8;
+    if (y + menuH > winH - 8) y = winH - menuH - 8;
+    if (x < 4) x = 4;
+    if (y < 4) y = 4;
+
+    menu.style.left = x + "px";
+    menu.style.top = y + "px";
+    if (typeof lucide !== "undefined" && lucide.createIcons) lucide.createIcons();
+}
+
+function phoneCloseCtxMenu() {
+    var menu = document.getElementById("phoneCtxMenu");
+    if (!menu) return;
+    menu.classList.remove("open");
+    menu.style.left = "";
+    menu.style.top = "";
+    _phoneCtxMsgIndex = -1;
+}
+
+function phoneGetMessageText(msgIndex) {
+    if (msgIndex < 0 || msgIndex >= messageStore.length) return "";
+    var msg = messageStore[msgIndex];
+    return msg ? msg.content : "";
+}
+
+function phoneCtxDo(action) {
+    var msgIndex = _phoneCtxMsgIndex;
+    phoneCloseCtxMenu();
+
+    if (action === "draft") {
+        var txt = phoneGetMessageText(msgIndex);
+        if (!txt) { showPhoneToast("No message content to draft."); return; }
+        if ("speechSynthesis" in window) {
+            window.speechSynthesis.cancel();
+            var utterance = new SpeechSynthesisUtterance(txt);
+            utterance.rate = 0.9; utterance.pitch = 0.85;
+            var voices = window.speechSynthesis.getVoices();
+            var voice = voices.find(function (v) { return v.lang.startsWith("en-"); });
+            if (voice) utterance.voice = voice;
+            window.speechSynthesis.speak(utterance);
+            showPhoneToast("Response Draft — voice synthesis active.", false);
+        } else {
+            showPhoneToast("Response Draft — layout compiled (" + txt.length + " chars).", false);
+        }
+        return;
+    }
+
+    if (action === "email") {
+        var txt = phoneGetMessageText(msgIndex);
+        if (!txt) { showPhoneToast("No message content to email."); return; }
+        var subject = encodeURIComponent("Valley Mind-AI Response Draft");
+        var body = encodeURIComponent(txt);
+        window.open("mailto:?subject=" + subject + "&body=" + body, "_blank");
+        showPhoneToast("Email draft opened in default client.", false);
+        return;
+    }
+
+    if (action === "detail") {
+        var msg = messageStore[msgIndex];
+        if (!msg) { showPhoneToast("Message not found."); return; }
+        var detail = "Message #" + msgIndex + "\nRole: " + msg.role + "\nLength: " + (msg.content || "").length + " chars\nPinned: " + (phoneIsMsgPinned(msgIndex) ? "Yes" : "No") + "\n---\n" + (msg.content || "").slice(0, 200);
+        showPhoneToast("Detail logged to console.");
+        console.log("[Response Details]", { index: msgIndex, role: msg.role, length: msg.content.length, content: msg.content.slice(0, 500) });
+        return;
+    }
+
+    if (action === "report") {
+        var msg = messageStore[msgIndex];
+        if (!msg) { showPhoneToast("Message not found."); return; }
+        var reportData = { index: msgIndex, role: msg.role, content: (msg.content || "").slice(0, 1000), chat_id: currentChatId, user_agent: navigator.userAgent };
+        showPhoneToast("Report Issue — logging debug data.");
+        console.log("[Report Issue]", reportData);
+        apiFetch("/chat/report", {
+            method: "POST",
+            headers: authHeaders({ "Content-Type": "application/json" }),
+            body: JSON.stringify(reportData)
+        }).then(function (r) {
+            if (r.ok) showPhoneToast("Issue reported to team.", false);
+        }).catch(function () {});
+        return;
+    }
+
+    if (action === "pin") {
+        if (msgIndex < 0 || msgIndex >= messageStore.length) { showPhoneToast("No message selected."); return; }
+        phoneToggleMsgPin(msgIndex);
+        return;
+    }
+
+    if (action === "rename") {
+        if (!currentChatId) { showPhoneToast("No active thread."); return; }
+        var curTitle = "";
+        var found = sessionList.find(function (s) { return s.chat_id === currentChatId; });
+        if (found) curTitle = found.title || "";
+        var newTitle = prompt("Modify session title:", curTitle);
+        if (newTitle && newTitle.trim() !== "") {
+            apiFetch("/chat/session/rename", {
+                method: "POST",
+                headers: authHeaders({ "Content-Type": "application/json" }),
+                body: JSON.stringify({ chat_id: currentChatId, title: newTitle.trim() })
+            }).then(function (res) {
+                if (res.ok) { phoneLoadSessions(); return res.json(); }
+            }).then(function () {
+                var titleEl = document.getElementById("phoneChatTitle");
+                if (titleEl) titleEl.textContent = newTitle.trim();
+                showPhoneToast("Thread renamed.", false);
+            }).catch(function () {
+                showPhoneToast("Rename failed.");
+            });
+        }
+        return;
+    }
+
+    if (action === "delete") {
+        if (!currentChatId) { showPhoneToast("No active thread."); return; }
+        if (!confirm("Delete this entire thread?")) return;
+        phoneDeleteSession(currentChatId);
+        return;
+    }
+}
+
+// ── Pin support (localStorage) ──
+function phoneGetPinnedIds() {
+    try { return JSON.parse(localStorage.getItem('phonePinnedSessions') || '[]'); } catch (e) { return []; }
+}
+function phoneTogglePinSession(chatId) {
+    var ids = phoneGetPinnedIds();
+    var idx = ids.indexOf(chatId);
+    if (idx !== -1) { ids.splice(idx, 1); showPhoneToast("Unpinned.", false); }
+    else { ids.push(chatId); showPhoneToast("Pinned.", false); }
+    localStorage.setItem('phonePinnedSessions', JSON.stringify(ids));
+}
+
+// ── Message-level Pin (visual pin state) ──
+function phoneGetPinnedMsgIds() {
+    try { return JSON.parse(localStorage.getItem('phonePinnedMessages') || '[]'); } catch (e) { return []; }
+}
+function phoneIsMsgPinned(msgIndex) {
+    var ids = phoneGetPinnedMsgIds();
+    return ids.indexOf(String(msgIndex)) !== -1;
+}
+function phoneToggleMsgPin(msgIndex) {
+    if (msgIndex < 0 || msgIndex >= messageStore.length) return;
+    var ids = phoneGetPinnedMsgIds();
+    var key = String(msgIndex);
+    var idx = ids.indexOf(key);
+    if (idx !== -1) {
+        ids.splice(idx, 1);
+        showPhoneToast("Message unpinned.", false);
+    } else {
+        ids.push(key);
+        showPhoneToast("Message pinned!", false);
+    }
+    localStorage.setItem('phonePinnedMessages', JSON.stringify(ids));
+    var container = document.getElementById("messages");
+    if (container) {
+        var msgs = container.querySelectorAll(".assistant-message");
+        for (var i = 0; i < msgs.length; i++) {
+            var toolbarBtns = msgs[i].querySelectorAll("button");
+            for (var j = 0; j < toolbarBtns.length; j++) {
+                var di = toolbarBtns[j].dataset.index;
+                if (di !== undefined && parseInt(di, 10) === msgIndex) {
+                    var existing = msgs[i].querySelector(".msg-pin-badge");
+                    if (idx !== -1) { if (existing) existing.remove(); }
+                    else { if (!existing) { var badge = document.createElement("span"); badge.className = "msg-pin-badge"; badge.textContent = "📌"; badge.style.cssText = "font-size:11px;margin-left:6px;"; msgs[i].querySelector(".bubble").appendChild(badge); } }
+                    break;
+                }
+            }
+        }
+    }
+}
+
+async function phoneDeleteSession(chatId) {
+    try {
+        var res = await apiFetch("/chat/sessions/" + encodeURIComponent(chatId), { method: "DELETE", headers: authHeaders() });
+        if (!res.ok) { showPhoneToast("Delete failed."); return; }
+        if (currentChatId === chatId) {
+            currentChatId = "";
+            phoneClearMessages();
+            var welcome = document.getElementById("phoneWelcome");
+            if (welcome) welcome.style.display = "flex";
+            var titleEl = document.getElementById("phoneChatTitle");
+            if (titleEl) titleEl.textContent = "New Thread";
+        }
+        await phoneLoadSessions();
+        showPhoneToast("Thread deleted.", false);
+    } catch (err) {
+        showPhoneToast("Delete failed: " + (err.message || ""));
+    }
+}
+
+// ── Header toolbar actions ──
+function phoneShareThread() {
+    if (!currentChatId) { showPhoneToast("No active thread to share."); return; }
+    var shareUrl = window.location.origin + "/share/" + currentChatId;
+    navigator.clipboard.writeText(shareUrl).then(function () {
+        showPhoneToast("Share link copied!", false);
+    }).catch(function () {
+        showPhoneToast("Could not copy link.");
+    });
+}
+
+function phoneReloadChat() {
+    if (!currentChatId) { showPhoneToast("No active thread to reload."); return; }
+    showPhoneToast("Reloading...", false);
+    phoneLoadChatHistory(currentChatId).then(function (ok) {
+        if (ok) showPhoneToast("Conversation reloaded.", false);
+        else showPhoneToast("Could not reload.");
+    });
+}
+
+async function phoneRegenerateMessage(msgIndex) {
+    if (!currentChatId) { showPhoneToast("No active session."); return; }
+    if (msgIndex < 0 || msgIndex >= messageStore.length) { showPhoneToast("Invalid message."); return; }
+    var msg = messageStore[msgIndex];
+    if (!msg || msg.role !== "assistant") { showPhoneToast("Can only regenerate AI responses."); return; }
+    var prevMsg = msgIndex > 0 ? messageStore[msgIndex - 1] : null;
+    if (!prevMsg || prevMsg.role !== "user") { showPhoneToast("No preceding user message to re-prompt."); return; }
+    var promptText = prevMsg.content || "";
+    if (!promptText) { showPhoneToast("Preceding message is empty."); return; }
+    showPhoneToast("Regenerating...", false);
+
+    var container = document.getElementById("messages");
+    if (!container) return;
+    var allMsgs = container.querySelectorAll(".assistant-message");
+    var targetEl = null;
+    for (var mi = 0; mi < allMsgs.length; mi++) {
+        var idx = parseInt(allMsgs[mi].querySelector('[data-msgindex]') ? allMsgs[mi].querySelector('[data-msgindex]').dataset.msgindex : allMsgs[mi].dataset.msgindex, 10);
+        if (isNaN(idx)) {
+            var toolbarBtns = allMsgs[mi].querySelectorAll("button");
+            for (var bi = 0; bi < toolbarBtns.length; bi++) {
+                var di = toolbarBtns[bi].dataset.index;
+                if (di !== undefined) { idx = parseInt(di, 10); break; }
+            }
+        }
+        if (idx === msgIndex) { targetEl = allMsgs[mi]; break; }
+    }
+    if (!targetEl) { showPhoneToast("Could not locate message bubble."); return; }
+    var bubbleDiv = targetEl.querySelector(".bubble");
+    if (bubbleDiv) { bubbleDiv.textContent = "Regenerating..."; msg.content = ""; }
+
+    try {
+        var body = { message: promptText, chat_id: currentChatId };
+        var streamRes = await fetch(apiUrl("/chat/stream"), {
+            method: "POST", credentials: "include",
+            headers: authHeaders({ "Content-Type": "application/json" }),
+            body: JSON.stringify(body)
+        });
+        if (!streamRes.ok) {
+            if (streamRes.status === 401) throw new Error("Session expired.");
+            throw new Error("Stream returned " + streamRes.status);
+        }
+        var reader = streamRes.body.getReader();
+        var decoder = new TextDecoder("utf-8");
+        var buffer = "";
+        var fullReply = "";
+        while (true) {
+            var chunk = await reader.read();
+            if (chunk.done) break;
+            buffer += decoder.decode(chunk.value, { stream: true });
+            var lines = buffer.split("\n");
+            buffer = lines.pop() || "";
+            for (var li = 0; li < lines.length; li++) {
+                var line = lines[li].trim();
+                if (!line || !line.startsWith("data: ")) continue;
+                var dataStr = line.slice(6).trim();
+                if (!dataStr || dataStr === "{}" || dataStr === "null") continue;
+                try { var evt = JSON.parse(dataStr); } catch (e) { continue; }
+                if (evt.error) { throw new Error(evt.error); }
+                if (evt.token !== undefined && evt.token !== "" && evt.token !== " ") {
+                    var tok = String(evt.token);
+                    if (tok.startsWith("{") || tok.startsWith("[")) continue;
+                    fullReply += tok;
+                    if (bubbleDiv) bubbleDiv.textContent = fullReply;
+                    container.scrollTop = container.scrollHeight;
+                }
+            }
+        }
+        if (fullReply) {
+            msg.content = fullReply;
+            showPhoneToast("Response regenerated.", false);
+            if (!isVoiceMuted) browserSpeak(fullReply);
+            phoneLoadSessions();
+        } else {
+            if (bubbleDiv) bubbleDiv.textContent = "[Empty response]";
+            showPhoneToast("Regeneration returned empty.");
+        }
+    } catch (err) {
+        if (bubbleDiv) bubbleDiv.textContent = msg.content || "[Regeneration failed]";
+        showPhoneToast("Regeneration error: " + (err.message || ""));
+    }
+}
+
+function phoneShareMessage(msgIndex) {
+    if (!currentChatId) { showPhoneToast("No active session."); return; }
+    var msg = messageStore[msgIndex];
+    if (!msg) { showPhoneToast("Message not found."); return; }
+    var text = msg.content || "";
+    if (!text) { showPhoneToast("Empty message."); return; }
+    navigator.clipboard.writeText(text).then(function () {
+        showPhoneToast("Response snippet copied to clipboard!", false);
+    }).catch(function () {
+        showPhoneToast("Could not copy.");
+    });
+}
+
+// ── MAIN SEND: live streaming from Flask backend ──
+window.phoneSend = async function () {
+    if (!authCheckComplete || isThinking) return;
+    var input = document.getElementById("phoneChatInput");
+    var text = input.value.trim();
+    if (!text) return;
+
+    phoneSetThinking(true);
+
+    if (!currentChatId) {
+        try {
+            var createRes = await apiFetch("/chat/sessions", { method: "POST", credentials: "include", headers: authHeaders({ "Content-Type": "application/json" }), body: JSON.stringify({ title: "New Chat" }) });
+            if (createRes.ok) { var createData = await createRes.json(); if (createData.status === "success") currentChatId = createData.session.chat_id; }
+        } catch (err) { console.warn("Failed to auto-create session.", err); }
+    }
+
+    phoneAddMessage(text, "user", _pendingImageData || null);
+    input.value = "";
+    var thinking = phoneAddThinkingIndicator();
+    var streamError = null;
+
+    try {
+        var body = { message: text };
+        if (currentChatId) body.chat_id = currentChatId;
+        if (_pendingImageData) { body.image = _pendingImageData; _pendingImageData = null; var pc = document.getElementById("phoneImagePreview"); if (pc) pc.classList.remove("show"); }
+
+        var streamRes = await fetch(apiUrl("/chat/stream"), {
+            method: "POST", credentials: "include",
+            headers: authHeaders({ "Content-Type": "application/json" }),
+            body: JSON.stringify(body)
+        });
+
+        if (!streamRes.ok) {
+            if (streamRes.status === 401) throw new Error("Session expired. Please log in again.");
+            throw new Error("Stream endpoint returned " + streamRes.status);
+        }
+
+        var reader = streamRes.body.getReader();
+        var decoder = new TextDecoder("utf-8");
+        var buffer = "";
+        var fullReply = "";
+        var bubbleEl = null;
+        var streamMeta = {};
+        var statusIndicator = null;
+
+        while (true) {
+            var chunk = await reader.read();
+            if (chunk.done) break;
+
+            buffer += decoder.decode(chunk.value, { stream: true });
+
+            var stripped = "";
+            var rawLines = buffer.split("\n");
+            for (var li = 0; li < rawLines.length; li++) {
+                var rl = rawLines[li];
+                if (rl.startsWith("data: ")) stripped += rl + "\n";
+                else if (rl.length > 0 && !rl.startsWith("{") && !rl.startsWith("data:")) stripped += rl + "\n";
+            }
+            buffer = stripped;
+
+            var lines = buffer.split("\n");
+            buffer = lines.pop() || "";
+
+            for (var j = 0; j < lines.length; j++) {
+                var line = lines[j].trim();
+                if (!line || !line.startsWith("data: ")) continue;
+                var dataStr = line.slice(6).trim();
+                if (!dataStr || dataStr === "{}" || dataStr === "null") continue;
+                try { var evt = JSON.parse(dataStr); } catch (e) { continue; }
+
+                if (evt.error) { streamError = evt.error; break; }
+
+                if (evt.intent) {
+                    if (!statusIndicator) {
+                        phoneRemoveThinkingIndicator(thinking);
+                        var statusDiv = document.createElement("div");
+                        statusDiv.className = "assistant-message";
+                        statusDiv.dataset.statusEl = "true";
+                        var statusBubble = document.createElement("div");
+                        statusBubble.className = "bubble";
+                        statusBubble.style.cssText = "color:#94a3b8;font-style:italic;font-size:12px;";
+                        statusBubble.textContent = "Searching the web...";
+                        statusDiv.appendChild(statusBubble);
+                        document.getElementById("messages").appendChild(statusDiv);
+                        statusIndicator = statusDiv;
+                        document.getElementById("messages").scrollTop = document.getElementById("messages").scrollHeight;
+                    }
+                    continue;
+                }
+
+                if (evt.token !== undefined) {
+                    if (evt.token === "" || evt.token === " ") continue;
+                    var tok = String(evt.token);
+                    if (tok.startsWith("{") || tok.startsWith("[") || tok.indexOf('{"intent":') !== -1 || tok.indexOf('{"token":') !== -1 || tok.indexOf('{"done":') !== -1) continue;
+
+                    if (statusIndicator) { statusIndicator.remove(); statusIndicator = null; }
+                    if (!bubbleEl) {
+                        phoneRemoveThinkingIndicator(thinking);
+                        phoneAddMessage("", "ai");
+                        var msgs = document.getElementById("messages");
+                        bubbleEl = msgs ? msgs.lastElementChild : null;
+                        if (bubbleEl) { var bub = bubbleEl.querySelector(".bubble"); if (bub) bub.textContent = ""; }
+                    }
+                    fullReply += tok;
+                    if (bubbleEl) {
+                        var bub = bubbleEl.querySelector(".bubble");
+                        if (bub) {
+                            bub.textContent = fullReply;
+                            var cursor = document.createElement("span");
+                            cursor.className = "stream-cursor";
+                            cursor.style.cssText = "display:inline-block;width:2px;height:14px;background:#00d4ff;animation:blink 1s step-end infinite;vertical-align:text-bottom;margin-left:1px;";
+                            bub.appendChild(cursor);
+                            var container = document.getElementById("messages");
+                            if (container) container.scrollTop = container.scrollHeight;
+                        }
+                    }
+                }
+                if (evt.done) {
+                    if (statusIndicator) { statusIndicator.remove(); statusIndicator = null; }
+                    streamMeta = evt;
+                }
+            }
+            if (streamError) break;
+        }
+
+        if (!bubbleEl && !streamError) { phoneRemoveThinkingIndicator(thinking); if (fullReply) phoneAddMessage(fullReply, "ai"); }
+
+        if (streamMeta.chat_id && !currentChatId) currentChatId = streamMeta.chat_id;
+
+        if (streamMeta.updated_title && currentChatId) {
+            var found = false;
+            for (var i = 0; i < sessionList.length; i++) { if (sessionList[i].chat_id === currentChatId) { sessionList[i].title = streamMeta.updated_title; found = true; break; } }
+            if (!found) sessionList.push({ chat_id: currentChatId, title: streamMeta.updated_title });
+            phoneRenderSessionList();
+        }
+        phoneLoadSessions();
+        if (!isVoiceMuted && fullReply) browserSpeak(fullReply);
+    } catch (err) {
+        if (!streamError) streamError = err.message || "Connection error";
+    }
+
+    // Fallback to non-streaming /chat
+    if (streamError) {
+        try {
+            phoneRemoveThinkingIndicator(thinking);
+            var body2 = { message: text };
+            if (currentChatId) body2.chat_id = currentChatId;
+            if (_pendingImageData) body2.image = _pendingImageData;
+            var fallbackRes = await apiFetch("/chat", { method: "POST", credentials: "include", headers: authHeaders({ "Content-Type": "application/json" }), body: JSON.stringify(body2), timeoutMs: 120000 });
+            var fallbackData = await fallbackRes.json();
+            phoneRemoveThinkingIndicator(thinking);
+            if (fallbackRes.status === 401) {
+                clearAuthToken(); showPhoneLogin(); showPhoneToast("Session expired. Please log in again.");
+                phoneSetThinking(false); return;
+            }
+            var reply = fallbackData.reply || fallbackData.message || "No response";
+            if (fallbackData.chat_id && !currentChatId) currentChatId = fallbackData.chat_id;
+            phoneAddMessage(reply, "ai");
+            phoneLoadSessions();
+        } catch (fallbackErr) {
+            phoneRemoveThinkingIndicator(thinking);
+            if (streamError.indexOf("401") !== -1 || streamError.indexOf("Session expired") !== -1) {
+                clearAuthToken(); showPhoneLogin();
+            } else {
+                phoneAddMessage(streamError || fallbackErr.message || "Network error. Server may be starting up — please retry in a moment.", "ai");
+                showPhoneToast(streamError || "Connection error — retrying...");
+            }
+        }
+    }
+
+    phoneSetThinking(false);
+    phoneFocusInput();
+    clearImageUpload();
+};
+
+// ── Clear image upload ──
+function clearImageUpload() {
+    _pendingImageData = null;
+    var container = document.getElementById("phoneImagePreview");
+    var uploader = document.getElementById("phoneImageInput");
+    if (container) container.classList.remove("show");
+    if (uploader) uploader.value = "";
+}
+
+// ── Auth session check ──
+async function phoneCheckSession() {
+    var wasComplete = authCheckComplete;
+    authCheckComplete = false;
+
+    if (!getAuthToken()) {
+        if (localStorage.getItem('isLoggedIn') === 'true') {
+            authCheckComplete = true;
+            setConnStatus("online");
+            hidePhoneLogin();
+            phoneClearMessages();
+            phoneLoadSessions();
+            var stEl = document.getElementById("phoneStatusText");
+            if (stEl) stEl.textContent = "Memory Online";
+            return true;
+        }
+        authCheckComplete = true;
+        showPhoneLogin();
+        var stEl = document.getElementById("phoneStatusText");
+        if (stEl) stEl.textContent = "Login Required";
+        return false;
+    }
+
+    setConnStatus("connecting");
+    try {
+        var res = await apiFetch("/auth/status", { credentials: "include", headers: authHeaders() });
+        var data = await res.json();
+        if (!res.ok || !data.authenticated) {
+            clearAuthToken(); authCheckComplete = true;
+            showPhoneLogin(); return false;
+        }
+
+        authCheckComplete = true;
+        setConnStatus("online");
+        hidePhoneLogin();
+        var stEl = document.getElementById("phoneStatusText");
+        if (stEl) stEl.textContent = "Memory Online";
+
+        /* Clean start — reset to empty ChatGPT-style interface */
+        currentChatId = "";
+        messageStore.length = 0;
+        phoneClearMessages();
+
+        var email = data.email || "";
+        if (email) {
+            var nameEl = document.getElementById("phoneUserName");
+            var avatarEl = document.getElementById("phoneAvatar");
+            var badgeEl = document.getElementById("phoneUserBadge");
+            if (nameEl) nameEl.textContent = email.split("@")[0];
+            if (avatarEl) avatarEl.textContent = email[0].toUpperCase();
+            if (badgeEl) badgeEl.textContent = data.is_creator ? "Founder & Creator" : "Active User";
+        }
+
+        phoneLoadSessions();
+        return true;
+    } catch (err) {
+        clearAuthToken(); authCheckComplete = true;
+        var stEl = document.getElementById("phoneStatusText");
+        if (stEl) stEl.textContent = "Login Required";
+        if (wasComplete) {
+            setConnStatus("offline");
+            showPhoneToast("Backend unavailable — retrying in 5s...");
+            setTimeout(phoneCheckSession, 5000);
+        } else {
+            setConnStatus("offline");
+            showPhoneLogin();
+            showPhoneToast("Cannot reach server at " + API_BASE_URL);
+        }
+        return false;
+    }
+}
+
+// ── Logout ──
+async function phoneLogout() {
+    try {
+        await apiFetch("/auth/logout", { method: "POST", credentials: "include", headers: authHeaders() });
+    } catch (_) {}
+    localStorage.removeItem('isLoggedIn');
+    clearAuthToken();
+    currentChatId = "";
+    sessionList = [];
+    messageStore.length = 0;
+    phoneClearMessages();
+    closePhoneSidebar();
+    showPhoneLogin();
+    showPhoneToast("Logged out.", false);
+}
+
+// ── Password recovery ──
+function phoneOpenRecovery() {
+    closePhoneSidebar();
+    document.getElementById("phoneRecoveryOverlay").classList.add("show");
+    document.getElementById("recoveryStep1").style.display = "block";
+    document.getElementById("recoveryStep2").style.display = "none";
+    document.getElementById("recoveryStatus").textContent = "";
+    document.getElementById("recoveryStatus2").textContent = "";
+}
+function phoneCloseRecovery() {
+    document.getElementById("phoneRecoveryOverlay").classList.remove("show");
+}
+async function phoneVerifyEmail() {
+    var email = document.getElementById("recoveryEmail").value.trim();
+    var status = document.getElementById("recoveryStatus");
+    status.textContent = "";
+    if (!email) { status.textContent = "Enter your email."; return; }
+    try {
+        var res = await apiFetch("/api/auth/forgot-password", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: email }) });
+        var data = await res.json();
+        if (!res.ok || data.status !== "success") throw new Error(data.message || "Email not found");
+        document.getElementById("recoveryQuestion").textContent = data.question || "What is your creator code project?";
+        document.getElementById("recoveryStep1").style.display = "none";
+        document.getElementById("recoveryStep2").style.display = "block";
+        status.textContent = "";
+    } catch (err) { status.textContent = err.message || "Could not verify email."; }
+}
+async function phoneResetPassword() {
+    var email = document.getElementById("recoveryEmail").value.trim();
+    var answer = document.getElementById("recoveryAnswer").value.trim();
+    var newPass = document.getElementById("recoveryNewPass").value;
+    var status = document.getElementById("recoveryStatus2");
+    status.textContent = "";
+    if (!answer) { status.textContent = "Enter your answer."; return; }
+    if (!newPass || newPass.length < 4) { status.textContent = "Password must be 4+ characters."; return; }
+    try {
+        var res = await apiFetch("/api/auth/reset-password", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: email, answer: answer, new_password: newPass }) });
+        var data = await res.json();
+        if (!res.ok || data.status !== "success") throw new Error(data.message || "Reset failed");
+        status.textContent = "Password reset! You can now log in.";
+        status.style.color = "#00ff88";
+        setTimeout(phoneCloseRecovery, 2000);
+    } catch (err) { status.textContent = err.message || "Could not reset password."; status.style.color = "#ff6b7a"; }
+}
+
+// ── Icon fallback system ──
+(function() {
+  var ICON_MAP = {
+    'close': '\u2715', 'add': '+', 'menu': '\u2630', 'search': '\ud83d\udd0d',
+    'send': '\u27a4', 'mic': '\ud83c\udfa4', 'plus': '+', 'x': '\u2715',
+    'chevron-left': '\u2039', 'chevron-right': '\u203a', 'chevron-down': '\u25bc',
+    'more-horizontal': '\u22ef', 'more-vertical': '\u22ee', 'edit-3': '\u270e',
+    'trash-2': '\ud83d\uddd1', 'share-2': '\ud83d\udd17', 'pin': '\ud83d\dccc',
+    'folder': '\ud83d\udcc1', 'lightbulb': '\ud83d\udca1', 'settings': '\u2699',
+    'log-out': '\u23ec', 'copy': '\ud83d\udcc4', 'rotate-ccw': '\u21ba',
+    'play': '\u25b6', 'pause': '\u23f8', 'volume-2': '\ud83d\udd0a',
+    'thumbs-up': '\ud83d\udc4d', 'thumbs-down': '\ud83d\udc4e', 'info': '\u2139',
+    'mail': '\u2709', 'alert-triangle': '\u26a0', 'image': '\ud83d\uddbc',
+    'smart-display': '\ud83d\udcfa', 'gesture': '\u270b', 'circle-stop': '\u23f9',
+    'camera': '\ud83d\udcf7', 'link': '\ud83d\udd17'
+  };
+  window.applyIconFallback = function() {
+    document.querySelectorAll('i[data-lucide]').forEach(function(el) {
+      var name = el.getAttribute('data-lucide');
+      if (name && ICON_MAP[name] && !el.classList.contains('icon-fallback')) {
+        el.classList.add('icon-fallback');
+        el.textContent = ICON_MAP[name];
+        el.style.cssText = (el.style.cssText || '') + ';font-style:normal;font-size:16px;';
+      }
+    });
+  };
+  if (document.readyState !== 'loading') window.applyIconFallback();
+  else document.addEventListener('DOMContentLoaded', window.applyIconFallback);
+  if (typeof MutationObserver !== 'undefined') {
+    new MutationObserver(window.applyIconFallback).observe(document.documentElement, { childList: true, subtree: true });
+  }
+})();
+
+// ── Markdown helper ──
+function phoneRenderMarkdown(text) {
+    if (typeof marked !== 'undefined' && marked) {
+        try { return marked.parse(text); } catch(e) { return text; }
+    }
+    return text;
+}
+
+// ── PDF viewer ──
+var settingsPdfDoc = null;
+var settingsPdfPage = 1;
+var settingsPdfTotalPages = 0;
+function openSettings() {
+    var overlay = document.getElementById('settingsOverlay');
+    if (overlay) overlay.style.setProperty('display', 'flex', 'important');
+    settingsPdfPage = 1;
+    renderPdfPage(1);
+}
+function closeSettings() {
+    var overlay = document.getElementById('settingsOverlay');
+    if (overlay) overlay.style.display = 'none';
+}
+function prevPdfPage() {
+    if (settingsPdfPage > 1) { settingsPdfPage--; renderPdfPage(settingsPdfPage); }
+}
+function nextPdfPage() {
+    if (settingsPdfPage < settingsPdfTotalPages) { settingsPdfPage++; renderPdfPage(settingsPdfPage); }
+}
+function goToPdfPage(n) {
+    if (n >= 1 && n <= settingsPdfTotalPages) { settingsPdfPage = n; renderPdfPage(n); }
+}
+function renderPdfPage(n) {
+    var canvas = document.getElementById('pdfCanvas');
+    var ctx = canvas.getContext('2d');
+    if (!settingsPdfDoc) return;
+    settingsPdfDoc.getPage(n).then(function (page) {
+        var viewport = page.getViewport({ scale: 1.5 });
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        var renderCtx = { canvasContext: ctx, viewport: viewport };
+        return page.render(renderCtx).promise;
+    }).then(function () {
+        document.getElementById('pdfPageIndicator').textContent = 'Page ' + n + ' of ' + settingsPdfTotalPages;
+        document.getElementById('pdfPrevBtn').style.display = n > 1 ? 'flex' : 'none';
+        document.getElementById('pdfNextBtn').style.display = n < settingsPdfTotalPages ? 'flex' : 'none';
+        updatePdfOverlays(n);
+    });
+}
+function updatePdfOverlays(n) {
+    document.querySelectorAll('.pdf-overlay').forEach(function (el) { el.style.display = 'none'; });
+    document.querySelectorAll('.pdf-overlay-' + n).forEach(function (el) { el.style.display = 'block'; });
+}
+function resetThemeColors() {
+    document.documentElement.style.setProperty('--accent-color', '#00d4ff');
+    document.documentElement.style.setProperty('--accent-hover', '#00b8d4');
+}
+function pdfChangePassword() {
+    var oldPass = document.getElementById('pdfOldPass').value;
+    var newPass = document.getElementById('pdfNewPass').value;
+    var status = document.getElementById('pdfPassStatus');
+    if (!oldPass || !newPass) { status.textContent = 'Fill in both fields.'; return; }
+    if (newPass.length < 4) { status.textContent = 'Password must be 4+ characters.'; return; }
+    apiFetch('/auth/change-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ current_password: oldPass, new_password: newPass })
+    }).then(function (r) { return r.json(); }).then(function (d) {
+        status.textContent = d.status === 'success' ? 'Password updated!' : d.message || 'Failed.';
+        if (d.status === 'success') { document.getElementById('pdfOldPass').value = ''; document.getElementById('pdfNewPass').value = ''; }
+    }).catch(function () { status.textContent = 'Connection error.'; });
+}
+
+// ── Event bindings ──
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function () { navigator.serviceWorker.register('/sw.js'); });
+}
+
+document.addEventListener("DOMContentLoaded", function () {
+    updateClock();
+
+    // Login
+    document.getElementById("phoneLoginBtn").addEventListener("click", phoneLogin);
+    document.getElementById("phoneLoginPassword").addEventListener("keydown", function (e) {
+        if (e.key === "Enter") { e.preventDefault(); phoneLogin(e); }
+    });
+    document.getElementById("phoneLoginEmail").addEventListener("keydown", function (e) {
+        if (e.key === "Enter") { e.preventDefault(); document.getElementById("phoneLoginPassword").focus(); }
+    });
+
+    // Sidebar
+    document.getElementById("phoneHamburger").addEventListener("click", togglePhoneSidebar);
+    document.getElementById("phoneSidebarClose").addEventListener("click", closePhoneSidebar);
+    document.getElementById("phoneSidebarBackdrop").addEventListener("click", closePhoneSidebar);
+
+    document.getElementById("phoneNewChat").addEventListener("click", phoneNewChat);
+    document.getElementById("phoneLibraryToggle").addEventListener("click", togglePhoneLibrary);
+    document.getElementById("phoneSuggestionToggle").addEventListener("click", togglePhoneSuggestion);
+    document.getElementById("phoneSuggestionSubmit").addEventListener("click", submitPhoneSuggestion);
+    document.getElementById("phoneSettingsToggle").addEventListener("click", function () { closePhoneSidebar(); openSettings(); });
+    document.getElementById("phoneLogoutBtn").addEventListener("click", phoneLogout);
+
+    // Plus menu
+    document.getElementById("phonePlusBtn").addEventListener("click", function (e) {
+        e.stopPropagation();
+        phoneTogglePlusMenu();
+    });
+
+    // Attachment items
+    document.getElementById("phoneAttachCamera").addEventListener("click", function () {
+        phoneClosePlusMenu();
+        document.getElementById("phoneImageInput").click();
+    });
+    document.getElementById("phoneAttachFile").addEventListener("click", function () {
+        phoneClosePlusMenu();
+        document.getElementById("phoneFileInput").click();
+    });
+    document.getElementById("phoneAttachDrive").addEventListener("click", function () {
+        phoneClosePlusMenu();
+        showPhoneComingSoon("Google Drive");
+    });
+    document.getElementById("phoneAttachLink").addEventListener("click", function () {
+        phoneClosePlusMenu();
+        showPhoneComingSoon("Website URL");
+    });
+
+    // Hidden file inputs
+    document.getElementById("phoneImageInput").addEventListener("change", function () {
+        var file = this.files[0];
+        if (!file) return;
+        var reader = new FileReader();
+        reader.onload = function (e) {
+            _pendingImageData = e.target.result;
+            var thumb = document.getElementById("phoneImagePreviewThumb");
+            var container = document.getElementById("phoneImagePreview");
+            if (thumb) thumb.src = _pendingImageData;
+            if (container) container.classList.add("show");
+        };
+        reader.readAsDataURL(file);
+        this.value = "";
+    });
+    document.getElementById("phoneImagePreviewRemove").addEventListener("click", function () {
+        _pendingImageData = null;
+        var container = document.getElementById("phoneImagePreview");
+        if (container) container.classList.remove("show");
+    });
+    document.getElementById("phoneFileInput").addEventListener("change", function () {
+        showPhoneComingSoon("Local File Upload");
+        this.value = "";
+    });
+
+    // Mic / Send
+    document.getElementById("phoneMicBtn").addEventListener("click", phoneToggleMic);
+    document.getElementById("phoneSendBtn").addEventListener("click", phoneSend);
+
+    var chatInput = document.getElementById("phoneChatInput");
+    chatInput.addEventListener("keydown", function (e) {
+        if (e.key === "Enter" && !e.shiftKey && !isThinking) { e.preventDefault(); phoneSend(); }
+    });
+    chatInput.addEventListener("input", function () {
+        this.style.height = "auto";
+        this.style.height = Math.min(this.scrollHeight, 80) + "px";
+    });
+
+    document.addEventListener("keydown", function (e) {
+        if (e.key === "Escape") { closePhoneSidebar(); hidePhoneToast(); }
+    });
+
+    document.addEventListener("pointerdown", function (e) {
+        var sidebar = document.getElementById("phoneSidebar");
+        if (sidebar && sidebar.classList.contains("open")) {
+            var backdrop = document.getElementById("phoneSidebarBackdrop");
+            if (backdrop && !sidebar.contains(e.target)) closePhoneSidebar();
+        }
+    });
+
+    if (typeof window !== "undefined" && window.speechSynthesis) {
+        window.speechSynthesis.getVoices();
+        if (window.speechSynthesis.onvoiceschanged !== undefined)
+            window.speechSynthesis.onvoiceschanged = window.speechSynthesis.getVoices;
+    }
+
+    phoneCheckSession();
+
+    // Close plus menu on outside click
+    document.addEventListener("pointerdown", function (e) {
+        var menu = document.getElementById("phonePlusMenu");
+        var btn = document.getElementById("phonePlusBtn");
+        if (menu && menu.classList.contains("show") && !menu.contains(e.target) && !btn.contains(e.target)) {
+            phoneClosePlusMenu();
+        }
+    });
+
+    // Close context menu on outside click
+    document.addEventListener("pointerdown", function (e) {
+        var menu = document.getElementById("phoneCtxMenu");
+        if (!menu || !menu.classList.contains("open")) return;
+        if (!menu.contains(e.target)) {
+            phoneCloseCtxMenu();
+        }
+    });
+
+    // Close session context menu on outside click
+    document.addEventListener("pointerdown", function (e) {
+        var menu = document.getElementById("sessionCtxMenu");
+        if (!menu || !menu.classList.contains("open")) return;
+        if (!menu.contains(e.target)) {
+            phoneCloseSessionCtxMenu();
+        }
+    });
+
+    // Session context menu item clicks
+    document.querySelectorAll('#sessionCtxMenu .session-ctx-item').forEach(function (el) {
+        el.addEventListener('click', function (e) {
+            e.stopPropagation();
+            phoneSessionCtxDo(this.dataset.sessionAction);
+        });
+    });
+
+    // Load PDF for settings overlay
+    if (typeof pdfjsLib !== 'undefined') {
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        try {
+            pdfjsLib.getDocument('/static/Valley Mind-AI Option B Suite.pdf').promise.then(function (doc) {
+                settingsPdfDoc = doc;
+                settingsPdfTotalPages = doc.numPages;
+                var indicator = document.getElementById('pdfPageIndicator');
+                if (indicator) indicator.textContent = 'Page 1 of ' + doc.numPages;
+                renderPdfPage(1);
+            }).catch(function (err) {
+                console.log('PDF loading bypassed');
+                var indicator = document.getElementById('pdfPageIndicator');
+                if (indicator) indicator.textContent = 'Failed to load PDF';
+            });
+        } catch (err) {
+            console.log('PDF loading bypassed');
+            var indicator = document.getElementById('pdfPageIndicator');
+            if (indicator) indicator.textContent = 'Failed to load PDF';
+        }
+    }
+
+    // Close settings overlay on backdrop click
+    document.getElementById('settingsOverlay').addEventListener('pointerdown', function (e) {
+        if (e.target === this) closeSettings();
+    });
+
+    // Forgot password link
+    document.getElementById("phoneForgotLink").addEventListener("click", phoneOpenRecovery);
+
+    // Recovery modal handlers
+    document.getElementById("recoveryVerifyBtn").addEventListener("click", phoneVerifyEmail);
+    document.getElementById("recoveryResetBtn").addEventListener("click", phoneResetPassword);
+    document.getElementById("recoveryBackBtn").addEventListener("click", phoneCloseRecovery);
+    document.getElementById("recoveryBackBtn2").addEventListener("click", phoneCloseRecovery);
+    document.getElementById("phoneRecoveryOverlay").addEventListener("pointerdown", function (e) {
+        if (e.target === this) phoneCloseRecovery();
+    });
+
+    // Coming-soon close handlers
+    document.getElementById("phoneComingSoonOverlay").addEventListener("click", hidePhoneComingSoon);
+    document.addEventListener("keydown", function (e) {
+        if (e.key === "Escape") { hidePhoneComingSoon(); }
+    });
+
+    // Extend Escape to also close recovery and coming soon
+    document.addEventListener("keydown", function phoneGlobalEscape(e) {
+        if (e.key === "Escape") {
+            hidePhoneComingSoon();
+            phoneCloseRecovery();
+            hidePhoneToast();
+        }
+    });
+
+    if (typeof lucide !== "undefined" && lucide.createIcons) lucide.createIcons();
+});
+</script>
+<div class="coming-soon-overlay" id="phoneComingSoonOverlay"></div>
+<div class="coming-soon-panel" id="phoneComingSoonPanel">
+  <h3 id="phoneComingSoonTitle">Coming Soon</h3>
+  <p id="phoneComingSoonDesc">This feature is on its way.</p>
+</div>
+
+<div class="recovery-overlay" id="phoneRecoveryOverlay">
+  <div class="recovery-modal">
+    <h2>Password Recovery</h2>
+    <div id="recoveryStep1">
+      <input type="email" id="recoveryEmail" placeholder="Your email address" autocomplete="email">
+      <button id="recoveryVerifyBtn">Verify Email</button>
+      <p id="recoveryStatus" style="font-size:11px;color:#94a3b8;text-align:center;min-height:14px;"></p>
+      <a class="back-link" id="recoveryBackBtn">Back to login</a>
+    </div>
+    <div id="recoveryStep2" style="display:none;">
+      <p style="color:#94a3b8;font-size:11px;text-align:center;" id="recoveryQuestion">Security question</p>
+      <input type="text" id="recoveryAnswer" placeholder="Your answer">
+      <input type="password" id="recoveryNewPass" placeholder="New password">
+      <button id="recoveryResetBtn">Reset Password</button>
+      <p id="recoveryStatus2" style="font-size:11px;color:#94a3b8;text-align:center;min-height:14px;"></p>
+      <a class="back-link" id="recoveryBackBtn2">Back to login</a>
+    </div>
+  </div>
+</div>
+
+<div id="settingsOverlay" style="position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(2,6,23,0.88);backdrop-filter:blur(14px);z-index:99999 !important;display:none;flex-direction:column;align-items:center;justify-content:center;">
+  <div style="position:relative;width:100%;max-width:1280px;height:100%;max-height:90vh;background:#0b1120;border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,0.6);overflow:hidden;border:1px solid rgba(34,211,238,0.15);">
+    <button id="closeSettingsBtn" onclick="closeSettings()" style="position:absolute;top:14px;right:18px;z-index:100;background:rgba(0,0,0,0.5);border:none;color:#f8fafc;font-size:26px;cursor:pointer;pointer-events:auto !important;width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;line-height:1;transition:background 0.2s;">&times;</button>
+    <div id="pdfPageIndicator" style="position:absolute;bottom:16px;left:50%;transform:translateX(-50%);z-index:100;background:rgba(0,0,0,0.65);color:#94a3b8;font-size:12px;padding:4px 14px;border-radius:20px;font-family:'Inter',sans-serif;pointer-events:none;">Loading...</div>
+    <button id="pdfPrevBtn" onclick="prevPdfPage()" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);z-index:100;background:rgba(0,0,0,0.5);border:none;color:#f8fafc;font-size:30px;cursor:pointer;pointer-events:auto !important;width:44px;height:44px;border-radius:50%;display:none;align-items:center;justify-content:center;transition:background 0.2s;">&#8249;</button>
+    <button id="pdfNextBtn" onclick="nextPdfPage()" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);z-index:100;background:rgba(0,0,0,0.5);border:none;color:#f8fafc;font-size:30px;cursor:pointer;pointer-events:auto !important;width:44px;height:44px;border-radius:50%;display:none;align-items:center;justify-content:center;transition:background 0.2s;">&#8250;</button>
+    <canvas id="pdfCanvas" style="display:block;margin:0 auto;width:100%;height:100%;object-fit:contain;"></canvas>
+    <div class="pdf-overlay pdf-overlay-1" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;display:none;">
+      <div onclick="goToPdfPage(2)" style="position:absolute;left:5%;top:30%;width:35%;height:8%;pointer-events:auto;cursor:pointer;" title="Go to Password Change"></div>
+      <div onclick="goToPdfPage(3)" style="position:absolute;left:5%;top:42%;width:35%;height:8%;pointer-events:auto;cursor:pointer;" title="Go to Theme Engine"></div>
+    </div>
+    <div class="pdf-overlay pdf-overlay-2" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;display:none;">
+      <div style="position:absolute;left:50%;top:38%;width:80%;max-width:300px;height:auto;pointer-events:auto;display:flex;flex-direction:column;gap:10px;transform:translateX(-50%);">
+        <input id="pdfOldPass" type="password" placeholder="Current password" style="width:100%;background:rgba(15,23,42,0.85);border:1px solid rgba(34,211,238,0.4);border-radius:8px;padding:10px 12px;color:#f8fafc;font-size:13px;outline:none;pointer-events:auto !important;">
+        <input id="pdfNewPass" type="password" placeholder="New password" style="width:100%;background:rgba(15,23,42,0.85);border:1px solid rgba(34,211,238,0.4);border-radius:8px;padding:10px 12px;color:#f8fafc;font-size:13px;outline:none;pointer-events:auto !important;">
+        <button onclick="pdfChangePassword()" style="width:100%;border:none;border-radius:8px;background:#0ea5e9;color:#fff;font-weight:600;padding:10px;cursor:pointer;pointer-events:auto !important;font-size:13px;">Update Password</button>
+        <p id="pdfPassStatus" style="font-size:11px;color:#94a3b8;margin:0;text-align:center;"></p>
+      </div>
+    </div>
+    <div class="pdf-overlay pdf-overlay-3" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;display:none;">
+      <button onclick="resetThemeColors()" style="position:absolute;left:30%;top:60%;width:18%;height:6%;pointer-events:auto !important;cursor:pointer;background:rgba(14,165,233,0.2);border:1px solid rgba(14,165,233,0.5);border-radius:8px;color:#f8fafc;font-weight:600;font-size:13px;backdrop-filter:blur(4px);">Reset to Default</button>
+    </div>
+  </div>
+</div>
+</body>
+</html>
