@@ -5,6 +5,7 @@ services:
     plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn app:app
+    healthCheckPath: /auth/status
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.9
@@ -13,7 +14,7 @@ services:
       - key: SESSION_COOKIE_SECURE
         value: "true"
       - key: SESSION_COOKIE_SAMESITE
-        value: Lax
+        value: "None"
       - key: ALLOWED_ORIGINS
         value: ""
       - key: GROQ_API_KEY
