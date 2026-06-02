@@ -540,7 +540,7 @@ function resolveApiBaseUrl() {
     const isLocal = localHosts.has(window.location.hostname);
     const isBackendPort = window.location.port === "8000";
     if (window.location.protocol === "file:" || (isLocal && !isBackendPort)) {
-        return "http://127.0.0.1:8000";
+        return "https://valleymind-ai-gzta.onrender.com";
     }
     return window.location.origin;
 }
