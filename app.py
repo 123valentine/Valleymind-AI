@@ -36,9 +36,12 @@ _local_dev_origins = [
     "http://localhost:5173",
     "null",
 ]
-_cors_origins = _allowed_origins or ([] if _is_production else _local_dev_origins)
-if _cors_origins:
-    CORS(app, supports_credentials=True, origins=_cors_origins)
+_cors_origins = _allowed_origins or (
+    _local_dev_origins
+    if not _is_production
+    else r"https?://([\w-]+\.)*(vercel\.app|onrender\.com)"
+)
+CORS(app, supports_credentials=True, origins=_cors_origins)
 
 # Cache Marcus per authenticated user so memory never leaks across accounts.
 _marcus_by_user = {}
