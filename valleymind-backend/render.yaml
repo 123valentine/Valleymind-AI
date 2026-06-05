@@ -1,0 +1,53 @@
+services:
+  - type: web
+    name: valleymind-ai-backend
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app
+    healthCheckPath: /auth/status
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: SECRET_KEY
+        generateValue: true
+      - key: SESSION_COOKIE_SECURE
+        value: "true"
+      - key: SESSION_COOKIE_SAMESITE
+        value: "None"
+      - key: SESSION_COOKIE_HTTPONLY
+        value: "true"
+      - key: ALLOWED_ORIGINS
+        value: "https://valleymind-ai.vercel.app"
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GROQ_MODEL
+        value: ""
+      - key: GROQ_BASE_URL
+        value: https://api.groq.com/openai/v1
+      - key: NEWS_API_KEY
+        sync: false
+      - key: SPORTS_API_KEY
+        sync: false
+      - key: API_KEY
+        sync: false
+      - key: NEWSCATCHER_API_KEY
+        sync: false
+      - key: CURRENTS_API_KEY
+        sync: false
+      - key: API_SPORTS_KEY
+        sync: false
+      - key: MONGODB_URI
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: NVIDIA_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: TINYFISH_API_KEY
+        sync: false
+    disk:
+      name: valleymind-memory
+      mountPath: /opt/render/project/src/memory_data
+      sizeGB: 1
