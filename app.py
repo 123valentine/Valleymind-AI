@@ -3,17 +3,58 @@ import json
 import os
 import re
 import secrets
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from threading import Lock
 from urllib.parse import quote
 
 from flask import Flask, Response, jsonify, request, send_from_directory, session, stream_with_context
 from flask_cors import CORS
+from pymongo import MongoClient
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from core.brain import MarcusBrain
 from core.config import PROJECT_ROOT
 from core.tts import speak_marcus
+
+# ── Load .env for local dev ──────────────────────────────────────────────
+_env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+if os.path.isfile(_env_path):
+    with open(_env_path, encoding="utf-8") as _f:
+        for _line in _f:
+            _line = _line.strip()
+            if not _line or _line.startswith("#") or "=" not in _line:
+                continue
+            _key, _val = _line.split("=", 1)
+            _key = _key.strip()
+            _val = _val.strip().strip("\"'")
+            if _key and not os.environ.get(_key):
+                os.environ[_key] = _val
+
+# ── MongoDB Atlas ────────────────────────────────────────────────────────
+_mongo_uri = os.getenv("MONGODB_URI", "").strip()
+_mongo_client: MongoClient | None = None
+_mongo_db = None
+_mongo_chat_collection = None
+
+if _mongo_uri:
+    try:
+        _mongo_client = MongoClient(
+            _mongo_uri,
+            serverSelectionTimeoutMS=5000,
+            connectTimeoutMS=5000,
+        )
+        _mongo_db = _mongo_client["valleymind_db"]
+        _mongo_chat_collection = _mongo_db["chat_history"]
+        # Force a lightweight ping to confirm connectivity at startup
+        _mongo_client.admin.command("ping")
+        print(f"[MONGO] Connected to Atlas — db=valleymind_db, collection=chat_history")
+    except Exception as _mongo_err:
+        print(f"[MONGO] Connection failed: {_mongo_err}")
+        _mongo_client = None
+        _mongo_db = None
+        _mongo_chat_collection = None
+else:
+    print("[MONGO] MONGODB_URI not set — skipping Atlas")
 
 app = Flask(__name__)
 app.permanent_session_lifetime = timedelta(days=30)
@@ -629,6 +670,84 @@ def change_password():
         _save_users(users)
 
     return jsonify({"status": "success", "message": "Password changed successfully."})
+
+
+@app.route("/api/chat", methods=["POST"])
+def api_chat():
+    """
+    Chat endpoint backed by MongoDB for short-term conversation memory.
+
+    Accepts JSON: { "user_id": "...", "message": "..." }
+    - Reads all prior messages for that user from MongoDB as context.
+    - Saves the incoming user message immediately.
+    - Generates a reply via Marcus brain.
+    - Appends the assistant reply to the same MongoDB document.
+    """
+    try:
+        data = request.get_json(silent=True)
+        if not data:
+            return jsonify({"status": "error", "message": "No JSON body received"}), 400
+
+        user_id = str(data.get("user_id") or "").strip()
+        message = str(data.get("message") or "").strip()
+
+        if not user_id:
+            return jsonify({"status": "error", "message": "user_id is required"}), 400
+        if not message:
+            return jsonify({"status": "error", "message": "message is required"}), 400
+
+        if not _mongo_chat_collection:
+            return jsonify({"status": "error", "message": "MongoDB not available"}), 503
+
+        # ── 1. Fetch previous messages from MongoDB ──────────────────────
+        doc = _mongo_chat_collection.find_one({"user_id": user_id})
+        previous_messages = doc["messages"] if doc and isinstance(doc.get("messages"), list) else []
+
+        # ── 2. Build context string from history ─────────────────────────
+        context_lines = []
+        for prev in previous_messages[-20:]:  # last 20 exchanges max
+            role = prev.get("role", "user")
+            content = prev.get("content", "")
+            context_lines.append(f"{role}: {content}")
+        context_str = "\n".join(context_lines)
+        full_prompt = f"{context_str}\nuser: {message}" if context_str else message
+
+        # ── 3. Save user message to MongoDB immediately ──────────────────
+        now_iso = datetime.now(timezone.utc).isoformat()
+        user_entry = {"role": "user", "content": message, "timestamp": now_iso}
+        _mongo_chat_collection.update_one(
+            {"user_id": user_id},
+            {"$push": {"messages": user_entry}},
+            upsert=True,
+        )
+
+        # ── 4. Get AI response via Marcus ────────────────────────────────
+        marcus = load_marcus(user_id)
+        if not marcus:
+            reply = "I'm sorry, but I'm not fully configured yet. Please try again later."
+        else:
+            auth = _current_auth()
+            if auth.get("email"):
+                _initialize_user_memory(marcus, auth["email"])
+            reply = marcus.respond(full_prompt)
+
+        # ── 5. Append assistant reply to MongoDB ─────────────────────────
+        assistant_entry = {"role": "assistant", "content": reply, "timestamp": datetime.now(timezone.utc).isoformat()}
+        _mongo_chat_collection.update_one(
+            {"user_id": user_id},
+            {"$push": {"messages": assistant_entry}},
+        )
+
+        return jsonify({
+            "status": "success",
+            "reply": reply,
+            "character": "marcus",
+            "user_id": user_id,
+        })
+
+    except Exception as exc:
+        print(f"[CRITICAL] /api/chat crashed: {exc}")
+        return jsonify({"status": "error", "message": "Internal server error"}), 500
 
 
 @app.route("/chat", methods=["POST"])
