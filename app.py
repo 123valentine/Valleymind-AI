@@ -705,7 +705,7 @@ def api_chat():
 
         # ── 2. Build context string from history ─────────────────────────
         context_lines = []
-        for prev in previous_messages[-20:]:  # last 20 exchanges max
+        for prev in previous_messages[-8:]:   # last 8 exchanges for context
             role = prev.get("role", "user")
             content = prev.get("content", "")
             context_lines.append(f"{role}: {content}")
