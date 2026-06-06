@@ -781,7 +781,7 @@ def api_chat_message():
 
         _mongo_chat_sessions.update_one(
             {"chat_id": session_id, "user_id": user_id},
-            {"$set": {"title": title, "last_updated": datetime.utcnow()},
+            {"$set": {"title": title, "last_updated": datetime.utcnow(), "session_id": session_id},
              "$inc": {"message_count": 1}},
             upsert=True,
         )
