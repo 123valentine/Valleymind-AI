@@ -1162,8 +1162,8 @@ function renderSessionList() {
     var visibleSessions = sorted.filter(function (session) {
         var title = (session.title || "").trim();
         var isGeneric = title === "" || title === "New Chat" || title === "Untitled Thread";
-        var isEmpty = !session.message_count || session.message_count === 0;
-        if (isGeneric && isEmpty && session.chat_id !== currentChatId) return false;
+        var isEmpty = isGeneric && (!session.message_count || session.message_count === 0);
+        if (isEmpty && session.chat_id !== currentChatId) return false;
         return true;
     });
 

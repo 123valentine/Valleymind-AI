@@ -780,10 +780,8 @@ def api_chat_message():
         return jsonify({"error": "session_id and message are required"}), 400
 
     try:
-        now = datetime.now(timezone.utc).isoformat()
-
         existing = _mongo_chat_sessions.find_one({
-            "session_id": session_id,
+            "chat_id": session_id,
             "user_id": user_id,
         })
         title = (existing or {}).get("title", "")
@@ -791,12 +789,9 @@ def api_chat_message():
             title = user_message[:25].rstrip()
 
         _mongo_chat_sessions.update_one(
-            {"session_id": session_id, "user_id": user_id},
-            {"$set": {
-                "chat_id": session_id,
-                "title": title,
-                "last_updated": now,
-            }},
+            {"chat_id": session_id, "user_id": user_id},
+            {"$set": {"title": title, "last_updated": datetime.utcnow()},
+             "$inc": {"message_count": 1}},
             upsert=True,
         )
 
@@ -805,7 +800,7 @@ def api_chat_message():
             "user_id": user_id,
             "user_message": user_message,
             "ai_response": ai_response,
-            "timestamp": now,
+            "timestamp": datetime.utcnow(),
         })
 
         return jsonify({"status": "success"})
