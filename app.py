@@ -35,6 +35,8 @@ _mongo_uri = os.getenv("MONGODB_URI", "").strip()
 _mongo_client: MongoClient | None = None
 _mongo_db = None
 _mongo_chat_collection = None
+_mongo_chat_sessions = None
+_mongo_messages = None
 
 if _mongo_uri:
     try:
@@ -45,14 +47,40 @@ if _mongo_uri:
         )
         _mongo_db = _mongo_client["valleymind_db"]
         _mongo_chat_collection = _mongo_db["chat_history"]
+        _mongo_chat_sessions = _mongo_db["chat_sessions"]
+        _mongo_messages = _mongo_db["messages"]
         # Force a lightweight ping to confirm connectivity at startup
         _mongo_client.admin.command("ping")
-        print(f"[MONGO] Connected to Atlas — db=valleymind_db, collection=chat_history")
+        print(f"[MONGO] Connected to Atlas — db=valleymind_db, collections ready")
+        # Ensure indexes for sidebar session listing and message retrieval
+        _mongo_chat_sessions.create_index(
+            [("user_id", 1), ("last_updated", -1)],
+            name="user_sessions_idx",
+            background=True,
+        )
+        _mongo_chat_sessions.create_index(
+            [("session_id", 1), ("user_id", 1)],
+            name="session_user_unique",
+            unique=True,
+            background=True,
+        )
+        _mongo_messages.create_index(
+            [("session_id", 1), ("timestamp", 1)],
+            name="session_messages_idx",
+            background=True,
+        )
+        _mongo_messages.create_index(
+            [("user_id", 1)],
+            name="messages_user_idx",
+            background=True,
+        )
     except Exception as _mongo_err:
         print(f"[MONGO] Connection failed: {_mongo_err}")
         _mongo_client = None
         _mongo_db = None
         _mongo_chat_collection = None
+        _mongo_chat_sessions = None
+        _mongo_messages = None
 else:
     print("[MONGO] MONGODB_URI not set — skipping Atlas")
 
@@ -440,6 +468,17 @@ def chat_delete_session(chat_id):
         return jsonify({"status": "error", "message": "Marcus not configured"}), 404
     try:
         marcus.memory.delete_session(chat_id)
+        # Also clean up from chat_sessions and messages collections
+        if _mongo_chat_sessions is not None:
+            try:
+                _mongo_chat_sessions.delete_one({"session_id": chat_id, "user_id": user_id})
+            except Exception:
+                pass
+        if _mongo_messages is not None:
+            try:
+                _mongo_messages.delete_many({"session_id": chat_id, "user_id": user_id})
+            except Exception:
+                pass
         return jsonify({"status": "success"})
     except Exception as exc:
         print(f"[ERROR] Failed to delete session '{chat_id}': {exc}")
@@ -670,6 +709,105 @@ def change_password():
         _save_users(users)
 
     return jsonify({"status": "success", "message": "Password changed successfully."})
+
+
+@app.route("/api/chat/history", methods=["GET"])
+def api_chat_history():
+    """Return all chat sessions for the authenticated user, sorted by last_updated descending."""
+    user_id, error = _require_login()
+    if error:
+        return error
+    try:
+        if not _mongo_chat_sessions:
+            return jsonify({"sessions": []})
+        cursor = _mongo_chat_sessions.find(
+            {"user_id": user_id},
+            {"_id": 0},
+        ).sort("last_updated", -1)
+        return jsonify({"sessions": list(cursor)})
+    except Exception as exc:
+        print(f"[ERROR] /api/chat/history failed: {exc}")
+        return jsonify({"error": "Failed to fetch sessions"}), 500
+
+
+@app.route("/api/chat/messages", methods=["GET"])
+def api_chat_messages():
+    """Return all message pairs for a given session_id, ordered by timestamp ascending."""
+    user_id, error = _require_login()
+    if error:
+        return error
+    session_id = request.args.get("session_id", "").strip()
+    if not session_id:
+        return jsonify({"error": "session_id is required"}), 400
+    try:
+        if not _mongo_messages:
+            return jsonify({"messages": []})
+        cursor = _mongo_messages.find(
+            {"session_id": session_id, "user_id": user_id},
+            {"_id": 0},
+        ).sort("timestamp", 1)
+        raw = list(cursor)
+        messages = []
+        for doc in raw:
+            messages.append({"role": "user", "content": doc.get("user_message", "")})
+            messages.append({"role": "assistant", "content": doc.get("ai_response", "")})
+        return jsonify({"messages": messages})
+    except Exception as exc:
+        print(f"[ERROR] /api/chat/messages failed: {exc}")
+        return jsonify({"error": "Failed to fetch messages"}), 500
+
+
+@app.route("/api/chat/message", methods=["POST"])
+def api_chat_message():
+    """
+    Atomically upsert a chat_session and insert a message pair.
+
+    Request body: { "session_id": "...", "message": "...", "response": "..." }
+    """
+    user_id, error = _require_login()
+    if error:
+        return error
+    data = request.get_json(silent=True) or {}
+    session_id = (data.get("session_id") or "").strip()
+    user_message = (data.get("message") or "").strip()
+    ai_response = (data.get("response") or "").strip()
+
+    if not session_id or not user_message:
+        return jsonify({"error": "session_id and message are required"}), 400
+
+    try:
+        now = datetime.now(timezone.utc).isoformat()
+
+        existing = _mongo_chat_sessions.find_one({
+            "session_id": session_id,
+            "user_id": user_id,
+        })
+        title = (existing or {}).get("title", "")
+        if not title:
+            title = user_message[:25].rstrip()
+
+        _mongo_chat_sessions.update_one(
+            {"session_id": session_id, "user_id": user_id},
+            {"$set": {
+                "chat_id": session_id,
+                "title": title,
+                "last_updated": now,
+            }},
+            upsert=True,
+        )
+
+        _mongo_messages.insert_one({
+            "session_id": session_id,
+            "user_id": user_id,
+            "user_message": user_message,
+            "ai_response": ai_response,
+            "timestamp": now,
+        })
+
+        return jsonify({"status": "success"})
+    except Exception as exc:
+        print(f"[ERROR] /api/chat/message failed: {exc}")
+        return jsonify({"error": "Failed to save message"}), 500
 
 
 @app.route("/api/chat", methods=["POST"])

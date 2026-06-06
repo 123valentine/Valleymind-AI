@@ -69,6 +69,25 @@
 .message-context-item { display:flex; align-items:center; gap:10px; padding:9px 14px; border-radius:8px; font-size:13px; color:#bbc9cf; cursor:pointer; transition:all 0.12s; white-space:nowrap; }
 .message-context-item:hover { background:rgba(0,212,255,0.08); color:#00d4ff; }
 .message-context-item svg { width:16px; height:16px; flex-shrink:0; }
+  .message-wrap { position:relative; }
+  .copy-float-btn {
+    position:absolute; top:8px; right:8px; z-index:5;
+    opacity:0; transition:opacity 0.2s;
+    background:rgba(15,23,42,0.8);
+    border:1px solid rgba(255,255,255,0.1);
+    border-radius:6px; cursor:pointer; padding:5px;
+    display:flex; align-items:center; justify-content:center;
+    color:#94a3b8; line-height:1;
+  }
+  .message-wrap:hover .copy-float-btn,
+  .copy-float-btn:focus-visible { opacity:1; }
+  .copy-float-btn:hover {
+    opacity:1;
+    background:rgba(15,23,42,0.95);
+    color:#00d4ff;
+    border-color:rgba(0,212,255,0.3);
+  }
+  .copy-float-btn.copied { color:#00ff88; border-color:rgba(0,255,136,0.3); }
   .ctx-divider { height:1px; background:rgba(255,255,255,0.08); margin:4px 0; }
   .page { display:none; }
   .page.active { display:flex; flex-direction:column; flex:1; overflow:hidden; }
@@ -801,6 +820,38 @@ function copyMessageText(btn) {
     });
 }
 
+function copyUserMessageText(btn) {
+    const wrap = btn.closest('.message-wrap');
+    const bubble = wrap ? wrap.querySelector('.bubble') : null;
+    const text = bubble ? bubble.textContent : '';
+
+    if (!text) return;
+
+    function doCopy(cb) {
+        navigator.clipboard.writeText(text).then(cb).catch(function () {
+            const ta = document.createElement("textarea");
+            ta.value = text;
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand("copy");
+            document.body.removeChild(ta);
+            cb();
+        });
+    }
+
+    doCopy(function () {
+        btn.innerHTML = '<i data-lucide="check" style="width:14px;height:14px;"></i>';
+        btn.classList.add('copied');
+        if (typeof lucide !== 'undefined' && lucide.createIcons) lucide.createIcons();
+
+        setTimeout(function () {
+            btn.innerHTML = '<i data-lucide="copy" style="width:14px;height:14px;"></i>';
+            btn.classList.remove('copied');
+            if (typeof lucide !== 'undefined' && lucide.createIcons) lucide.createIcons();
+        }, 1500);
+    });
+}
+
 window.toggleVoicePlayback = function (btn) {
     const icon = btn.querySelector('i');
     const isPlaying = btn.dataset.playing === 'true';
@@ -877,7 +928,23 @@ function addMessage(text, type = "ai", imageData) {
         txtSpan.textContent = text;
         bubble.appendChild(txtSpan);
     }
-    wrapper.appendChild(bubble);
+
+    if (type === "user") {
+        var wrapDiv = document.createElement("div");
+        wrapDiv.className = "message-wrap";
+        wrapDiv.appendChild(bubble);
+
+        var copyBtn = document.createElement("button");
+        copyBtn.className = "copy-float-btn";
+        copyBtn.title = "Copy text";
+        copyBtn.innerHTML = '<i data-lucide="copy" style="width:14px;height:14px;"></i>';
+        copyBtn.onclick = function () { copyUserMessageText(this); };
+        wrapDiv.appendChild(copyBtn);
+
+        wrapper.appendChild(wrapDiv);
+    } else {
+        wrapper.appendChild(bubble);
+    }
 
     if (type === "ai") {
         const toolbar = document.createElement("div");
@@ -1029,18 +1096,48 @@ async function loadChatHistory(chatId) {
 
 async function loadSessions() {
     try {
-        const res = await apiFetch("/chat/sessions", {
+        const res = await apiFetch("/api/chat/history", {
             credentials: "include",
             headers: authHeaders()
         });
         if (!res.ok) return;
         const data = await res.json();
-        if (data.status === "success") {
-            sessionList = data.sessions || [];
-            renderSessionList();
-        }
+        sessionList = data.sessions || [];
+        renderSessionList();
     } catch (err) {
         console.warn("Failed to load sessions.", err);
+    }
+}
+
+async function loadSessionMessages(sessionId) {
+    try {
+        const res = await apiFetch("/api/chat/messages?session_id=" + encodeURIComponent(sessionId), {
+            credentials: "include",
+            headers: authHeaders()
+        });
+        if (!res.ok) return [];
+        const data = await res.json();
+        return data.messages || [];
+    } catch (err) {
+        console.warn("Failed to load messages.", err);
+        return [];
+    }
+}
+
+async function persistMessagePair(sessionId, userMessage, aiResponse) {
+    try {
+        await apiFetch("/api/chat/message", {
+            method: "POST",
+            credentials: "include",
+            headers: authHeaders({ "Content-Type": "application/json" }),
+            body: JSON.stringify({
+                session_id: sessionId,
+                message: userMessage,
+                response: aiResponse,
+            }),
+        });
+    } catch (err) {
+        console.warn("Failed to persist message pair.", err);
     }
 }
 
@@ -1066,7 +1163,7 @@ function renderSessionList() {
         var title = (session.title || "").trim();
         var isGeneric = title === "" || title === "New Chat" || title === "Untitled Thread";
         var isEmpty = !session.message_count || session.message_count === 0;
-        if (isGeneric && isEmpty && session.chat_id !== window.currentChatId) return false;
+        if (isGeneric && isEmpty && session.chat_id !== currentChatId) return false;
         return true;
     });
     if (countEl) {
@@ -1079,7 +1176,7 @@ function renderSessionList() {
     visibleSessions.forEach(function (session) {
         var isPinned = pinnedIds.indexOf(session.chat_id) !== -1;
         const item = document.createElement("div");
-        item.className = "hist-item" + (session.chat_id === window.currentChatId ? " hist-active" : "");
+        item.className = "hist-item" + (session.chat_id === currentChatId ? " hist-active" : "");
         item.style.cssText = "display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border-radius:10px;cursor:pointer;position:relative;margin-bottom:4px;background:rgba(255,255,255,0.02);transition:all 0.2s;";
 
         const titleWrapper = document.createElement("div");
@@ -1121,7 +1218,12 @@ function renderSessionList() {
 async function switchSession(chatId) {
     if (chatId === currentChatId) return;
     currentChatId = chatId;
-    await loadChatHistory(chatId);
+    var messages = await loadSessionMessages(chatId);
+    if (messages.length > 0) {
+        renderChatHistory(messages);
+    } else {
+        await loadChatHistory(chatId);
+    }
     renderSessionList();
     closeFloatingPanels();
     document.querySelectorAll(".page").forEach(function (el) { el.classList.remove("active"); });
@@ -1201,8 +1303,8 @@ function openActionDropdown(event, chatId, currentTitle) {
                 headers: authHeaders()
             });
             if (res.ok) {
-                if (window.currentChatId === chatId) {
-                    window.currentChatId = null;
+                if (currentChatId === chatId) {
+                    currentChatId = null;
                     clearVisibleMessages();
                 }
                 if (typeof loadSessions === "function") { await loadSessions(); }
@@ -1491,16 +1593,24 @@ async function checkSession() {
             splash.style.opacity = "1";
         }
 
-        const historyLoaded = await loadChatHistory();
-        if (!historyLoaded) {
-            clearAuthToken();
-            setAppVisible(false);
-            authCheckComplete = true;
-            if (splash) splash.style.display = "none";
-            if (login) login.style.display = "flex";
-            const error = document.getElementById("loginError");
-            if (error) error.textContent = "Could not load session memory";
-            return false;
+        // Load sidebar sessions first — independent of Marcus brain
+        await loadSessions();
+
+        // If we have sessions, load the most recent one
+        if (sessionList.length > 0) {
+            var latest = sessionList[0];
+            currentChatId = latest.session_id || latest.chat_id || "";
+            if (currentChatId) {
+                var msgs = await loadSessionMessages(currentChatId);
+                if (msgs.length > 0) {
+                    renderChatHistory(msgs);
+                } else {
+                    await loadChatHistory(currentChatId);
+                }
+            }
+        } else {
+            // No sessions yet — try the default Marcus chat without blocking
+            await loadChatHistory();
         }
 
         setAppVisible(true);
@@ -1516,7 +1626,6 @@ async function checkSession() {
             if (avatarEl) avatarEl.textContent = email[0].toUpperCase();
             if (badgeEl) badgeEl.textContent = data.is_creator ? "Founder & Creator" : "Active User";
         }
-        loadSessions();
 
         if (splash) {
             setTimeout(function() {
@@ -1855,6 +1964,10 @@ window.send = async function () {
 
         loadSessions();
 
+        if (currentChatId && text && fullReply) {
+            persistMessagePair(currentChatId, text, fullReply);
+        }
+
         if (!isVoiceMuted && fullReply) {
             browserSpeak(fullReply);
         }
@@ -1896,6 +2009,10 @@ window.send = async function () {
             }
             addMessage(reply, "ai");
             loadSessions();
+
+            if (currentChatId && text && reply) {
+                persistMessagePair(currentChatId, text, reply);
+            }
 
             if (!isVoiceMuted && reply) {
                 browserSpeak(reply);
