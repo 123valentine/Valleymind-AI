@@ -1166,6 +1166,16 @@ function renderSessionList() {
         if (isGeneric && isEmpty && session.chat_id !== currentChatId) return false;
         return true;
     });
+
+    // Ensure currentChatId is always visible even if the backend hasn't fully updated yet
+    if (currentChatId && !visibleSessions.some(function (s) { return s.chat_id === currentChatId; })) {
+        var current = sessionList.find(function (s) { return s.chat_id === currentChatId; });
+        if (!current) {
+            current = { chat_id: currentChatId, title: "New Chat" };
+            sessionList.push(current);
+        }
+        visibleSessions.unshift(current);
+    }
     if (countEl) {
         countEl.textContent = visibleSessions.length > 0 ? visibleSessions.length + " session" + (visibleSessions.length !== 1 ? "s" : "") : "";
     }
@@ -1962,11 +1972,10 @@ window.send = async function () {
             renderSessionList();
         }
 
-        loadSessions();
-
         if (currentChatId && text && fullReply) {
-            persistMessagePair(currentChatId, text, fullReply);
+            await persistMessagePair(currentChatId, text, fullReply);
         }
+        loadSessions();
 
         if (!isVoiceMuted && fullReply) {
             browserSpeak(fullReply);
@@ -2008,11 +2017,11 @@ window.send = async function () {
                 renderSessionList();
             }
             addMessage(reply, "ai");
-            loadSessions();
 
             if (currentChatId && text && reply) {
-                persistMessagePair(currentChatId, text, reply);
+                await persistMessagePair(currentChatId, text, reply);
             }
+            loadSessions();
 
             if (!isVoiceMuted && reply) {
                 browserSpeak(reply);
