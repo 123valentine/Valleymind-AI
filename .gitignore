@@ -10,3 +10,6 @@ __pycache__/
 *.pyc
 .vscode/
 .DS_Store
+
+node_modules/
+test_mongo.py
