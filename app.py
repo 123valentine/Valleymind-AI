@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 from threading import Lock
 from urllib.parse import quote
 
+import certifi
 from flask import Flask, Response, jsonify, request, send_from_directory, session, stream_with_context
 from flask_cors import CORS
 from pymongo import MongoClient
@@ -42,8 +43,8 @@ if _mongo_uri:
     try:
         _mongo_client = MongoClient(
             _mongo_uri,
-            serverSelectionTimeoutMS=5000,
-            connectTimeoutMS=5000,
+            tlsCAFile=certifi.where(),
+            connectTimeoutMS=5000
         )
         _mongo_db = _mongo_client["valleymind_db"]
         _mongo_chat_collection = _mongo_db["chat_history"]
@@ -764,6 +765,9 @@ def api_chat_message():
 
     Request body: { "session_id": "...", "message": "...", "response": "..." }
     """
+    if not _mongo_chat_sessions:
+        return jsonify({"error": "Database collection not initialized"}), 500
+
     user_id, error = _require_login()
     if error:
         return error
