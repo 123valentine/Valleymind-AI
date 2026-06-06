@@ -33,57 +33,48 @@ if os.path.isfile(_env_path):
 
 # ── MongoDB Atlas ────────────────────────────────────────────────────────
 _mongo_uri = os.getenv("MONGODB_URI", "").strip()
+if not _mongo_uri:
+    _mongo_uri = "mongodb+srv://egbujievalentine_db_user:oaXtrA7Et5Mjva6W@valleymind-ai.cx8cbqf.mongodb.net/?appName=ValleyMind-AI"
 _mongo_client: MongoClient | None = None
 _mongo_db = None
-_mongo_chat_collection = None
 _mongo_chat_sessions = None
 _mongo_messages = None
 
-if _mongo_uri:
-    try:
-        _mongo_client = MongoClient(
-            _mongo_uri,
-            tlsCAFile=certifi.where(),
-            connectTimeoutMS=5000
-        )
-        _mongo_db = _mongo_client["valleymind_db"]
-        _mongo_chat_collection = _mongo_db["chat_history"]
-        _mongo_chat_sessions = _mongo_db["chat_sessions"]
-        _mongo_messages = _mongo_db["messages"]
-        # Force a lightweight ping to confirm connectivity at startup
-        _mongo_client.admin.command("ping")
-        print(f"[MONGO] Connected to Atlas — db=valleymind_db, collections ready")
-        # Ensure indexes for sidebar session listing and message retrieval
-        _mongo_chat_sessions.create_index(
-            [("user_id", 1), ("last_updated", -1)],
-            name="user_sessions_idx",
-            background=True,
-        )
-        _mongo_chat_sessions.create_index(
-            [("session_id", 1), ("user_id", 1)],
-            name="session_user_unique",
-            unique=True,
-            background=True,
-        )
-        _mongo_messages.create_index(
-            [("session_id", 1), ("timestamp", 1)],
-            name="session_messages_idx",
-            background=True,
-        )
-        _mongo_messages.create_index(
-            [("user_id", 1)],
-            name="messages_user_idx",
-            background=True,
-        )
-    except Exception as _mongo_err:
-        print(f"[MONGO] Connection failed: {_mongo_err}")
-        _mongo_client = None
-        _mongo_db = None
-        _mongo_chat_collection = None
-        _mongo_chat_sessions = None
-        _mongo_messages = None
-else:
-    print("[MONGO] MONGODB_URI not set — skipping Atlas")
+try:
+    _mongo_client = MongoClient(_mongo_uri, tlsCAFile=certifi.where())
+    _mongo_db = _mongo_client["valleymind_db"]
+    _mongo_chat_sessions = _mongo_db["chat_sessions"]
+    _mongo_messages = _mongo_db["messages"]
+    _mongo_client.admin.command("ping")
+    print("[SUCCESS] Pinged your deployment. You successfully connected to MongoDB Atlas!")
+    # Ensure indexes for sidebar session listing and message retrieval
+    _mongo_chat_sessions.create_index(
+        [("user_id", 1), ("last_updated", -1)],
+        name="user_sessions_idx",
+        background=True,
+    )
+    _mongo_chat_sessions.create_index(
+        [("session_id", 1), ("user_id", 1)],
+        name="session_user_unique",
+        unique=True,
+        background=True,
+    )
+    _mongo_messages.create_index(
+        [("session_id", 1), ("timestamp", 1)],
+        name="session_messages_idx",
+        background=True,
+    )
+    _mongo_messages.create_index(
+        [("user_id", 1)],
+        name="messages_user_idx",
+        background=True,
+    )
+except Exception as e:
+    print(f"[ERROR] MongoDB Atlas connection failed: {e}")
+    _mongo_client = None
+    _mongo_db = None
+    _mongo_chat_sessions = None
+    _mongo_messages = None
 
 app = Flask(__name__)
 app.permanent_session_lifetime = timedelta(days=30)
