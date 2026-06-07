@@ -834,24 +834,38 @@ def api_chat_message():
             upsert=True,
         )
 
+        # ── Save user message immediately (before LLM call) ───────────────
+        _msg_result = _mongo_messages.insert_one({
+            "session_id": session_id,
+            "user_id": user_id,
+            "user_message": user_message,
+            "ai_response": "",
+            "timestamp": datetime.utcnow(),
+        })
+
         # ── Resolve response (call LLM or use pre-provided) ───────────────
         if preprovided_response:
             ai_response = preprovided_response
         else:
-            history = _fetch_mongo_history(session_id, user_id)
-            messages = [{"role": "system", "content": _CHAT_SYSTEM_PROMPT}]
-            messages.extend(history)
-            messages.append({"role": "user", "content": user_message})
-            ai_response = _call_llm_cluster(messages)
+            _system_prompt = (
+                _CHAT_SYSTEM_PROMPT
+                if isinstance(_CHAT_SYSTEM_PROMPT, str) and _CHAT_SYSTEM_PROMPT
+                else "You are Marcus, an authentic AI assistant."
+            )
+            try:
+                history = _fetch_mongo_history(session_id, user_id)
+                messages = [{"role": "system", "content": _system_prompt}]
+                messages.extend(history)
+                messages.append({"role": "user", "content": user_message})
+                ai_response = _call_llm_cluster(messages)
+            except Exception:
+                ai_response = "Marcus is currently optimizing his connection. Please try sending your message again."
 
-        # ── Persist message pair ──────────────────────────────────────────
-        _mongo_messages.insert_one({
-            "session_id": session_id,
-            "user_id": user_id,
-            "user_message": user_message,
-            "ai_response": ai_response,
-            "timestamp": datetime.utcnow(),
-        })
+        # ── Update saved doc with AI response ─────────────────────────────
+        _mongo_messages.update_one(
+            {"_id": _msg_result.inserted_id},
+            {"$set": {"ai_response": ai_response}},
+        )
 
         return jsonify({
             "status": "success",
