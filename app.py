@@ -191,7 +191,12 @@ def _current_auth() -> dict:
             session.permanent = True
             session["user_id"] = auth.get("user_id", "")
             session["email"] = auth.get("email", "")
-            session["user"] = {"id": auth.get("user_id", ""), "email": auth.get("email", "")}
+            session["is_creator"] = auth.get("is_creator", False)
+            session["user"] = {
+                "id": auth.get("user_id", ""),
+                "email": auth.get("email", ""),
+                "is_creator": auth.get("is_creator", False),
+            }
             return auth
 
     return {}
@@ -730,12 +735,17 @@ def change_password():
 @app.route("/api/chat/history", methods=["GET"])
 def api_chat_history():
     """Return all chat sessions for the authenticated user, sorted by last_updated descending."""
-    user_id, error = _require_login()
-    if error:
-        return error
     try:
+        print(f"[DEBUG-AUTH] Loading history for user_id: {session.get('user_id')} and email: {session.get('email')}")
+        user_id, error = _require_login()
+        if error:
+            return error
         if not _mongo_chat_sessions:
-            return jsonify({"sessions": []})
+            print("[ERROR] /api/chat/history: _mongo_chat_sessions is None — DB not connected")
+            return jsonify([]), 200
+        if not user_id:
+            print("[ERROR] /api/chat/history: user_id is empty after auth check")
+            return jsonify({"error": "Unauthorized"}), 401
         cursor = _mongo_chat_sessions.find(
             {"user_id": user_id},
             {"_id": 0},
@@ -743,7 +753,7 @@ def api_chat_history():
         return jsonify({"sessions": list(cursor)})
     except Exception as exc:
         print(f"[ERROR] /api/chat/history failed: {exc}")
-        return jsonify({"error": "Failed to fetch sessions"}), 500
+        return jsonify([]), 200
 
 
 @app.route("/api/chat/messages", methods=["GET"])

@@ -613,15 +613,15 @@ async function apiFetch(path, options = {}) {
 }
 
 function getAuthToken() {
-    return sessionStorage.getItem(AUTH_TOKEN_KEY) || "";
+    return localStorage.getItem(AUTH_TOKEN_KEY) || "";
 }
 
 function setAuthToken(token) {
-    if (token) sessionStorage.setItem(AUTH_TOKEN_KEY, token);
+    if (token) localStorage.setItem(AUTH_TOKEN_KEY, token);
 }
 
 function clearAuthToken() {
-    sessionStorage.removeItem(AUTH_TOKEN_KEY);
+    localStorage.removeItem(AUTH_TOKEN_KEY);
 }
 
 function authHeaders(extra = {}) {
