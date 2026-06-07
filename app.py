@@ -414,15 +414,20 @@ def chat_sessions():
     user_id, error = _require_login()
     if error:
         return error
-    marcus = load_marcus(user_id)
-    if not marcus:
-        return jsonify({"status": "error", "message": "Marcus not configured"}), 404
+    if not user_id:
+        return jsonify({"status": "error", "message": "Unauthorized"}), 401
     try:
-        sessions = marcus.memory.list_sessions()
-        return jsonify({"status": "success", "sessions": sessions})
+        if not _mongo_chat_sessions:
+            print("[ERROR] /chat/sessions: _mongo_chat_sessions is None — DB not connected")
+            return jsonify({"status": "success", "sessions": []})
+        cursor = _mongo_chat_sessions.find(
+            {"user_id": user_id},
+            {"_id": 0},
+        ).sort("last_updated", -1)
+        return jsonify({"status": "success", "sessions": list(cursor)})
     except Exception as exc:
-        print(f"[ERROR] Failed to list sessions: {exc}")
-        return jsonify({"status": "error", "message": "Failed to list sessions"}), 500
+        print(f"[ERROR] /chat/sessions failed: {exc}")
+        return jsonify({"status": "success", "sessions": []})
 
 
 @app.route("/chat/sessions", methods=["POST"])

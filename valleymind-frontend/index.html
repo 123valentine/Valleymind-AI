@@ -176,8 +176,10 @@
 <body class="text-on-background font-body-md overflow-hidden">
 
 <div id="brandSplashScreen" style="position:fixed; top:0; left:0; width:100vw; height:100vh; background:#020617; z-index:999999; display:none; flex-direction:column; align-items:center; justify-content:center; transition: opacity 0.5s ease-out;">
-  <img src="/static/valleymind-logo.png" alt="Valleymind-AI Logo" style="width:240px; height:auto; filter: brightness(1.5) saturate(1.8) drop-shadow(0 0 25px rgba(0,212,255,0.75)); animation: logoBloom 4.2s ease-in-out forwards;">
-  <h1 style="color: #00d4ff; font-family: 'Space Grotesk', 'Inter', sans-serif; font-size: 32px; font-weight: 800; letter-spacing: 0.15em; text-transform: uppercase; margin-top: 24px; text-shadow: 0 0 15px #00d4ff, 0 0 35px rgba(0,212,255,0.6); text-align: center;">VALLEYMIND-AI</h1>
+  <div style="width:120px;height:120px;overflow:hidden;display:flex;justify-content:center;align-items:flex-start;">
+    <img src="/static/valleymind-logo.png" alt="Valleymind-AI Logo" style="width:120px;height:180px;object-fit:cover;object-position:top; filter: brightness(1.5) saturate(1.8) drop-shadow(0 0 25px rgba(0,212,255,0.75)); animation: logoBloom 4.2s ease-in-out forwards;">
+  </div>
+  <h1 style="color: #00d4ff; font-family: 'Space Grotesk', 'Inter', sans-serif; font-size: 32px; font-weight: 800; letter-spacing: 0.15em; text-transform: uppercase; margin-top: 12px; text-shadow: 0 0 15px #00d4ff, 0 0 35px rgba(0,212,255,0.6); text-align: center;">VALLEYMIND-AI</h1>
 </div>
 
 <!-- Context Menu -->
@@ -210,7 +212,9 @@
 <section id="loginView">
   <form id="loginForm" class="glass-panel" style="width:min(420px,100%);border-radius:16px;padding:28px;display:flex;flex-direction:column;gap:16px;">
     <div style="display:flex;flex-direction:column;align-items:center;gap:8px;">
-      <img src="/static/valleymind-logo.png" alt="Valleymind-AI Logo" width="80" height="80" style="width:80px;height:80px;display:block;object-fit:contain;border-radius:0;background:transparent;">
+      <div style="width:120px;height:120px;overflow:hidden;display:flex;justify-content:center;align-items:flex-start;">
+        <img src="/static/valleymind-logo.png" alt="Valleymind-AI Logo" width="120" height="180" style="width:120px;height:180px;object-fit:cover;object-position:top;display:block;border-radius:0;background:transparent;">
+      </div>
       <h1 class="text-cyan-400 font-black text-2xl tracking-widest uppercase font-label-caps">Valley Mind-AI</h1>
       <p class="text-slate-400 text-[10px] uppercase tracking-[0.2em] mt-1">Login Required</p>
     </div>
