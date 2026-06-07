@@ -337,6 +337,30 @@ def _debug_user_memory(user_id: str, marcus):
         print(f"[ERROR] Failed to print memory debug logs: {exc}")
 
 
+def _fetch_mongo_history(session_id: str, user_id: str) -> list:
+    """Fetch and format message history from the messages collection."""
+    try:
+        if _mongo_messages is None:
+            return []
+        cursor = _mongo_messages.find(
+            {"session_id": session_id, "user_id": user_id},
+            {"_id": 0},
+        ).sort("timestamp", 1)
+        raw = list(cursor)
+        history = []
+        for doc in raw:
+            user_msg = (doc.get("user_message") or "").strip()
+            ai_resp = (doc.get("ai_response") or "").strip()
+            if user_msg:
+                history.append({"role": "user", "content": user_msg})
+            if ai_resp:
+                history.append({"role": "assistant", "content": ai_resp})
+        return history
+    except Exception as exc:
+        print(f"[ERROR] _fetch_mongo_history failed: {exc}")
+        return []
+
+
 @app.route("/auth/status", methods=["GET"])
 def auth_status():
     auth = _current_auth()
@@ -752,25 +776,39 @@ def api_chat_messages():
 @app.route("/api/chat/message", methods=["POST"])
 def api_chat_message():
     """
-    Atomically upsert a chat_session and insert a message pair.
+    Chat endpoint backed by the 'messages' collection for persistent session memory.
 
-    Request body: { "session_id": "...", "message": "...", "response": "..." }
+    Request body:
+      Required: { "session_id": "...", "message": "..." }
+      Optional: { "response": "..." } — if pre-provided, skip LLM call and persist directly.
+
+    When 'response' is NOT provided, Marcus fetches all past messages from the
+    'messages' collection for this session_id, injects them into the LLM context
+    (after System Prompt, before the new user message), generates a reply, persists
+    both the user message and the AI response, and returns the reply.
     """
-    if not _mongo_chat_sessions:
-        return jsonify({"error": "Database collection not initialized"}), 500
+    if not _mongo_chat_sessions or not _mongo_messages:
+        return jsonify({"error": "Database not initialized"}), 500
 
     user_id, error = _require_login()
     if error:
         return error
+
     data = request.get_json(silent=True) or {}
     session_id = (data.get("session_id") or "").strip()
     user_message = (data.get("message") or "").strip()
-    ai_response = (data.get("response") or "").strip()
+    preprovided_response = (data.get("response") or "").strip()
 
     if not session_id or not user_message:
         return jsonify({"error": "session_id and message are required"}), 400
 
     try:
+        # ── Load Marcus brain ─────────────────────────────────────────────
+        marcus = load_marcus(user_id)
+        if not marcus:
+            return jsonify({"error": "Marcus is not configured"}), 404
+
+        # ── Upsert session metadata ───────────────────────────────────────
         existing = _mongo_chat_sessions.find_one({
             "chat_id": session_id,
             "user_id": user_id,
@@ -786,6 +824,17 @@ def api_chat_message():
             upsert=True,
         )
 
+        # ── Resolve response (call LLM or use pre-provided) ───────────────
+        if preprovided_response:
+            ai_response = preprovided_response
+        else:
+            history = _fetch_mongo_history(session_id, user_id)
+            auth = _current_auth()
+            if auth.get("email"):
+                _initialize_user_memory(marcus, auth["email"])
+            ai_response = marcus.respond(user_message, chat_id=session_id, mongo_history=history)
+
+        # ── Persist message pair ──────────────────────────────────────────
         _mongo_messages.insert_one({
             "session_id": session_id,
             "user_id": user_id,
@@ -794,10 +843,16 @@ def api_chat_message():
             "timestamp": datetime.utcnow(),
         })
 
-        return jsonify({"status": "success"})
+        return jsonify({
+            "status": "success",
+            "reply": ai_response,
+            "character": "marcus",
+            "session_id": session_id,
+        })
+
     except Exception as exc:
         print(f"[ERROR] /api/chat/message failed: {exc}")
-        return jsonify({"error": "Failed to save message"}), 500
+        return jsonify({"error": "Failed to process message"}), 500
 
 
 @app.route("/api/chat", methods=["POST"])
@@ -908,15 +963,15 @@ def chat():
         _initialize_user_memory(marcus, auth.get("email", ""))
         _debug_user_memory(user_id, marcus)
 
-        reply = marcus.respond(message, chat_id=chat_id, image_data=image_data)
+        resolved_chat_id = chat_id or f"{marcus.profile.key}_main_chat"
+        mongo_history = _fetch_mongo_history(resolved_chat_id, user_id)
+        reply = marcus.respond(message, chat_id=resolved_chat_id, image_data=image_data, mongo_history=mongo_history)
         response_meta = getattr(marcus, "last_response_meta", {}) or {}
         voice = (
             {"enabled": True, "spoken": False, "engine": "browser", "reason": "reply too long for blocking server TTS"}
             if len(reply) > 900
             else speak_marcus(reply)
         )
-
-        resolved_chat_id = chat_id or f"{marcus.profile.key}_main_chat"
 
         updated_title = None
         if message and resolved_chat_id and resolved_chat_id != f"{marcus.profile.key}_main_chat":
@@ -983,6 +1038,7 @@ def chat_stream():
         _initialize_user_memory(marcus, auth.get("email", ""))
 
         resolved_chat_id = chat_id or f"{marcus.profile.key}_main_chat"
+        mongo_history = _fetch_mongo_history(resolved_chat_id, user_id)
 
         def generate():
             updated_title = None
@@ -1003,7 +1059,7 @@ def chat_stream():
                     print(f"[WARN] Auto-title fallback failed: {exc}")
 
             try:
-                for token in marcus.stream_respond(message, chat_id=chat_id, image_data=image_data):
+                for token in marcus.stream_respond(message, chat_id=resolved_chat_id, image_data=image_data, mongo_history=mongo_history):
                     if token:
                         yield f"data: {json.dumps({'token': token})}\n\n"
             except Exception as exc:

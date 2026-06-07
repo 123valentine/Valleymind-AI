@@ -678,11 +678,15 @@ class MarcusBrain:
         except Exception as exc:
             print(f"[ERROR] Failed to save knowledge file: {exc}")
 
-    def _groq_messages(self, chat_id: str, user_message: str, image_data: str = "", live_context: str = "", expanded_query: str = "") -> list:
+    def _groq_messages(self, chat_id: str, user_message: str, image_data: str = "", live_context: str = "", expanded_query: str = "", mongo_history: list = None) -> list:
         try:
             self.memory.reload()
             long_term = self.memory.get_full_memory() or {}
-            history = self.memory.get_chat(chat_id) or []
+            if mongo_history is not None:
+                history = mongo_history
+                print(f"[MEMORY LOG] Injected {len(history)} past messages into Marcus's current context window.")
+            else:
+                history = self.memory.get_chat(chat_id) or []
             user_name = self.memory.get_user_name() or ""
             identity_str = json.dumps(long_term.get("identity", {}))
             prefs_str = json.dumps(long_term.get("preferences", {}))
@@ -768,9 +772,9 @@ class MarcusBrain:
             messages.append({"role": "user", "content": user_message})
         return messages
 
-    def _try_llm_first(self, chat_id: str, user_message: str, image_data: str = "", live_context: str = "") -> dict:
+    def _try_llm_first(self, chat_id: str, user_message: str, image_data: str = "", live_context: str = "", mongo_history: list = None) -> dict:
         try:
-            raw = _call_llm_cluster(self._groq_messages(chat_id, user_message, image_data, live_context=live_context))
+            raw = _call_llm_cluster(self._groq_messages(chat_id, user_message, image_data, live_context=live_context, mongo_history=mongo_history))
             envelope = _parse_envelope(raw)
             reply = str(envelope.get("reply") or "").strip()
             if not reply:
@@ -838,8 +842,8 @@ class MarcusBrain:
             "meta": meta,
         }
 
-    def _think(self, chat_id: str, user_message: str, image_data: str = "", live_context: str = "") -> dict:
-        llm_envelope = self._try_llm_first(chat_id, user_message, image_data, live_context=live_context)
+    def _think(self, chat_id: str, user_message: str, image_data: str = "", live_context: str = "", mongo_history: list = None) -> dict:
+        llm_envelope = self._try_llm_first(chat_id, user_message, image_data, live_context=live_context, mongo_history=mongo_history)
         if llm_envelope:
             return llm_envelope
         return self._envelope(
@@ -872,7 +876,7 @@ class MarcusBrain:
             print(f"[ERROR] Title generation failed: {exc}")
             return ""
 
-    def respond(self, message: str, chat_id: str = "", image_data: str = "") -> str:
+    def respond(self, message: str, chat_id: str = "", image_data: str = "", mongo_history: list = None) -> str:
         try:
             self.memory.load_memory(self.profile.key)
 
@@ -932,7 +936,7 @@ class MarcusBrain:
                 except Exception as exc:
                     print(f"[SEARCH ERROR] Live context fetch failed: {exc}")
 
-            envelope = self._think(cid, message, image_data, live_context=live_ctx)
+            envelope = self._think(cid, message, image_data, live_context=live_ctx, mongo_history=mongo_history)
             self.last_response_meta = envelope.get("meta") or self._metadata(False, True, "local")
             raw_reply = str(envelope.get("reply") or "").strip()
             reply = _sanitize_reply_for_chat(raw_reply, "") if raw_reply else FALLBACK_RESPONSE
@@ -965,7 +969,7 @@ class MarcusBrain:
             self.last_response_meta = self._metadata(False, True, "local")
             return FALLBACK_RESPONSE
 
-    def stream_respond(self, message: str, chat_id: str = "", image_data: str = ""):
+    def stream_respond(self, message: str, chat_id: str = "", image_data: str = "", mongo_history: list = None):
         try:
             self.memory.load_memory(self.profile.key)
             message = (message or "").strip()
@@ -1044,7 +1048,7 @@ class MarcusBrain:
                 else:
                     print("[STREAM SEARCH] No live context found - proceeding with cached knowledge only")
 
-            msgs = self._groq_messages(cid, message, image_data, live_context=live_ctx)
+            msgs = self._groq_messages(cid, message, image_data, live_context=live_ctx, mongo_history=mongo_history)
             full_reply = ""
 
             try:
