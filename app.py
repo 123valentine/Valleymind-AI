@@ -13,7 +13,7 @@ from flask_cors import CORS
 from pymongo import MongoClient
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from core.brain import MarcusBrain
+from core.brain import MarcusBrain, _call_llm_cluster, _CHAT_SYSTEM_PROMPT
 from core.config import PROJECT_ROOT
 from core.tts import speak_marcus
 
@@ -818,11 +818,6 @@ def api_chat_message():
         return jsonify({"error": "session_id and message are required"}), 400
 
     try:
-        # ── Load Marcus brain ─────────────────────────────────────────────
-        marcus = load_marcus(user_id)
-        if not marcus:
-            return jsonify({"error": "Marcus is not configured"}), 404
-
         # ── Upsert session metadata ───────────────────────────────────────
         existing = _mongo_chat_sessions.find_one({
             "chat_id": session_id,
@@ -844,10 +839,10 @@ def api_chat_message():
             ai_response = preprovided_response
         else:
             history = _fetch_mongo_history(session_id, user_id)
-            auth = _current_auth()
-            if auth.get("email"):
-                _initialize_user_memory(marcus, auth["email"])
-            ai_response = marcus.respond(user_message, chat_id=session_id, mongo_history=history)
+            messages = [{"role": "system", "content": _CHAT_SYSTEM_PROMPT}]
+            messages.extend(history)
+            messages.append({"role": "user", "content": user_message})
+            ai_response = _call_llm_cluster(messages)
 
         # ── Persist message pair ──────────────────────────────────────────
         _mongo_messages.insert_one({
