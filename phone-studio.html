@@ -1032,16 +1032,14 @@ async function loadChatHistory(chatId) {
 
 async function loadSessions() {
     try {
-        const res = await apiFetch("/chat/sessions", {
+        const res = await apiFetch("/api/chat/history", {
             credentials: "include",
             headers: authHeaders()
         });
         if (!res.ok) return;
         const data = await res.json();
-        if (data.status === "success") {
-            sessionList = data.sessions || [];
-            renderSessionList();
-        }
+        sessionList = (data && !Array.isArray(data) ? (data.sessions || []) : []);
+        renderSessionList();
     } catch (err) {
         console.warn("Failed to load sessions.", err);
     }
@@ -1506,6 +1504,7 @@ async function checkSession() {
             return false;
         }
 
+        await loadSessions();
         setAppVisible(true);
         authCheckComplete = true;
         const status = document.getElementById("statusText");
@@ -1519,7 +1518,6 @@ async function checkSession() {
             if (avatarEl) avatarEl.textContent = email[0].toUpperCase();
             if (badgeEl) badgeEl.textContent = data.is_creator ? "Founder & Creator" : "Active User";
         }
-        loadSessions();
 
         if (splash) {
             setTimeout(function() {
