@@ -101,6 +101,34 @@
   #loginView { min-height:100vh; display:flex; align-items:center; justify-content:center; padding:24px; }
   .hist-dots { opacity:0; transition:opacity 0.15s; }
   .hist-item:hover .hist-dots { opacity:1; }
+  /* Sidebar session loading states */
+  .session-skeleton {
+    display:flex; align-items:center; gap:10px;
+    padding:10px 12px; border-radius:10px; margin-bottom:4px;
+    background:rgba(255,255,255,0.03);
+  }
+  .session-skeleton-icon,
+  .session-skeleton-line {
+    background:linear-gradient(90deg, rgba(0,212,255,0.08) 25%, rgba(0,212,255,0.18) 50%, rgba(0,212,255,0.08) 75%);
+    background-size:200% 100%;
+    animation:sessionShimmer 1.4s ease-in-out infinite;
+    border-radius:6px;
+  }
+  .session-skeleton-icon { width:16px; height:16px; flex-shrink:0; border-radius:50%; }
+  .session-skeleton-line { height:12px; flex:1; }
+  @keyframes sessionShimmer {
+    0% { background-position:200% 0; }
+    100% { background-position:-200% 0; }
+  }
+  .session-load-status {
+    padding:12px 8px; font-size:11px; text-align:center; color:#64748b;
+  }
+  .session-load-status.error { color:#f59e0b; }
+  .session-retry-btn {
+    margin-top:8px; padding:6px 12px; border-radius:8px; border:1px solid rgba(0,212,255,0.25);
+    background:rgba(0,212,255,0.08); color:#00d4ff; font-size:11px; cursor:pointer;
+  }
+  .session-retry-btn:hover { background:rgba(0,212,255,0.15); }
   .hist-item.hist-active { background:rgba(0,212,255,0.08); border-left:3px solid #00d4ff; }
   .hist-item.hist-active .hist-text { color:#00d4ff; }
   .ai-content p{margin-bottom:8px} .ai-content p:last-child{margin-bottom:0}
@@ -190,9 +218,7 @@
 <body class="text-on-background font-body-md overflow-hidden">
 
 <div id="brandSplashScreen" style="position:fixed; top:0; left:0; width:100vw; height:100vh; background:#020617; z-index:999999; display:none; flex-direction:column; align-items:center; justify-content:center; transition: opacity 0.5s ease-out;">
-  <div style="width:120px;height:120px;overflow:hidden;display:flex;justify-content:center;align-items:flex-start;">
-    <img src="/static/valleymind-logo.png" alt="Valleymind-AI Logo" style="width:120px;height:180px;object-fit:cover;object-position:top; filter: brightness(1.5) saturate(1.8) drop-shadow(0 0 25px rgba(0,212,255,0.75)); animation: logoBloom 4.2s ease-in-out forwards;">
-  </div>
+  <img src="/static/valleymind-logo.png" alt="Valleymind-AI Logo" style="width:120px;height:120px;object-fit:cover;object-position:top;clip-path:inset(0% 0% 32% 0%); animation: logoBloom 4.2s ease-in-out forwards;">
   <h1 style="color: #00d4ff; font-family: 'Space Grotesk', 'Inter', sans-serif; font-size: 32px; font-weight: 800; letter-spacing: 0.15em; text-transform: uppercase; margin-top: 12px; text-shadow: 0 0 15px #00d4ff, 0 0 35px rgba(0,212,255,0.6); text-align: center;">VALLEYMIND-AI</h1>
 </div>
 
@@ -226,9 +252,7 @@
 <section id="loginView">
   <form id="loginForm" class="glass-panel" style="width:min(420px,100%);border-radius:16px;padding:28px;display:flex;flex-direction:column;gap:16px;">
     <div style="display:flex;flex-direction:column;align-items:center;gap:8px;">
-      <div style="width:120px;height:120px;overflow:hidden;display:flex;justify-content:center;align-items:flex-start;">
-        <img src="/static/valleymind-logo.png" alt="Valleymind-AI Logo" width="120" height="180" style="width:120px;height:180px;object-fit:cover;object-position:top;display:block;border-radius:0;background:transparent;">
-      </div>
+      <img src="/static/valleymind-logo.png" alt="Valleymind-AI Logo" width="120" height="120" style="width:120px;height:120px;object-fit:cover;object-position:top;clip-path:inset(0% 0% 32% 0%);">
       <h1 class="text-cyan-400 font-black text-2xl tracking-widest uppercase font-label-caps">Valley Mind-AI</h1>
       <p class="text-slate-400 text-[10px] uppercase tracking-[0.2em] mt-1">Login Required</p>
     </div>
@@ -571,9 +595,157 @@ function resolveApiBaseUrl() {
 
 const API_BASE_URL = resolveApiBaseUrl();
 const AUTH_TOKEN_KEY = "valleymind_session_token";
+const SESSIONS_CACHE_KEY = "valleymind_sessions_cache";
+const LAST_CHAT_KEY = "valleymind_last_chat_id";
+const SESSION_FETCH_MAX_RETRIES = 3;
+const SESSION_FETCH_RETRY_DELAY_MS = 900;
+
 let authCheckComplete = false;
+let isAuthenticated = false;
+let authCheckPromise = null;
+let sessionsLoading = false;
+let sessionsLoadError = "";
+let sessionsLoadPromise = null;
 let currentChatId = "";
 let sessionList = [];
+
+function sleep(ms) {
+    return new Promise(function (resolve) { setTimeout(resolve, ms); });
+}
+
+/** Wait until /auth/status has fully resolved before hitting protected endpoints. */
+async function waitForAuth(timeoutMs) {
+    timeoutMs = timeoutMs || 45000;
+    if (authCheckComplete) return;
+    if (authCheckPromise) {
+        try { await authCheckPromise; } catch (_) { /* handled by caller */ }
+        if (authCheckComplete) return;
+    }
+    var start = Date.now();
+    while (!authCheckComplete && Date.now() - start < timeoutMs) {
+        await sleep(100);
+    }
+    if (!authCheckComplete) {
+        throw new Error("Authentication check timed out. Please refresh the page.");
+    }
+}
+
+function getSessionId(session) {
+    if (!session) return "";
+    return String(session.chat_id || session.session_id || "").trim();
+}
+
+function normalizeSession(raw) {
+    var chatId = getSessionId(raw);
+    return {
+        chat_id: chatId,
+        session_id: chatId,
+        title: String((raw && raw.title) || "Untitled Thread").trim() || "Untitled Thread",
+        message_count: Number((raw && raw.message_count) || 0),
+        last_updated: (raw && (raw.last_updated || raw.last_activity || raw.created_at)) || "",
+        created_at: (raw && raw.created_at) || "",
+    };
+}
+
+function saveSessionsCache(sessions) {
+    try {
+        localStorage.setItem(SESSIONS_CACHE_KEY, JSON.stringify(sessions));
+    } catch (_) { /* quota or private mode */ }
+}
+
+function loadSessionsCache() {
+    try {
+        var raw = localStorage.getItem(SESSIONS_CACHE_KEY);
+        if (!raw) return [];
+        var parsed = JSON.parse(raw);
+        if (!Array.isArray(parsed)) return [];
+        return parsed.map(normalizeSession).filter(function (s) { return s.chat_id; });
+    } catch (_) {
+        return [];
+    }
+}
+
+function saveLastChatId(chatId) {
+    if (!chatId) return;
+    try { localStorage.setItem(LAST_CHAT_KEY, chatId); } catch (_) {}
+}
+
+function loadLastChatId() {
+    try { return localStorage.getItem(LAST_CHAT_KEY) || ""; } catch (_) { return ""; }
+}
+
+function upsertLocalSession(session) {
+    var normalized = normalizeSession(session);
+    if (!normalized.chat_id) return;
+    var idx = -1;
+    for (var i = 0; i < sessionList.length; i++) {
+        if (getSessionId(sessionList[i]) === normalized.chat_id) {
+            idx = i;
+            break;
+        }
+    }
+    if (idx >= 0) {
+        sessionList[idx] = Object.assign({}, sessionList[idx], normalized);
+    } else {
+        sessionList.unshift(normalized);
+    }
+    saveSessionsCache(sessionList);
+}
+
+function renderSessionListSkeleton() {
+    var list = document.getElementById("historyList");
+    if (!list) return;
+    var html = "";
+    for (var i = 0; i < 4; i++) {
+        html += '<div class="session-skeleton"><div class="session-skeleton-icon"></div><div class="session-skeleton-line"></div></div>';
+    }
+    html += '<div class="session-load-status">Loading sessions…</div>';
+    list.innerHTML = html;
+    var countEl = document.getElementById("sessionCount");
+    if (countEl) countEl.textContent = "";
+}
+
+function renderSessionListError(message) {
+    var list = document.getElementById("historyList");
+    if (!list) return;
+    list.innerHTML =
+        '<div class="session-load-status error">' +
+        (message || "Could not load sessions.") +
+        '<br><button type="button" class="session-retry-btn" onclick="loadSessions({ force: true })">Retry</button>' +
+        '</div>';
+}
+
+/** Single fetch attempt — tries primary then legacy endpoint. */
+async function fetchSessionsOnce() {
+    var endpoints = ["/chat/sessions", "/api/chat/history"];
+    var lastError = null;
+    for (var e = 0; e < endpoints.length; e++) {
+        try {
+            var res = await apiFetch(endpoints[e], {
+                credentials: "include",
+                headers: authHeaders(),
+                timeoutMs: 45000,
+            });
+            var data = await res.json();
+            if (!res.ok) {
+                lastError = new Error(
+                    (data && (data.message || data.error)) || ("HTTP " + res.status)
+                );
+                continue;
+            }
+            var sessions = [];
+            if (Array.isArray(data)) {
+                sessions = data;
+            } else if (data && Array.isArray(data.sessions)) {
+                sessions = data.sessions;
+            }
+            return sessions.map(normalizeSession).filter(function (s) { return s.chat_id; });
+        } catch (err) {
+            lastError = err;
+        }
+    }
+    throw lastError || new Error("Failed to load sessions");
+}
 
 if (typeof window !== "undefined" && window.speechSynthesis) {
     window.speechSynthesis.getVoices();
@@ -1081,49 +1253,117 @@ function renderChatHistory(messages) {
 
 async function loadChatHistory(chatId) {
     try {
-        const params = chatId ? "?chat_id=" + encodeURIComponent(chatId) : "";
-        const res = await apiFetch("/chat/history" + params, {
+        await waitForAuth();
+        var params = chatId ? "?chat_id=" + encodeURIComponent(chatId) : "";
+        var res = await apiFetch("/chat/history" + params, {
             credentials: "include",
-            headers: authHeaders()
+            headers: authHeaders(),
+            timeoutMs: 45000,
         });
-        if (!res.ok) return false;
-        const data = await res.json();
+        if (!res.ok) {
+            console.warn("[Chat history] HTTP", res.status);
+            return false;
+        }
+        var data = await res.json();
         if (data.status === "success") {
             renderChatHistory(data.messages || []);
             return true;
         }
     } catch (err) {
-        console.warn("Chat history unavailable.", err);
+        console.warn("[Chat history] unavailable:", err);
     }
     return false;
 }
 
-async function loadSessions() {
-    try {
-        const res = await apiFetch("/api/chat/history", {
-            credentials: "include",
-            headers: authHeaders()
-        });
-        if (!res.ok) return;
-        const data = await res.json();
-        sessionList = data.sessions || [];
-        renderSessionList();
-    } catch (err) {
-        console.warn("Failed to load sessions.", err);
+/**
+ * Load sidebar sessions with auth gating, retries, and stale-cache fallback.
+ * Never wipes visible sessions on transient Render cold-start failures.
+ */
+async function loadSessions(options) {
+    options = options || {};
+    var force = !!options.force;
+    var showLoading = options.showLoading !== false;
+
+    if (sessionsLoadPromise && !force) {
+        return sessionsLoadPromise;
     }
+
+    sessionsLoadPromise = (async function () {
+        try {
+            await waitForAuth();
+            if (!isAuthenticated) return;
+
+            if (showLoading && sessionList.length === 0) {
+                sessionsLoading = true;
+                sessionsLoadError = "";
+                renderSessionListSkeleton();
+            } else if (showLoading) {
+                sessionsLoading = true;
+                sessionsLoadError = "";
+            }
+
+            var fetched = null;
+            var lastErr = null;
+            for (var attempt = 1; attempt <= SESSION_FETCH_MAX_RETRIES; attempt++) {
+                try {
+                    fetched = await fetchSessionsOnce();
+                    break;
+                } catch (err) {
+                    lastErr = err;
+                    console.warn("[Sessions] attempt " + attempt + " failed:", err);
+                    if (attempt < SESSION_FETCH_MAX_RETRIES) {
+                        await sleep(SESSION_FETCH_RETRY_DELAY_MS * attempt);
+                    }
+                }
+            }
+
+            if (fetched !== null) {
+                sessionList = fetched;
+                saveSessionsCache(fetched);
+                sessionsLoadError = "";
+            } else {
+                if (sessionList.length === 0) {
+                    sessionList = loadSessionsCache();
+                }
+                sessionsLoadError = (lastErr && lastErr.message)
+                    ? lastErr.message
+                    : "Could not reach the server. Sessions may be out of date.";
+            }
+        } catch (err) {
+            console.warn("[Sessions] load failed:", err);
+            if (sessionList.length === 0) {
+                sessionList = loadSessionsCache();
+            }
+            sessionsLoadError = err.message || "Session load failed";
+        } finally {
+            sessionsLoading = false;
+            renderSessionList();
+            sessionsLoadPromise = null;
+        }
+    })();
+
+    return sessionsLoadPromise;
 }
 
 async function loadSessionMessages(sessionId) {
     try {
-        const res = await apiFetch("/api/chat/messages?session_id=" + encodeURIComponent(sessionId), {
-            credentials: "include",
-            headers: authHeaders()
-        });
-        if (!res.ok) return [];
-        const data = await res.json();
-        return data.messages || [];
+        await waitForAuth();
+        var res = await apiFetch(
+            "/api/chat/messages?session_id=" + encodeURIComponent(sessionId),
+            {
+                credentials: "include",
+                headers: authHeaders(),
+                timeoutMs: 45000,
+            }
+        );
+        if (!res.ok) {
+            console.warn("[Session messages] HTTP", res.status, "for", sessionId);
+            return [];
+        }
+        var data = await res.json();
+        return Array.isArray(data.messages) ? data.messages : [];
     } catch (err) {
-        console.warn("Failed to load messages.", err);
+        console.warn("[Session messages] failed for", sessionId, err);
         return [];
     }
 }
@@ -1146,22 +1386,37 @@ async function persistMessagePair(sessionId, userMessage, aiResponse) {
 }
 
 function renderSessionList() {
-    const list = document.getElementById("historyList");
+    var list = document.getElementById("historyList");
     if (!list) return;
+
+    if (sessionsLoading && sessionList.length === 0) {
+        renderSessionListSkeleton();
+        return;
+    }
+
     list.innerHTML = "";
+
+    if (sessionsLoadError && sessionList.length === 0) {
+        renderSessionListError(sessionsLoadError);
+        var countElErr = document.getElementById("sessionCount");
+        if (countElErr) countElErr.textContent = "";
+        return;
+    }
 
     if (!Array.isArray(sessionList) || sessionList.length === 0) {
         list.innerHTML = '<div style="padding:12px 8px;color:#475569;font-size:11px;text-align:center;">No previous sessions</div>';
-        var countEl = document.getElementById("sessionCount");
-        if (countEl) countEl.textContent = "";
+        var countEmpty = document.getElementById("sessionCount");
+        if (countEmpty) countEmpty.textContent = "";
         return;
     }
+
     var countEl = document.getElementById("sessionCount");
     var pinnedIds = getPinnedIds();
-    var sorted = sessionList.slice().sort(function (a, b) {
+    var sorted = sessionList.slice().map(normalizeSession).sort(function (a, b) {
         var aP = pinnedIds.indexOf(a.chat_id) !== -1 ? 1 : 0;
         var bP = pinnedIds.indexOf(b.chat_id) !== -1 ? 1 : 0;
-        return bP - aP;
+        if (bP !== aP) return bP - aP;
+        return String(b.last_updated || "").localeCompare(String(a.last_updated || ""));
     });
     var visibleSessions = sorted.filter(function (session) {
         var title = (session.title || "").trim();
@@ -1171,39 +1426,52 @@ function renderSessionList() {
         return true;
     });
 
-    // Ensure currentChatId is always visible even if the backend hasn't fully updated yet
+    // Keep the active thread visible even if the backend hasn't synced yet.
     if (currentChatId && !visibleSessions.some(function (s) { return s.chat_id === currentChatId; })) {
-        var current = sessionList.find(function (s) { return s.chat_id === currentChatId; });
+        var current = sessionList.find(function (s) { return getSessionId(s) === currentChatId; });
         if (!current) {
-            current = { chat_id: currentChatId, title: "New Chat" };
+            current = normalizeSession({ chat_id: currentChatId, title: "New Chat" });
             sessionList.push(current);
         }
-        visibleSessions.unshift(current);
+        visibleSessions.unshift(normalizeSession(current));
     }
+
     if (countEl) {
-        countEl.textContent = visibleSessions.length > 0 ? visibleSessions.length + " session" + (visibleSessions.length !== 1 ? "s" : "") : "";
+        countEl.textContent = visibleSessions.length > 0
+            ? visibleSessions.length + " session" + (visibleSessions.length !== 1 ? "s" : "")
+            : "";
     }
+
     if (visibleSessions.length === 0) {
         list.innerHTML = '<div style="padding:12px 8px;color:#475569;font-size:11px;text-align:center;">No previous sessions</div>';
         return;
     }
+
+    if (sessionsLoadError) {
+        var warn = document.createElement("div");
+        warn.className = "session-load-status error";
+        warn.style.marginBottom = "6px";
+        warn.textContent = "Showing cached sessions — " + sessionsLoadError;
+        list.appendChild(warn);
+    }
+
     visibleSessions.forEach(function (session) {
-        var isPinned = pinnedIds.indexOf(session.chat_id) !== -1;
-        const item = document.createElement("div");
-        item.className = "hist-item" + (session.chat_id === currentChatId ? " hist-active" : "");
+        var chatId = getSessionId(session);
+        var isPinned = pinnedIds.indexOf(chatId) !== -1;
+        var item = document.createElement("div");
+        item.className = "hist-item" + (chatId === currentChatId ? " hist-active" : "");
         item.style.cssText = "display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border-radius:10px;cursor:pointer;position:relative;margin-bottom:4px;background:rgba(255,255,255,0.02);transition:all 0.2s;";
 
-        const titleWrapper = document.createElement("div");
+        var titleWrapper = document.createElement("div");
         titleWrapper.style.cssText = "display:flex;align-items:center;gap:10px;flex:1;overflow:hidden;";
-        titleWrapper.onclick = function() { switchSession(session.chat_id); };
+        titleWrapper.onclick = function () { switchSession(chatId); };
 
-        const icon = document.createElement("span");
+        var icon = document.createElement("span");
         icon.className = "material-icons";
         icon.style.cssText = "font-size:16px;color:#00d4ff;flex-shrink:0;";
         icon.textContent = isPinned ? "push_pin" : "chat";
-        if (isPinned) icon.style.color = "#00d4ff";
 
-        const text = document.createElement("span");
+        var text = document.createElement("span");
         text.className = "hist-text";
         text.style.cssText = "font-size:13px;color:#cbd5e1;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
         text.textContent = session.title || "Untitled Thread";
@@ -1212,16 +1480,15 @@ function renderSessionList() {
         titleWrapper.appendChild(text);
         item.appendChild(titleWrapper);
 
-        const menuBtn = document.createElement("span");
+        var menuBtn = document.createElement("span");
         menuBtn.className = "material-icons";
         menuBtn.style.cssText = "font-size:16px;color:#64748b;cursor:pointer;padding:4px;border-radius:4px;user-select:none;transition:color 0.2s;";
         menuBtn.textContent = "more_vert";
-        menuBtn.onmouseover = function() { this.style.color = "#00d4ff"; };
-        menuBtn.onmouseout = function() { this.style.color = "#64748b"; };
-
+        menuBtn.onmouseover = function () { this.style.color = "#00d4ff"; };
+        menuBtn.onmouseout = function () { this.style.color = "#64748b"; };
         menuBtn.onclick = function (e) {
             e.stopPropagation();
-            openActionDropdown(e, session.chat_id, session.title);
+            openActionDropdown(e, chatId, session.title);
         };
 
         item.appendChild(menuBtn);
@@ -1230,8 +1497,10 @@ function renderSessionList() {
 }
 
 async function switchSession(chatId) {
-    if (chatId === currentChatId) return;
+    chatId = String(chatId || "").trim();
+    if (!chatId || chatId === currentChatId) return;
     currentChatId = chatId;
+    saveLastChatId(chatId);
     var messages = await loadSessionMessages(chatId);
     if (messages.length > 0) {
         renderChatHistory(messages);
@@ -1468,11 +1737,14 @@ async function newChat() {
         const data = await res.json();
         if (data.status === "success") {
             currentChatId = data.session.chat_id;
+            saveLastChatId(currentChatId);
+            upsertLocalSession(data.session);
             clearVisibleMessages();
             messageStore.length = 0;
             const welcome = document.getElementById("welcome");
             if (welcome) welcome.style.display = "flex";
-            await loadSessions();
+            renderSessionList();
+            await loadSessions({ showLoading: false });
             goTo("chat");
             closeSidebar();
             focusChatInput();
@@ -1512,14 +1784,20 @@ function closeSidebar(collapseDesktop = false) {
     focusChatInput();
 }
 
-function toggleSidebar() {
-    const sidebar = document.getElementById("sidebar");
+async function toggleSidebar() {
+    var sidebar = document.getElementById("sidebar");
     if (!sidebar) return;
     if (sidebar.classList.contains("open") || document.body.classList.contains("sidebar-collapsed")) {
-        if (document.body.classList.contains("sidebar-collapsed")) { openSidebar(); loadSessions(); }
-        else closeSidebar(true);
+        if (document.body.classList.contains("sidebar-collapsed")) {
+            openSidebar();
+            if (isAuthenticated) await loadSessions({ showLoading: sessionList.length === 0 });
+        } else {
+            closeSidebar(true);
+        }
+    } else {
+        openSidebar();
+        if (isAuthenticated) await loadSessions({ showLoading: sessionList.length === 0 });
     }
-    else { openSidebar(); loadSessions(); }
 }
 
 function toggleSuggestionBox() {
@@ -1583,86 +1861,102 @@ function ctxDo() {}
 
 async function checkSession() {
     authCheckComplete = false;
+    isAuthenticated = false;
     setAppVisible(false);
-    try {
-        const res = await apiFetch("/auth/status", {
-            credentials: "include",
-            headers: authHeaders()
-        });
-        const data = await res.json();
-        if (!res.ok || !data.authenticated) {
-            clearAuthToken();
-            setAppVisible(false);
+
+    authCheckPromise = (async function () {
+        try {
+            var res = await apiFetch("/auth/status", {
+                credentials: "include",
+                headers: authHeaders(),
+                timeoutMs: 45000,
+            });
+            var data = await res.json();
+            if (!res.ok || !data.authenticated) {
+                clearAuthToken();
+                isAuthenticated = false;
+                setAppVisible(false);
+                var statusNeedLogin = document.getElementById("statusText");
+                if (statusNeedLogin) statusNeedLogin.textContent = "Login Required";
+                return false;
+            }
+
+            // Auth is fully resolved — safe to fetch protected session endpoints.
+            isAuthenticated = true;
             authCheckComplete = true;
-            const status = document.getElementById("statusText");
-            if (status) status.textContent = "Login Required";
-            return false;
-        }
 
-        const splash = document.getElementById("brandSplashScreen");
-        const login = document.getElementById("loginView");
-        if (splash) {
-            if (login) login.style.display = "none";
-            splash.style.display = "flex";
-            splash.style.opacity = "1";
-        }
+            var splash = document.getElementById("brandSplashScreen");
+            var login = document.getElementById("loginView");
+            if (splash) {
+                if (login) login.style.display = "none";
+                splash.style.display = "flex";
+                splash.style.opacity = "1";
+            }
 
-        // Load sidebar sessions first — independent of Marcus brain
-        await loadSessions();
+            // Restore cached sessions immediately so the sidebar never flashes empty.
+            sessionList = loadSessionsCache();
+            renderSessionListSkeleton();
 
-        // If we have sessions, load the most recent one
-        if (sessionList.length > 0) {
-            var latest = sessionList[0];
-            currentChatId = latest.session_id || latest.chat_id || "";
+            await loadSessions({ showLoading: true });
+
+            var targetChatId = loadLastChatId();
+            if (targetChatId && sessionList.some(function (s) { return getSessionId(s) === targetChatId; })) {
+                currentChatId = targetChatId;
+            } else if (sessionList.length > 0) {
+                currentChatId = getSessionId(sessionList[0]);
+            }
+
             if (currentChatId) {
+                saveLastChatId(currentChatId);
                 var msgs = await loadSessionMessages(currentChatId);
                 if (msgs.length > 0) {
                     renderChatHistory(msgs);
                 } else {
                     await loadChatHistory(currentChatId);
                 }
+            } else {
+                await loadChatHistory();
             }
-        } else {
-            // No sessions yet — try the default Marcus chat without blocking
-            await loadChatHistory();
-        }
 
-        setAppVisible(true);
-        authCheckComplete = true;
-        const status = document.getElementById("statusText");
-        if (status) status.textContent = "Memory Online";
-        var email = data.email || "";
-        if (email) {
-            var nameEl = document.getElementById("sidebarUserName");
-            var avatarEl = document.getElementById("sidebarAvatarLetter");
-            var badgeEl = document.getElementById("sidebarUserBadge");
-            if (nameEl) nameEl.textContent = email.split("@")[0];
-            if (avatarEl) avatarEl.textContent = email[0].toUpperCase();
-            if (badgeEl) badgeEl.textContent = data.is_creator ? "Founder & Creator" : "Active User";
-        }
+            setAppVisible(true);
+            var status = document.getElementById("statusText");
+            if (status) status.textContent = "Memory Online";
+            var email = data.email || "";
+            if (email) {
+                var nameEl = document.getElementById("sidebarUserName");
+                var avatarEl = document.getElementById("sidebarAvatarLetter");
+                var badgeEl = document.getElementById("sidebarUserBadge");
+                if (nameEl) nameEl.textContent = email.split("@")[0];
+                if (avatarEl) avatarEl.textContent = email[0].toUpperCase();
+                if (badgeEl) badgeEl.textContent = data.is_creator ? "Founder & Creator" : "Active User";
+            }
 
-        if (splash) {
-            setTimeout(function() {
-                splash.style.opacity = "0";
-                setTimeout(function() {
-                    splash.style.display = "none";
-                }, 500);
-            }, 5000);
-        }
+            if (splash) {
+                setTimeout(function () {
+                    splash.style.opacity = "0";
+                    setTimeout(function () { splash.style.display = "none"; }, 500);
+                }, 5000);
+            }
 
-        return true;
-    } catch (err) {
-        clearAuthToken();
-        setAppVisible(false);
-        authCheckComplete = true;
-        const splash = document.getElementById("brandSplashScreen");
-        if (splash) splash.style.display = "none";
-        const login = document.getElementById("loginView");
-        if (login) login.style.display = "flex";
-        const error = document.getElementById("loginError");
-        if (error) error.textContent = err.message || "Backend unavailable";
-        return false;
-    }
+            return true;
+        } catch (err) {
+            clearAuthToken();
+            isAuthenticated = false;
+            setAppVisible(false);
+            var splashErr = document.getElementById("brandSplashScreen");
+            if (splashErr) splashErr.style.display = "none";
+            var loginErr = document.getElementById("loginView");
+            if (loginErr) loginErr.style.display = "flex";
+            var error = document.getElementById("loginError");
+            if (error) error.textContent = err.message || "Backend unavailable";
+            return false;
+        } finally {
+            authCheckComplete = true;
+            authCheckPromise = null;
+        }
+    })();
+
+    return authCheckPromise;
 }
 
 function openRecovery() {
@@ -1818,6 +2112,9 @@ window.send = async function () {
                 const createData = await createRes.json();
                 if (createData.status === "success") {
                     currentChatId = createData.session.chat_id;
+                    saveLastChatId(currentChatId);
+                    upsertLocalSession(createData.session);
+                    renderSessionList();
                 }
             }
         } catch (err) {
@@ -1965,21 +2262,15 @@ window.send = async function () {
         if (streamMeta.chat_id && !currentChatId) currentChatId = streamMeta.chat_id;
 
         if (streamMeta.updated_title && currentChatId) {
-            var found = false;
-            for (var i = 0; i < sessionList.length; i++) {
-                if (sessionList[i].chat_id === currentChatId) {
-                    sessionList[i].title = streamMeta.updated_title;
-                    found = true; break;
-                }
-            }
-            if (!found) sessionList.push({ chat_id: currentChatId, title: streamMeta.updated_title });
+            upsertLocalSession({ chat_id: currentChatId, title: streamMeta.updated_title });
             renderSessionList();
         }
 
         if (currentChatId && text && fullReply) {
             await persistMessagePair(currentChatId, text, fullReply);
         }
-        loadSessions();
+        if (currentChatId) saveLastChatId(currentChatId);
+        loadSessions({ showLoading: false });
 
         if (!isVoiceMuted && fullReply) {
             browserSpeak(fullReply);
@@ -2013,11 +2304,7 @@ window.send = async function () {
             var reply = fallbackData.reply || fallbackData.message || "No response";
             if (fallbackData.chat_id && !currentChatId) currentChatId = fallbackData.chat_id;
             if (fallbackData.updated_title && currentChatId) {
-                var f = false;
-                for (var i = 0; i < sessionList.length; i++) {
-                    if (sessionList[i].chat_id === currentChatId) { sessionList[i].title = fallbackData.updated_title; f = true; break; }
-                }
-                if (!f) sessionList.push({ chat_id: currentChatId, title: fallbackData.updated_title });
+                upsertLocalSession({ chat_id: currentChatId, title: fallbackData.updated_title });
                 renderSessionList();
             }
             addMessage(reply, "ai");
@@ -2025,7 +2312,8 @@ window.send = async function () {
             if (currentChatId && text && reply) {
                 await persistMessagePair(currentChatId, text, reply);
             }
-            loadSessions();
+            if (currentChatId) saveLastChatId(currentChatId);
+            loadSessions({ showLoading: false });
 
             if (!isVoiceMuted && reply) {
                 browserSpeak(reply);
@@ -2049,12 +2337,7 @@ document.addEventListener("DOMContentLoaded", () => {
         lucide.createIcons();
     }
 
-    // Chat icon click → toggle sidebar and load sessions
-    document.querySelectorAll('[onclick*="toggleSidebar"]').forEach(function (el) {
-        el.addEventListener("click", function (e) {
-            loadSessions();
-        });
-    });
+    // Sidebar toggle already refreshes sessions inside toggleSidebar().
 
     const form = document.getElementById("loginForm");
     if (form) form.addEventListener("submit", login);

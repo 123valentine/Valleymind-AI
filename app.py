@@ -366,6 +366,147 @@ def _fetch_mongo_history(session_id: str, user_id: str) -> list:
         return []
 
 
+def _normalize_session_doc(doc: dict) -> dict:
+    """Normalize session records from chat_sessions or chats collections."""
+    if not isinstance(doc, dict):
+        return {}
+    chat_id = str(doc.get("chat_id") or doc.get("session_id") or "").strip()
+    if not chat_id:
+        return {}
+    title = str(doc.get("title") or "Untitled Thread").strip() or "Untitled Thread"
+    last_updated = (
+        doc.get("last_updated")
+        or doc.get("last_activity")
+        or doc.get("created_at")
+        or ""
+    )
+    try:
+        message_count = int(doc.get("message_count") or 0)
+    except (TypeError, ValueError):
+        message_count = 0
+    return {
+        "chat_id": chat_id,
+        "session_id": chat_id,
+        "title": title,
+        "message_count": message_count,
+        "last_updated": last_updated,
+        "created_at": doc.get("created_at") or last_updated,
+    }
+
+
+def _session_sort_key(session: dict):
+    raw = session.get("last_updated") or session.get("created_at") or ""
+    if hasattr(raw, "isoformat"):
+        return raw.isoformat()
+    return str(raw)
+
+
+def _merge_session_records(existing: dict, incoming: dict) -> dict:
+    """Merge two normalized session records, preferring richer metadata."""
+    merged = dict(existing)
+    generic_titles = {"", "New Chat", "Untitled Thread"}
+    if incoming.get("title") and incoming["title"] not in generic_titles:
+        if merged.get("title") in generic_titles or not merged.get("title"):
+            merged["title"] = incoming["title"]
+    merged["message_count"] = max(
+        int(merged.get("message_count") or 0),
+        int(incoming.get("message_count") or 0),
+    )
+    if _session_sort_key(incoming) > _session_sort_key(merged):
+        merged["last_updated"] = incoming.get("last_updated") or merged.get("last_updated")
+    return merged
+
+
+def _list_user_sessions(user_id: str) -> list:
+    """Return all sessions for a user, merged from chat_sessions and chats."""
+    sessions_by_id: dict[str, dict] = {}
+
+    if _mongo_chat_sessions is not None:
+        try:
+            cursor = _mongo_chat_sessions.find({"user_id": user_id}, {"_id": 0})
+            for doc in cursor:
+                normalized = _normalize_session_doc(doc)
+                chat_id = normalized.get("chat_id")
+                if not chat_id:
+                    continue
+                sessions_by_id[chat_id] = normalized
+        except Exception as exc:
+            print(f"[ERROR] Failed to list chat_sessions for '{user_id}': {exc}")
+
+    marcus = load_marcus(user_id)
+    if marcus:
+        try:
+            for doc in marcus.memory.list_sessions() or []:
+                normalized = _normalize_session_doc(doc)
+                chat_id = normalized.get("chat_id")
+                if not chat_id:
+                    continue
+                if chat_id in sessions_by_id:
+                    sessions_by_id[chat_id] = _merge_session_records(
+                        sessions_by_id[chat_id], normalized
+                    )
+                else:
+                    sessions_by_id[chat_id] = normalized
+        except Exception as exc:
+            print(f"[ERROR] Failed to list chats sessions for '{user_id}': {exc}")
+
+    sessions = list(sessions_by_id.values())
+    sessions.sort(key=_session_sort_key, reverse=True)
+    return sessions
+
+
+def _upsert_chat_session_meta(
+    user_id: str,
+    chat_id: str,
+    title: str = "",
+    message_count: int | None = None,
+    message_count_delta: int = 0,
+):
+    """Keep chat_sessions in sync with legacy chats storage for sidebar listing."""
+    if not _mongo_chat_sessions or not user_id or not chat_id:
+        return
+    try:
+        now = datetime.now(timezone.utc)
+        update: dict = {
+            "chat_id": chat_id,
+            "session_id": chat_id,
+            "user_id": user_id,
+            "last_updated": now,
+        }
+        set_on_insert = {
+            "created_at": now,
+            "message_count": 0,
+        }
+        if title:
+            update["title"] = title
+        else:
+            set_on_insert["title"] = "New Chat"
+        if message_count is not None:
+            update["message_count"] = max(0, int(message_count))
+        update_doc = {"$set": update, "$setOnInsert": set_on_insert}
+        if message_count_delta:
+            update_doc["$inc"] = {"message_count": message_count_delta}
+        _mongo_chat_sessions.update_one(
+            {"chat_id": chat_id, "user_id": user_id},
+            update_doc,
+            upsert=True,
+        )
+    except Exception as exc:
+        print(f"[WARN] Failed to sync chat_sessions meta for '{chat_id}': {exc}")
+
+
+def _delete_chat_session_meta(user_id: str, chat_id: str):
+    if not _mongo_chat_sessions or not user_id or not chat_id:
+        return
+    try:
+        _mongo_chat_sessions.delete_many({
+            "user_id": user_id,
+            "$or": [{"chat_id": chat_id}, {"session_id": chat_id}],
+        })
+    except Exception as exc:
+        print(f"[WARN] Failed to delete chat_sessions meta for '{chat_id}': {exc}")
+
+
 @app.route("/auth/status", methods=["GET"])
 def auth_status():
     auth = _current_auth()
@@ -417,17 +558,15 @@ def chat_sessions():
     if not user_id:
         return jsonify({"status": "error", "message": "Unauthorized"}), 401
     try:
-        if not _mongo_chat_sessions:
-            print("[ERROR] /chat/sessions: _mongo_chat_sessions is None — DB not connected")
-            return jsonify({"status": "success", "sessions": []})
-        cursor = _mongo_chat_sessions.find(
-            {"user_id": user_id},
-            {"_id": 0},
-        ).sort("last_updated", -1)
-        return jsonify({"status": "success", "sessions": list(cursor)})
+        sessions = _list_user_sessions(user_id)
+        return jsonify({"status": "success", "sessions": sessions})
     except Exception as exc:
         print(f"[ERROR] /chat/sessions failed: {exc}")
-        return jsonify({"status": "success", "sessions": []})
+        return jsonify({
+            "status": "error",
+            "message": "Failed to load sessions",
+            "sessions": [],
+        }), 500
 
 
 @app.route("/chat/sessions", methods=["POST"])
@@ -445,6 +584,12 @@ def chat_create_session():
 
     try:
         session = marcus.memory.create_session(chat_id, title)
+        _upsert_chat_session_meta(
+            user_id,
+            session["chat_id"],
+            title=session["title"],
+            message_count=0,
+        )
         return jsonify({"status": "success", "session": {
             "chat_id": session["chat_id"],
             "title": session["title"],
@@ -478,6 +623,7 @@ def rename_chat_session():
             marcus.memory.set_title(chat_id, new_title)
         elif hasattr(marcus.memory, "db_manager"):
             marcus.memory.db_manager.update_session_title(chat_id, new_title)
+        _upsert_chat_session_meta(user_id, chat_id, title=new_title)
         return jsonify({"status": "success", "message": "Session renamed"})
     except Exception as exc:
         print(f"[ERROR] Failed to rename session '{chat_id}': {exc}")
@@ -494,12 +640,7 @@ def chat_delete_session(chat_id):
         return jsonify({"status": "error", "message": "Marcus not configured"}), 404
     try:
         marcus.memory.delete_session(chat_id)
-        # Also clean up from chat_sessions and messages collections
-        if _mongo_chat_sessions is not None:
-            try:
-                _mongo_chat_sessions.delete_one({"session_id": chat_id, "user_id": user_id})
-            except Exception:
-                pass
+        _delete_chat_session_meta(user_id, chat_id)
         if _mongo_messages is not None:
             try:
                 _mongo_messages.delete_many({"session_id": chat_id, "user_id": user_id})
@@ -745,20 +886,18 @@ def api_chat_history():
         user_id, error = _require_login()
         if error:
             return error
-        if not _mongo_chat_sessions:
-            print("[ERROR] /api/chat/history: _mongo_chat_sessions is None — DB not connected")
-            return jsonify([]), 200
         if not user_id:
             print("[ERROR] /api/chat/history: user_id is empty after auth check")
-            return jsonify({"error": "Unauthorized"}), 401
-        cursor = _mongo_chat_sessions.find(
-            {"user_id": user_id},
-            {"_id": 0},
-        ).sort("last_updated", -1)
-        return jsonify({"sessions": list(cursor)})
+            return jsonify({"status": "error", "message": "Unauthorized", "sessions": []}), 401
+        sessions = _list_user_sessions(user_id)
+        return jsonify({"status": "success", "sessions": sessions})
     except Exception as exc:
         print(f"[ERROR] /api/chat/history failed: {exc}")
-        return jsonify([]), 200
+        return jsonify({
+            "status": "error",
+            "message": "Failed to load sessions",
+            "sessions": [],
+        }), 500
 
 
 @app.route("/api/chat/messages", methods=["GET"])
