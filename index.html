@@ -608,6 +608,8 @@ let sessionsLoadError = "";
 let sessionsLoadPromise = null;
 let currentChatId = "";
 let sessionList = [];
+/** Incremented to cancel in-flight message hydration (checkSession vs newChat races). */
+let chatHydrationToken = 0;
 
 function sleep(ms) {
     return new Promise(function (resolve) { setTimeout(resolve, ms); });
@@ -666,8 +668,23 @@ function loadSessionsCache() {
 }
 
 function saveLastChatId(chatId) {
-    if (!chatId) return;
-    try { localStorage.setItem(LAST_CHAT_KEY, chatId); } catch (_) {}
+    try {
+        if (chatId) localStorage.setItem(LAST_CHAT_KEY, chatId);
+        else localStorage.removeItem(LAST_CHAT_KEY);
+    } catch (_) {}
+}
+
+function mergeSessionLists(remoteSessions, localSessions) {
+    var merged = {};
+    (remoteSessions || []).forEach(function (s) {
+        var id = getSessionId(s);
+        if (id) merged[id] = normalizeSession(s);
+    });
+    (localSessions || []).forEach(function (s) {
+        var id = getSessionId(s);
+        if (id && !merged[id]) merged[id] = normalizeSession(s);
+    });
+    return Object.keys(merged).map(function (id) { return merged[id]; });
 }
 
 function loadLastChatId() {
@@ -1318,8 +1335,8 @@ async function loadSessions(options) {
             }
 
             if (fetched !== null) {
-                sessionList = fetched;
-                saveSessionsCache(fetched);
+                sessionList = mergeSessionLists(fetched, sessionList);
+                saveSessionsCache(sessionList);
                 sessionsLoadError = "";
             } else {
                 if (sessionList.length === 0) {
@@ -1496,17 +1513,27 @@ function renderSessionList() {
     });
 }
 
+async function hydrateChatMessages(chatId) {
+    chatId = String(chatId || "").trim();
+    if (!chatId) return;
+    var token = ++chatHydrationToken;
+    var messages = await loadSessionMessages(chatId);
+    if (token !== chatHydrationToken || chatId !== currentChatId) return;
+    if (messages.length > 0) {
+        renderChatHistory(messages);
+        return;
+    }
+    await loadChatHistory(chatId);
+    if (token !== chatHydrationToken || chatId !== currentChatId) return;
+}
+
 async function switchSession(chatId) {
     chatId = String(chatId || "").trim();
     if (!chatId || chatId === currentChatId) return;
+    chatHydrationToken++;
     currentChatId = chatId;
     saveLastChatId(chatId);
-    var messages = await loadSessionMessages(chatId);
-    if (messages.length > 0) {
-        renderChatHistory(messages);
-    } else {
-        await loadChatHistory(chatId);
-    }
+    await hydrateChatMessages(chatId);
     renderSessionList();
     closeFloatingPanels();
     document.querySelectorAll(".page").forEach(function (el) { el.classList.remove("active"); });
@@ -1524,8 +1551,11 @@ async function deleteSession(chatId) {
         });
         if (!res.ok) return;
         if (currentChatId === chatId) {
+            chatHydrationToken++;
             currentChatId = "";
+            saveLastChatId("");
             clearVisibleMessages();
+            messageStore.length = 0;
             const welcome = document.getElementById("welcome");
             if (welcome) welcome.style.display = "flex";
         }
@@ -1587,8 +1617,11 @@ function openActionDropdown(event, chatId, currentTitle) {
             });
             if (res.ok) {
                 if (currentChatId === chatId) {
-                    currentChatId = null;
+                    chatHydrationToken++;
+                    currentChatId = "";
+                    saveLastChatId("");
                     clearVisibleMessages();
+                    messageStore.length = 0;
                 }
                 if (typeof loadSessions === "function") { await loadSessions(); }
             }
@@ -1727,41 +1760,49 @@ function goTo(page) {
 
 async function newChat() {
     try {
+        await waitForAuth();
+        if (!isAuthenticated) return;
+
+        chatHydrationToken++;
+
         const res = await apiFetch("/chat/sessions", {
             method: "POST",
             credentials: "include",
             headers: authHeaders({ "Content-Type": "application/json" }),
             body: JSON.stringify({ title: "New Chat" })
         });
-        if (!res.ok) return;
+        if (!res.ok) {
+            console.warn("[New Chat] HTTP", res.status);
+            return;
+        }
         const data = await res.json();
-        if (data.status === "success") {
-            currentChatId = data.session.chat_id;
-            saveLastChatId(currentChatId);
-            upsertLocalSession(data.session);
-            clearVisibleMessages();
-            messageStore.length = 0;
-            const welcome = document.getElementById("welcome");
-            if (welcome) welcome.style.display = "flex";
-            renderSessionList();
-            await loadSessions({ showLoading: false });
-            goTo("chat");
-            closeSidebar();
-            focusChatInput();
+        if (data.status !== "success" || !data.session) {
+            console.warn("[New Chat] unexpected response:", data);
+            return;
         }
-    } catch (err) {
-        console.warn("Failed to create new session.", err);
-        // Fallback: just clear UI
-        const messages = document.getElementById("messages");
+
+        var newId = getSessionId(data.session);
+        if (!newId) {
+            console.warn("[New Chat] missing chat_id in response:", data.session);
+            return;
+        }
+
+        currentChatId = newId;
+        saveLastChatId(newId);
+        upsertLocalSession(data.session);
+        clearVisibleMessages();
+        messageStore.length = 0;
         const welcome = document.getElementById("welcome");
-        if (messages) {
-            Array.from(messages.children).forEach(function (child) {
-                if (child.id !== "welcome") child.remove();
-            });
-        }
         if (welcome) welcome.style.display = "flex";
+        renderSessionList();
+        loadSessions({ showLoading: false, force: true }).catch(function (err) {
+            console.warn("[New Chat] background session refresh failed:", err);
+        });
         goTo("chat");
         closeSidebar();
+        focusChatInput();
+    } catch (err) {
+        console.warn("Failed to create new session.", err);
     }
 }
 
@@ -1900,7 +1941,7 @@ async function checkSession() {
             await loadSessions({ showLoading: true });
 
             var targetChatId = loadLastChatId();
-            if (targetChatId && sessionList.some(function (s) { return getSessionId(s) === targetChatId; })) {
+            if (targetChatId) {
                 currentChatId = targetChatId;
             } else if (sessionList.length > 0) {
                 currentChatId = getSessionId(sessionList[0]);
@@ -1908,14 +1949,11 @@ async function checkSession() {
 
             if (currentChatId) {
                 saveLastChatId(currentChatId);
-                var msgs = await loadSessionMessages(currentChatId);
-                if (msgs.length > 0) {
-                    renderChatHistory(msgs);
-                } else {
-                    await loadChatHistory(currentChatId);
-                }
+                await hydrateChatMessages(currentChatId);
             } else {
-                await loadChatHistory();
+                chatHydrationToken++;
+                clearVisibleMessages();
+                messageStore.length = 0;
             }
 
             setAppVisible(true);

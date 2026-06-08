@@ -487,7 +487,7 @@ def _upsert_chat_session_meta(
         if message_count_delta:
             update_doc["$inc"] = {"message_count": message_count_delta}
         _mongo_chat_sessions.update_one(
-            {"chat_id": chat_id, "user_id": user_id},
+            {"session_id": chat_id, "user_id": user_id},
             update_doc,
             upsert=True,
         )
@@ -592,9 +592,11 @@ def chat_create_session():
         )
         return jsonify({"status": "success", "session": {
             "chat_id": session["chat_id"],
+            "session_id": session["chat_id"],
             "title": session["title"],
             "created_at": session["created_at"],
             "last_activity": session["last_activity"],
+            "last_updated": session["last_activity"],
             "message_count": 0,
         }})
     except Exception as exc:
@@ -959,17 +961,30 @@ def api_chat_message():
     try:
         # ── Upsert session metadata ───────────────────────────────────────
         existing = _mongo_chat_sessions.find_one({
-            "chat_id": session_id,
+            "session_id": session_id,
             "user_id": user_id,
         })
         title = (existing or {}).get("title", "")
         if not title:
             title = user_message[:25].rstrip()
 
+        now = datetime.now(timezone.utc)
         _mongo_chat_sessions.update_one(
-            {"chat_id": session_id, "user_id": user_id},
-            {"$set": {"title": title, "last_updated": datetime.utcnow(), "session_id": session_id},
-             "$inc": {"message_count": 1}},
+            {"session_id": session_id, "user_id": user_id},
+            {
+                "$set": {
+                    "chat_id": session_id,
+                    "title": title,
+                    "last_updated": now,
+                    "session_id": session_id,
+                    "user_id": user_id,
+                },
+                "$setOnInsert": {
+                    "created_at": now,
+                    "message_count": 0,
+                },
+                "$inc": {"message_count": 1},
+            },
             upsert=True,
         )
 
