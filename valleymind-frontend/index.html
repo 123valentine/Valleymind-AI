@@ -1034,13 +1034,13 @@ async function loadChatHistory(chatId) {
 
 async function loadSessions() {
     try {
-        const res = await apiFetch("/api/chat/history", {
+        const res = await apiFetch("/chat/sessions", {
             credentials: "include",
             headers: authHeaders()
         });
         if (!res.ok) return;
         const data = await res.json();
-        sessionList = (data && !Array.isArray(data) ? (data.sessions || []) : []);
+        sessionList = (data && data.status === "success" ? (data.sessions || []) : []);
         renderSessionList();
     } catch (err) {
         console.warn("Failed to load sessions.", err);

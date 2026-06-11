@@ -386,12 +386,12 @@ class DatabaseManager:
             print(f"[DB] Failed to list sessions for '{user_id}': {exc}")
             return self._load_sessions_index(user_id)
 
-    def get_session(self, chat_id: str) -> dict:
+    def get_session(self, chat_id: str, projection: dict = None) -> dict:
         if not USE_LOCAL_JSON:
             db = self.get_db()
             if db is not None:
                 try:
-                    doc = db.chats.find_one({"chat_id": chat_id})
+                    doc = db.chats.find_one({"chat_id": chat_id}, projection)
                     if doc:
                         return doc
                 except Exception as exc:
@@ -400,7 +400,10 @@ class DatabaseManager:
         try:
             if os.path.exists(fpath):
                 with open(fpath, "r", encoding="utf-8") as f:
-                    return json.load(f)
+                    data = json.load(f)
+                    if projection:
+                        data = {k: v for k, v in data.items() if k in projection}
+                    return data
         except (json.JSONDecodeError, OSError) as exc:
             print(f"[DB] Failed to load session '{chat_id}': {exc}")
         return {}

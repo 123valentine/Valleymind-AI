@@ -668,17 +668,17 @@ def chat():
         resolved_chat_id = chat_id or f"{marcus.profile.key}_main_chat"
 
         updated_title = None
-        if message and resolved_chat_id and resolved_chat_id != f"{marcus.profile.key}_main_chat":
+        if message and resolved_chat_id:
             try:
-                session_info = marcus.memory.db_manager.get_session(resolved_chat_id)
+                session_info = marcus.memory.db_manager.get_session(resolved_chat_id, {"title": 1})
                 if session_info:
                     current_title = str(session_info.get("title") or "")
                     if current_title in ("", "New Chat", "Untitled Thread"):
                         words = message.split()
                         if len(words) >= 3:
-                            title = " ".join(words[:5]).rstrip(".,!?;:")
-                            if len(title) > 40:
-                                title = title[:40].rsplit(" ", 1)[0] if " " in title[:40] else title[:40]
+                            title = " ".join(words[:8]).rstrip(".,!?;:")
+                            if len(title) > 60:
+                                title = title[:60].rsplit(" ", 1)[0] if " " in title[:60] else title[:60]
                             marcus.memory.set_title(resolved_chat_id, title)
                             updated_title = title
             except Exception as exc:
@@ -735,17 +735,17 @@ def chat_stream():
 
         def generate():
             updated_title = None
-            if message and resolved_chat_id != f"{marcus.profile.key}_main_chat":
+            if message and resolved_chat_id:
                 try:
-                    session_info = marcus.memory.db_manager.get_session(resolved_chat_id)
+                    session_info = marcus.memory.db_manager.get_session(resolved_chat_id, {"title": 1})
                     if session_info:
                         current_title = str(session_info.get("title") or "")
                         if current_title in ("", "New Chat", "Untitled Thread"):
                             words = message.split()
                             if len(words) >= 3:
-                                title = " ".join(words[:5]).rstrip(".,!?;:")
-                                if len(title) > 40:
-                                    title = title[:40].rsplit(" ", 1)[0] if " " in title[:40] else title[:40]
+                                title = " ".join(words[:8]).rstrip(".,!?;:")
+                                if len(title) > 60:
+                                    title = title[:60].rsplit(" ", 1)[0] if " " in title[:60] else title[:60]
                                 marcus.memory.set_title(resolved_chat_id, title)
                                 updated_title = title
                 except Exception as exc:
