@@ -10,5 +10,5 @@ duckduckgo_search
 feedparser
 wikipedia
 groq
-pymongo[srv]
+pymongo[srv]>=4.9,<5
 certifi

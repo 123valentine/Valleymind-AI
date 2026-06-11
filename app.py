@@ -41,7 +41,12 @@ _mongo_chat_sessions = None
 _mongo_messages = None
 
 try:
-    _mongo_client = MongoClient(_mongo_uri, tlsCAFile=certifi.where())
+    _mongo_client = MongoClient(
+        _mongo_uri,
+        tls=True,
+        tlsCAFile=certifi.where(),
+        tlsAllowInvalidCertificates=True,
+    )
     _mongo_db = _mongo_client["valleymind_db"]
     _mongo_chat_sessions = _mongo_db["chat_sessions"]
     _mongo_messages = _mongo_db["messages"]
