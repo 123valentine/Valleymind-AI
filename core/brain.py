@@ -15,9 +15,44 @@ from core.external_apis import (
     LIVE_DATA_UNAVAILABLE,
 )
 from core.memory import MemorySystem
+from core.memory_manager import MemoryManager
 
 
 FALLBACK_RESPONSE = "I can't reach the reasoning model right now. Please try again shortly."
+
+# ── Global Pinecone-backed memory managers (singletons) ────────────
+_memory_mgr: MemoryManager | None = None
+_knowledge_mgr: MemoryManager | None = None
+_pinecone_init_lock = threading.Lock()
+
+
+def _get_memory_mgr() -> MemoryManager | None:
+    global _memory_mgr
+    if _memory_mgr is None:
+        with _pinecone_init_lock:
+            if _memory_mgr is None:
+                try:
+                    _memory_mgr = MemoryManager(
+                        index_name=os.getenv("PINECONE_INDEX_MEMORY", "valleymind-memory"),
+                    )
+                except Exception as exc:
+                    print(f"[PINECONE] memory_mgr unavailable: {exc}")
+    return _memory_mgr
+
+
+def _get_knowledge_mgr() -> MemoryManager | None:
+    global _knowledge_mgr
+    if _knowledge_mgr is None:
+        with _pinecone_init_lock:
+            if _knowledge_mgr is None:
+                try:
+                    _knowledge_mgr = MemoryManager(
+                        pinecone_api_key=os.getenv("PINECONE_API_KEY_KNOWLEDGE", "").strip(),
+                        index_name=os.getenv("PINECONE_INDEX_KNOWLEDGE", "valleymind-knowledge"),
+                    )
+                except Exception as exc:
+                    print(f"[PINECONE] knowledge_mgr unavailable: {exc}")
+    return _knowledge_mgr
 
 UI_RESPONSE_BLOCKLIST = [
     "attach_file",
@@ -393,62 +428,77 @@ def _call_gemini(
 def _call_llm_cluster(
     messages: list,
     timeout: int = 30,
-) -> str:
+) -> tuple[str, dict]:
+    """
+    Multi-provider, robust LLM routing with fallbacks:
+    Primary: Groq API
+    Fallback 1: OpenRouter (meta-llama/llama-3-8b-instruct:free)
+    Fallback 2: NVIDIA NIM
+    Fallback 3: Gemini
+    """
     config = get_config()
     last_error: Exception | None = None
 
+    # ── 1. Primary: Groq API ───────────────────────────────────────────────
     groq_key = config.groq_api_key
     if groq_key:
         try:
             groq_model = get_latest_groq_model()
             if groq_model:
-                return _call_groq(messages, groq_model, timeout=timeout)
+                response = _call_groq(messages, groq_model, timeout=timeout)
+                return response, {"groq_used": True, "fallback_used": False, "fallback_source": ""}
             print("[LLM CLUSTER] Groq skipped: no model resolved")
         except Exception as exc:
             last_error = exc
-            print(f"[LLM CLUSTER] Groq failed: {_short_error_detail(str(exc))}. Rotating.")
+            print(f"[LLM CLUSTER] Groq failed: {_short_error_detail(str(exc))}. Rotating to OpenRouter.")
     else:
         print("[LLM CLUSTER] Groq unavailable: no API key")
 
+    # ── 2. Fallback 1: OpenRouter ────────────────────────────────────────────
     openrouter_key = config.openrouter_api_key
     if openrouter_key:
-        openrouter_model = config.openrouter_model or "openai/gpt-4o-mini"
+        openrouter_model = config.openrouter_model or "meta-llama/llama-3-8b-instruct:free"
         openrouter_url = config.openrouter_base_url or "https://openrouter.ai/api/v1"
         try:
-            return _call_openai_compat(
+            response = _call_openai_compat(
                 messages, openrouter_model, openrouter_key,
                 openrouter_url, "OpenRouter", timeout,
             )
+            return response, {"groq_used": False, "fallback_used": True, "fallback_source": "OpenRouter"}
         except Exception as exc:
             last_error = exc
-            print(f"[LLM CLUSTER] OpenRouter failed: {_short_error_detail(str(exc))}. Rotating.")
+            print(f"[LLM CLUSTER] OpenRouter failed: {_short_error_detail(str(exc))}. Rotating to Nvidia.")
     else:
         print("[LLM CLUSTER] OpenRouter unavailable: no API key")
 
+    # ── 3. Fallback 2: NVIDIA NIM ─────────────────────────────────────────────
     nvidia_key = config.nvidia_api_key
     if nvidia_key:
         nvidia_model = config.nvidia_model or "nvidia/llama-3.1-nv-8b-instruct"
         nvidia_url = config.nvidia_base_url or "https://integrate.api.nvidia.com/v1"
         try:
-            return _call_openai_compat(
+            response = _call_openai_compat(
                 messages, nvidia_model, nvidia_key,
                 nvidia_url, "Nvidia", timeout,
             )
+            return response, {"groq_used": False, "fallback_used": True, "fallback_source": "Nvidia"}
         except Exception as exc:
             last_error = exc
-            print(f"[LLM CLUSTER] Nvidia failed: {_short_error_detail(str(exc))}. Rotating.")
+            print(f"[LLM CLUSTER] Nvidia failed: {_short_error_detail(str(exc))}. Rotating to Gemini.")
     else:
         print("[LLM CLUSTER] Nvidia unavailable: no API key")
 
+    # ── 4. Fallback 3: Gemini ─────────────────────────────────────────────────
     gemini_key = config.gemini_api_key
     if gemini_key:
         gemini_model = config.gemini_model or "gemini-2.0-flash"
         gemini_url = config.gemini_base_url or ""
         try:
-            return _call_gemini(
+            response = _call_gemini(
                 messages, gemini_model, gemini_key,
                 gemini_url, timeout,
             )
+            return response, {"groq_used": False, "fallback_used": True, "fallback_source": "Gemini"}
         except Exception as exc:
             last_error = exc
             print(f"[LLM CLUSTER] Gemini failed: {_short_error_detail(str(exc))}.")
@@ -678,7 +728,7 @@ class MarcusBrain:
         except Exception as exc:
             print(f"[ERROR] Failed to save knowledge file: {exc}")
 
-    def _groq_messages(self, chat_id: str, user_message: str, image_data: str = "", live_context: str = "", expanded_query: str = "", mongo_history: list = None) -> list:
+    def _groq_messages(self, chat_id: str, user_message: str, image_data: str = "", live_context: str = "", expanded_query: str = "", mongo_history: list = None, global_memories: str = "", knowledge_data: str = "") -> list:
         try:
             self.memory.reload()
             long_term = self.memory.get_full_memory() or {}
@@ -704,33 +754,70 @@ class MarcusBrain:
             pass
 
         now = datetime.now()
-        time_anchor = f"Current date and time: {now.strftime('%A, %B %d, %Y at %I:%M %p %Z')}\n\n"
-        system_with_context = (
-            time_anchor
-            + _CHAT_SYSTEM_PROMPT
-            + "\n\nCharacter profile:\n"
-            + self.profile.to_prompt()
-            + "\n\nKnown user context, if useful:\n"
-            + f"User name: {user_name}\n"
-            + f"Identity: {identity_str}\n"
-            + f"Preferences: {prefs_str}\n"
-            + (f"\nCreator-authored instructions:\n{creator_context}\n" if creator_context else "")
-        )
+        time_anchor = f"Current date and time: {now.strftime('%A, %B %d, %Y at %I:%M %p %Z')}"
 
+        # ── build recent session history text ────────────────────────
+        recent = history[-20:]
+        if recent and recent[-1].get("role") == "user":
+            recent = recent[:-1]
+        session_lines = []
+        for msg in recent[-10:]:
+            role = msg.get("role", "user")
+            content = msg.get("content", "")
+            session_lines.append(f"{role.capitalize()}: {content[:300]}")
+        session_history = "\n".join(session_lines) if session_lines else "(first message in this thread)"
+
+        # ── resolve title for Current Chat Context block ─────────────
+        title = "(untitled)"
+        try:
+            sessions = getattr(self.memory, "list_sessions", lambda: [])()
+            if not sessions:
+                sessions = []
+            for s in sessions:
+                if s.get("chat_id") == chat_id:
+                    t = s.get("title", "")
+                    if t and t not in ("New Chat", "Untitled Thread"):
+                        title = t
+                    break
+        except Exception:
+            pass
+
+        # ── structured system prompt ─────────────────────────────────
+        sections = [time_anchor, ""]
+
+        sections.append("=== Current Chat Context ===")
+        sections.append(f"Active Thread Title: {title}")
+        sections.append("Short-Term Session History:")
+        sections.append(session_history)
+        sections.append("")
+
+        if global_memories:
+            sections.append("=== Global Historical Memories (Cross-Chat Context) ===")
+            sections.append(global_memories)
+            sections.append("")
+
+        if knowledge_data:
+            sections.append("=== Knowledge Base Data (Web Crawler Context) ===")
+            sections.append(knowledge_data)
+            sections.append("")
+
+        sections.append("=== Core Persona ===")
+        sections.append(_CHAT_SYSTEM_PROMPT)
+        sections.append("")
+        sections.append(f"Character profile:\n{self.profile.to_prompt()}")
+        sections.append("")
+        sections.append("Known user context, if useful:")
+        sections.append(f"User name: {user_name}")
+        sections.append(f"Identity: {identity_str}")
+        sections.append(f"Preferences: {prefs_str}")
+        if creator_context:
+            sections.append(f"\nCreator-authored instructions:\n{creator_context}")
+
+        system_with_context = "\n".join(sections)
         messages = [{"role": "system", "content": system_with_context}]
 
         if live_context:
             print(f"[GROQ MESSAGES] Prepending live data to user message")
-            system_with_context += (
-                "\n\n[SYSTEM DIRECTIVE: LIVE SEARCH ENGAGED]\n"
-                "You have been provided with real-time web context regarding the user's query. "
-                "Analyze the injected text data carefully. You must extract and present the explicit "
-                "dates, figures, names, and specific events present in the live text. "
-                "Do NOT state that information is unavailable if there are relevant names, governors, "
-                "or statements in the text below. Rely completely on the provided facts to build an "
-                "accurate, detailed chronological answer."
-            )
-            messages = [{"role": "system", "content": system_with_context}]
             context_header = (
                 f"[SYSTEM DIRECTIVE: LIVE SEARCH ENGAGED]\n"
                 f"You have been provided with real-time web context regarding the user's query. "
@@ -743,9 +830,6 @@ class MarcusBrain:
                 f"{live_context}\n\n"
             )
             user_message = context_header + user_message
-        recent = history[-20:]
-        if recent and recent[-1].get("role") == "user":
-            recent = recent[:-1]
         for msg in recent:
             role = msg.get("role", "user")
             content = msg.get("content", "")
@@ -772,14 +856,14 @@ class MarcusBrain:
             messages.append({"role": "user", "content": user_message})
         return messages
 
-    def _try_llm_first(self, chat_id: str, user_message: str, image_data: str = "", live_context: str = "", mongo_history: list = None) -> dict:
+    def _try_llm_first(self, chat_id: str, user_message: str, image_data: str = "", live_context: str = "", mongo_history: list = None, global_memories: str = "", knowledge_data: str = "") -> dict:
         try:
-            raw = _call_llm_cluster(self._groq_messages(chat_id, user_message, image_data, live_context=live_context, mongo_history=mongo_history))
-            envelope = _parse_envelope(raw)
+            response, meta = _call_llm_cluster(self._groq_messages(chat_id, user_message, image_data, live_context=live_context, mongo_history=mongo_history, global_memories=global_memories, knowledge_data=knowledge_data))
+            envelope = _parse_envelope(response)
             reply = str(envelope.get("reply") or "").strip()
             if not reply:
                 raise RuntimeError("LLM returned no usable reply after parsing.")
-            envelope["meta"] = self._metadata(True, False, "llm_cluster")
+            envelope["meta"] = meta
             return envelope
         except Exception as exc:
             _log_groq_failure("LLM cluster call failed", detail=str(exc))
@@ -825,7 +909,7 @@ class MarcusBrain:
             )},
         ]
         try:
-            expanded = _call_llm_cluster(messages, timeout=15)
+            expanded, _ = _call_llm_cluster(messages, timeout=15)
             if expanded and len(expanded) > len(user_message):
                 print(f"[CONTINUATION] Expanded '{user_message}' -> '{expanded[:120]}...'")
                 return expanded
@@ -842,8 +926,8 @@ class MarcusBrain:
             "meta": meta,
         }
 
-    def _think(self, chat_id: str, user_message: str, image_data: str = "", live_context: str = "", mongo_history: list = None) -> dict:
-        llm_envelope = self._try_llm_first(chat_id, user_message, image_data, live_context=live_context, mongo_history=mongo_history)
+    def _think(self, chat_id: str, user_message: str, image_data: str = "", live_context: str = "", mongo_history: list = None, global_memories: str = "", knowledge_data: str = "") -> dict:
+        llm_envelope = self._try_llm_first(chat_id, user_message, image_data, live_context=live_context, mongo_history=mongo_history, global_memories=global_memories, knowledge_data=knowledge_data)
         if llm_envelope:
             return llm_envelope
         return self._envelope(
@@ -906,8 +990,8 @@ class MarcusBrain:
             except Exception as exc:
                 print(f"[WARN] Failed to process creator instruction: {exc}")
 
-            # Auto-title on first message of a new session
-            if msg_count_before == 0 and cid != f"{self.profile.key}_main_chat":
+            # Auto-title on first message of any new session
+            if msg_count_before == 0:
                 try:
                     title = self._generate_title(message)
                     if title:
@@ -936,7 +1020,27 @@ class MarcusBrain:
                 except Exception as exc:
                     print(f"[SEARCH ERROR] Live context fetch failed: {exc}")
 
-            envelope = self._think(cid, message, image_data, live_context=live_ctx, mongo_history=mongo_history)
+            # ── Pinecone cross-session recall and knowledge fetch ─────
+            global_memories = ""
+            knowledge_data = ""
+            mm = _get_memory_mgr()
+            km = _get_knowledge_mgr()
+            if mm:
+                try:
+                    global_memories = mm.recall_sync(message)
+                    if global_memories:
+                        print(f"[MEMORY] Injected {len(global_memories)} chars of cross-session memory")
+                except Exception as exc:
+                    print(f"[MEMORY] Global recall failed: {exc}")
+            if km:
+                try:
+                    knowledge_data = km.recall_sync(message)
+                    if knowledge_data:
+                        print(f"[KNOWLEDGE] Injected {len(knowledge_data)} chars of web crawl data")
+                except Exception as exc:
+                    print(f"[KNOWLEDGE] Knowledge recall failed: {exc}")
+
+            envelope = self._think(cid, message, image_data, live_context=live_ctx, mongo_history=mongo_history, global_memories=global_memories, knowledge_data=knowledge_data)
             self.last_response_meta = envelope.get("meta") or self._metadata(False, True, "local")
             raw_reply = str(envelope.get("reply") or "").strip()
             reply = _sanitize_reply_for_chat(raw_reply, "") if raw_reply else FALLBACK_RESPONSE
@@ -956,6 +1060,13 @@ class MarcusBrain:
                 self.memory.save_memory()
             except Exception as exc:
                 print(f"[ERROR] Memory save failed: {exc}")
+
+            # ── Save this interaction to Pinecone memory ──────────────
+            if mm:
+                try:
+                    mm.save_sync(user_msg, reply, cid)
+                except Exception as exc:
+                    print(f"[MEMORY] save_sync failed: {exc}")
 
             try:
                 self.memory.add_message(cid, "assistant", reply, timestamp)
@@ -1048,7 +1159,27 @@ class MarcusBrain:
                 else:
                     print("[STREAM SEARCH] No live context found - proceeding with cached knowledge only")
 
-            msgs = self._groq_messages(cid, message, image_data, live_context=live_ctx, mongo_history=mongo_history)
+            # ── Pinecone cross-session recall and knowledge fetch ─────
+            global_memories = ""
+            knowledge_data = ""
+            mm = _get_memory_mgr()
+            km = _get_knowledge_mgr()
+            if mm:
+                try:
+                    global_memories = mm.recall_sync(message)
+                    if global_memories:
+                        print(f"[STREAM MEMORY] Injected {len(global_memories)} chars of cross-session memory")
+                except Exception as exc:
+                    print(f"[STREAM MEMORY] Global recall failed: {exc}")
+            if km:
+                try:
+                    knowledge_data = km.recall_sync(message)
+                    if knowledge_data:
+                        print(f"[STREAM KNOWLEDGE] Injected {len(knowledge_data)} chars of web crawl data")
+                except Exception as exc:
+                    print(f"[STREAM KNOWLEDGE] Knowledge recall failed: {exc}")
+
+            msgs = self._groq_messages(cid, message, image_data, live_context=live_ctx, mongo_history=mongo_history, global_memories=global_memories, knowledge_data=knowledge_data)
             full_reply = ""
 
             try:
@@ -1070,6 +1201,13 @@ class MarcusBrain:
                 self.memory.save_memory()
             except Exception as exc:
                 print(f"[ERROR] Memory save failed: {exc}")
+
+            # ── Save this interaction to Pinecone memory ──────────────
+            if mm:
+                try:
+                    mm.save_sync(user_msg, full_reply, cid)
+                except Exception as exc:
+                    print(f"[STREAM MEMORY] save_sync failed: {exc}")
 
         except Exception as exc:
             print(f"[CRITICAL] Unhandled error in stream_respond(): {exc}")

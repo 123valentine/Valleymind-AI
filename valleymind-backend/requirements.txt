@@ -12,3 +12,4 @@ wikipedia
 groq
 pymongo[srv]>=4.9,<5
 certifi
+pinecone==9.1.0

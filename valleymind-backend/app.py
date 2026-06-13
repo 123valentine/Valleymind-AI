@@ -3,17 +3,32 @@ import json
 import os
 import re
 import secrets
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from threading import Lock
 from urllib.parse import quote
 
-from flask import Flask, jsonify, request, send_from_directory, session, stream_with_context, Response
+import certifi
+from flask import Flask, Response, jsonify, request, send_from_directory, session, stream_with_context
 from flask_cors import CORS
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from core.brain import MarcusBrain
+from core.brain import MarcusBrain, _call_llm_cluster, _CHAT_SYSTEM_PROMPT
 from core.config import PROJECT_ROOT
 from core.tts import speak_marcus
+
+# ── Load .env for local dev ──────────────────────────────────────────────
+_env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+if os.path.isfile(_env_path):
+    with open(_env_path, encoding="utf-8") as _f:
+        for _line in _f:
+            _line = _line.strip()
+            if not _line or _line.startswith("#") or "=" not in _line:
+                continue
+            _key, _val = _line.split("=", 1)
+            _key = _key.strip()
+            _val = _val.strip().strip("\"'")
+            if _key and not os.environ.get(_key):
+                os.environ[_key] = _val
 
 app = Flask(__name__)
 app.permanent_session_lifetime = timedelta(days=30)
@@ -39,7 +54,6 @@ _local_dev_origins = [
 _cors_origins = _allowed_origins or ([] if _is_production else _local_dev_origins)
 if _cors_origins:
     CORS(app, supports_credentials=True, origins=_cors_origins)
-
 
 _cache_marcus_by_user = {}
 _auth_tokens = {}
@@ -110,7 +124,6 @@ def _save_users(users: dict):
 
 
 def _current_auth() -> dict:
-    print(f"[DEBUG] _current_auth: Session: {dict(session)}")
     user_id = str(session.get("user_id") or "").strip()
     email = str(session.get("email") or "").strip()
     if user_id:
@@ -217,6 +230,147 @@ def _derive_initial_user_name(email: str) -> str:
     return cleaned.split()[-1].capitalize()
 
 
+# ── PINECONE SESSION INDEX HANDLING ────────────────────────────────────────────────────────
+def _normalize_session_doc(doc: dict) -> dict:
+    if not isinstance(doc, dict):
+        return {}
+    chat_id = str(doc.get("chat_id") or doc.get("session_id") or "").strip()
+    if not chat_id:
+        return {}
+    title = str(doc.get("title") or "Untitled Thread").strip() or "Untitled Thread"
+    last_updated = (
+        doc.get("last_updated")
+        or doc.get("last_activity")
+        or doc.get("created_at")
+        or ""
+    )
+    try:
+        message_count = int(doc.get("message_count") or 0)
+    except (TypeError, ValueError):
+        message_count = 0
+    return {
+        "chat_id": chat_id,
+        "session_id": chat_id,
+        "title": title,
+        "message_count": message_count,
+        "last_updated": last_updated,
+        "created_at": doc.get("created_at") or last_updated,
+    }
+
+def _session_sort_key(session: dict):
+    raw = session.get("last_updated") or session.get("created_at") or ""
+    if hasattr(raw, "isoformat"):
+        return raw.isoformat()
+    return str(raw)
+
+def _merge_session_records(existing: dict, incoming: dict) -> dict:
+    merged = dict(existing)
+    generic_titles = {"", "New Chat", "Untitled Thread"}
+    if incoming.get("title") and incoming["title"] not in generic_titles:
+        if merged.get("title") in generic_titles or not merged.get("title"):
+            merged["title"] = incoming["title"]
+    merged["message_count"] = max(
+        int(merged.get("message_count") or 0),
+        int(incoming.get("message_count") or 0),
+    )
+    if _session_sort_key(incoming) > _session_sort_key(merged):
+        merged["last_updated"] = incoming.get("last_updated") or merged.get("last_updated")
+    return merged
+
+_sessions_index_file = PROJECT_ROOT / "memory_data" / "users" / "{user_id}" / "sessions_index.json"
+
+def _load_sessions_index(user_id: str) -> list:
+    fpath = str(_sessions_index_file).format(user_id=user_id)
+    fpath_obj = PROJECT_ROOT / fpath
+    try:
+        if fpath_obj.exists():
+            with open(fpath_obj, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, list):
+                return data
+    except (json.JSONDecodeError, OSError) as exc:
+        print(f"[ERROR] Failed to load sessions index: {exc}")
+    return []
+
+def _save_sessions_index(user_id: str, sessions: list):
+    try:
+        fpath = str(_sessions_index_file).format(user_id=user_id)
+        fpath_obj = PROJECT_ROOT / fpath
+        fpath_obj.parent.mkdir(parents=True, exist_ok=True)
+        tmp = str(fpath_obj) + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(sessions, f, indent=2, ensure_ascii=False)
+        os.replace(tmp, fpath_obj)
+    except OSError as exc:
+        print(f"[ERROR] Failed to save sessions index: {exc}")
+
+def _list_user_sessions(user_id: str) -> list:
+    if not user_id:
+        return []
+    try:
+        sessions = _load_sessions_index(user_id)
+        normalized_sessions = []
+        for doc in sessions:
+            normalized = _normalize_session_doc(doc)
+            if normalized:
+                normalized_sessions.append(normalized)
+        merged_sessions = []
+        seen_ids = set()
+        for session_doc in normalized_sessions:
+            chat_id = session_doc.get("chat_id")
+            if chat_id and chat_id not in seen_ids:
+                seen_ids.add(chat_id)
+                merged_sessions.append(session_doc)
+            elif chat_id and chat_id in seen_ids:
+                for existing in merged_sessions:
+                    if existing.get("chat_id") == chat_id:
+                        merged = _merge_session_records(existing, session_doc)
+                        existing.clear()
+                        existing.update(merged)
+        merged_sessions.sort(key=_session_sort_key, reverse=True)
+        return merged_sessions
+    except Exception as exc:
+        print(f"[ERROR] Failed to list user sessions: {exc}")
+        return []
+
+def _upsert_chat_session_meta(user_id: str, chat_id: str, title: str = "", message_count: int = 0):
+    try:
+        now = datetime.now(timezone.utc).isoformat()
+        sessions = _load_sessions_index(user_id)
+        found = False
+        for session_doc in sessions:
+            if session_doc.get("chat_id") == chat_id:
+                if title:
+                    session_doc["title"] = title
+                session_doc["last_activity"] = now
+                session_doc["message_count"] = max(session_doc.get("message_count", 0), message_count)
+                found = True
+                break
+        if not found:
+            session_doc = {
+                "chat_id": chat_id,
+                "title": title or "New Chat",
+                "user_id": user_id,
+                "created_at": now,
+                "last_activity": now,
+                "message_count": message_count,
+            }
+            sessions.append(session_doc)
+        sessions.sort(key=lambda x: x.get("last_activity", ""), reverse=True)
+        _save_sessions_index(user_id, sessions)
+    except Exception as exc:
+        print(f"[ERROR] Failed to upsert session meta: {exc}")
+
+def _delete_chat_session_meta(user_id: str, chat_id: str):
+    try:
+        sessions = _load_sessions_index(user_id)
+        sessions = [s for s in sessions if s.get("chat_id") != chat_id]
+        _save_sessions_index(user_id, sessions)
+    except Exception as exc:
+        print(f"[ERROR] Failed to delete session meta: {exc}")
+
+# ── CORE ROUTES ──────────────────────────────────────────────────────────────────────
+
 def load_marcus(user_id: str):
     user_id = str(user_id or "").strip()
     if not user_id:
@@ -301,7 +455,6 @@ def _new_chat_id() -> str:
 @app.route("/chat/history", methods=["GET"])
 def chat_history():
     user_id, error = _require_login()
-    print(f"[DEBUG] ChatHistory: user_id: {user_id}, error: {error}")
     if error:
         return error
 
@@ -320,15 +473,12 @@ def chat_sessions():
     user_id, error = _require_login()
     if error:
         return error
-    marcus = load_marcus(user_id)
-    if not marcus:
-        return jsonify({"status": "error", "message": "Marcus not configured"}), 404
     try:
-        sessions = marcus.memory.list_sessions()
+        sessions = _list_user_sessions(user_id)
         return jsonify({"status": "success", "sessions": sessions})
     except Exception as exc:
-        print(f"[ERROR] Failed to list sessions: {exc}")
-        return jsonify({"status": "error", "message": "Failed to list sessions"}), 500
+        print(f"[ERROR] /chat/sessions failed: {exc}")
+        return jsonify({"status": "error", "message": "Failed to load sessions"}), 500
 
 
 @app.route("/chat/sessions", methods=["POST"])
@@ -345,14 +495,20 @@ def chat_create_session():
     chat_id = str(data.get("chat_id") or "").strip() or _new_chat_id()
 
     try:
-        session = marcus.memory.create_session(chat_id, title)
-        return jsonify({"status": "success", "session": {
-            "chat_id": session["chat_id"],
-            "title": session["title"],
-            "created_at": session["created_at"],
-            "last_activity": session["last_activity"],
-            "message_count": 0,
-        }})
+        session_doc = marcus.memory.create_session(chat_id, title)
+        _upsert_chat_session_meta(user_id, session_doc["chat_id"], title=session_doc["title"], message_count=0)
+        return jsonify({
+            "status": "success", 
+            "session": {
+                "chat_id": session_doc["chat_id"],
+                "session_id": session_doc["chat_id"],
+                "title": session_doc["title"],
+                "created_at": session_doc["created_at"],
+                "last_activity": session_doc["last_activity"],
+                "last_updated": session_doc["last_activity"],
+                "message_count": 0,
+            }
+        })
     except Exception as exc:
         print(f"[ERROR] Failed to create session: {exc}")
         return jsonify({"status": "error", "message": "Failed to create session"}), 500
@@ -377,8 +533,10 @@ def rename_chat_session():
     try:
         if hasattr(marcus.memory, "set_title"):
             marcus.memory.set_title(chat_id, new_title)
-        elif hasattr(marcus.memory, "db_manager"):
-            marcus.memory.db_manager.update_session_title(chat_id, new_title)
+        
+        # Explicitly updating the new Pinecone-backed index instead of MongoDB
+        _upsert_chat_session_meta(user_id, chat_id, title=new_title)
+        
         return jsonify({"status": "success", "message": "Session renamed"})
     except Exception as exc:
         print(f"[ERROR] Failed to rename session '{chat_id}': {exc}")
@@ -395,6 +553,7 @@ def chat_delete_session(chat_id):
         return jsonify({"status": "error", "message": "Marcus not configured"}), 404
     try:
         marcus.memory.delete_session(chat_id)
+        _delete_chat_session_meta(user_id, chat_id)
         return jsonify({"status": "success"})
     except Exception as exc:
         print(f"[ERROR] Failed to delete session '{chat_id}': {exc}")
@@ -409,372 +568,3 @@ def chat_session_reaction(chat_id):
     marcus = load_marcus(user_id)
     if not marcus:
         return jsonify({"status": "error", "message": "Marcus not configured"}), 404
-
-    data = request.get_json(silent=True) or {}
-    message_index = data.get("message_index")
-    if message_index is None or not isinstance(message_index, int):
-        return jsonify({"status": "error", "message": "message_index (int) is required"}), 400
-    reaction = str(data.get("reaction") or "").strip() or ""
-    if reaction not in ("up", "down", ""):
-        return jsonify({"status": "error", "message": "reaction must be 'up', 'down', or empty"}), 400
-
-    try:
-        ok = marcus.memory.update_reaction(chat_id, message_index, reaction)
-        if not ok:
-            return jsonify({"status": "error", "message": "Invalid message_index"}), 404
-        return jsonify({"status": "success"})
-    except Exception as exc:
-        print(f"[ERROR] Failed to update reaction: {exc}")
-        return jsonify({"status": "error", "message": "Failed to update reaction"}), 500
-
-
-@app.route("/suggestions", methods=["POST"])
-def suggestions():
-    user_id, error = _require_login()
-    if error:
-        return error
-
-    data = request.get_json(silent=True) or {}
-    text = _sanitize_suggestion(data.get("text") or "")
-    if not text:
-        return jsonify({"status": "error", "message": "Suggestion is required"}), 400
-    if _suggestion_rate_limited(user_id):
-        return jsonify({"status": "error", "message": "Please wait before sending another suggestion"}), 429
-
-    auth = _current_auth()
-    _append_suggestion({
-        "user_id": user_id,
-        "email": auth.get("email", ""),
-        "text": text,
-        "time": datetime.now().isoformat(),
-    })
-    return jsonify({
-        "status": "success",
-        "whatsapp_url": _whatsapp_url(auth.get("email", ""), text),
-    })
-
-
-@app.route("/tts/<path:filename>", methods=["GET"])
-def tts_file(filename):
-    return send_from_directory(_tts_folder, filename)
-
-
-@app.route("/login", methods=["POST"])
-@app.route("/auth/login", methods=["POST"])
-def login():
-    data = request.get_json(silent=True) or {}
-    email = str(data.get("email") or "").strip().lower()
-    password = str(data.get("password") or "")
-
-    if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email):
-        return jsonify({"status": "error", "message": "Valid email is required"}), 400
-    if not password:
-        return jsonify({"status": "error", "message": "Password is required"}), 400
-
-    user_id = _safe_user_id(email)
-    is_creator = _is_creator(email)
-    with _users_lock:
-        users = _load_users()
-        user = users.get(email)
-
-        if user:
-            stored_hash = str(user.get("password_hash") or "")
-            if not check_password_hash(stored_hash, password):
-                return jsonify({"status": "error", "message": "Invalid email or password"}), 401
-            if is_creator:
-                user["identity_name"] = CREATOR_NAME
-                user["title"] = CREATOR_TITLE
-                _save_users(users)
-        else:
-            users[email] = {
-                "user_id": user_id,
-                "password_hash": generate_password_hash(password),
-                "security_question": DEFAULT_SECURITY_QUESTION,
-                "security_answer_hash": generate_password_hash(DEFAULT_SECURITY_ANSWER),
-            }
-            if is_creator:
-                users[email]["identity_name"] = CREATOR_NAME
-                users[email]["title"] = CREATOR_TITLE
-            _save_users(users)
-
-    session.clear()
-    session.permanent = True
-    session["user_id"] = user_id
-    session["email"] = email
-    session["is_creator"] = is_creator
-    session["user"] = {"id": user_id, "email": email, "is_creator": is_creator}
-    if is_creator:
-        session["user"]["identity_name"] = CREATOR_NAME
-        session["user"]["title"] = CREATOR_TITLE
-
-    token = secrets.token_urlsafe(32)
-    _auth_tokens[token] = {"user_id": user_id, "email": email, "is_creator": is_creator}
-
-    marcus = load_marcus(user_id)
-    if marcus:
-        _initialize_user_memory(marcus, email)
-        if is_creator:
-            try:
-                marcus.memory.set_creator_identity(CREATOR_NAME, CREATOR_TITLE)
-            except Exception as exc:
-                print(f"[WARN] Failed to set creator identity in memory: {exc}")
-    return jsonify({
-        "status": "success",
-        "authenticated": True,
-        "email": email,
-        "character": "marcus",
-        "session_token": token,
-        "is_creator": is_creator,
-    })
-
-
-@app.route("/logout", methods=["POST"])
-@app.route("/auth/logout", methods=["POST"])
-def logout():
-    token = str(
-        request.headers.get("X-Session-Token")
-        or request.headers.get("Authorization", "").replace("Bearer ", "", 1)
-        or ""
-    ).strip()
-    if token:
-        _auth_tokens.pop(token, None)
-    session.clear()
-    return jsonify({"status": "success", "authenticated": False})
-
-
-@app.route("/api/auth/forgot-password", methods=["POST"])
-def forgot_password():
-    data = request.get_json(silent=True) or {}
-    email = str(data.get("email") or "").strip().lower()
-
-    if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email):
-        return jsonify({"status": "error", "message": "Valid email is required"}), 400
-
-    with _users_lock:
-        users = _load_users()
-        user = users.get(email)
-
-        if not user:
-            return jsonify({"status": "error", "message": "No account found with that email."}), 404
-
-        question = user.get("security_question", DEFAULT_SECURITY_QUESTION)
-
-    return jsonify({"status": "success", "question": question})
-
-
-@app.route("/api/auth/reset-password", methods=["POST"])
-def reset_password():
-    data = request.get_json(silent=True) or {}
-    email = str(data.get("email") or "").strip().lower()
-    answer = str(data.get("answer") or "").strip().lower()
-    new_password = str(data.get("new_password") or "")
-
-    if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email):
-        return jsonify({"status": "error", "message": "Valid email is required"}), 400
-    if not answer:
-        return jsonify({"status": "error", "message": "Security answer is required."}), 400
-    if not new_password or len(new_password) < 4:
-        return jsonify({"status": "error", "message": "Password must be at least 4 characters."}), 400
-
-    with _users_lock:
-        users = _load_users()
-        user = users.get(email)
-
-        if not user:
-            return jsonify({"status": "error", "message": "No account found with that email."}), 404
-
-        stored_hash = user.get("security_answer_hash")
-        if not stored_hash:
-            return jsonify({"status": "error", "message": "Security question not set for this account."}), 400
-
-        if not check_password_hash(stored_hash, answer):
-            return jsonify({"status": "error", "message": "Incorrect answer."}), 401
-
-        user["password_hash"] = generate_password_hash(new_password)
-        _save_users(users)
-
-    return jsonify({"status": "success", "message": "Password reset successfully."})
-
-
-@app.route("/auth/change-password", methods=["POST"])
-def change_password():
-    user_id, error = _require_login()
-    if error:
-        return error
-    data = request.get_json(silent=True) or {}
-    current_password = str(data.get("current_password") or "")
-    new_password = str(data.get("new_password") or "")
-
-    if not current_password:
-        return jsonify({"status": "error", "message": "Current password required."}), 400
-    if not new_password or len(new_password) < 4:
-        return jsonify({"status": "error", "message": "New password must be at least 4 characters."}), 400
-
-    auth = _current_auth()
-    email = str(auth.get("email") or "").strip().lower()
-
-    with _users_lock:
-        users = _load_users()
-        user = users.get(email)
-        if not user:
-            return jsonify({"status": "error", "message": "User not found."}), 404
-        stored_hash = str(user.get("password_hash") or "")
-        if not check_password_hash(stored_hash, current_password):
-            return jsonify({"status": "error", "message": "Current password is incorrect."}), 401
-        user["password_hash"] = generate_password_hash(new_password)
-        _save_users(users)
-
-    return jsonify({"status": "success", "message": "Password changed successfully."})
-
-
-@app.route("/chat", methods=["POST"])
-def chat():
-    try:
-        user_id, error = _require_login()
-        if error:
-            return error
-
-        data = request.get_json(silent=True)
-
-        if not data:
-            return jsonify({"status": "error", "message": "No JSON body received"}), 400
-
-        message = (data.get("message") or "").strip()
-        if not message and not data.get("image"):
-            return jsonify({"status": "error", "message": "message or image is required"}), 400
-
-        chat_id = str(data.get("chat_id") or "").strip()
-        image_data = str(data.get("image") or "").strip()
-
-        marcus = load_marcus(user_id)
-
-        if not marcus:
-            return jsonify({
-                "status": "error",
-                "message": "Marcus is not configured",
-            }), 404
-        auth = _current_auth()
-        _initialize_user_memory(marcus, auth.get("email", ""))
-        _debug_user_memory(user_id, marcus)
-
-        reply = marcus.respond(message, chat_id=chat_id, image_data=image_data)
-        response_meta = getattr(marcus, "last_response_meta", {}) or {}
-        voice = (
-            {"enabled": True, "spoken": False, "engine": "browser", "reason": "reply too long for blocking server TTS"}
-            if len(reply) > 900
-            else speak_marcus(reply)
-        )
-
-        resolved_chat_id = chat_id or f"{marcus.profile.key}_main_chat"
-
-        updated_title = None
-        if message and resolved_chat_id:
-            try:
-                session_info = marcus.memory.db_manager.get_session(resolved_chat_id, {"title": 1})
-                if session_info:
-                    current_title = str(session_info.get("title") or "")
-                    if current_title in ("", "New Chat", "Untitled Thread"):
-                        words = message.split()
-                        if len(words) >= 3:
-                            title = " ".join(words[:8]).rstrip(".,!?;:")
-                            if len(title) > 60:
-                                title = title[:60].rsplit(" ", 1)[0] if " " in title[:60] else title[:60]
-                            marcus.memory.set_title(resolved_chat_id, title)
-                            updated_title = title
-            except Exception as exc:
-                print(f"[WARN] Auto-title fallback failed: {exc}")
-
-        return jsonify({
-            "status": "success",
-            "chat_id": resolved_chat_id,
-            "character": "marcus",
-            "reply": reply,
-            "voice": voice,
-            "updated_title": updated_title,
-            "detected_route": str(response_meta.get("detected_route") or ""),
-            "groq_used": bool(response_meta.get("groq_used")),
-            "live_routing_used": bool(response_meta.get("live_routing_used")),
-            "fallback_used": bool(response_meta.get("fallback_used")),
-            "fallback_source": str(response_meta.get("fallback_source") or ""),
-        })
-
-    except Exception as e:
-        print(f"[CRITICAL] /chat crashed: {e}")
-        return jsonify({
-            "status": "error",
-            "message": "Internal server error",
-        }), 500
-
-
-@app.route("/chat/stream", methods=["POST"])
-def chat_stream():
-    try:
-        user_id, error = _require_login()
-        if error:
-            return error
-
-        data = request.get_json(silent=True)
-        if not data:
-            return jsonify({"status": "error", "message": "No JSON body received"}), 400
-
-        message = (data.get("message") or "").strip()
-        if not message and not data.get("image"):
-            return jsonify({"status": "error", "message": "message or image is required"}), 400
-
-        chat_id = str(data.get("chat_id") or "").strip()
-        image_data = str(data.get("image") or "").strip()
-
-        marcus = load_marcus(user_id)
-        if not marcus:
-            return jsonify({"status": "error", "message": "Marcus not configured"}), 404
-
-        auth = _current_auth()
-        _initialize_user_memory(marcus, auth.get("email", ""))
-
-        resolved_chat_id = chat_id or f"{marcus.profile.key}_main_chat"
-
-        def generate():
-            updated_title = None
-            if message and resolved_chat_id:
-                try:
-                    session_info = marcus.memory.db_manager.get_session(resolved_chat_id, {"title": 1})
-                    if session_info:
-                        current_title = str(session_info.get("title") or "")
-                        if current_title in ("", "New Chat", "Untitled Thread"):
-                            words = message.split()
-                            if len(words) >= 3:
-                                title = " ".join(words[:8]).rstrip(".,!?;:")
-                                if len(title) > 60:
-                                    title = title[:60].rsplit(" ", 1)[0] if " " in title[:60] else title[:60]
-                                marcus.memory.set_title(resolved_chat_id, title)
-                                updated_title = title
-                except Exception as exc:
-                    print(f"[WARN] Auto-title fallback failed: {exc}")
-
-            try:
-                for token in marcus.stream_respond(message, chat_id=chat_id, image_data=image_data):
-                    if token:
-                        yield f"data: {json.dumps({'token': token})}\n\n"
-            except Exception as exc:
-                yield f"data: {json.dumps({'error': str(exc)})}\n\n"
-
-            yield f"data: {json.dumps({'done': True, 'chat_id': resolved_chat_id, 'updated_title': updated_title})}\n\n"
-
-        return Response(
-            stream_with_context(generate()),
-            mimetype='text/event-stream',
-            headers={
-                'Cache-Control': 'no-cache',
-                'X-Accel-Buffering': 'no',
-                'Connection': 'keep-alive',
-            }
-        )
-
-    except Exception as e:
-        print(f"[CRITICAL] /chat/stream crashed: {e}")
-        return jsonify({"status": "error", "message": "Internal server error"}), 500
-
-
-if __name__ == "__main__":
-    port = int(os.getenv("PORT", "8000"))
-    app.run(host="0.0.0.0", port=port, debug=os.getenv("FLASK_DEBUG", "").lower() == "true")

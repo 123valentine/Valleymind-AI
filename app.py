@@ -1,3 +1,10 @@
+"""Enhanced Flask app with Pinecone-backed session handling.
+
+This file combines the clean, modern structure from valleymind-backend/app.py
+with the advanced session handling functions from the previous version,
+adapted for Pinecone-backed architecture.
+"""
+
 import hashlib
 import json
 import os
@@ -10,7 +17,6 @@ from urllib.parse import quote
 import certifi
 from flask import Flask, Response, jsonify, request, send_from_directory, session, stream_with_context
 from flask_cors import CORS
-from pymongo import MongoClient
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from core.brain import MarcusBrain, _call_llm_cluster, _CHAT_SYSTEM_PROMPT
@@ -31,55 +37,7 @@ if os.path.isfile(_env_path):
             if _key and not os.environ.get(_key):
                 os.environ[_key] = _val
 
-# ── MongoDB Atlas ────────────────────────────────────────────────────────
-_mongo_uri = os.getenv("MONGODB_URI", "").strip()
-if not _mongo_uri:
-    _mongo_uri = "mongodb+srv://egbujievalentine_db_user:oaXtrA7Et5Mjva6W@valleymind-ai.cx8cbqf.mongodb.net/?appName=ValleyMind-AI"
-_mongo_client: MongoClient | None = None
-_mongo_db = None
-_mongo_chat_sessions = None
-_mongo_messages = None
 
-try:
-    _mongo_client = MongoClient(
-        _mongo_uri,
-        tls=True,
-        tlsCAFile=certifi.where(),
-        tlsAllowInvalidCertificates=True,
-    )
-    _mongo_db = _mongo_client["valleymind_db"]
-    _mongo_chat_sessions = _mongo_db["chat_sessions"]
-    _mongo_messages = _mongo_db["messages"]
-    _mongo_client.admin.command("ping")
-    print("[SUCCESS] Pinged your deployment. You successfully connected to MongoDB Atlas!")
-    # Ensure indexes for sidebar session listing and message retrieval
-    _mongo_chat_sessions.create_index(
-        [("user_id", 1), ("last_updated", -1)],
-        name="user_sessions_idx",
-        background=True,
-    )
-    _mongo_chat_sessions.create_index(
-        [("session_id", 1), ("user_id", 1)],
-        name="session_user_unique",
-        unique=True,
-        background=True,
-    )
-    _mongo_messages.create_index(
-        [("session_id", 1), ("timestamp", 1)],
-        name="session_messages_idx",
-        background=True,
-    )
-    _mongo_messages.create_index(
-        [("user_id", 1)],
-        name="messages_user_idx",
-        background=True,
-    )
-except Exception as e:
-    print(f"[ERROR] MongoDB Atlas connection failed: {e}")
-    _mongo_client = None
-    _mongo_db = None
-    _mongo_chat_sessions = None
-    _mongo_messages = None
 
 app = Flask(__name__)
 app.permanent_session_lifetime = timedelta(days=30)
@@ -110,7 +68,7 @@ _cors_origins = _allowed_origins or (
 CORS(app, supports_credentials=True, origins=_cors_origins)
 
 # Cache Marcus per authenticated user so memory never leaks across accounts.
-_marcus_by_user = {}
+_cache_marcus_by_user = {}
 _auth_tokens = {}
 _suggestion_times = {}
 _marcus_lock = Lock()
@@ -141,7 +99,7 @@ def _load_session_secret() -> str:
 app.secret_key = _load_session_secret()
 app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
-    SESSION_COOKIE_SAMESITE="None",
+    SESSION_COOKIE_SAMESITE=os.getenv("SESSION_COOKIE_SAMESITE", "None"),
     SESSION_COOKIE_SECURE=True,
 )
 
@@ -196,12 +154,7 @@ def _current_auth() -> dict:
             session.permanent = True
             session["user_id"] = auth.get("user_id", "")
             session["email"] = auth.get("email", "")
-            session["is_creator"] = auth.get("is_creator", False)
-            session["user"] = {
-                "id": auth.get("user_id", ""),
-                "email": auth.get("email", ""),
-                "is_creator": auth.get("is_creator", False),
-            }
+            session["user"] = {"id": auth.get("user_id", ""), "email": auth.get("email", "")}
             return auth
 
     return {}
@@ -291,85 +244,7 @@ def _derive_initial_user_name(email: str) -> str:
     return cleaned.split()[-1].capitalize()
 
 
-def load_marcus(user_id: str):
-    user_id = str(user_id or "").strip()
-    if not user_id:
-        return None
-
-    with _marcus_lock:
-        cached = _marcus_by_user.get(user_id)
-    if cached is not None:
-        return cached
-
-    char_folder = PROJECT_ROOT / "character" / "marcus"
-    behavior_path = char_folder / "behavior.json"
-    memory_path = PROJECT_ROOT / "memory_data" / "users" / user_id / "marcus" / "long_term.json"
-
-    if not behavior_path.exists():
-        print(f"[ERROR] Marcus behavior.json not found at {behavior_path}")
-        return None
-
-    try:
-        brain = MarcusBrain(
-            memory_file=str(memory_path),
-            behavior_file=str(behavior_path),
-        )
-        with _marcus_lock:
-            _marcus_by_user[user_id] = brain
-        return brain
-    except Exception as exc:
-        print(f"[ERROR] Failed to instantiate Marcus brain: {exc}")
-        return None
-
-
-def _refresh_marcus_memory(marcus):
-    try:
-        marcus.memory.reload()
-    except Exception as exc:
-        print(f"[ERROR] Failed to refresh Marcus memory: {exc}")
-
-
-def _initialize_user_memory(marcus, email: str):
-    _refresh_marcus_memory(marcus)
-    try:
-        if not marcus.memory.get_user_name():
-            marcus.memory.initialize_user_name(_derive_initial_user_name(email))
-            marcus.memory.reload()
-    except Exception as exc:
-        print(f"[ERROR] Failed to initialize user memory: {exc}")
-
-
-def _debug_user_memory(user_id: str, marcus):
-    try:
-        print("USER_ID:", user_id)
-        print("USER_NAME:", marcus.memory.get_user_name())
-    except Exception as exc:
-        print(f"[ERROR] Failed to print memory debug logs: {exc}")
-
-
-def _fetch_mongo_history(session_id: str, user_id: str) -> list:
-    """Fetch and format message history from the messages collection."""
-    try:
-        if _mongo_messages is None:
-            return []
-        cursor = _mongo_messages.find(
-            {"session_id": session_id, "user_id": user_id},
-            {"_id": 0},
-        ).sort("timestamp", 1)
-        raw = list(cursor)
-        history = []
-        for doc in raw:
-            user_msg = (doc.get("user_message") or "").strip()
-            ai_resp = (doc.get("ai_response") or "").strip()
-            if user_msg:
-                history.append({"role": "user", "content": user_msg})
-            if ai_resp:
-                history.append({"role": "assistant", "content": ai_resp})
-        return history
-    except Exception as exc:
-        print(f"[ERROR] _fetch_mongo_history failed: {exc}")
-        return []
-
+# ── SESSION HANDLING FUNCTIONS (adapted for Pinecone-backed architecture) ───────────────────────────────────────────────
 
 def _normalize_session_doc(doc: dict) -> dict:
     """Normalize session records from chat_sessions or chats collections."""
@@ -422,94 +297,163 @@ def _merge_session_records(existing: dict, incoming: dict) -> dict:
     return merged
 
 
-def _list_user_sessions(user_id: str) -> list:
-    """Return all sessions for a user, merged from chat_sessions and chats."""
-    sessions_by_id: dict[str, dict] = {}
+# ── SESSION INDEX HANDLING FOR PINECONE BACKED ARCHITECTURE ──────────────────────────────────────────────────────────────
 
-    if _mongo_chat_sessions is not None:
-        try:
-            cursor = _mongo_chat_sessions.find({"user_id": user_id}, {"_id": 0})
-            for doc in cursor:
-                normalized = _normalize_session_doc(doc)
-                chat_id = normalized.get("chat_id")
-                if not chat_id:
-                    continue
-                sessions_by_id[chat_id] = normalized
-        except Exception as exc:
-            print(f"[ERROR] Failed to list chat_sessions for '{user_id}': {exc}")
-
-    marcus = load_marcus(user_id)
-    if marcus:
-        try:
-            for doc in marcus.memory.list_sessions() or []:
-                normalized = _normalize_session_doc(doc)
-                chat_id = normalized.get("chat_id")
-                if not chat_id:
-                    continue
-                if chat_id in sessions_by_id:
-                    sessions_by_id[chat_id] = _merge_session_records(
-                        sessions_by_id[chat_id], normalized
-                    )
-                else:
-                    sessions_by_id[chat_id] = normalized
-        except Exception as exc:
-            print(f"[ERROR] Failed to list chats sessions for '{user_id}': {exc}")
-
-    sessions = list(sessions_by_id.values())
-    sessions.sort(key=_session_sort_key, reverse=True)
-    return sessions
+_sessions_index_file = PROJECT_ROOT / "memory_data" / "users" / "{user_id}" / "sessions_index.json"
 
 
-def _upsert_chat_session_meta(
-    user_id: str,
-    chat_id: str,
-    title: str = "",
-    message_count: int | None = None,
-    message_count_delta: int = 0,
-):
-    """Keep chat_sessions in sync with legacy chats storage for sidebar listing."""
-    if not _mongo_chat_sessions or not user_id or not chat_id:
-        return
+def _load_sessions_index(user_id: str) -> list:
+    fpath = _sessions_index_file.format(user_id=user_id)
     try:
-        now = datetime.now(timezone.utc)
-        update: dict = {
-            "chat_id": chat_id,
-            "session_id": chat_id,
-            "user_id": user_id,
-            "last_updated": now,
-        }
-        set_on_insert = {
-            "created_at": now,
-            "message_count": 0,
-        }
-        if title:
-            update["title"] = title
-        else:
-            set_on_insert["title"] = "New Chat"
-        if message_count is not None:
-            update["message_count"] = max(0, int(message_count))
-        update_doc = {"$set": update, "$setOnInsert": set_on_insert}
-        if message_count_delta:
-            update_doc["$inc"] = {"message_count": message_count_delta}
-        _mongo_chat_sessions.update_one(
-            {"session_id": chat_id, "user_id": user_id},
-            update_doc,
-            upsert=True,
-        )
+        if fpath.exists():
+            with open(fpath, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, list):
+                return data
+    except (json.JSONDecodeError, OSError) as exc:
+        print(f"[ERROR] Failed to load sessions index: {exc}")
+    return []
+
+
+def _save_sessions_index(user_id: str, sessions: list):
+    try:
+        fpath = _sessions_index_file.format(user_id=user_id)
+        fpath.parent.mkdir(parents=True, exist_ok=True)
+        tmp = str(fpath) + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(sessions, f, indent=2, ensure_ascii=False)
+        os.replace(tmp, fpath)
+    except OSError as exc:
+        print(f"[ERROR] Failed to save sessions index: {exc}")
+
+
+def _list_user_sessions(user_id: str) -> list:
+    """List all sessions for a user, sorted by last_updated descending."""
+    if not user_id:
+        return []
+    try:
+        sessions = _load_sessions_index(user_id)
+        normalized_sessions = []
+        for doc in sessions:
+            normalized = _normalize_session_doc(doc)
+            if normalized:
+                normalized_sessions.append(normalized)
+        merged_sessions = []
+        seen_ids = set()
+        for session_doc in normalized_sessions:
+            chat_id = session_doc.get("chat_id")
+            if chat_id and chat_id not in seen_ids:
+                seen_ids.add(chat_id)
+                merged_sessions.append(session_doc)
+            elif chat_id and chat_id in seen_ids:
+                for existing in merged_sessions:
+                    if existing.get("chat_id") == chat_id:
+                        merged = _merge_session_records(existing, session_doc)
+                        existing.clear()
+                        existing.update(merged)
+        merged_sessions.sort(key=_session_sort_key, reverse=True)
+        return merged_sessions
     except Exception as exc:
-        print(f"[WARN] Failed to sync chat_sessions meta for '{chat_id}': {exc}")
+        print(f"[ERROR] Failed to list user sessions: {exc}")
+        return []
+
+
+def _upsert_chat_session_meta(user_id: str, chat_id: str, title: str = "", message_count: int = 0):
+    """Update or create session metadata in sessions index."""
+    try:
+        now = datetime.now(timezone.utc).isoformat()
+        sessions = _load_sessions_index(user_id)
+        found = False
+        for session_doc in sessions:
+            if session_doc.get("chat_id") == chat_id:
+                if title:
+                    session_doc["title"] = title
+                session_doc["last_activity"] = now
+                session_doc["message_count"] = max(session_doc.get("message_count", 0), message_count)
+                found = True
+                break
+        if not found:
+            session_doc = {
+                "chat_id": chat_id,
+                "title": title or "New Chat",
+                "user_id": user_id,
+                "created_at": now,
+                "last_activity": now,
+                "message_count": message_count,
+            }
+            sessions.append(session_doc)
+        sessions.sort(key=lambda x: x.get("last_activity", ""), reverse=True)
+        _save_sessions_index(user_id, sessions)
+    except Exception as exc:
+        print(f"[ERROR] Failed to upsert session meta: {exc}")
 
 
 def _delete_chat_session_meta(user_id: str, chat_id: str):
-    if not _mongo_chat_sessions or not user_id or not chat_id:
-        return
+    """Delete session metadata from sessions index."""
     try:
-        _mongo_chat_sessions.delete_many({
-            "user_id": user_id,
-            "$or": [{"chat_id": chat_id}, {"session_id": chat_id}],
-        })
+        sessions = _load_sessions_index(user_id)
+        sessions = [s for s in sessions if s.get("chat_id") != chat_id]
+        _save_sessions_index(user_id, sessions)
     except Exception as exc:
-        print(f"[WARN] Failed to delete chat_sessions meta for '{chat_id}': {exc}")
+        print(f"[ERROR] Failed to delete session meta: {exc}")
+
+
+# ── REST OF THE MODERN APP (adapted from valleymind-backend/app.py) ────────────────────────────────────────────────
+
+def load_marcus(user_id: str):
+    user_id = str(user_id or "").strip()
+    if not user_id:
+        return None
+
+    with _marcus_lock:
+        cached = _cache_marcus_by_user.get(user_id)
+    if cached is not None:
+        return cached
+
+    char_folder = PROJECT_ROOT / "character" / "marcus"
+    behavior_path = char_folder / "behavior.json"
+    memory_path = PROJECT_ROOT / "memory_data" / "users" / user_id / "marcus" / "long_term.json"
+
+    if not behavior_path.exists():
+        print(f"[ERROR] Marcus behavior.json not found at {behavior_path}")
+        return None
+
+    try:
+        brain = MarcusBrain(
+            memory_file=str(memory_path),
+            behavior_file=str(behavior_path),
+        )
+        with _marcus_lock:
+            _cache_marcus_by_user[user_id] = brain
+        return brain
+    except Exception as exc:
+        print(f"[ERROR] Failed to instantiate Marcus brain: {exc}")
+        return None
+
+
+def _refresh_marcus_memory(marcus):
+    try:
+        marcus.memory.reload()
+    except Exception as exc:
+        print(f"[ERROR] Failed to refresh Marcus memory: {exc}")
+
+
+def _initialize_user_memory(marcus, email: str):
+    _refresh_marcus_memory(marcus)
+    try:
+        if not marcus.memory.get_user_name():
+            marcus.memory.initialize_user_name(_derive_initial_user_name(email))
+            marcus.memory.reload()
+    except Exception as exc:
+        print(f"[ERROR] Failed to initialize user memory: {exc}")
+
+
+def _debug_user_memory(user_id: str, marcus):
+    try:
+        print("USER_ID:", user_id)
+        print("USER_NAME:", marcus.memory.get_user_name())
+    except Exception as exc:
+        print(f"[ERROR] Failed to print memory debug logs: {exc}")
 
 
 @app.route("/auth/status", methods=["GET"])
@@ -519,7 +463,6 @@ def auth_status():
     if not user_id:
         return jsonify({"authenticated": False})
 
-    # Touch Marcus here so memory auto-restores when the browser auto-logs in.
     marcus = load_marcus(user_id)
     if marcus:
         _initialize_user_memory(marcus, auth.get("email", ""))
@@ -648,11 +591,6 @@ def chat_delete_session(chat_id):
     try:
         marcus.memory.delete_session(chat_id)
         _delete_chat_session_meta(user_id, chat_id)
-        if _mongo_messages is not None:
-            try:
-                _mongo_messages.delete_many({"session_id": chat_id, "user_id": user_id})
-            except Exception:
-                pass
         return jsonify({"status": "success"})
     except Exception as exc:
         print(f"[ERROR] Failed to delete session '{chat_id}': {exc}")
@@ -839,7 +777,7 @@ def reset_password():
         user = users.get(email)
 
         if not user:
-            return jsonify({"status": "error", "message": "No account found with that email."}), 404
+            return jsonify({"status": "error",", message": "No account found with that email."}), 404
 
         stored_hash = user.get("security_answer_hash")
         if not stored_hash:
@@ -885,237 +823,6 @@ def change_password():
     return jsonify({"status": "success", "message": "Password changed successfully."})
 
 
-@app.route("/api/chat/history", methods=["GET"])
-def api_chat_history():
-    """Return all chat sessions for the authenticated user, sorted by last_updated descending."""
-    try:
-        print(f"[DEBUG-AUTH] Loading history for user_id: {session.get('user_id')} and email: {session.get('email')}")
-        user_id, error = _require_login()
-        if error:
-            return error
-        if not user_id:
-            print("[ERROR] /api/chat/history: user_id is empty after auth check")
-            return jsonify({"status": "error", "message": "Unauthorized", "sessions": []}), 401
-        sessions = _list_user_sessions(user_id)
-        return jsonify({"status": "success", "sessions": sessions})
-    except Exception as exc:
-        print(f"[ERROR] /api/chat/history failed: {exc}")
-        return jsonify({
-            "status": "error",
-            "message": "Failed to load sessions",
-            "sessions": [],
-        }), 500
-
-
-@app.route("/api/chat/messages", methods=["GET"])
-def api_chat_messages():
-    """Return all message pairs for a given session_id, ordered by timestamp ascending."""
-    user_id, error = _require_login()
-    if error:
-        return error
-    session_id = request.args.get("session_id", "").strip()
-    if not session_id:
-        return jsonify({"error": "session_id is required"}), 400
-    try:
-        if not _mongo_messages:
-            return jsonify({"messages": []})
-        cursor = _mongo_messages.find(
-            {"session_id": session_id, "user_id": user_id},
-            {"_id": 0},
-        ).sort("timestamp", 1)
-        raw = list(cursor)
-        messages = []
-        for doc in raw:
-            messages.append({"role": "user", "content": doc.get("user_message", "")})
-            messages.append({"role": "assistant", "content": doc.get("ai_response", "")})
-        return jsonify({"messages": messages})
-    except Exception as exc:
-        print(f"[ERROR] /api/chat/messages failed: {exc}")
-        return jsonify({"error": "Failed to fetch messages"}), 500
-
-
-@app.route("/api/chat/message", methods=["POST"])
-def api_chat_message():
-    """
-    Chat endpoint backed by the 'messages' collection for persistent session memory.
-
-    Request body:
-      Required: { "session_id": "...", "message": "..." }
-      Optional: { "response": "..." } — if pre-provided, skip LLM call and persist directly.
-
-    When 'response' is NOT provided, Marcus fetches all past messages from the
-    'messages' collection for this session_id, injects them into the LLM context
-    (after System Prompt, before the new user message), generates a reply, persists
-    both the user message and the AI response, and returns the reply.
-    """
-    if not _mongo_chat_sessions or not _mongo_messages:
-        return jsonify({"error": "Database not initialized"}), 500
-
-    user_id, error = _require_login()
-    if error:
-        return error
-
-    data = request.get_json(silent=True) or {}
-    session_id = (data.get("session_id") or "").strip()
-    user_message = (data.get("message") or "").strip()
-    preprovided_response = (data.get("response") or "").strip()
-
-    if not session_id or not user_message:
-        return jsonify({"error": "session_id and message are required"}), 400
-
-    try:
-        # ── Upsert session metadata ───────────────────────────────────────
-        existing = _mongo_chat_sessions.find_one({
-            "session_id": session_id,
-            "user_id": user_id,
-        })
-        title = (existing or {}).get("title", "")
-        if not title:
-            title = user_message[:25].rstrip()
-
-        now = datetime.now(timezone.utc)
-        _mongo_chat_sessions.update_one(
-            {"session_id": session_id, "user_id": user_id},
-            {
-                "$set": {
-                    "chat_id": session_id,
-                    "title": title,
-                    "last_updated": now,
-                    "session_id": session_id,
-                    "user_id": user_id,
-                },
-                "$setOnInsert": {
-                    "created_at": now,
-                    "message_count": 0,
-                },
-                "$inc": {"message_count": 1},
-            },
-            upsert=True,
-        )
-
-        # ── Save user message immediately (before LLM call) ───────────────
-        _msg_result = _mongo_messages.insert_one({
-            "session_id": session_id,
-            "user_id": user_id,
-            "user_message": user_message,
-            "ai_response": "",
-            "timestamp": datetime.utcnow(),
-        })
-
-        # ── Resolve response (call LLM or use pre-provided) ───────────────
-        if preprovided_response:
-            ai_response = preprovided_response
-        else:
-            _system_prompt = (
-                _CHAT_SYSTEM_PROMPT
-                if isinstance(_CHAT_SYSTEM_PROMPT, str) and _CHAT_SYSTEM_PROMPT
-                else "You are Marcus, an authentic AI assistant."
-            )
-            try:
-                history = _fetch_mongo_history(session_id, user_id)
-                messages = [{"role": "system", "content": _system_prompt}]
-                messages.extend(history)
-                messages.append({"role": "user", "content": user_message})
-                ai_response = _call_llm_cluster(messages)
-            except Exception:
-                ai_response = "Marcus is currently optimizing his connection. Please try sending your message again."
-
-        # ── Update saved doc with AI response ─────────────────────────────
-        _mongo_messages.update_one(
-            {"_id": _msg_result.inserted_id},
-            {"$set": {"ai_response": ai_response}},
-        )
-
-        return jsonify({
-            "status": "success",
-            "reply": ai_response,
-            "character": "marcus",
-            "session_id": session_id,
-        })
-
-    except Exception as exc:
-        print(f"[ERROR] /api/chat/message failed: {exc}")
-        return jsonify({"error": "Failed to process message"}), 500
-
-
-@app.route("/api/chat", methods=["POST"])
-def api_chat():
-    """
-    Chat endpoint backed by MongoDB for short-term conversation memory.
-
-    Accepts JSON: { "user_id": "...", "message": "..." }
-    - Reads all prior messages for that user from MongoDB as context.
-    - Saves the incoming user message immediately.
-    - Generates a reply via Marcus brain.
-    - Appends the assistant reply to the same MongoDB document.
-    """
-    try:
-        data = request.get_json(silent=True)
-        if not data:
-            return jsonify({"status": "error", "message": "No JSON body received"}), 400
-
-        user_id = str(data.get("user_id") or "").strip()
-        message = str(data.get("message") or "").strip()
-
-        if not user_id:
-            return jsonify({"status": "error", "message": "user_id is required"}), 400
-        if not message:
-            return jsonify({"status": "error", "message": "message is required"}), 400
-
-        if not _mongo_chat_collection:
-            return jsonify({"status": "error", "message": "MongoDB not available"}), 503
-
-        # ── 1. Fetch previous messages from MongoDB ──────────────────────
-        doc = _mongo_chat_collection.find_one({"user_id": user_id})
-        previous_messages = doc["messages"] if doc and isinstance(doc.get("messages"), list) else []
-
-        # ── 2. Build context string from history ─────────────────────────
-        context_lines = []
-        for prev in previous_messages[-8:]:   # last 8 exchanges for context
-            role = prev.get("role", "user")
-            content = prev.get("content", "")
-            context_lines.append(f"{role}: {content}")
-        context_str = "\n".join(context_lines)
-        full_prompt = f"{context_str}\nuser: {message}" if context_str else message
-
-        # ── 3. Save user message to MongoDB immediately ──────────────────
-        now_iso = datetime.now(timezone.utc).isoformat()
-        user_entry = {"role": "user", "content": message, "timestamp": now_iso}
-        _mongo_chat_collection.update_one(
-            {"user_id": user_id},
-            {"$push": {"messages": user_entry}},
-            upsert=True,
-        )
-
-        # ── 4. Get AI response via Marcus ────────────────────────────────
-        marcus = load_marcus(user_id)
-        if not marcus:
-            reply = "I'm sorry, but I'm not fully configured yet. Please try again later."
-        else:
-            auth = _current_auth()
-            if auth.get("email"):
-                _initialize_user_memory(marcus, auth["email"])
-            reply = marcus.respond(full_prompt)
-
-        # ── 5. Append assistant reply to MongoDB ─────────────────────────
-        assistant_entry = {"role": "assistant", "content": reply, "timestamp": datetime.now(timezone.utc).isoformat()}
-        _mongo_chat_collection.update_one(
-            {"user_id": user_id},
-            {"$push": {"messages": assistant_entry}},
-        )
-
-        return jsonify({
-            "status": "success",
-            "reply": reply,
-            "character": "marcus",
-            "user_id": user_id,
-        })
-
-    except Exception as exc:
-        print(f"[CRITICAL] /api/chat crashed: {exc}")
-        return jsonify({"status": "error", "message": "Internal server error"}), 500
-
-
 @app.route("/chat", methods=["POST"])
 def chat():
     try:
@@ -1146,9 +853,7 @@ def chat():
         _initialize_user_memory(marcus, auth.get("email", ""))
         _debug_user_memory(user_id, marcus)
 
-        resolved_chat_id = chat_id or f"{marcus.profile.key}_main_chat"
-        mongo_history = _fetch_mongo_history(resolved_chat_id, user_id)
-        reply = marcus.respond(message, chat_id=resolved_chat_id, image_data=image_data, mongo_history=mongo_history)
+        reply = marcus.respond(message, chat_id=chat_id, image_data=image_data)
         response_meta = getattr(marcus, "last_response_meta", {}) or {}
         voice = (
             {"enabled": True, "spoken": False, "engine": "browser", "reason": "reply too long for blocking server TTS"}
@@ -1157,25 +862,29 @@ def chat():
         )
 
         updated_title = None
-        if message and resolved_chat_id:
+        if message and chat_id:
             try:
-                session_info = marcus.memory.db_manager.get_session(resolved_chat_id, {"title": 1})
-                if session_info:
-                    current_title = str(session_info.get("title") or "")
-                    if current_title in ("", "New Chat", "Untitled Thread"):
-                        words = message.split()
-                        if len(words) >= 3:
-                            title = " ".join(words[:8]).rstrip(".,!?;:")
-                            if len(title) > 60:
-                                title = title[:60].rsplit(" ", 1)[0] if " " in title[:60] else title[:60]
-                            marcus.memory.set_title(resolved_chat_id, title)
-                            updated_title = title
+                sessions = _list_user_sessions(user_id)
+                current_title = None
+                for s in sessions:
+                    if s.get("chat_id") == chat_id:
+                        current_title = s.get("title", "")
+                        break
+                if current_title in (None, "", "New Chat", "Untitled Thread"):
+                    words = message.split()
+                    if len(words) >= 3:
+                        title = " ".join(words[:8]).rstrip(".", ",", "!", "?", ";", ":")
+                        if len(title) > 60:
+                            title = title[:60].rsplit(" ", 1)[0] if " " in title[:60] else title[:60]
+                        marcus.memory.set_title(chat_id, title)
+                        _upsert_chat_session_meta(user_id, chat_id, title=title)
+                        updated_title = title
             except Exception as exc:
                 print(f"[WARN] Auto-title fallback failed: {exc}")
 
         return jsonify({
             "status": "success",
-            "chat_id": resolved_chat_id,
+            "chat_id": chat_id or f"{marcus.profile.key}_main_chat",
             "character": "marcus",
             "reply": reply,
             "voice": voice,
@@ -1221,34 +930,37 @@ def chat_stream():
         _initialize_user_memory(marcus, auth.get("email", ""))
 
         resolved_chat_id = chat_id or f"{marcus.profile.key}_main_chat"
-        mongo_history = _fetch_mongo_history(resolved_chat_id, user_id)
 
         def generate():
             updated_title = None
             if message and resolved_chat_id:
                 try:
-                    session_info = marcus.memory.db_manager.get_session(resolved_chat_id, {"title": 1})
-                    if session_info:
-                        current_title = str(session_info.get("title") or "")
-                        if current_title in ("", "New Chat", "Untitled Thread"):
-                            words = message.split()
-                            if len(words) >= 3:
-                                title = " ".join(words[:8]).rstrip(".,!?;:")
-                                if len(title) > 60:
-                                    title = title[:60].rsplit(" ", 1)[0] if " " in title[:60] else title[:60]
-                                marcus.memory.set_title(resolved_chat_id, title)
-                                updated_title = title
+                    sessions = _list_user_sessions(user_id)
+                    current_title = None
+                    for s in sessions:
+                        if s.get("chat_id") == resolved_chat_id:
+                            current_title = s.get("title", "")
+                            break
+                    if current_title in (None, "", "New Chat", "Untitled Thread"):
+                        words = message.split()
+                        if len(words) >= 3:
+                            title = " ".join(words[:8]).rstrip(".", ",", "!", "?", ";", ":")
+                            if len(title) > 60:
+                                title = title[:60].rsplit(" ", 1)[0] if " " in title[:60] else title[:60]
+                            marcus.memory.set_title(resolved_chat_id, title)
+                            _upsert_chat_session_meta(user_id, resolved_chat_id, title=title)
+                            updated_title = title
                 except Exception as exc:
                     print(f"[WARN] Auto-title fallback failed: {exc}")
 
             try:
-                for token in marcus.stream_respond(message, chat_id=resolved_chat_id, image_data=image_data, mongo_history=mongo_history):
+                for token in marcus.stream_respond(message, chat_id=resolved_chat_id, image_data=image_data):
                     if token:
-                        yield f"data: {json.dumps({'token': token})}\n\n"
+                        yield f"data: {json.dumps({'token': token})}\\n\\n"
             except Exception as exc:
-                yield f"data: {json.dumps({'error': str(exc)})}\n\n"
+                yield f"data: {json.dumps({'error': str(exc)})}\\n\\n"
 
-            yield f"data: {json.dumps({'done': True, 'chat_id': resolved_chat_id, 'updated_title': updated_title})}\n\n"
+            yield f"data: {json.dumps({'done': True, 'chat_id': resolved_chat_id, 'updated_title': updated_title})}\\n\\n"
 
         return Response(
             stream_with_context(generate()),

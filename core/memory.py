@@ -4,7 +4,6 @@ import threading
 from datetime import datetime
 
 from core.config import PROJECT_ROOT
-from core.db import get_db, get_db_manager
 
 
 ASSISTANT_IDENTITY_NAMES = {"marcus"}
@@ -33,11 +32,10 @@ class MemorySystem:
             self.long_term_file = os.path.join(self.base_folder, "long_term.json")
 
         self._cache: dict = {}
+        self._sessions: dict = {}
         self._locks: dict = {}
         self._locks_lock = threading.Lock()
         self._long_term_lock = threading.Lock()
-        self.db = get_db()
-        self.db_manager = get_db_manager()
 
         if os.path.basename(self.base_folder) == "memory_data":
             self.user_id = "default"
@@ -58,22 +56,7 @@ class MemorySystem:
             return self._locks[chat_id]
 
     def load_long_term(self) -> dict:
-        if self.db is not None:
-            try:
-                data = self.db.long_term.find_one({"_id": self.user_id})
-                if data:
-                    data.pop("_id", None)
-                    identity = data.setdefault("identity", {})
-                    removed = False
-                    for key, value in list(identity.items()):
-                        if _looks_like_assistant_identity(key, value):
-                            identity.pop(key, None)
-                            removed = True
-                    if removed:
-                        self.save_long_term()
-                    return data
-            except Exception as exc:
-                print(f"[ERROR] Failed to load long-term memory from MongoDB: {exc}")
+        # TODO: Implement Pinecone storage logic here
         return _fresh_long_term()
 
     def reload(self) -> dict:
@@ -82,13 +65,8 @@ class MemorySystem:
             return self.long_term
 
     def save_long_term(self):
-        if self.db is not None:
-            try:
-                data = self.long_term.copy()
-                data["_id"] = self.user_id
-                self.db.long_term.replace_one({"_id": self.user_id}, data, upsert=True)
-            except Exception as exc:
-                print(f"[ERROR] Failed to save long-term memory to MongoDB: {exc}")
+        # TODO: Implement Pinecone storage logic here
+        pass
 
     def _creator_prefs_file(self) -> str:
         return os.path.join(self.base_folder, "creator_preferences.json")
@@ -188,52 +166,46 @@ class MemorySystem:
         return self.long_term
 
     def load_chat(self, chat_id: str) -> list:
-        if self.db is not None:
-            try:
-                data = self.db.chats.find_one({"chat_id": chat_id})
-                if data and data.get("messages"):
-                    return data.get("messages", [])
-            except Exception as exc:
-                print(f"[ERROR] Failed to load chat '{chat_id}' from MongoDB: {exc}")
-        local_path = os.path.join("memory_data", "chats", f"{chat_id}.json")
-        try:
-            if os.path.exists(local_path):
-                with open(local_path, "r", encoding="utf-8") as f:
-                    local_data = json.load(f)
-                if isinstance(local_data, dict) and local_data.get("messages"):
-                    return local_data["messages"]
-        except (json.JSONDecodeError, OSError) as exc:
-            print(f"[ERROR] Failed to load chat '{chat_id}' from local file: {exc}")
+        # TODO: Implement Pinecone storage logic here
         return []
 
     def save_chat(self, chat_id: str, messages: list, title: str = ""):
-        self.db_manager.background_chat_write(chat_id, messages, user_id=self.user_id, title=title)
+        # TODO: Implement Pinecone storage logic here
+        pass
 
     def create_session(self, chat_id: str, title: str = "New Chat") -> dict:
         self._cache[chat_id] = []
         now = datetime.now().isoformat()
         title_to_use = title or "New Chat"
-        self.db_manager.background_chat_write(
-            chat_id, [], user_id=self.user_id, title=title_to_use,
-        )
-        return {
+        session = {
             "chat_id": chat_id,
             "title": title_to_use,
             "created_at": now,
             "last_activity": now,
             "message_count": 0,
         }
+        self._sessions[chat_id] = session
+        return session
 
     def list_sessions(self) -> list:
-        return self.db_manager.list_sessions(self.user_id)
+        return list(self._sessions.values())
 
     def delete_session(self, chat_id: str):
+        self._sessions.pop(chat_id, None)
         with self._get_lock(chat_id):
             self._cache.pop(chat_id, None)
-        self.db_manager.delete_session(chat_id, self.user_id)
 
     def set_title(self, chat_id: str, title: str):
-        self.db_manager.update_session_title(chat_id, title)
+        if chat_id not in self._sessions:
+            now = datetime.now().isoformat()
+            self._sessions[chat_id] = {
+                "chat_id": chat_id,
+                "title": "New Chat",
+                "created_at": now,
+                "last_activity": now,
+                "message_count": 0,
+            }
+        self._sessions[chat_id]["title"] = title
 
     def update_reaction(self, chat_id: str, message_index: int, reaction: str) -> bool:
         lock = self._get_lock(chat_id)
@@ -290,8 +262,4 @@ class MemorySystem:
         with lock:
             self._cache.pop(chat_id, None)
 
-            if self.db is not None:
-                try:
-                    self.db.chats.delete_one({"chat_id": chat_id})
-                except Exception as exc:
-                    print(f"[ERROR] Failed to clear chat '{chat_id}' from MongoDB: {exc}")
+            # TODO: Implement Pinecone storage logic here
