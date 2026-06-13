@@ -2,6 +2,7 @@ import json
 import os
 import re
 import threading
+import traceback
 from datetime import datetime
 
 import requests
@@ -977,6 +978,7 @@ class MarcusBrain:
 
         except Exception as exc:
             print(f"[CRITICAL] Unhandled error in respond(): {exc}")
+            traceback.print_exc()
             self.last_response_meta = self._metadata(False, True, "local")
             return FALLBACK_RESPONSE
 
@@ -1068,6 +1070,7 @@ class MarcusBrain:
                     yield token
             except Exception as exc:
                 print(f"[STREAM ERROR] Groq streaming failed: {exc}")
+                traceback.print_exc()
                 fallback = "I apologize, but I'm having trouble processing your request right now."
                 full_reply = fallback
                 yield fallback
@@ -1084,4 +1087,5 @@ class MarcusBrain:
 
         except Exception as exc:
             print(f"[CRITICAL] Unhandled error in stream_respond(): {exc}")
+            traceback.print_exc()
             return

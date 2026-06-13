@@ -14,7 +14,6 @@ from datetime import datetime, timedelta, timezone
 from threading import Lock
 from urllib.parse import quote
 
-import certifi
 from flask import Flask, Response, jsonify, request, send_from_directory, session, stream_with_context
 from flask_cors import CORS
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -298,11 +297,15 @@ def _merge_session_records(existing: dict, incoming: dict) -> dict:
 
 # ── SESSION INDEX HANDLING FOR PINECONE BACKED ARCHITECTURE ──────────────────────────────────────────────────────────────
 
-_sessions_index_file = PROJECT_ROOT / "memory_data" / "users" / "{user_id}" / "sessions_index.json"
+_sessions_index_template = str(PROJECT_ROOT / "memory_data" / "users" / "{user_id}" / "sessions_index.json")
+
+
+def _sessions_index_path(user_id: str):
+    return Path(_sessions_index_template.replace("{user_id}", user_id))
 
 
 def _load_sessions_index(user_id: str) -> list:
-    fpath = _sessions_index_file.format(user_id=user_id)
+    fpath = _sessions_index_path(user_id)
     try:
         if fpath.exists():
             with open(fpath, "r", encoding="utf-8") as f:
@@ -316,7 +319,7 @@ def _load_sessions_index(user_id: str) -> list:
 
 def _save_sessions_index(user_id: str, sessions: list):
     try:
-        fpath = _sessions_index_file.format(user_id=user_id)
+        fpath = _sessions_index_path(user_id)
         fpath.parent.mkdir(parents=True, exist_ok=True)
         tmp = str(fpath) + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:

@@ -26,7 +26,6 @@ class APIConfig:
     newscatcher_api_key: str
     currents_api_key: str
     api_sports_key: str
-    mongodb_uri: str
     openrouter_api_key: str
     openrouter_base_url: str
     openrouter_model: str
@@ -36,6 +35,9 @@ class APIConfig:
     gemini_api_key: str
     gemini_base_url: str
     gemini_model: str
+    pinecone_api_key: str
+    pinecone_environment: str
+    pinecone_index_name: str
 
 
 
@@ -55,7 +57,6 @@ def get_config() -> APIConfig:
         newscatcher_api_key=os.getenv("NEWSCATCHER_API_KEY", "").strip(),
         currents_api_key=os.getenv("CURRENTS_API_KEY", "").strip(),
         api_sports_key=os.getenv("API_SPORTS_KEY", "").strip(),
-        mongodb_uri=os.getenv("MONGODB_URI", "").strip(),
         openrouter_api_key=os.getenv("OPENROUTER_API_KEY", "").strip(),
         openrouter_base_url=os.getenv(
             "OPENROUTER_BASE_URL",
@@ -74,6 +75,9 @@ def get_config() -> APIConfig:
             "https://generativelanguage.googleapis.com/v1beta",
         ).rstrip("/"),
         gemini_model=os.getenv("GEMINI_MODEL", "gemini-2.0-flash").strip(),
+        pinecone_api_key=os.getenv("PINECONE_API_KEY", "").strip(),
+        pinecone_environment=os.getenv("PINECONE_ENVIRONMENT", "us-east-1-aws").strip(),
+        pinecone_index_name=os.getenv("PINECONE_INDEX_NAME", "valleymind").strip(),
     )
 
 
