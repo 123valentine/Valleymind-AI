@@ -8,7 +8,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#0b141a">
-<script>window.VALLEYMIND_API_BASE_URL="https://valleymind-ai-backend.onrender.com";</script>
+<script>window.VALLEYMIND_API_BASE_URL="https://valleymind-ai-opms.onrender.com";</script>
 <link rel="icon" type="image/png" href="/static/valleymind-logo.png">
 <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
 <script src="https://unpkg.com/lucide@latest"></script>
@@ -546,9 +546,9 @@ function resolveApiBaseUrl() {
     const isLocal = localHosts.has(window.location.hostname);
     const isBackendPort = window.location.port === "8000";
     if (window.location.protocol === "file:" || (isLocal && !isBackendPort)) {
-        return "https://valleymind-ai-gzta.onrender.com";
+        return "http://127.0.0.1:8000";
     }
-    return "https://valleymind-ai-gzta.onrender.com";
+    return "https://valleymind-ai-opms.onrender.com";
 }
 
 const API_BASE_URL = resolveApiBaseUrl();
