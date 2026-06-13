@@ -497,6 +497,28 @@ def chat_history():
     return jsonify({"status": "success", "messages": messages})
 
 
+@app.route("/api/chat/messages", methods=["GET"])
+def api_chat_messages_alias():
+    user_id, error = _require_login()
+    if error:
+        return error
+
+    marcus = load_marcus(user_id)
+    if not marcus:
+        return jsonify({"status": "error", "message": "Marcus is not configured"}), 404
+
+    _refresh_marcus_memory(marcus)
+
+    chat_id = str(
+        request.args.get("session_id")
+        or request.args.get("chat_id")
+        or ""
+    ).strip() or f"{marcus.profile.key}_main_chat"
+
+    messages = marcus.memory.get_chat(chat_id)
+    return jsonify({"status": "success", "messages": messages})
+
+
 @app.route("/chat/sessions", methods=["GET"])
 def chat_sessions():
     user_id, error = _require_login()
