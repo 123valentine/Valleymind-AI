@@ -989,6 +989,42 @@ def chat_stream():
         return jsonify({"status": "error", "message": "Internal server error"}), 500
 
 
+@app.route("/api/chat/message", methods=["POST"])
+def api_chat_message():
+    try:
+        user_id, error = _require_login()
+        if error:
+            return error
+
+        data = request.get_json(silent=True)
+        if not data:
+            return jsonify({"status": "error", "message": "No JSON body received"}), 400
+
+        chat_id = str(data.get("session_id") or "").strip()
+        user_message = str(data.get("message") or "").strip()
+        ai_response = str(data.get("response") or "").strip()
+
+        if not chat_id:
+            return jsonify({"status": "error", "message": "session_id is required"}), 400
+        if not user_message and not ai_response:
+            return jsonify({"status": "error", "message": "message or response is required"}), 400
+
+        marcus = load_marcus(user_id)
+        if not marcus:
+            return jsonify({"status": "error", "message": "Marcus not configured"}), 404
+
+        if user_message:
+            marcus.memory.add_message(chat_id, "user", user_message)
+        if ai_response:
+            marcus.memory.add_message(chat_id, "assistant", ai_response)
+
+        return jsonify({"status": "success"})
+
+    except Exception as e:
+        print(f"[CRITICAL] /api/chat/message crashed: {e}")
+        return jsonify({"status": "error", "message": "Internal server error"}), 500
+
+
 # ── Static frontend serving (same-origin, eliminates CORS) ──────────────
 
 
