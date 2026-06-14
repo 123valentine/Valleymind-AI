@@ -37,7 +37,7 @@ if os.path.isfile(_env_path):
 
 
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder='../static', static_url_path='/static')
 app.permanent_session_lifetime = timedelta(days=30)
 
 # ── CORS (commented out — frontend is now served from the same origin) ──────
