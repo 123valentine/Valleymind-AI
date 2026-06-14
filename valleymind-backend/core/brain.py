@@ -1030,7 +1030,7 @@ class MarcusBrain:
                     if expanded and expanded != message:
                         search_message = expanded
 
-                yield json.dumps({"intent": "searching_web", "query": message})
+                yield {"intent": "searching_web", "query": message}
 
                 search_done = threading.Event()
                 search_result = [""]
@@ -1051,7 +1051,7 @@ class MarcusBrain:
                 while not search_done.is_set():
                     if search_done.wait(timeout=0.5):
                         break
-                    yield json.dumps({"token": ""})
+                    yield {"token": ""}
 
                 t.join(timeout=5)
                 live_ctx = search_result[0]

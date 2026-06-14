@@ -963,12 +963,16 @@ def chat_stream():
 
             try:
                 for token in marcus.stream_respond(message, chat_id=resolved_chat_id, image_data=image_data):
-                    if token:
-                        yield f"data: {json.dumps({'token': token})}\\n\\n"
+                    if token is None:
+                        continue
+                    if isinstance(token, dict):
+                        yield f"data: {json.dumps(token)}\n\n"
+                    elif token:
+                        yield f"data: {json.dumps({'token': token})}\n\n"
             except Exception as exc:
-                yield f"data: {json.dumps({'error': str(exc)})}\\n\\n"
+                yield f"data: {json.dumps({'error': str(exc)})}\n\n"
 
-            yield f"data: {json.dumps({'done': True, 'chat_id': resolved_chat_id, 'updated_title': updated_title})}\\n\\n"
+            yield f"data: {json.dumps({'done': True, 'chat_id': resolved_chat_id, 'updated_title': updated_title})}\n\n"
 
         return Response(
             stream_with_context(generate()),
