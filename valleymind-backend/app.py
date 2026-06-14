@@ -785,7 +785,7 @@ def reset_password():
         user = users.get(email)
 
         if not user:
-            return jsonify({"status": "error",", message": "No account found with that email."}), 404
+            return jsonify({"status": "error", "message": "No account found with that email."}), 404
 
         stored_hash = user.get("security_answer_hash")
         if not stored_hash:

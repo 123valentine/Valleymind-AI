@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-ENV_FILE = Path(__file__).resolve().parent.parent / ".env"
+ENV_FILE = PROJECT_ROOT / ".env"
 
 # Load once from the project root. Environment variables already present in the
 # host process keep priority unless override=True is passed by a caller.
