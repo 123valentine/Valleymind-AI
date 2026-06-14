@@ -546,7 +546,7 @@ function resolveApiBaseUrl() {
     if (window.location.protocol === "file:" || (isLocal && !isBackendPort)) {
         return "http://127.0.0.1:8000";
     }
-    return "https://valleymind-ai-opms.onrender.com";
+    return "";
 }
 
 const API_BASE_URL = resolveApiBaseUrl();
