@@ -15,7 +15,6 @@ from threading import Lock
 from urllib.parse import quote
 
 from flask import Flask, Response, jsonify, request, send_from_directory, session, stream_with_context
-from flask_cors import CORS
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from core.brain import MarcusBrain, _call_llm_cluster, _CHAT_SYSTEM_PROMPT
@@ -41,18 +40,14 @@ if os.path.isfile(_env_path):
 app = Flask(__name__)
 app.permanent_session_lifetime = timedelta(days=30)
 
-# ── CORS ──────────────────────────────────────────────────────────────────────
-allowed_origins = [
-    "http://127.0.0.1:3000",
-    "http://localhost:3000",
-    "https://valleymind-ai.vercel.app",
-]
-CORS(app, supports_credentials=True, origins=allowed_origins)
-
-@app.before_request
-def handle_options():
-    if request.method == "OPTIONS":
-        return "", 200
+# ── CORS (commented out — frontend is now served from the same origin) ──────
+# from flask_cors import CORS
+# allowed_origins = [
+#     "http://127.0.0.1:3000",
+#     "http://localhost:3000",
+#     "https://valleymind-ai.vercel.app",
+# ]
+# CORS(app, supports_credentials=True, origins=allowed_origins)
 
 # Cache Marcus per authenticated user so memory never leaks across accounts.
 _cache_marcus_by_user = {}
@@ -988,6 +983,24 @@ def chat_stream():
     except Exception as e:
         print(f"[CRITICAL] /chat/stream crashed: {e}")
         return jsonify({"status": "error", "message": "Internal server error"}), 500
+
+
+# ── Static frontend serving (same-origin, eliminates CORS) ──────────────
+
+
+@app.route("/")
+def serve_index():
+    return send_from_directory("../", "index.html")
+
+
+@app.route("/<path:path>")
+def serve_frontend_assets(path):
+    allowed_files = ["manifest.json", "sw.js", "phone-studio.html", "jpj.txt"]
+
+    if path in allowed_files or path.startswith("static/"):
+        return send_from_directory("../", path)
+
+    return send_from_directory("../", "index.html")
 
 
 if __name__ == "__main__":
