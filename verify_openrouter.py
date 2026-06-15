@@ -17,7 +17,7 @@ def verify_embedding_dimensions() -> int:
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
     }
-    _model = os.getenv("EMBEDDING_MODEL", "baai/bge-base-en-v1.5").strip()
+    _model = os.getenv("EMBEDDING_MODEL", "text-embedding-3-large").strip()
     payload = {
         "model": _model,
         "input": "Valleymind AI embedding dimension verification",
@@ -47,8 +47,8 @@ def verify_embedding_dimensions() -> int:
 
 def main():
     dims = verify_embedding_dimensions()
-    _model = os.getenv("EMBEDDING_MODEL", "baai/bge-base-en-v1.5").strip()
-    expected = int(os.getenv("EMBEDDING_DIMS", "768").strip())
+    _model = os.getenv("EMBEDDING_MODEL", "text-embedding-3-large").strip()
+    expected = int(os.getenv("EMBEDDING_DIMS", "3072").strip())
     if dims == expected:
         print(f"Valleymind-AI now using {_model} ({dims} dimensions) aligned with Pinecone index.")
     else:

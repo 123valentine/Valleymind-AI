@@ -34,11 +34,11 @@ if os.path.isfile(_env_path):
                 os.environ[_key] = _val
 
 PINECONE_API_KEY = os.environ.get("PINECONE_API_KEY", "").strip()
-PINECONE_INDEX_NAME = "valleymind-knowledge"
-PINECONE_CLOUD = "aws"
-PINECONE_REGION = "us-east-1"
-PINECONE_NAMESPACE = "web-crawler"
-VECTOR_DIMENSION = 384
+PINECONE_INDEX_NAME = os.environ.get("PINECONE_INDEX_NAME", "valleymind-knowledge").strip()
+PINECONE_CLOUD = os.environ.get("PINECONE_CLOUD", "aws").strip()
+PINECONE_REGION = os.environ.get("PINECONE_REGION", "us-east-1").strip()
+PINECONE_NAMESPACE = os.environ.get("PINECONE_NAMESPACE", "web-crawler").strip()
+VECTOR_DIMENSION = int(os.environ.get("EMBEDDING_DIMS", "3072").strip())
 
 
 def _validate_env():

@@ -13,7 +13,7 @@ from core.config import PROJECT_ROOT, get_config
 
 _SENTINEL = object()
 
-_EMBEDDING_DIM = 384
+_EMBEDDING_DIM = int(os.getenv("EMBEDDING_DIMS", "3072").strip())
 
 
 def _sanitize_value(value: Any, depth: int = 0) -> Any:

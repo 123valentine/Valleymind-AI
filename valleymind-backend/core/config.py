@@ -76,7 +76,7 @@ def get_config() -> APIConfig:
         ).rstrip("/"),
         gemini_model=os.getenv("GEMINI_MODEL", "gemini-2.0-flash").strip(),
         pinecone_api_key=os.getenv("PINECONE_API_KEY", "").strip(),
-        pinecone_environment=os.getenv("PINECONE_ENVIRONMENT", "us-east-1-aws").strip(),
+        pinecone_environment=os.getenv("PINECONE_ENVIRONMENT", os.getenv("PINECONE_REGION", "us-east-1")).strip(),
         pinecone_index_name=os.getenv("PINECONE_INDEX_NAME", "valleymind").strip(),
     )
 

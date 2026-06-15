@@ -23,8 +23,8 @@ class MemoryManager:
         pinecone>=3.0.0
     """
 
-    EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "baai/bge-base-en-v1.5").strip()
-    EMBEDDING_DIMS = int(os.getenv("EMBEDDING_DIMS", "768").strip())
+    EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-3-large").strip()
+    EMBEDDING_DIMS = int(os.getenv("EMBEDDING_DIMS", "3072").strip())
     OPENROUTER_URL = "https://openrouter.ai/api/v1/embeddings"
 
     def __init__(
@@ -69,7 +69,7 @@ class MemoryManager:
                     name=self.index_name,
                     dimension=self.EMBEDDING_DIMS,
                     metric="cosine",
-                    spec=ServerlessSpec(cloud="aws", region="us-east-1"),
+                    spec=ServerlessSpec(cloud="aws", region=os.getenv("PINECONE_REGION", "us-east-1")),
                 )
                 logger.info("Created index '%s'", self.index_name)
             else:

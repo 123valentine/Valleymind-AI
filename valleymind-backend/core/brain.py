@@ -397,9 +397,9 @@ def _call_llm_cluster(
 ) -> tuple[str, dict]:
     """
     Multi-provider, robust LLM routing with fallbacks:
-    Primary: Groq API
-    Fallback 1: OpenRouter (meta-llama/llama-3-8b-instruct:free)
-    Fallback 2: NVIDIA NIM
+    Primary: Groq (llama-3.3-70b-versatile)
+    Fallback 1: NVIDIA API
+    Fallback 2: OpenRouter (configured for 3072 dimensions)
     Fallback 3: Gemini
     """
     config = get_config()
@@ -416,28 +416,11 @@ def _call_llm_cluster(
             print("[LLM CLUSTER] Groq skipped: no model resolved")
         except Exception as exc:
             last_error = exc
-            print(f"[LLM CLUSTER] Groq failed: {_short_error_detail(str(exc))}. Rotating to OpenRouter.")
+            print(f"[LLM CLUSTER] Groq failed: {_short_error_detail(str(exc))}. Rotating to Nvidia.")
     else:
         print("[LLM CLUSTER] Groq unavailable: no API key")
 
-    # ── 2. Fallback 1: OpenRouter ────────────────────────────────────────────
-    openrouter_key = config.openrouter_api_key
-    if openrouter_key:
-        openrouter_model = config.openrouter_model or "meta-llama/llama-3-8b-instruct:free"
-        openrouter_url = config.openrouter_base_url or "https://openrouter.ai/api/v1"
-        try:
-            response = _call_openai_compat(
-                messages, openrouter_model, openrouter_key,
-                openrouter_url, "OpenRouter", timeout,
-            )
-            return response, {"groq_used": False, "fallback_used": True, "fallback_source": "OpenRouter"}
-        except Exception as exc:
-            last_error = exc
-            print(f"[LLM CLUSTER] OpenRouter failed: {_short_error_detail(str(exc))}. Rotating to Nvidia.")
-    else:
-        print("[LLM CLUSTER] OpenRouter unavailable: no API key")
-
-    # ── 3. Fallback 2: NVIDIA NIM ─────────────────────────────────────────────
+    # ── 2. Fallback 1: NVIDIA API ─────────────────────────────────────────────
     nvidia_key = config.nvidia_api_key
     if nvidia_key:
         nvidia_model = config.nvidia_model or "nvidia/llama-3.1-nv-8b-instruct"
@@ -450,9 +433,26 @@ def _call_llm_cluster(
             return response, {"groq_used": False, "fallback_used": True, "fallback_source": "Nvidia"}
         except Exception as exc:
             last_error = exc
-            print(f"[LLM CLUSTER] Nvidia failed: {_short_error_detail(str(exc))}. Rotating to Gemini.")
+            print(f"[LLM CLUSTER] Nvidia failed: {_short_error_detail(str(exc))}. Rotating to OpenRouter.")
     else:
         print("[LLM CLUSTER] Nvidia unavailable: no API key")
+
+    # ── 3. Fallback 2: OpenRouter (configured for 3072 dimensions) ────────────
+    openrouter_key = config.openrouter_api_key
+    if openrouter_key:
+        openrouter_model = config.openrouter_model or "openai/gpt-4o-mini"
+        openrouter_url = config.openrouter_base_url or "https://openrouter.ai/api/v1"
+        try:
+            response = _call_openai_compat(
+                messages, openrouter_model, openrouter_key,
+                openrouter_url, "OpenRouter", timeout,
+            )
+            return response, {"groq_used": False, "fallback_used": True, "fallback_source": "OpenRouter"}
+        except Exception as exc:
+            last_error = exc
+            print(f"[LLM CLUSTER] OpenRouter failed: {_short_error_detail(str(exc))}. Rotating to Gemini.")
+    else:
+        print("[LLM CLUSTER] OpenRouter unavailable: no API key")
 
     # ── 4. Fallback 3: Gemini ─────────────────────────────────────────────────
     gemini_key = config.gemini_api_key

@@ -9,7 +9,7 @@ from core.db import get_db, get_db_manager
 
 
 ASSISTANT_IDENTITY_NAMES = {"marcus"}
-_EMBEDDING_DIM = 384
+_EMBEDDING_DIM = int(os.getenv("EMBEDDING_DIMS", "3072").strip())
 _MEMORY_NAMESPACE = "memory"
 _CHAT_NAMESPACE = "chats"
 
