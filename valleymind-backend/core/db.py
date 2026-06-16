@@ -1,3 +1,4 @@
+import hashlib
 import json
 import os
 import threading
@@ -14,6 +15,11 @@ from core.config import PROJECT_ROOT, get_config
 _SENTINEL = object()
 
 _EMBEDDING_DIM = int(os.getenv("EMBEDDING_DIMS", "3072").strip())
+
+
+def _pseudo_embedding(seed: str, dim: int = _EMBEDDING_DIM) -> list:
+    h = hashlib.sha256(seed.encode("utf-8")).digest()
+    return [((h[i % 32] + i) / 255.0) * 2 - 1 for i in range(dim)]
 
 
 def _sanitize_value(value: Any, depth: int = 0) -> Any:
@@ -141,6 +147,37 @@ class PineconeManager:
             idx.delete(ids=ids, filter=filter, namespace=namespace)
         except Exception as exc:
             print(f"[PINECONE] Delete failed: {exc}")
+
+    # ── Session metadata (Pinecone + local JSON) ──────────────────────────
+
+    def upsert_session_title(
+        self,
+        chat_id: str,
+        title: str,
+        user_id: str = "",
+    ):
+        """Persist session title to Pinecone index metadata for UI retrieval."""
+        if not chat_id or not title:
+            return
+        idx = self.get_index()
+        if idx is None:
+            return
+        vector = _pseudo_embedding(f"session_meta_{chat_id}")
+        metadata = {
+            "type": "session_meta",
+            "chat_id": chat_id,
+            "title": title,
+        }
+        if user_id:
+            metadata["user_id"] = user_id
+        try:
+            idx.upsert(
+                vectors=[(f"session_meta_{chat_id}", vector, metadata)],
+                namespace="sessions",
+            )
+            print(f"[PINECONE] Title synced to Pinecone for chat '{chat_id}': {title}")
+        except Exception as exc:
+            print(f"[PINECONE] Failed to upsert session title: {exc}")
 
     # ── Session metadata (local JSON only) ────────────────────────────────
 

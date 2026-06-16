@@ -126,6 +126,7 @@ def _current_auth() -> dict:
     if user_id:
         return {"user_id": user_id, "email": email}
 
+    # Fallback 1: headers (X-Session-Token / Authorization: Bearer)
     token = str(
         request.headers.get("X-Session-Token")
         or request.headers.get("Authorization", "").replace("Bearer ", "", 1)
@@ -139,6 +140,21 @@ def _current_auth() -> dict:
             session["email"] = auth.get("email", "")
             session["user"] = {"id": auth.get("user_id", ""), "email": auth.get("email", "")}
             return auth
+
+    # Fallback 2: POST JSON body (for clients that cannot send cookies on POST)
+    if request.method == "POST" and request.content_type and "json" in request.content_type:
+        try:
+            body_token = str((request.get_json(silent=True) or {}).get("session_token") or "").strip()
+            if body_token:
+                auth = _auth_tokens.get(body_token)
+                if auth and auth.get("user_id"):
+                    session.permanent = True
+                    session["user_id"] = auth.get("user_id", "")
+                    session["email"] = auth.get("email", "")
+                    session["user"] = {"id": auth.get("user_id", ""), "email": auth.get("email", "")}
+                    return auth
+        except Exception:
+            pass
 
     return {}
 

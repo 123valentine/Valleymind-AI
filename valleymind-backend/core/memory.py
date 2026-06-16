@@ -341,6 +341,9 @@ class MemorySystem:
 
     def set_title(self, chat_id: str, title: str):
         self.pc_manager.update_session_title(chat_id, title)
+        self.pc_manager.upsert_session_title(
+            chat_id, title, user_id=self.user_id
+        )
 
     def update_reaction(self, chat_id: str, message_index: int, reaction: str) -> bool:
         lock = self._get_lock(chat_id)
