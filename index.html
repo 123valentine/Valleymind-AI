@@ -732,36 +732,26 @@ function renderSessionListError(message) {
         '</div>';
 }
 
-/** Single fetch attempt — tries primary then legacy endpoint. */
+/** Single fetch attempt — primary endpoint only. */
 async function fetchSessionsOnce() {
-    var endpoints = ["/chat/sessions", "/api/chat/history"];
-    var lastError = null;
-    for (var e = 0; e < endpoints.length; e++) {
-        try {
-            var res = await apiFetch(endpoints[e], {
-                credentials: "include",
-                headers: authHeaders(),
-                timeoutMs: 45000,
-            });
-            var data = await res.json();
-            if (!res.ok) {
-                lastError = new Error(
-                    (data && (data.message || data.error)) || ("HTTP " + res.status)
-                );
-                continue;
-            }
-            var sessions = [];
-            if (Array.isArray(data)) {
-                sessions = data;
-            } else if (data && Array.isArray(data.sessions)) {
-                sessions = data.sessions;
-            }
-            return sessions.map(normalizeSession).filter(function (s) { return s.chat_id; });
-        } catch (err) {
-            lastError = err;
-        }
+    var res = await apiFetch("/chat/sessions", {
+        credentials: "include",
+        headers: authHeaders(),
+        timeoutMs: 45000,
+    });
+    var data = await res.json();
+    if (!res.ok) {
+        throw new Error(
+            (data && (data.message || data.error)) || ("HTTP " + res.status)
+        );
     }
-    throw lastError || new Error("Failed to load sessions");
+    var sessions = [];
+    if (Array.isArray(data)) {
+        sessions = data;
+    } else if (data && Array.isArray(data.sessions)) {
+        sessions = data.sessions;
+    }
+    return sessions.map(normalizeSession).filter(function (s) { return s.chat_id; });
 }
 
 if (typeof window !== "undefined" && window.speechSynthesis) {
@@ -1519,12 +1509,7 @@ async function hydrateChatMessages(chatId) {
     var token = ++chatHydrationToken;
     var messages = await loadSessionMessages(chatId);
     if (token !== chatHydrationToken || chatId !== currentChatId) return;
-    if (messages.length > 0) {
-        renderChatHistory(messages);
-        return;
-    }
-    await loadChatHistory(chatId);
-    if (token !== chatHydrationToken || chatId !== currentChatId) return;
+    renderChatHistory(messages);
 }
 
 async function switchSession(chatId) {
@@ -2308,7 +2293,13 @@ window.send = async function () {
             await persistMessagePair(currentChatId, text, fullReply);
         }
         if (currentChatId) saveLastChatId(currentChatId);
-        loadSessions({ showLoading: false });
+        /* refresh sessions once — dedup guard prevents double fetch */
+        if (!window._sessionsRefreshPending) {
+            window._sessionsRefreshPending = true;
+            loadSessions({ showLoading: false }).finally(function () {
+                window._sessionsRefreshPending = false;
+            });
+        }
 
         if (!isVoiceMuted && fullReply) {
             browserSpeak(fullReply);
@@ -2351,7 +2342,12 @@ window.send = async function () {
                 await persistMessagePair(currentChatId, text, reply);
             }
             if (currentChatId) saveLastChatId(currentChatId);
-            loadSessions({ showLoading: false });
+            if (!window._sessionsRefreshPending) {
+                window._sessionsRefreshPending = true;
+                loadSessions({ showLoading: false }).finally(function () {
+                    window._sessionsRefreshPending = false;
+                });
+            }
 
             if (!isVoiceMuted && reply) {
                 browserSpeak(reply);

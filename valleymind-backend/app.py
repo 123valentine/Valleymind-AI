@@ -898,12 +898,12 @@ def chat():
                 if current_title in (None, "", "New Chat", "Untitled Thread"):
                     words = message.split()
                     if len(words) >= 3:
-                        title = " ".join(words[:8]).rstrip(".", ",", "!", "?", ";", ":")
-                        if len(title) > 60:
-                            title = title[:60].rsplit(" ", 1)[0] if " " in title[:60] else title[:60]
-                        marcus.memory.set_title(chat_id, title)
-                        _upsert_chat_session_meta(user_id, chat_id, title=title)
-                        updated_title = title
+                            title = " ".join(words[:8]).rstrip(".,!?;:")
+                            if len(title) > 60:
+                                title = title[:60].rsplit(" ", 1)[0] if " " in title[:60] else title[:60]
+                            marcus.memory.set_title(chat_id, title)
+                            _upsert_chat_session_meta(user_id, chat_id, title=title)
+                            updated_title = title
             except Exception as exc:
                 print(f"[WARN] Auto-title fallback failed: {exc}")
 
@@ -969,7 +969,7 @@ def chat_stream():
                     if current_title in (None, "", "New Chat", "Untitled Thread"):
                         words = message.split()
                         if len(words) >= 3:
-                            title = " ".join(words[:8]).rstrip(".", ",", "!", "?", ";", ":")
+                            title = " ".join(words[:8]).rstrip(".,!?;:")
                             if len(title) > 60:
                                 title = title[:60].rsplit(" ", 1)[0] if " " in title[:60] else title[:60]
                             marcus.memory.set_title(resolved_chat_id, title)
