@@ -69,7 +69,9 @@ class MemoryManager:
                     name=self.index_name,
                     dimension=self.EMBEDDING_DIMS,
                     metric="cosine",
-                    spec=ServerlessSpec(cloud="aws", region=os.getenv("PINECONE_REGION", "us-east-1")),
+                    spec=ServerlessSpec
+                    (cloud="aws",
+                 region=os.getenv("PINECONE_REGION", "us-east-1")),
                 )
                 logger.info("Created index '%s'", self.index_name)
             else:
