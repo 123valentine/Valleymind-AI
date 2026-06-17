@@ -897,11 +897,18 @@ class MarcusBrain:
         recent = history[-20:]
         if recent and recent[-1].get("role") == "user":
             recent = recent[:-1]
+        is_text_turn = not image_data
         for msg in recent:
             role = msg.get("role", "user")
             content = msg.get("content", "")
             msg_image = msg.get("image_data", "")
-            if msg_image:
+            if is_text_turn:
+                text = (content or "")
+                if msg_image:
+                    text = (text + " [Uploaded Image]").strip()
+                if text:
+                    messages.append({"role": role, "content": text})
+            elif msg_image:
                 messages.append({
                     "role": role,
                     "content": [
@@ -1125,8 +1132,8 @@ class MarcusBrain:
             message = (message or "").strip()
             if not message and not image_data:
                 return "I didn't catch that - could you say something?"
-            if not message:
-                message = "(image attached)"
+            if not message and image_data:
+                message = "Analyze this image in detail and describe what you see."
 
             cid = (chat_id or "").strip() or f"{self.profile.key}_main_chat"
             timestamp = datetime.now().isoformat()
@@ -1231,8 +1238,8 @@ class MarcusBrain:
             message = (message or "").strip()
             if not message and not image_data:
                 return
-            if not message:
-                message = "(image attached)"
+            if not message and image_data:
+                message = "Analyze this image in detail and describe what you see."
 
             cid = (chat_id or "").strip() or f"{self.profile.key}_main_chat"
             timestamp = datetime.now().isoformat()
