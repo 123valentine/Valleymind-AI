@@ -391,6 +391,145 @@ def _call_gemini(
     return text.strip()
 
 
+def _parse_data_uri(data_uri: str) -> tuple[str, str]:
+    if not data_uri or "," not in data_uri:
+        return "image/png", ""
+    header, b64_data = data_uri.split(",", 1)
+    mime_match = re.search(r"data:([^;]+)", header)
+    mime_type = mime_match.group(1) if mime_match else "image/png"
+    return mime_type, b64_data
+
+
+def _call_gemini_multimodal(
+    user_message: str,
+    image_data: str,
+    system_prompt: str,
+    chat_history: list,
+    api_key: str,
+    model: str = "gemini-2.0-flash",
+    base_url: str = "",
+    timeout: int = 60,
+) -> str:
+    if not base_url:
+        base_url = "https://generativelanguage.googleapis.com/v1beta"
+
+    print(f"[MULTIMODAL] Calling Gemini multimodal with model: {model}")
+
+    contents = []
+    for msg in chat_history:
+        role = msg.get("role", "")
+        content = msg.get("content", "")
+        if not content and not msg.get("image_data"):
+            continue
+        gemini_role = "model" if role == "assistant" else "user"
+        parts = []
+        if content:
+            parts.append({"text": content})
+        if msg.get("image_data"):
+            mime, b64 = _parse_data_uri(msg["image_data"])
+            parts.append({"inlineData": {"mimeType": mime, "data": b64}})
+        if parts:
+            contents.append({"role": gemini_role, "parts": parts})
+
+    mime, b64 = _parse_data_uri(image_data)
+    contents.append({
+        "role": "user",
+        "parts": [
+            {"text": user_message},
+            {"inlineData": {"mimeType": mime, "data": b64}},
+        ],
+    })
+
+    payload: dict = {"contents": contents}
+    if system_prompt:
+        payload["system_instruction"] = {"parts": [{"text": system_prompt}]}
+
+    response = requests.post(
+        f"{base_url}/models/{model}:generateContent?key={api_key}",
+        json=payload,
+        timeout=timeout,
+    )
+
+    if response.status_code != 200:
+        raise RuntimeError(
+            f"Gemini multimodal API HTTP {response.status_code}: "
+            f"{_short_error_detail(response.text[:500])}"
+        )
+
+    data = response.json()
+    prompt_feedback = data.get("promptFeedback") or {}
+    block_reason = prompt_feedback.get("blockReason") or ""
+    if block_reason:
+        raise RuntimeError(
+            f"Gemini blocked the request: {block_reason}"
+        )
+
+    candidates = data.get("candidates") or []
+    if not candidates:
+        raise RuntimeError("Gemini multimodal returned 200 but candidates list was empty.")
+
+    finish_reason = candidates[0].get("finishReason") or ""
+    if finish_reason not in ("STOP", ""):
+        print(f"[MULTIMODAL] Gemini finishReason: {finish_reason}")
+
+    parts = (candidates[0].get("content") or {}).get("parts") or []
+    if not parts:
+        raise RuntimeError("Gemini multimodal returned 200 but parts list was empty.")
+
+    text = parts[0].get("text", "")
+    if not isinstance(text, str) or not text.strip():
+        raise RuntimeError("Gemini multimodal returned 200 but text was empty.")
+
+    print("[MULTIMODAL] Gemini multimodal success")
+    return text.strip()
+
+
+def _call_openai_vision(
+    messages: list,
+    model: str,
+    api_key: str,
+    base_url: str,
+    timeout: int = 60,
+) -> str:
+    provider_label = "OpenRouter Vision"
+    print(f"[MULTIMODAL] Calling {provider_label} with model: {model}")
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": model,
+        "messages": messages,
+        "max_tokens": 2048,
+    }
+
+    response = requests.post(
+        f"{base_url}/chat/completions",
+        headers=headers,
+        json=payload,
+        timeout=timeout,
+    )
+
+    if response.status_code != 200:
+        raise RuntimeError(
+            f"{provider_label} API HTTP {response.status_code}: "
+            f"{_short_error_detail(response.text[:500])}"
+        )
+
+    data = response.json()
+    choices = data.get("choices") or []
+    if not choices:
+        raise RuntimeError(f"{provider_label} returned 200 but choices list was empty.")
+
+    content = (choices[0].get("message") or {}).get("content", "")
+    if not isinstance(content, str) or not content.strip():
+        raise RuntimeError(f"{provider_label} returned 200 but content was empty.")
+
+    print(f"[MULTIMODAL] {provider_label} success")
+    return content.strip()
+
+
 def _call_llm_cluster(
     messages: list,
     timeout: int = 30,
@@ -888,6 +1027,97 @@ class MarcusBrain:
             print(f"[ERROR] Title generation failed: {exc}")
             return ""
 
+    def _respond_multimodal(self, chat_id: str, user_message: str, image_data: str) -> str:
+        system_prompt = self._build_multimodal_system_prompt()
+        history = []
+        try:
+            history = (self.memory.get_chat(chat_id) or [])[-10:]
+        except Exception as exc:
+            print(f"[MULTIMODAL] Failed to load chat history: {exc}")
+        history = [m for m in history if m.get("role") != "system"]
+        if history and history[-1].get("role") == "user":
+            history = history[:-1]
+
+        config = get_config()
+
+        gemini_key = config.gemini_api_key
+        if gemini_key:
+            gemini_model = config.gemini_model or "gemini-2.0-flash"
+            gemini_url = config.gemini_base_url or ""
+            try:
+                print("[MULTIMODAL] Primary path: Gemini multimodal")
+                return _call_gemini_multimodal(
+                    user_message, image_data, system_prompt,
+                    history, gemini_key, gemini_model, gemini_url, timeout=60,
+                )
+            except Exception as exc:
+                print(f"[MULTIMODAL] Gemini failed: {_short_error_detail(str(exc))}. "
+                      f"Falling back to OpenRouter vision.")
+
+        openrouter_key = config.openrouter_api_key
+        if openrouter_key:
+            openrouter_model = config.openrouter_model or "openai/gpt-4o-mini"
+            openrouter_url = config.openrouter_base_url or "https://openrouter.ai/api/v1"
+            try:
+                print("[MULTIMODAL] Fallback path: OpenRouter vision")
+                msgs = self._groq_messages(chat_id, user_message, image_data)
+                return _call_openai_vision(
+                    msgs, openrouter_model, openrouter_key,
+                    openrouter_url, timeout=60,
+                )
+            except Exception as exc:
+                print(f"[MULTIMODAL] OpenRouter vision failed: {_short_error_detail(str(exc))}.")
+
+        raise RuntimeError("No multimodal provider available (Gemini and OpenRouter both unavailable).")
+
+    def _stream_respond_multimodal(self, chat_id: str, user_message: str, image_data: str):
+        yield {"intent": "analyzing_image", "message": "Analyzing your image..."}
+        try:
+            reply = self._respond_multimodal(chat_id, user_message, image_data)
+            yield reply
+        except Exception as exc:
+            error_msg = f"I apologize, but I'm having trouble processing your image right now."
+            print(f"[MULTIMODAL STREAM] All providers failed: {exc}")
+            yield error_msg
+
+    def _build_multimodal_system_prompt(self) -> str:
+        try:
+            self.memory.reload()
+            long_term = self.memory.get_full_memory() or {}
+            user_name = self.memory.get_user_name() or ""
+            identity_str = json.dumps(long_term.get("identity", {}))
+            prefs_str = json.dumps(long_term.get("preferences", {}))
+        except Exception as exc:
+            print(f"[ERROR] Failed to load multimodal prompt context: {exc}")
+            user_name = ""
+            identity_str = "{}"
+            prefs_str = "{}"
+
+        creator_context = ""
+        try:
+            creator_context = self.memory.load_creator_context()
+        except Exception:
+            pass
+
+        now = datetime.now()
+        time_anchor = f"Current date and time: {now.strftime('%A, %B %d, %Y at %I:%M %p %Z')}\n\n"
+        system_with_context = (
+            time_anchor
+            + _CHAT_SYSTEM_PROMPT
+            + "\n\nCharacter profile:\n"
+            + self.profile.to_prompt()
+            + "\n\nKnown user context, if useful:\n"
+            + f"User name: {user_name}\n"
+            + f"Identity: {identity_str}\n"
+            + f"Preferences: {prefs_str}\n"
+            + (f"\nCreator-authored instructions:\n{creator_context}\n" if creator_context else "")
+            + "\n\nThe user has attached an image. Analyze the visual content thoroughly "
+            "and incorporate what you see into your response. If the image contains "
+            "text, read it and respond appropriately. If it contains objects, people, "
+            "or scenes, describe or discuss them naturally."
+        )
+        return system_with_context
+
     def respond(self, message: str, chat_id: str = "", image_data: str = "") -> str:
         try:
             self.memory.load_memory(self.profile.key)
@@ -911,6 +1141,19 @@ class MarcusBrain:
                 self.memory.add_message(cid, "user", user_msg, timestamp, image_data=image_data)
             except Exception as exc:
                 print(f"[ERROR] Memory add_message (user) failed: {exc}")
+
+            if image_data:
+                reply = self._respond_multimodal(cid, message, image_data)
+                try:
+                    self.memory.add_message(cid, "assistant", reply, timestamp)
+                except Exception as exc:
+                    print(f"[ERROR] Memory add_message (assistant) failed: {exc}")
+                try:
+                    self.memory.save_memory()
+                except Exception as exc:
+                    print(f"[ERROR] Memory save failed: {exc}")
+                self.last_response_meta = self._metadata(False, True, "multimodal_gemini")
+                return reply
 
             try:
                 if self.memory.long_term.get("creator") and message:
@@ -1003,6 +1246,25 @@ class MarcusBrain:
                 self.memory.add_message(cid, "user", user_msg, timestamp, image_data=image_data)
             except Exception as exc:
                 print(f"[ERROR] Memory add_message (user) failed: {exc}")
+
+            if image_data:
+                full_reply = ""
+                for token in self._stream_respond_multimodal(cid, message, image_data):
+                    if isinstance(token, dict):
+                        yield token
+                    elif token:
+                        full_reply += token
+                        yield token
+                try:
+                    self.memory.add_message(cid, "assistant", full_reply or "No response", timestamp)
+                except Exception as exc:
+                    print(f"[ERROR] Memory add_message (assistant) failed: {exc}")
+                try:
+                    self.memory.save_memory()
+                except Exception as exc:
+                    print(f"[ERROR] Memory save failed: {exc}")
+                self.last_response_meta = self._metadata(False, True, "multimodal_gemini")
+                return
 
             try:
                 if self.memory.long_term.get("creator") and message:
