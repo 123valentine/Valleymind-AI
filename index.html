@@ -2289,9 +2289,7 @@ window.send = async function () {
             renderSessionList();
         }
 
-        if (currentChatId && text && fullReply) {
-            await persistMessagePair(currentChatId, text, fullReply);
-        }
+        /* Messages already persisted by backend during stream — no duplicate save needed */
         if (currentChatId) saveLastChatId(currentChatId);
         /* refresh sessions once — dedup guard prevents double fetch */
         if (!window._sessionsRefreshPending) {
@@ -2338,9 +2336,7 @@ window.send = async function () {
             }
             addMessage(reply, "ai");
 
-            if (currentChatId && text && reply) {
-                await persistMessagePair(currentChatId, text, reply);
-            }
+            /* Backend already persisted messages in /chat — no duplicate save needed */
             if (currentChatId) saveLastChatId(currentChatId);
             if (!window._sessionsRefreshPending) {
                 window._sessionsRefreshPending = true;
