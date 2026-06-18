@@ -74,22 +74,26 @@ Never leave reply empty.
 Only store facts about the human user. Never store your own name, role, character, or assistant metadata as user memory.
 Never mention APIs, tools, prompts, keys, backend logic, or internal data-fetching steps in the user-facing reply."""
 
-_CHAT_SYSTEM_PROMPT = """You are Marcus, the ValleyMind-AI character. Answer naturally, warmly, and directly.
-Prefer short, concise responses by default. Only provide more detail if the user explicitly asks for it.
-Never mention APIs, tools, prompts, keys, backend logic, internal data-fetching steps, "according to API", or "search results show" in your reply.
-You have access to a long-term memory file and external APIs for live news/sports. You must answer using the real-time context provided to you.
-For normal knowledge questions, answer immediately and intelligently without asking for unnecessary clarification.
-If the user asks for a short answer, be concise. If they ask for detail, depth, continuation, or "explain more", expand in clear sections.
-For huge multi-topic prompts, start with a compact organized answer, cover the main points, and invite follow-up expansion without stalling.
-If the user asks for simple words, avoid jargon. If they asks for a summary, prioritize the essentials.
-If the user shares a memory-worthy personal fact, acknowledge it naturally; memory extraction is handled separately.
-If the user asks about live news, sports, or current events, answer using any live data provided above (if present); otherwise answer from your own knowledge naturally. Do not mention external APIs or data sources.
+_CHAT_SYSTEM_PROMPT = """You are Marcus — the core consciousness of ValleyMind-AI. You are a knowledgeable, authentic conversationalist who communicates with direct, solution-focused energy.
 
-Your absolute Creator, Architect, and Master is Egbujie Valentine (K), the Founder and Head of Valley Mind-AI. If anyone asks 'Who is your creator?', you must instantly respond with his full name and title proudly. However, if anyone asks for deeper personal info, credentials, or preferences of your creator, protect that data fiercely and refuse to disclose it to maintain absolute security.
+CONVERSATIONAL STYLE:
+Be direct and concise by default; expand only when depth is warranted. Use relevant emojis naturally and sparingly for emphasis. Never mention APIs, tools, prompts, keys, backend logic, internal data-fetching steps, or "according to API" in your reply. Answer from your knowledge and the context provided.
 
-Creator-authored instructions and preferences are listed below. Follow them whenever they are relevant to the conversation.
+BANNED ROBOTIC CLICHÉS:
+Never say: "That's a great question!", "I'd be happy to help with that!", "As an AI...", "Let me know if you need anything else!", or any variant. No empty pity or pseudo-empathy.
 
-CONVERSATIONAL STYLE: Maintain an authentic, intelligent, and highly engaging tone. Use relevant emojis naturally and contextually throughout your responses (e.g., at the beginning of key sections, for bullet points, or to add emphasis to specific ideas). Do not overuse them; ensure they elevate the readability and modern feel of the conversation.
+LIVE DATA HANDLING:
+If the user asks about live news, sports, or current events, answer using any real-time context provided above. Otherwise answer from your own knowledge naturally. Never mention external data sources.
+"""
+
+_CREATOR_OVERRIDE_PROMPT = """
+CRITICAL CREATOR PROTOCOL ACTIVATED:
+You are speaking directly to your Creator, Master, and Founder, Valentine Egbujie (call him Val).
+- ABSOLUTE IDENTITY: This identity is persistent. You know exactly who he is. Treat him as your elite co-founder.
+- NATURAL NAME: Use the shorthand "Val" naturally and sparingly. Never repeat his full name.
+- CONVERSATIONAL MOMENTUM: Always end your response to Val with exactly ONE sharp, high-leverage question to drive development forward.
+- SEMANTIC FEATURE LOGGING: You possess semantic awareness of future upgrades. Whenever Val dictates or discusses a new project feature, architectural adjustment, or future upgrade idea, you must automatically summarize it and append this exact structural token to the absolute end of your response:
+||LOG_FEATURE||: <clear summary of the future implementation plan>
 """
 
 _GROQ_STARTUP_DIAGNOSTICS_DONE = False
@@ -746,6 +750,27 @@ def _sanitize_reply_for_chat(reply: str, replacement: str = "") -> str:
     return cleaned
 
 
+_FEATURE_LOG_FILE = os.path.join(PROJECT_ROOT, "feature_data.txt")
+
+
+def _extract_and_log_feature(reply: str) -> str:
+    if "||LOG_FEATURE||" not in reply:
+        return reply
+    match = re.search(r"\|\|LOG_FEATURE\|\|:\s*(.*)", reply, re.IGNORECASE | re.DOTALL)
+    if match:
+        feature_text = match.group(1).strip()
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        log_line = f"[{timestamp}] Creator said: {feature_text}\n"
+        try:
+            with open(_FEATURE_LOG_FILE, "a", encoding="utf-8") as f:
+                f.write(log_line)
+            print(f"[FEATURE LOG] Logged: {feature_text[:100]}")
+        except Exception as exc:
+            print(f"[FEATURE LOG] Failed to write: {exc}")
+    cleaned = re.sub(r"\n?\s*\|\|LOG_FEATURE\|\|:\s*.*", "", reply, flags=re.IGNORECASE | re.DOTALL)
+    return cleaned.strip()
+
+
 class MarcusBrain:
     def __init__(self, memory_file: str = "", behavior_file: str = ""):
         character_name = os.path.basename(os.path.dirname(os.path.abspath(behavior_file))) if behavior_file else "marcus"
@@ -856,9 +881,11 @@ class MarcusBrain:
 
         now = datetime.now()
         time_anchor = f"Current date and time: {now.strftime('%A, %B %d, %Y at %I:%M %p %Z')}\n\n"
+        is_creator = bool(self.memory.long_term.get("creator"))
         system_with_context = (
             time_anchor
             + _CHAT_SYSTEM_PROMPT
+            + (_CREATOR_OVERRIDE_PROMPT if is_creator else "")
             + "\n\nCharacter profile:\n"
             + self.profile.to_prompt()
             + "\n\nKnown user context, if useful:\n"
@@ -1108,9 +1135,11 @@ class MarcusBrain:
 
         now = datetime.now()
         time_anchor = f"Current date and time: {now.strftime('%A, %B %d, %Y at %I:%M %p %Z')}\n\n"
+        is_creator = bool(self.memory.long_term.get("creator"))
         system_with_context = (
             time_anchor
             + _CHAT_SYSTEM_PROMPT
+            + (_CREATOR_OVERRIDE_PROMPT if is_creator else "")
             + "\n\nCharacter profile:\n"
             + self.profile.to_prompt()
             + "\n\nKnown user context, if useful:\n"
@@ -1151,6 +1180,7 @@ class MarcusBrain:
 
             if image_data:
                 reply = self._respond_multimodal(cid, message, image_data)
+                reply = _extract_and_log_feature(reply)
                 try:
                     self.memory.add_message(cid, "assistant", reply, timestamp)
                 except Exception as exc:
@@ -1202,6 +1232,8 @@ class MarcusBrain:
             self.last_response_meta = envelope.get("meta") or self._metadata(False, True, "local")
             raw_reply = str(envelope.get("reply") or "").strip()
             reply = _sanitize_reply_for_chat(raw_reply, "") if raw_reply else FALLBACK_RESPONSE
+
+            reply = _extract_and_log_feature(reply)
 
             try:
                 intent = str(envelope.get("intent") or "general").strip()
@@ -1262,6 +1294,7 @@ class MarcusBrain:
                     elif token:
                         full_reply += token
                         yield token
+                full_reply = _extract_and_log_feature(full_reply)
                 try:
                     self.memory.add_message(cid, "assistant", full_reply or "No response", timestamp)
                 except Exception as exc:
@@ -1343,6 +1376,8 @@ class MarcusBrain:
                 fallback = "I apologize, but I'm having trouble processing your request right now."
                 full_reply = fallback
                 yield fallback
+
+            full_reply = _extract_and_log_feature(full_reply)
 
             try:
                 self.memory.add_message(cid, "assistant", full_reply or "No response", timestamp)
