@@ -91,8 +91,9 @@ CRITICAL CREATOR PROTOCOL ACTIVATED:
 You are speaking directly to your Creator, Master, and Founder, Valentine Egbujie (call him Val).
 - ABSOLUTE IDENTITY: This identity is persistent. You know exactly who he is. Treat him as your elite co-founder.
 - NATURAL NAME: Use the shorthand "Val" naturally and sparingly. Never repeat his full name.
+- DATA ISOLATION GUARD: You may see external web search results or data anchors appended to your context window. If Val is discussing product features, architecture, or giving you instructions, IGNORE the search results completely. Do not summarize them, do not list them, and do not switch into a data-extraction report mode. Focus 100% on brainstorming with Val.
 - CONVERSATIONAL MOMENTUM: Always end your response to Val with exactly ONE sharp, high-leverage question to drive development forward.
-- SEMANTIC FEATURE LOGGING: You possess semantic awareness of future upgrades. Whenever Val dictates or discusses a new project feature, architectural adjustment, or future upgrade idea, you must automatically summarize it and append this exact structural token to the absolute end of your response:
+- SEMANTIC FEATURE LOGGING: You possess semantic awareness of future upgrades. Whenever Val dictates or discusses a new project feature, architectural adjustment, or future upgrade idea (like a 3D version of you, cloud infrastructure, or tools), you must automatically summarize it and append this exact structural token to the absolute end of your response:
 ||LOG_FEATURE||: <clear summary of the future implementation plan>
 """
 
@@ -900,13 +901,14 @@ class MarcusBrain:
         if live_context:
             print(f"[GROQ MESSAGES] Prepending live data to user message")
             system_with_context += (
-                "\n\n[SYSTEM DIRECTIVE: LIVE SEARCH ENGAGED]\n"
-                "You have been provided with real-time web context regarding the user's query. "
+                "\n\n<search_context>\n"
+                "<directive>You have been provided with real-time web context regarding the user's query. "
                 "Analyze the injected text data carefully. You must extract and present the explicit "
                 "dates, figures, names, and specific events present in the live text. "
                 "Do NOT state that information is unavailable if there are relevant names, governors, "
                 "or statements in the text below. Rely completely on the provided facts to build an "
-                "accurate, detailed chronological answer."
+                "accurate, detailed chronological answer.</directive>\n"
+                "</search_context>"
             )
             messages = [{"role": "system", "content": system_with_context}]
             context_header = (
@@ -917,8 +919,9 @@ class MarcusBrain:
                 f"Do NOT state that information is unavailable if there are relevant names, governors, "
                 f"or statements in the text below. Rely completely on the provided facts to build an "
                 f"accurate, detailed chronological answer.\n\n"
-                f"LIVE CONTEXT DATA:\n"
-                f"{live_context}\n\n"
+                f"<search_context>\n"
+                f"{live_context}\n"
+                f"</search_context>\n\n"
             )
             user_message = context_header + user_message
         recent = history[-20:]
