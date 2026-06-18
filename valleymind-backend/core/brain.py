@@ -1333,7 +1333,35 @@ class MarcusBrain:
                     print(f"[ERROR] Auto-title failed: {exc}")
 
             live_ctx = ""
-            intent = classify_live_request(message)
+
+            # ── Semantic Intent Routing for Creator ───────────────────
+            is_creator = bool(self.memory.long_term.get("creator"))
+            intent = "none"
+
+            if is_creator:
+                try:
+                    classification_prompt = [
+                        {"role": "system", "content": (
+                            "Analyze the creator's message. Classify it into one of two semantic intents:\n"
+                            "1. 'internal_roadmap': Brainstorming, future feature planning, app expansion, architecture, or code updates.\n"
+                            "2. 'external_search': Asking for live outside world info, current news, real-time sports scores, or web lookups.\n"
+                            "Respond with exactly one word: either 'internal_roadmap' or 'external_search'. No punctuation, no extra text."
+                        )},
+                        {"role": "user", "content": message}
+                    ]
+                    semantic_intent = _call_groq(classification_prompt, model_name=get_latest_groq_model(), timeout=5).strip().lower()
+                    print(f"[SEMANTIC INTENT] Creator utterance classified as: {semantic_intent}")
+
+                    if "internal_roadmap" in semantic_intent:
+                        intent = "none"
+                    else:
+                        intent = "news"
+                except Exception as exc:
+                    print(f"[SEMANTIC INTENT] Evaluation failed, falling back to general classifier: {exc}")
+                    intent = classify_live_request(message)
+            else:
+                intent = classify_live_request(message)
+
             if intent == "none":
                 print(f"[FAST-PATH] LLM classified intent '{intent}' — conversational, no search")
             else:
