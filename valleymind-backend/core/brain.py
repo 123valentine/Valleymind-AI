@@ -899,30 +899,39 @@ class MarcusBrain:
         messages = [{"role": "system", "content": system_with_context}]
 
         if live_context:
-            print(f"[GROQ MESSAGES] Prepending live data to user message")
-            system_with_context += (
-                "\n\n<search_context>\n"
-                "<directive>You have been provided with real-time web context regarding the user's query. "
-                "Analyze the injected text data carefully. You must extract and present the explicit "
-                "dates, figures, names, and specific events present in the live text. "
-                "Do NOT state that information is unavailable if there are relevant names, governors, "
-                "or statements in the text below. Rely completely on the provided facts to build an "
-                "accurate, detailed chronological answer.</directive>\n"
-                "</search_context>"
-            )
-            messages = [{"role": "system", "content": system_with_context}]
-            context_header = (
-                f"[SYSTEM DIRECTIVE: LIVE SEARCH ENGAGED]\n"
-                f"You have been provided with real-time web context regarding the user's query. "
-                f"Analyze the injected text data carefully. You must extract and present the explicit "
-                f"dates, figures, names, and specific events present in the live text. "
-                f"Do NOT state that information is unavailable if there are relevant names, governors, "
-                f"or statements in the text below. Rely completely on the provided facts to build an "
-                f"accurate, detailed chronological answer.\n\n"
-                f"<search_context>\n"
-                f"{live_context}\n"
-                f"</search_context>\n\n"
-            )
+            if is_creator:
+                print(f"[GROQ MESSAGES] Prepending passive reference context for Creator")
+                system_with_context += (
+                    "\n\n<search_context>\n"
+                    "The following real-time web context is provided for background reference only. "
+                    "Use these facts naturally IF they directly answer Val's question. Otherwise, "
+                    "ignore them. Do NOT switch into a data-extraction report mode. Focus 100% on "
+                    "your co-founder persona, answer Val directly, and ensure you append your "
+                    "||LOG_FEATURE|| token if he is discussing future implementations.\n"
+                    f"{live_context}\n"
+                    "</search_context>"
+                )
+                messages = [{"role": "system", "content": system_with_context}]
+                context_header = ""
+            else:
+                print(f"[GROQ MESSAGES] Prepending strict live data directive for standard user")
+                system_with_context += (
+                    "\n\n<search_context>\n"
+                    "<directive>You have been provided with real-time web context regarding the user's query. "
+                    "Analyze the injected text data carefully. You must extract and present the explicit "
+                    "dates, figures, names, and specific events present in the live text. "
+                    "Do NOT state that information is unavailable if there are relevant names, governors, "
+                    "or statements in the text below. Rely completely on the provided facts to build an "
+                    "accurate, detailed chronological answer.</directive>\n"
+                    "</search_context>"
+                )
+                messages = [{"role": "system", "content": system_with_context}]
+                context_header = (
+                    f"[SYSTEM DIRECTIVE: LIVE SEARCH ENGAGED]\n"
+                    f"Analyze the text data below to answer the user's request explicitly.\n\n"
+                    f"<search_context>\n{live_context}\n</search_context>\n\n"
+                )
+
             user_message = context_header + user_message
         recent = history[-20:]
         if recent and recent[-1].get("role") == "user":
