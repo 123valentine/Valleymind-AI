@@ -749,6 +749,103 @@ def login():
     })
 
 
+@app.route("/api/auth/google", methods=["POST"])
+def google_auth():
+    data = request.get_json(silent=True) or {}
+    credential = str(data.get("credential") or "").strip()
+
+    if not credential:
+        return jsonify({"status": "error", "message": "Credential token is required"}), 400
+
+    google_client_id = os.getenv("GOOGLE_CLIENT_ID", "").strip()
+    if not google_client_id:
+        return jsonify({"status": "error", "message": "Google auth is not configured"}), 500
+
+    try:
+        from google.auth.transport import requests as google_requests
+        from google.oauth2 import id_token
+
+        idinfo = id_token.verify_oauth2_token(
+            credential,
+            google_requests.Request(),
+            google_client_id,
+        )
+    except ValueError as exc:
+        return jsonify({"status": "error", "message": f"Invalid or expired token: {exc}"}), 400
+    except Exception as exc:
+        return jsonify({"status": "error", "message": f"Token verification failed: {exc}"}), 400
+
+    google_id = str(idinfo.get("sub") or "")
+    email = str(idinfo.get("email") or "").strip().lower()
+    name = str(idinfo.get("name") or email.split("@")[0] if email else "User")
+    picture = str(idinfo.get("picture") or "")
+
+    if not email:
+        return jsonify({"status": "error", "message": "Email not provided by Google"}), 400
+    if not idinfo.get("email_verified"):
+        return jsonify({"status": "error", "message": "Google email is not verified"}), 400
+
+    user_id = _safe_user_id(email)
+    is_creator = _is_creator(email)
+
+    with _users_lock:
+        users = _load_users()
+        user = users.get(email)
+        if user:
+            user["google_id"] = google_id
+            if name:
+                user["name"] = name
+            if picture:
+                user["picture"] = picture
+        else:
+            users[email] = {
+                "user_id": user_id,
+                "google_id": google_id,
+                "name": name,
+                "picture": picture,
+                "email_verified": True,
+                "auth_method": "google",
+            }
+        if is_creator:
+            users[email]["identity_name"] = CREATOR_NAME
+            users[email]["title"] = CREATOR_TITLE
+        _save_users(users)
+
+    session.clear()
+    session.permanent = True
+    session["user_id"] = user_id
+    session["email"] = email
+    session["is_creator"] = is_creator
+    session["user"] = {"id": user_id, "email": email, "is_creator": is_creator}
+    if is_creator:
+        session["user"]["identity_name"] = CREATOR_NAME
+        session["user"]["title"] = CREATOR_TITLE
+
+    token = secrets.token_urlsafe(32)
+    _auth_tokens[token] = {"user_id": user_id, "email": email, "is_creator": is_creator}
+
+    marcus = load_marcus(user_id)
+    if marcus:
+        _initialize_user_memory(marcus, email)
+        if is_creator:
+            try:
+                marcus.memory.set_creator_identity(CREATOR_NAME, CREATOR_TITLE)
+            except Exception as exc:
+                print(f"[WARN] Failed to set creator identity in memory: {exc}")
+
+    return jsonify({
+        "status": "success",
+        "authenticated": True,
+        "email": email,
+        "name": name,
+        "picture": picture,
+        "google_id": google_id,
+        "character": "marcus",
+        "session_token": token,
+        "is_creator": is_creator,
+    })
+
+
 @app.route("/logout", methods=["POST"])
 @app.route("/auth/logout", methods=["POST"])
 def logout():

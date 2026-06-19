@@ -7,6 +7,7 @@
 <link rel="icon" type="image/png" href="/static/valleymind-logo.png">
 <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
 <script src="https://unpkg.com/lucide@latest"></script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script id="tailwind-config">
@@ -264,6 +265,12 @@
       style="border:none;border-radius:12px;background:#00d4ff;color:#003642;font-weight:800;padding:12px 16px;cursor:pointer;text-transform:uppercase;letter-spacing:0.12em;font-family:'Space Grotesk',sans-serif;">
       Login
     </button>
+    <div style="display:flex;align-items:center;gap:12px;margin:4px 0;">
+      <div style="flex:1;height:1px;background:rgba(255,255,255,0.08);"></div>
+      <span style="color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:0.1em;">or</span>
+      <div style="flex:1;height:1px;background:rgba(255,255,255,0.08);"></div>
+    </div>
+    <div id="googleSignInDiv" style="display:flex;justify-content:center;"></div>
     <a href="#" id="forgotPasswordLink" style="font-size:0.85rem;margin-top:10px;display:block;color:#00d4ff;text-align:center;text-decoration:none;cursor:pointer;">Forgot Password?</a>
     <p id="loginError" style="min-height:18px;color:#ff6b7a;font-size:12px;"></p>
   </form>
@@ -2099,6 +2106,30 @@ async function login(event) {
         if (status) status.textContent = "Memory Online";
     } catch (err) {
         if (error) error.textContent = err.message || "Login failed";
+    }
+}
+
+async function handleCredentialResponse(response) {
+    const error = document.getElementById("loginError");
+    if (error) error.textContent = "";
+    try {
+        const res = await apiFetch("/api/auth/google", {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ credential: response.credential })
+        });
+        const data = await res.json();
+        if (!res.ok || data.status !== "success") {
+            throw new Error(data.message || "Google login failed");
+        }
+        setAuthToken(data.session_token || "");
+        const authenticated = await checkSession();
+        if (!authenticated) throw new Error("Session validation failed");
+        const status = document.getElementById("statusText");
+        if (status) status.textContent = "Memory Online";
+    } catch (err) {
+        if (error) error.textContent = err.message || "Google login failed";
     }
 }
 
