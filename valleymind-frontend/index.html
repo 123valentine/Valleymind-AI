@@ -14,7 +14,7 @@
 <script src="https://unpkg.com/lucide@latest"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script src="https://accounts.google.com/gsi/client" defer></script>
 <script id="tailwind-config">
   tailwind.config = {
     darkMode: "class",
@@ -228,23 +228,7 @@
       <span style="color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:0.1em;white-space:nowrap;">or continue with</span>
       <div style="flex:1;height:1px;background:rgba(255,255,255,0.1);"></div>
     </div>
-    <div id="g_id_onload"
-         data-client_id="113174109452-59fddouc2oumonhh2mrqv7sapc4retq2.apps.googleusercontent.com"
-         data-context="signin"
-         data-ux_mode="popup"
-         data-callback="handleGoogleLogin"
-         data-auto_prompt="false"
-         data-itp_support="true">
-    </div>
-    <div class="g_id_signin"
-         data-type="standard"
-         data-shape="rectangular"
-         data-theme="outline"
-         data-text="sign_in_with"
-         data-size="large"
-         data-logo_alignment="left"
-         style="display:flex;justify-content:center;min-height:50px;">
-    </div>
+    <div id="googleButtonWrap" style="display:flex;justify-content:center;min-height:50px;"></div>
     <a href="#" id="forgotPasswordLink" style="font-size:0.85rem;margin-top:10px;display:block;color:#00d4ff;text-align:center;text-decoration:none;cursor:pointer;">Forgot Password?</a>
     <p id="loginError" style="min-height:18px;color:#ff6b7a;font-size:12px;"></p>
   </form>
@@ -1506,6 +1490,7 @@ async function checkSession() {
             authCheckComplete = true;
             const status = document.getElementById("statusText");
             if (status) status.textContent = "Login Required";
+            renderGoogleButton();
             return false;
         }
 
@@ -1526,6 +1511,7 @@ async function checkSession() {
             if (login) login.style.display = "flex";
             const error = document.getElementById("loginError");
             if (error) error.textContent = "Could not load session memory";
+            renderGoogleButton();
             return false;
         }
 
@@ -1564,6 +1550,7 @@ async function checkSession() {
         if (login) login.style.display = "flex";
         const error = document.getElementById("loginError");
         if (error) error.textContent = err.message || "Backend unavailable";
+        renderGoogleButton();
         return false;
     }
 }
@@ -1686,6 +1673,34 @@ async function login(event) {
     } catch (err) {
         if (error) error.textContent = err.message || "Login failed";
     }
+}
+
+var _gsiReady = false;
+
+function renderGoogleButton() {
+    var wrap = document.getElementById("googleButtonWrap");
+    if (!wrap) return;
+    if (typeof google === "undefined" || !google.accounts || !google.accounts.id) {
+        setTimeout(renderGoogleButton, 200);
+        return;
+    }
+    if (!_gsiReady) {
+        google.accounts.id.initialize({
+            client_id: "113174109452-59fddouc2oumonhh2mrqv7sapc4retq2.apps.googleusercontent.com",
+            callback: handleGoogleLogin,
+            auto_prompt: false,
+            itp_support: true,
+        });
+        _gsiReady = true;
+    }
+    google.accounts.id.renderButton(wrap, {
+        type: "standard",
+        shape: "rectangular",
+        theme: "outline",
+        text: "sign_in_with",
+        size: "large",
+        logo_alignment: "left",
+    });
 }
 
 async function handleGoogleLogin(response) {
