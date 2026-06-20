@@ -48,8 +48,9 @@ MIDDLEWARE_OUTPUT_PATTERNS = [
 
 _FALLBACK_ENVELOPE = {
     "reply": FALLBACK_RESPONSE,
-    "intent": "general",
-    "entity": "",
+    "should_remember": False,
+    "memory_type": "other",
+    "summary": "",
     "value": "",
 }
 
@@ -59,16 +60,14 @@ Use exactly this structure:
 
 {
   "reply": "<your full natural response to the user>",
-  "intent": "<one of: identity | preference | memory_question | general>",
-  "entity": "<thing being stored, e.g. 'name' or 'favorite_color' - empty string if none>",
-  "value":  "<value to store, e.g. 'Alice' or 'blue' - empty string if none>"
+  "should_remember": true or false,
+  "memory_type": "identity" | "preference" | "decision" | "project_context" | "ongoing_goal" | "other",
+  "summary": "a clear one-sentence statement of the fact, written so it makes sense without the original conversation",
+  "value": "<the actual fact>"
 }
 
-Intent rules:
-- identity: user is sharing info about themselves.
-- preference: user is expressing a like, dislike, or preference.
-- memory_question: user is asking what you remember about them.
-- general: everything else.
+Memory decision rules:
+Decide if this message contains something worth remembering across future conversations — not just relevant to right now. Ask yourself: if the user starts a brand new conversation next week, would they expect me to already know this? This includes: who they are, what they prefer, decisions they've made about their projects, ongoing goals, important constraints, or anything they've explicitly said to remember. Casual remarks, one-off questions, and small talk should NOT be remembered. If should_remember is true, also classify memory_type as the closest fit, but don't force a fact into a category that doesn't quite match — 'other' is fine.
 
 Never leave reply empty.
 Only store facts about the human user. Never store your own name, role, character, or assistant metadata as user memory.
@@ -820,12 +819,15 @@ def _parse_envelope(raw: str) -> dict:
         return _FALLBACK_ENVELOPE.copy()
 
     reply = str(parsed.get("reply") or "").strip()
-    intent = str(parsed.get("intent") or "general").strip()
-    entity = str(parsed.get("entity") or "").strip()
+    should_remember = bool(parsed.get("should_remember", False))
+    memory_type = str(parsed.get("memory_type") or "other").strip()
+    summary = str(parsed.get("summary") or "").strip()
     value = str(parsed.get("value") or "").strip()
 
-    if intent not in {"identity", "preference", "memory_question", "general"}:
-        intent = "general"
+    valid_types = {"identity", "preference", "decision", "project_context", "ongoing_goal", "other"}
+    if memory_type not in valid_types:
+        memory_type = "other"
+
     if not reply:
         for key in ("answer", "content", "message", "text"):
             reply = str(parsed.get(key) or "").strip()
@@ -835,7 +837,7 @@ def _parse_envelope(raw: str) -> dict:
         reply = cleaned
 
     reply = _sanitize_reply_for_chat(reply, FALLBACK_RESPONSE)
-    return {"reply": reply, "intent": intent, "entity": entity, "value": value}
+    return {"reply": reply, "should_remember": should_remember, "memory_type": memory_type, "summary": summary, "value": value}
 
 
 def _is_ui_leak(text: str) -> bool:
@@ -1000,12 +1002,15 @@ class MarcusBrain:
             user_name = self.memory.get_user_name() or ""
             identity_str = json.dumps(long_term.get("identity", {}))
             prefs_str = json.dumps(long_term.get("preferences", {}))
+            facts = long_term.get("facts", [])
+            facts_str = json.dumps(facts, indent=2) if facts else "[]"
         except Exception as exc:
             print(f"[ERROR] Failed to load prompt memory context: {exc}")
             history = []
             user_name = ""
             identity_str = "{}"
             prefs_str = "{}"
+            facts_str = "[]"
 
         creator_context = ""
         try:
@@ -1026,6 +1031,7 @@ class MarcusBrain:
             + f"User name: {user_name}\n"
             + f"Identity: {identity_str}\n"
             + f"Preferences: {prefs_str}\n"
+            + (f"Remembered facts:\n{facts_str}\n" if facts else "")
             + (f"\nCreator-authored instructions:\n{creator_context}\n" if creator_context else "")
         )
 
@@ -1162,11 +1168,12 @@ class MarcusBrain:
             print(f"[CONTINUATION] Query expansion failed: {exc}")
         return user_message
 
-    def _envelope(self, reply: str, meta: dict, intent: str = "general", entity: str = "", value: str = "") -> dict:
+    def _envelope(self, reply: str, meta: dict, should_remember: bool = False, memory_type: str = "other", summary: str = "", value: str = "") -> dict:
         return {
             "reply": _sanitize_reply_for_chat(reply, ""),
-            "intent": intent,
-            "entity": entity,
+            "should_remember": should_remember,
+            "memory_type": memory_type,
+            "summary": summary,
             "value": value,
             "meta": meta,
         }
@@ -1265,11 +1272,14 @@ class MarcusBrain:
             user_name = self.memory.get_user_name() or ""
             identity_str = json.dumps(long_term.get("identity", {}))
             prefs_str = json.dumps(long_term.get("preferences", {}))
+            facts = long_term.get("facts", [])
+            facts_str = json.dumps(facts, indent=2) if facts else "[]"
         except Exception as exc:
             print(f"[ERROR] Failed to load multimodal prompt context: {exc}")
             user_name = ""
             identity_str = "{}"
             prefs_str = "{}"
+            facts_str = "[]"
 
         creator_context = ""
         try:
@@ -1290,6 +1300,7 @@ class MarcusBrain:
             + f"User name: {user_name}\n"
             + f"Identity: {identity_str}\n"
             + f"Preferences: {prefs_str}\n"
+            + (f"Remembered facts:\n{facts_str}\n" if facts else "")
             + (f"\nCreator-authored instructions:\n{creator_context}\n" if creator_context else "")
             + "\n\nThe user has attached an image. Analyze the visual content thoroughly "
             "and incorporate what you see into your response. If the image contains "
@@ -1380,13 +1391,14 @@ class MarcusBrain:
             reply = _extract_and_log_feature(reply)
 
             try:
-                intent = str(envelope.get("intent") or "general").strip()
-                entity = str(envelope.get("entity") or "").strip()
-                value = str(envelope.get("value") or "").strip()
-                if intent == "identity" and entity and value:
-                    self.memory.remember_identity(entity, value)
-                elif intent == "preference" and entity and value:
-                    self.memory.remember_preference(entity, value)
+                should_remember = bool(envelope.get("should_remember", False))
+                if should_remember:
+                    memory_type = str(envelope.get("memory_type") or "other").strip()
+                    summary = str(envelope.get("summary") or "").strip()
+                    value = str(envelope.get("value") or "").strip()
+                    if summary:
+                        self.memory.remember_fact(memory_type, summary, value)
+                        print(f"[MEMORY] Remembered fact ({memory_type}): {summary[:100]}")
             except Exception as exc:
                 print(f"[ERROR] Memory extraction/storage skipped: {exc}")
 

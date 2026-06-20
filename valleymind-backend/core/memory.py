@@ -18,6 +18,7 @@ def _fresh_long_term() -> dict:
     return {
         "identity": {},
         "preferences": {},
+        "facts": [],
     }
 
 
@@ -80,7 +81,8 @@ class MemorySystem:
                 md = matches[0].get("metadata", {})
                 identity = json.loads(md.get("identity", "{}"))
                 preferences = json.loads(md.get("preferences", "{}"))
-                return {"identity": identity, "preferences": preferences}
+                facts = json.loads(md.get("facts", "[]"))
+                return {"identity": identity, "preferences": preferences, "facts": facts}
         except Exception as exc:
             print(f"[MEMORY] Pinecone long-term load failed: {exc}")
 
@@ -124,6 +126,7 @@ class MemorySystem:
                 "user_id": self.user_id,
                 "identity": json.dumps(self.long_term.get("identity", {})),
                 "preferences": json.dumps(self.long_term.get("preferences", {})),
+                "facts": json.dumps(self.long_term.get("facts", [])),
             }
             self.pc.upsert_vectors(
                 vectors=[(f"lt_{self.user_id}", vector, metadata)],
@@ -219,6 +222,20 @@ class MemorySystem:
 
     def recall_preference(self, key: str):
         return self.long_term.get("preferences", {}).get(key)
+
+    def remember_fact(self, memory_type: str, summary: str, value: str):
+        if not summary or not isinstance(summary, str):
+            print("[WARNING] remember_fact called without a summary; skipping.")
+            return
+        with self._long_term_lock:
+            facts = self.long_term.setdefault("facts", [])
+            facts.append({
+                "memory_type": memory_type or "other",
+                "summary": summary.strip(),
+                "value": (value or "").strip(),
+                "timestamp": datetime.now().isoformat(),
+            })
+            self.save_long_term()
 
     def load_memory(self, user_id: str) -> dict:
         self.user_id = user_id
