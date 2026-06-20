@@ -190,15 +190,18 @@ def classify_live_request(message: str) -> str:
         return "CHAT"
 
     SYSTEM_PROMPT = (
-        "You classify user messages as 'CHAT' or 'SEARCH'.\n\n"
-        "Return 'SEARCH' for any query regarding news, current events, sports "
-        "transfers or scores, technology updates, recent developments, or any "
-        "time-sensitive information.\n"
-        "Return 'CHAT' only for basic greetings, casual conversation, identity "
-        "questions, or static general knowledge that has no dependency on "
-        "current timeline events.\n\n"
-        "Respond with exactly ONE word: either 'CHAT' or 'SEARCH'. "
-        "Do not include punctuation, brackets, or any extra text."
+        "You classify user messages as 'CHAT' or 'SEARCH' based on SEMANTIC INTENT, not keyword matching.\n\n"
+        "Return 'SEARCH' only when the user's actual intent is to find out what is currently true in the real world "
+        "right now — current news, live scores, current prices, who currently holds a position, recent events, "
+        "or anything where the answer could have changed recently and the user wants the current real-world fact.\n\n"
+        "Return 'CHAT' for everything else, including: personal decisions, plans, opinions, strategy questions, "
+        "requests for advice or pushback, hypothetical scenarios, questions about the user's own project or business, "
+        "emotional or relationship topics, technical/coding help, and general knowledge that doesn't change over time.\n\n"
+        "Judge by what the user is actually trying to accomplish, not by whether the message contains a topic word "
+        "that sounds current (AI, money, technology, social media, etc.). A message can mention any trendy topic "
+        "while still being a CHAT — for example, 'should I invest in AI video generation' is CHAT (a decision/opinion request), "
+        "while 'what is the current price of AI video generation tools' is SEARCH (a real-world fact request).\n\n"
+        "Respond with exactly ONE word: CHAT or SEARCH."
     )
 
     try:

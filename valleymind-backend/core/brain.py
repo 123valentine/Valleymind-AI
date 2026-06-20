@@ -1047,21 +1047,20 @@ class MarcusBrain:
                 messages = [{"role": "system", "content": system_with_context}]
                 context_header = ""
             else:
-                print(f"[GROQ MESSAGES] Prepending strict live data directive for standard user")
+                print(f"[GROQ MESSAGES] Prepending passive reference context for standard user")
                 system_with_context += (
                     "\n\n<search_context>\n"
-                    "<directive>You have been provided with real-time web context regarding the user's query. "
-                    "Analyze the injected text data carefully. You must extract and present the explicit "
-                    "dates, figures, names, and specific events present in the live text. "
-                    "Do NOT state that information is unavailable if there are relevant names, governors, "
-                    "or statements in the text below. Rely completely on the provided facts to build an "
-                    "accurate, detailed chronological answer.</directive>\n"
+                    "The following real-time web context is provided for background reference only. "
+                    "Use it as supporting context only — still apply your own reasoning, principles, "
+                    "and honest pushback from the system prompt; don't just summarize the search "
+                    "results. Do NOT state that information is unavailable if there are relevant "
+                    "names, governors, or statements in the text below.\n"
+                    f"{live_context}\n"
                     "</search_context>"
                 )
                 messages = [{"role": "system", "content": system_with_context}]
                 context_header = (
-                    f"[SYSTEM DIRECTIVE: LIVE SEARCH ENGAGED]\n"
-                    f"Analyze the text data below to answer the user's request explicitly.\n\n"
+                    f"[SYSTEM NOTE: Live search data provided as background reference]\n\n"
                     f"<search_context>\n{live_context}\n</search_context>\n\n"
                 )
 
