@@ -242,7 +242,11 @@ Your ENTIRE response must be ONLY the JSON object below. Do not include any expl
 }
 
 Memory decision rules:
-Decide if this message contains something worth remembering across future conversations — not just relevant to right now. Ask yourself: if the user starts a brand new conversation next week, would they expect me to already know this? Casual remarks, one-off questions, and small talk should NOT be remembered. If should_remember is true, also classify memory_type as the closest fit, but don't force a fact into a category that doesn't quite match — 'other' is fine."""
+Decide if this message contains something worth remembering across future conversations — not just relevant to right now. Ask yourself: if the user starts a brand new conversation next week, would they expect me to already know this? Casual remarks, one-off questions, and small talk should NOT be remembered.
+
+Examples of things that SHOULD be remembered: a sports team or brand the user supports, a stated like/dislike, a project decision, a personal fact about their life, a stated goal or plan. Examples of things that should NOT be remembered: a question being asked right now, a request for information, small talk with no lasting fact, a one-time task.
+
+If the user states a personal preference, identity fact, or opinion about themselves — even briefly or casually — lean toward should_remember=true. When genuinely uncertain, prefer remembering over forgetting, since the cost of remembering something minor is low, but the cost of forgetting something the user explicitly stated is high. If should_remember is true, also classify memory_type as the closest fit, but don't force a fact into a category that doesn't quite match — 'other' is fine."""
 
 _GROQ_STARTUP_DIAGNOSTICS_DONE = False
 
