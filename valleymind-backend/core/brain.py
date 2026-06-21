@@ -232,7 +232,7 @@ You are speaking directly to your Creator, Master, and Founder, Valentine Egbuji
 _ENVELOPE_INSTRUCTIONS = """
 
 RESPONSE FORMAT:
-Output a single JSON object with no markdown, no code fences, no explanation. Use exactly this structure:
+Your ENTIRE response must be ONLY the JSON object below. Do not include any explanation, prose, or text before or after the JSON. The very first character of your response must be '{' and the very last character must be '}'. No markdown, no code fences, no formatting of any kind. Use exactly this structure:
 {
   "reply": "<your full natural response to the user>",
   "should_remember": true or false,
@@ -1127,7 +1127,7 @@ class MarcusBrain:
 
     def _try_llm_first(self, chat_id: str, user_message: str, image_data: str = "", live_context: str = "") -> dict:
         try:
-            raw = _call_llm_cluster(self._groq_messages(chat_id, user_message, image_data, live_context=live_context, envelope_mode=True))
+            raw, _ = _call_llm_cluster(self._groq_messages(chat_id, user_message, image_data, live_context=live_context, envelope_mode=True))
             envelope = _parse_envelope(raw)
             reply = str(envelope.get("reply") or "").strip()
             if not reply:
@@ -1178,7 +1178,7 @@ class MarcusBrain:
             )},
         ]
         try:
-            expanded = _call_llm_cluster(messages, timeout=15)
+            expanded, _ = _call_llm_cluster(messages, timeout=15)
             if expanded and len(expanded) > len(user_message):
                 print(f"[CONTINUATION] Expanded '{user_message}' -> '{expanded[:120]}...'")
                 return expanded
