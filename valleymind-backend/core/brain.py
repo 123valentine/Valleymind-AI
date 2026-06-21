@@ -49,9 +49,10 @@ MIDDLEWARE_OUTPUT_PATTERNS = [
 _FALLBACK_ENVELOPE = {
     "reply": FALLBACK_RESPONSE,
     "should_remember": False,
-    "memory_type": "other",
+    "memory_type": "callback",
     "summary": "",
     "value": "",
+    "confidence": 0.0,
 }
 
 _SYSTEM_PROMPT = """You are a ValleyMind-AI character. Stay natural, warm, and conversational.
@@ -236,17 +237,46 @@ Your ENTIRE response must be ONLY the JSON object below. Do not include any expl
 {
   "reply": "<your full natural response to the user>",
   "should_remember": true or false,
-  "memory_type": "identity" | "preference" | "decision" | "project_context" | "ongoing_goal" | "other",
-  "summary": "a clear one-sentence statement of the fact, written so it makes sense without the original conversation",
-  "value": "<the actual fact>"
+  "memory_type": "fact" | "preference" | "project" | "exploration" | "callback",
+  "confidence": 0.0 to 1.0,
+  "summary": "a clear one-sentence statement written so it makes sense without the original conversation",
+  "value": "<the actual fact or context>"
 }
 
-Memory decision rules:
-Decide if this message contains something worth remembering across future conversations — not just relevant to right now. Ask yourself: if the user starts a brand new conversation next week, would they expect me to already know this? Casual remarks, one-off questions, and small talk should NOT be remembered.
+MEMORY TYPES:
+- fact: User asserts something as currently true about themselves ("I am," "I have," "I decided," "I live," "I work as," "I own"). Declarative, no hedging. Save by default if personal.
+- preference: A stated like/dislike, opinion, or taste ("I like," "I prefer," "I'm a fan of," "I don't like"). Save by default.
+- project: An active commitment or plan in motion ("I'm building," "I'm working on," "I'm planning," "I'm creating"). Save by default.
+- exploration: User is actively considering or weighing a decision with real engagement ("thinking about," "considering," "researching," "debating," "weighing"). Only save if it passes the significance + engagement gate below.
+- callback: A meaningful but non-goal-directed musing worth remembering as a human thread ("I wonder," "curious about," "not sure if," "maybe I'll"). Only save if it passes the significance + engagement gate below.
 
-Examples of things that SHOULD be remembered: a sports team or brand the user supports, a stated like/dislike, a project decision, a personal fact about their life, a stated goal or plan. Examples of things that should NOT be remembered: a question being asked right now, a request for information, small talk with no lasting fact, a one-time task.
+CONFIDENCE SCALE:
+- 0.9-1.0: Settled fact or strong preference stated declaratively.
+- 0.7-0.9: Active project or clear preference with engagement.
+- 0.4-0.7: Modestly engaged exploration or recurring topic.
+- 0.1-0.4: Early exploration or callback — tentative, low commitment.
+- 0.0: No memory needed (set should_remember=false).
 
-If the user states a personal preference, identity fact, or opinion about themselves — even briefly or casually — lean toward should_remember=true. When genuinely uncertain, prefer remembering over forgetting, since the cost of remembering something minor is low, but the cost of forgetting something the user explicitly stated is high. If should_remember is true, also classify memory_type as the closest fit, but don't force a fact into a category that doesn't quite match — 'other' is fine."""
+MEMORY DECISION RULES:
+FACT, PREFERENCE, and PROJECT: save by default if personal to the user and stated with at least moderate engagement.
+
+EXPLORATION and CALLBACK: must pass BOTH gates to be saved:
+  Gate A — Personal significance: does this involve a career change, relationship, major purchase, relocation, business decision, or life goal? (Not: "maybe I'll buy a blue shirt.")
+  Gate B — Engagement depth: did the user spend real attention on it — length, repetition, follow-up questions, emotional weight? (Not: a single offhand half-sentence.)
+If either gate fails, set should_remember=false.
+
+LINGUISTIC TRIGGERS:
+Settled markers (point to fact/preference/project): "I am," "I have," "I decided," "I prefer," "I like," "I'm building," "I work as," "I own," "I will" — declarative, no hedging.
+Tentative markers (point to exploration/callback): "thinking about," "considering," "wondering," "maybe," "might," "could," "possibly," "not sure if," "curious about," "debating," "weighing."
+When tentative markers are present, classify as EXPLORATION or CALLBACK — never as FACT.
+
+CRITICAL — RECALL FRAMING CONSTRAINT:
+EXPLORATION and CALLBACK must NEVER be recalled as settled fact. In any future conversation, they must be framed with qualifiers like "you mentioned," "you were considering," "you once wondered." This is a hard constraint, not a suggestion. The summary field should preserve uncertainty: write "User mentioned considering X" — never "User is doing X."
+
+RETRACTION SIGNAL:
+If the user says anything like "forget I said that," "I was just thinking out loud," "never mind," "ignore that," or otherwise indicates a previous statement should not be remembered — treat that as a strong signal to disregard. Set should_remember=false for the retraction itself if it's just a correction; the downstream system handles vetoing the original fact.
+
+When genuinely uncertain about whether to remember, prefer remembering over forgetting. The cost of saving something minor is low; the cost of forgetting something the user explicitly stated is high. If should_remember is true, classify memory_type as the closest fit among the five defined types above. Every saved memory must use one of these five categories."""
 
 _GROQ_STARTUP_DIAGNOSTICS_DONE = False
 
@@ -841,13 +871,15 @@ def _parse_envelope(raw: str) -> dict:
 
     reply = str(parsed.get("reply") or "").strip()
     should_remember = bool(parsed.get("should_remember", False))
-    memory_type = str(parsed.get("memory_type") or "other").strip()
+    memory_type = str(parsed.get("memory_type") or "callback").strip()
     summary = str(parsed.get("summary") or "").strip()
     value = str(parsed.get("value") or "").strip()
+    confidence = float(parsed.get("confidence") or 0.0)
+    confidence = max(0.0, min(1.0, confidence))
 
-    valid_types = {"identity", "preference", "decision", "project_context", "ongoing_goal", "other"}
+    valid_types = {"fact", "preference", "project", "exploration", "callback"}
     if memory_type not in valid_types:
-        memory_type = "other"
+        memory_type = "callback"
 
     if not reply:
         for key in ("answer", "content", "message", "text"):
@@ -858,7 +890,7 @@ def _parse_envelope(raw: str) -> dict:
         reply = cleaned
 
     reply = _sanitize_reply_for_chat(reply, FALLBACK_RESPONSE)
-    return {"reply": reply, "should_remember": should_remember, "memory_type": memory_type, "summary": summary, "value": value}
+    return {"reply": reply, "should_remember": should_remember, "memory_type": memory_type, "summary": summary, "value": value, "confidence": confidence}
 
 
 def _is_ui_leak(text: str) -> bool:
@@ -1052,7 +1084,7 @@ class MarcusBrain:
             + f"User name: {user_name}\n"
             + f"Identity: {identity_str}\n"
             + f"Preferences: {prefs_str}\n"
-            + (f"Remembered facts:\n{facts_str}\n" if facts else "")
+            + (f"\nFacts marked 'exploration' or 'callback' are tentative musings — recall them with 'you mentioned'/'you were considering' framing, never as settled fact.\n\nRemembered facts:\n{facts_str}\n" if facts else "")
             + (f"\nCreator-authored instructions:\n{creator_context}\n" if creator_context else "")
         )
 
@@ -1192,13 +1224,14 @@ class MarcusBrain:
             print(f"[CONTINUATION] Query expansion failed: {exc}")
         return user_message
 
-    def _envelope(self, reply: str, meta: dict, should_remember: bool = False, memory_type: str = "other", summary: str = "", value: str = "") -> dict:
+    def _envelope(self, reply: str, meta: dict, should_remember: bool = False, memory_type: str = "callback", summary: str = "", value: str = "", confidence: float = 0.0) -> dict:
         return {
             "reply": _sanitize_reply_for_chat(reply, ""),
             "should_remember": should_remember,
             "memory_type": memory_type,
             "summary": summary,
             "value": value,
+            "confidence": confidence,
             "meta": meta,
         }
 
@@ -1324,7 +1357,7 @@ class MarcusBrain:
             + f"User name: {user_name}\n"
             + f"Identity: {identity_str}\n"
             + f"Preferences: {prefs_str}\n"
-            + (f"Remembered facts:\n{facts_str}\n" if facts else "")
+            + (f"\nFacts marked 'exploration' or 'callback' are tentative musings — recall them with 'you mentioned'/'you were considering' framing, never as settled fact.\n\nRemembered facts:\n{facts_str}\n" if facts else "")
             + (f"\nCreator-authored instructions:\n{creator_context}\n" if creator_context else "")
             + "\n\nThe user has attached an image. Analyze the visual content thoroughly "
             "and incorporate what you see into your response. If the image contains "
@@ -1414,15 +1447,15 @@ class MarcusBrain:
 
             reply = _extract_and_log_feature(reply)
 
-            print(f"[DEBUG ENVELOPE]: reply={repr(envelope.get('reply',''))} | should_remember={envelope.get('should_remember')} | memory_type={envelope.get('memory_type')} | summary={envelope.get('summary')} | value={envelope.get('value')}")
+            print(f"[DEBUG ENVELOPE]: reply={repr(envelope.get('reply',''))} | should_remember={envelope.get('should_remember')} | memory_type={envelope.get('memory_type')} | summary={envelope.get('summary')} | value={envelope.get('value')} | confidence={envelope.get('confidence')}")
             try:
                 should_remember = bool(envelope.get("should_remember", False))
                 if should_remember:
-                    memory_type = str(envelope.get("memory_type") or "other").strip()
+                    memory_type = str(envelope.get("memory_type") or "callback").strip()
                     summary = str(envelope.get("summary") or "").strip()
                     value = str(envelope.get("value") or "").strip()
                     if summary:
-                        self.memory.remember_fact(memory_type, summary, value)
+                        self.memory.remember_fact(memory_type, summary, value, confidence=envelope.get("confidence", 0.0))
                         print(f"[MEMORY] Remembered fact ({memory_type}): {summary[:100]}")
             except Exception as exc:
                 print(f"[ERROR] Memory extraction/storage skipped: {exc}")
@@ -1590,14 +1623,14 @@ class MarcusBrain:
 
             try:
                 st_envelope = self._think(cid, message, image_data, live_context=live_ctx)
-                print(f"[DEBUG ENVELOPE - STREAM]: reply={repr(st_envelope.get('reply',''))} | should_remember={st_envelope.get('should_remember')} | memory_type={st_envelope.get('memory_type')} | summary={st_envelope.get('summary')} | value={st_envelope.get('value')}")
+                print(f"[DEBUG ENVELOPE - STREAM]: reply={repr(st_envelope.get('reply',''))} | should_remember={st_envelope.get('should_remember')} | memory_type={st_envelope.get('memory_type')} | summary={st_envelope.get('summary')} | value={st_envelope.get('value')} | confidence={st_envelope.get('confidence')}")
                 st_should_remember = bool(st_envelope.get("should_remember", False))
                 if st_should_remember:
-                    st_memory_type = str(st_envelope.get("memory_type") or "other").strip()
+                    st_memory_type = str(st_envelope.get("memory_type") or "callback").strip()
                     st_summary = str(st_envelope.get("summary") or "").strip()
                     st_value = str(st_envelope.get("value") or "").strip()
                     if st_summary:
-                        self.memory.remember_fact(st_memory_type, st_summary, st_value)
+                        self.memory.remember_fact(st_memory_type, st_summary, st_value, confidence=st_envelope.get("confidence", 0.0))
                         print(f"[MEMORY] Remembered fact ({st_memory_type}): {st_summary[:100]}")
             except Exception as exc:
                 print(f"[ERROR] Memory extraction/storage skipped: {exc}")

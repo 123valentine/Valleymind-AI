@@ -224,21 +224,121 @@ class MemorySystem:
     def recall_preference(self, key: str):
         return self.long_term.get("preferences", {}).get(key)
 
-    def remember_fact(self, memory_type: str, summary: str, value: str):
+    def remember_fact(self, memory_type: str, summary: str, value: str, confidence: float = 0.0):
         if not summary or not isinstance(summary, str):
             print("[WARNING] remember_fact called without a summary; skipping.")
             return
-        print(f"[DEBUG REMEMBER_FACT] memory_type={repr(memory_type)} summary={repr(summary)} value={repr(value)}")
+        confidence = max(0.0, min(1.0, float(confidence)))
+        print(f"[DEBUG REMEMBER_FACT] memory_type={repr(memory_type)} summary={repr(summary)} value={repr(value)} confidence={confidence}")
         with self._long_term_lock:
             facts = self.long_term.setdefault("facts", [])
-            facts.append({
-                "memory_type": memory_type or "other",
-                "summary": summary.strip(),
-                "value": (value or "").strip(),
-                "timestamp": datetime.now().isoformat(),
-            })
+            existing_idx = self._find_fact_by_summary(summary)
+            if existing_idx is not None:
+                existing = facts[existing_idx]
+                old_type = existing.get("memory_type", "callback")
+                existing["confidence"] = max(existing.get("confidence", 0.0), confidence)
+                existing["mention_count"] = existing.get("mention_count", 1) + 1
+                existing["last_updated"] = datetime.now().isoformat()
+                existing["memory_type"] = self._promote_type(old_type, existing["confidence"])
+                if existing["memory_type"] != old_type:
+                    print(f"[MEMORY] Promoted fact '{summary[:60]}' from {old_type} to {existing['memory_type']}")
+                if existing.get("expires_at") is not None:
+                    existing["expires_at"] = self._compute_expiry(existing["memory_type"])
+            else:
+                expires_at = self._compute_expiry(memory_type)
+                facts.append({
+                    "memory_type": memory_type or "callback",
+                    "summary": summary.strip(),
+                    "value": (value or "").strip(),
+                    "confidence": confidence,
+                    "timestamp": datetime.now().isoformat(),
+                    "last_updated": datetime.now().isoformat(),
+                    "mention_count": 1,
+                    "expires_at": expires_at,
+                    "vetoed": False,
+                })
+            self._expire_stale_facts()
             self.save_long_term()
             print("[MEMORY] save_long_term() completed")
+
+    @staticmethod
+    def _normalize_text(text: str) -> str:
+        import re
+        return re.sub(r'[^\w\s]', '', text.lower()).strip()
+
+    def _find_fact_by_summary(self, summary: str) -> int | None:
+        words = set(self._normalize_text(summary).split())
+        if not words:
+            return None
+        facts = self.long_term.get("facts", [])
+        best_idx = None
+        best_score = 0.0
+        for i, f in enumerate(facts):
+            if f.get("vetoed"):
+                continue
+            f_words = set(self._normalize_text(f.get("summary", "")).split())
+            if not f_words:
+                continue
+            overlap = len(words & f_words) / max(len(words), len(f_words))
+            if overlap > 0.3 and overlap > best_score:
+                best_score = overlap
+                best_idx = i
+        return best_idx
+
+    @staticmethod
+    def _promote_type(current_type: str, confidence: float) -> str:
+        upgrades = {
+            "callback": (0.6, "exploration"),
+            "exploration": (0.75, "project"),
+            "project": (0.95, "fact"),
+        }
+        if current_type in upgrades:
+            threshold, promoted = upgrades[current_type]
+            if confidence >= threshold:
+                return promoted
+        return current_type
+
+    def _compute_expiry(self, memory_type: str) -> str | None:
+        from datetime import timedelta
+        ttl_map = {
+            "exploration": 60,
+            "callback": 30,
+        }
+        days = ttl_map.get(memory_type)
+        if days is not None:
+            return (datetime.now() + timedelta(days=days)).isoformat()
+        return None
+
+    def _expire_stale_facts(self):
+        now = datetime.now()
+        facts = self.long_term.get("facts", [])
+        before = len(facts)
+        facts[:] = [f for f in facts if not f.get("vetoed") and (
+            f.get("expires_at") is None or datetime.fromisoformat(f["expires_at"]) > now
+        )]
+        removed = before - len(facts)
+        if removed:
+            print(f"[MEMORY] Expired {removed} stale fact(s)")
+
+    def handle_retraction(self, text: str) -> int:
+        words = set(self._normalize_text(text).split())
+        if not words:
+            return 0
+        count = 0
+        with self._long_term_lock:
+            for f in self.long_term.get("facts", []):
+                f_words = set(self._normalize_text(f.get("summary", "")).split())
+                if not f_words:
+                    continue
+                overlap = len(words & f_words) / max(len(words), len(f_words))
+                if overlap > 0.3:
+                    f["vetoed"] = True
+                    f["confidence"] = 0.0
+                    count += 1
+            if count:
+                self.save_long_term()
+                print(f"[MEMORY] Vetoed {count} fact(s) by retraction")
+        return count
 
     def load_memory(self, user_id: str) -> dict:
         self.user_id = user_id
