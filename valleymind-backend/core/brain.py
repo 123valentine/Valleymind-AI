@@ -1390,6 +1390,7 @@ class MarcusBrain:
 
             reply = _extract_and_log_feature(reply)
 
+            print(f"[DEBUG ENVELOPE]: reply={repr(envelope.get('reply',''))} | should_remember={envelope.get('should_remember')} | memory_type={envelope.get('memory_type')} | summary={envelope.get('summary')} | value={envelope.get('value')}")
             try:
                 should_remember = bool(envelope.get("should_remember", False))
                 if should_remember:
