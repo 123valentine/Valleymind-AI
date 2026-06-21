@@ -229,6 +229,21 @@ You are speaking directly to your Creator, Master, and Founder, Valentine Egbuji
 ||LOG_FEATURE||: <clear summary of the future implementation plan>
 """
 
+_ENVELOPE_INSTRUCTIONS = """
+
+RESPONSE FORMAT:
+Output a single JSON object with no markdown, no code fences, no explanation. Use exactly this structure:
+{
+  "reply": "<your full natural response to the user>",
+  "should_remember": true or false,
+  "memory_type": "identity" | "preference" | "decision" | "project_context" | "ongoing_goal" | "other",
+  "summary": "a clear one-sentence statement of the fact, written so it makes sense without the original conversation",
+  "value": "<the actual fact>"
+}
+
+Memory decision rules:
+Decide if this message contains something worth remembering across future conversations — not just relevant to right now. Ask yourself: if the user starts a brand new conversation next week, would they expect me to already know this? Casual remarks, one-off questions, and small talk should NOT be remembered. If should_remember is true, also classify memory_type as the closest fit, but don't force a fact into a category that doesn't quite match — 'other' is fine."""
+
 _GROQ_STARTUP_DIAGNOSTICS_DONE = False
 
 
@@ -994,7 +1009,7 @@ class MarcusBrain:
         except Exception as exc:
             print(f"[ERROR] Failed to save knowledge file: {exc}")
 
-    def _groq_messages(self, chat_id: str, user_message: str, image_data: str = "", live_context: str = "", expanded_query: str = "") -> list:
+    def _groq_messages(self, chat_id: str, user_message: str, image_data: str = "", live_context: str = "", expanded_query: str = "", envelope_mode: bool = False) -> list:
         try:
             self.memory.reload()
             long_term = self.memory.get_full_memory() or {}
@@ -1034,6 +1049,9 @@ class MarcusBrain:
             + (f"Remembered facts:\n{facts_str}\n" if facts else "")
             + (f"\nCreator-authored instructions:\n{creator_context}\n" if creator_context else "")
         )
+
+        if envelope_mode:
+            system_with_context += _ENVELOPE_INSTRUCTIONS
 
         messages = [{"role": "system", "content": system_with_context}]
 
@@ -1109,7 +1127,7 @@ class MarcusBrain:
 
     def _try_llm_first(self, chat_id: str, user_message: str, image_data: str = "", live_context: str = "") -> dict:
         try:
-            raw = _call_llm_cluster(self._groq_messages(chat_id, user_message, image_data, live_context=live_context))
+            raw = _call_llm_cluster(self._groq_messages(chat_id, user_message, image_data, live_context=live_context, envelope_mode=True))
             envelope = _parse_envelope(raw)
             reply = str(envelope.get("reply") or "").strip()
             if not reply:
@@ -1563,6 +1581,20 @@ class MarcusBrain:
                 yield fallback
 
             full_reply = _extract_and_log_feature(full_reply)
+
+            try:
+                st_envelope = self._think(cid, message, image_data, live_context=live_ctx)
+                print(f"[DEBUG ENVELOPE - STREAM]: reply={repr(st_envelope.get('reply',''))} | should_remember={st_envelope.get('should_remember')} | memory_type={st_envelope.get('memory_type')} | summary={st_envelope.get('summary')} | value={st_envelope.get('value')}")
+                st_should_remember = bool(st_envelope.get("should_remember", False))
+                if st_should_remember:
+                    st_memory_type = str(st_envelope.get("memory_type") or "other").strip()
+                    st_summary = str(st_envelope.get("summary") or "").strip()
+                    st_value = str(st_envelope.get("value") or "").strip()
+                    if st_summary:
+                        self.memory.remember_fact(st_memory_type, st_summary, st_value)
+                        print(f"[MEMORY] Remembered fact ({st_memory_type}): {st_summary[:100]}")
+            except Exception as exc:
+                print(f"[ERROR] Memory extraction/storage skipped: {exc}")
 
             try:
                 self.memory.add_message(cid, "assistant", full_reply or "No response", timestamp)
