@@ -227,6 +227,7 @@ class MemorySystem:
         if not summary or not isinstance(summary, str):
             print("[WARNING] remember_fact called without a summary; skipping.")
             return
+        print(f"[DEBUG REMEMBER_FACT] memory_type={repr(memory_type)} summary={repr(summary)} value={repr(value)}")
         with self._long_term_lock:
             facts = self.long_term.setdefault("facts", [])
             facts.append({
@@ -236,6 +237,7 @@ class MemorySystem:
                 "timestamp": datetime.now().isoformat(),
             })
             self.save_long_term()
+            print("[MEMORY] save_long_term() completed")
 
     def load_memory(self, user_id: str) -> dict:
         self.user_id = user_id
