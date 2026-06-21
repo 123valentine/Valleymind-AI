@@ -810,6 +810,8 @@ def _groq_health_check(model_name: str) -> bool:
 
 def _parse_envelope(raw: str) -> dict:
     cleaned = str(raw or "").replace("```json", "").replace("```", "").strip()
+    print("===RAW START===" + repr(raw) + "===RAW END===")
+    print("===CLEANED START===" + repr(cleaned) + "===CLEANED END===")
     parsed = None
 
     try:
