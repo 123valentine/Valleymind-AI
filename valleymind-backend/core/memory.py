@@ -132,6 +132,7 @@ class MemorySystem:
                 vectors=[(f"lt_{self.user_id}", vector, metadata)],
                 namespace=_MEMORY_NAMESPACE,
             )
+            print(f"[MEMORY] Pinecone upsert SUCCEEDED for user {self.user_id}, facts count: {len(self.long_term.get('facts', []))}")
         except Exception as exc:
             print(f"[MEMORY] Pinecone long-term save failed: {exc}")
         self._save_long_term_json(self.long_term)
