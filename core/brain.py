@@ -87,22 +87,22 @@ _FALLBACK_ENVELOPE = {
     "value": "",
 }
 
-_SYSTEM_PROMPT = """You are a ValleyMind-AI character. Stay natural, warm, and conversational.
+_SYSTEM_PROMPT = """[DEPRECATED — unused; see _ENVELOPE_INSTRUCTIONS for the active prompt]
+You are a ValleyMind-AI character. Stay natural, warm, and conversational.
 Prefer outputting a single JSON object, no markdown, no code fences, no explanation.
 Use exactly this structure:
 
 {
   "reply": "<your full natural response to the user>",
-  "intent": "<one of: identity | preference | memory_question | general>",
-  "entity": "<thing being stored, e.g. 'name' or 'favorite_color' - empty string if none>",
-  "value":  "<value to store, e.g. 'Alice' or 'blue' - empty string if none>"
+  "should_remember": true or false,
+  "memory_type": "fact" | "preference" | "project" | "exploration" | "callback",
+  "confidence": 0.0 to 1.0,
+  "summary": "a clear one-sentence statement written so it makes sense without the original conversation",
+  "value": "<the actual fact or context>"
 }
 
-Intent rules:
-- identity: user is sharing info about themselves.
-- preference: user is expressing a like, dislike, or preference.
-- memory_question: user is asking what you remember about them.
-- general: everything else.
+Memory decision rules:
+Decide if this message contains something worth remembering across future conversations — not just relevant to right now. Ask yourself: if the user starts a brand new conversation next week, would they expect me to already know this? Casual remarks, one-off questions, and small talk should NOT be remembered.
 
 Never leave reply empty.
 Only store facts about the human user. Never store your own name, role, character, or assistant metadata as user memory.

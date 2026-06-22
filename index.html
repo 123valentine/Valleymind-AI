@@ -3,6 +3,10 @@
 <head>
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0b141a">
 <title>Valley Mind-AI - Quantum v2.4</title>
 <link rel="icon" type="image/png" href="/static/valleymind-logo.png">
 <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
@@ -803,15 +807,15 @@ async function apiFetch(path, options = {}) {
 }
 
 function getAuthToken() {
-    return localStorage.getItem(AUTH_TOKEN_KEY) || "";
+    return sessionStorage.getItem(AUTH_TOKEN_KEY) || "";
 }
 
 function setAuthToken(token) {
-    if (token) localStorage.setItem(AUTH_TOKEN_KEY, token);
+    if (token) sessionStorage.setItem(AUTH_TOKEN_KEY, token);
 }
 
 function clearAuthToken() {
-    localStorage.removeItem(AUTH_TOKEN_KEY);
+    sessionStorage.removeItem(AUTH_TOKEN_KEY);
 }
 
 function authHeaders(extra = {}) {
@@ -1685,6 +1689,7 @@ function browserSpeak(text) {
 }
 
 let isVoiceMuted = false;
+var _gsiReady = false;
 
 async function playMarcusVoice(text, voice) {
     browserSpeak(text);
@@ -1911,6 +1916,7 @@ async function checkSession() {
                 setAppVisible(false);
                 var statusNeedLogin = document.getElementById("statusText");
                 if (statusNeedLogin) statusNeedLogin.textContent = "Login Required";
+                renderGoogleButton();
                 return false;
             }
 
@@ -1979,6 +1985,7 @@ async function checkSession() {
             if (loginErr) loginErr.style.display = "flex";
             var error = document.getElementById("loginError");
             if (error) error.textContent = err.message || "Backend unavailable";
+            renderGoogleButton();
             return false;
         } finally {
             authCheckComplete = true;
@@ -2109,27 +2116,52 @@ async function login(event) {
     }
 }
 
-async function handleCredentialResponse(response) {
-    const error = document.getElementById("loginError");
-    if (error) error.textContent = "";
-    try {
-        const res = await apiFetch("/api/auth/google", {
-            method: "POST",
-            credentials: "include",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ credential: response.credential })
+function renderGoogleButton() {
+    var wrap = document.getElementById("googleSignInDiv");
+    if (!wrap) return;
+    if (typeof google === "undefined" || !google.accounts || !google.accounts.id) {
+        setTimeout(renderGoogleButton, 200);
+        return;
+    }
+    if (!_gsiReady) {
+        google.accounts.id.initialize({
+            client_id: "113174109452-59fddouc2oumonhh2mrqv7sapc4retq2.apps.googleusercontent.com",
+            callback: handleGoogleLogin,
+            auto_prompt: false,
+            itp_support: true,
         });
-        const data = await res.json();
+        _gsiReady = true;
+    }
+    google.accounts.id.renderButton(wrap, {
+        type: "standard",
+        shape: "rectangular",
+        theme: "outline",
+        text: "sign_in_with",
+        size: "large",
+        logo_alignment: "left",
+    });
+}
+
+async function handleGoogleLogin(response) {
+    var credential = response.credential;
+    if (!credential) return;
+    var error = document.getElementById("loginError");
+    if (error) error.textContent = "Signing in with Google...";
+    try {
+        var res = await apiFetch("/api/auth/google", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ credential: credential })
+        });
+        var data = await res.json();
         if (!res.ok || data.status !== "success") {
-            throw new Error(data.message || "Google login failed");
+            throw new Error(data.message || "Google sign-in failed");
         }
         setAuthToken(data.session_token || "");
-        const authenticated = await checkSession();
+        var authenticated = await checkSession();
         if (!authenticated) throw new Error("Session validation failed");
-        const status = document.getElementById("statusText");
-        if (status) status.textContent = "Memory Online";
     } catch (err) {
-        if (error) error.textContent = err.message || "Google login failed";
+        if (error) error.textContent = err.message || "Google sign-in failed";
     }
 }
 
