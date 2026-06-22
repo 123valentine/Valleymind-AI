@@ -54,7 +54,7 @@ _FALLBACK_ENVELOPE = {
     "value": "",
     "confidence": 0.0,
 }
-
+  
 _SYSTEM_PROMPT = """[DEPRECATED — unused; see _ENVELOPE_INSTRUCTIONS for the active prompt]
 You are a ValleyMind-AI character. Stay natural, warm, and conversational.
 Prefer outputting a single JSON object, no markdown, no code fences, no explanation.

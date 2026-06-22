@@ -274,7 +274,15 @@
       <span style="color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:0.1em;">or</span>
       <div style="flex:1;height:1px;background:rgba(255,255,255,0.08);"></div>
     </div>
-    <div id="googleSignInDiv" style="display:flex;justify-content:center;"></div>
+    <button id="googleSignInBtn" type="button" style="display:flex;align-items:center;gap:12px;width:100%;background:#1a1f2e;border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:12px 14px;cursor:pointer;outline:none;font-family:'Space Grotesk',sans-serif;font-size:14px;transition:border-color 0.15s;">
+      <span style="display:flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:50%;background:#4285F4;flex-shrink:0;">
+        <span style="color:white;font-weight:700;font-size:15px;line-height:1;">G</span>
+      </span>
+      <span>
+        <span style="color:white;">Sign in with </span>
+        <span style="color:#4285F4;font-weight:600;">Google</span>
+      </span>
+    </button>
     <a href="#" id="forgotPasswordLink" style="font-size:0.85rem;margin-top:10px;display:block;color:#00d4ff;text-align:center;text-decoration:none;cursor:pointer;">Forgot Password?</a>
     <p id="loginError" style="min-height:18px;color:#ff6b7a;font-size:12px;"></p>
   </form>
@@ -2117,8 +2125,6 @@ async function login(event) {
 }
 
 function renderGoogleButton() {
-    var wrap = document.getElementById("googleSignInDiv");
-    if (!wrap) return;
     if (typeof google === "undefined" || !google.accounts || !google.accounts.id) {
         setTimeout(renderGoogleButton, 200);
         return;
@@ -2132,14 +2138,13 @@ function renderGoogleButton() {
         });
         _gsiReady = true;
     }
-    google.accounts.id.renderButton(wrap, {
-        type: "standard",
-        shape: "rectangular",
-        theme: "outline",
-        text: "sign_in_with",
-        size: "large",
-        logo_alignment: "left",
-    });
+    var btn = document.getElementById("googleSignInBtn");
+    if (btn && !btn._gsiBound) {
+        btn.addEventListener("click", function () {
+            google.accounts.id.prompt();
+        });
+        btn._gsiBound = true;
+    }
 }
 
 async function handleGoogleLogin(response) {
