@@ -10,6 +10,7 @@ import requests
 from core.auto_model import get_latest_groq_model
 from core.character import load_character_profile
 from core.config import PROJECT_ROOT, get_config
+from core.capabilities import build_capabilities_prompt
 from core.external_apis import (
     classify_live_request,
     _search_general_web,
@@ -1079,6 +1080,7 @@ class MarcusBrain:
         system_with_context = (
             time_anchor
             + _CHAT_SYSTEM_PROMPT
+            + build_capabilities_prompt()
             + (_CREATOR_OVERRIDE_PROMPT if is_creator else "")
             + "\n\nCharacter profile:\n"
             + self.profile.to_prompt()
@@ -1352,6 +1354,7 @@ class MarcusBrain:
         system_with_context = (
             time_anchor
             + _CHAT_SYSTEM_PROMPT
+            + build_capabilities_prompt()
             + (_CREATOR_OVERRIDE_PROMPT if is_creator else "")
             + "\n\nCharacter profile:\n"
             + self.profile.to_prompt()
