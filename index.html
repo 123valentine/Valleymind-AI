@@ -1344,22 +1344,18 @@ async function loadSessions(options) {
             }
 
             if (fetched !== null) {
-                sessionList = mergeSessionLists(fetched, sessionList);
+                sessionList = fetched;
                 saveSessionsCache(sessionList);
                 sessionsLoadError = "";
             } else {
-                if (sessionList.length === 0) {
-                    sessionList = loadSessionsCache();
-                }
+                sessionList = loadSessionsCache();
                 sessionsLoadError = (lastErr && lastErr.message)
                     ? lastErr.message
                     : "Could not reach the server. Sessions may be out of date.";
             }
         } catch (err) {
             console.warn("[Sessions] load failed:", err);
-            if (sessionList.length === 0) {
-                sessionList = loadSessionsCache();
-            }
+            sessionList = loadSessionsCache();
             sessionsLoadError = err.message || "Session load failed";
         } finally {
             sessionsLoading = false;
@@ -1940,16 +1936,11 @@ async function checkSession() {
                 splash.style.opacity = "1";
             }
 
-            // Restore cached sessions immediately so the sidebar never flashes empty.
-            sessionList = loadSessionsCache();
             renderSessionListSkeleton();
 
             await loadSessions({ showLoading: true });
 
-            var targetChatId = loadLastChatId();
-            if (targetChatId) {
-                currentChatId = targetChatId;
-            } else if (sessionList.length > 0) {
+            if (sessionList.length > 0) {
                 currentChatId = getSessionId(sessionList[0]);
             }
 
