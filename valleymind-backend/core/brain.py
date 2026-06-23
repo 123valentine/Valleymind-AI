@@ -2,6 +2,7 @@ import json
 import os
 import re
 import threading
+import time
 import traceback
 from datetime import datetime
 
@@ -283,6 +284,12 @@ When genuinely uncertain about whether to remember, prefer remembering over forg
 
 _GROQ_STARTUP_DIAGNOSTICS_DONE = False
 
+# Proactive Groq quota management
+_GROQ_REMAINING_TOKENS: int | None = None
+_GROQ_QUOTA_COOLDOWN_UNTIL: float = 0.0
+_GROQ_COOLDOWN_MINUTES = 5
+_GROQ_LOW_TOKEN_THRESHOLD = 10_000
+
 
 
 
@@ -405,6 +412,10 @@ def _call_groq(messages: list, model_name: str, timeout: int = 30, timeout_retri
     if response.status_code != 200:
         detail = response.text[:500]
         _log_groq_failure("Groq API request failed", response.status_code, detail)
+        if response.status_code == 429:
+            global _GROQ_QUOTA_COOLDOWN_UNTIL
+            _GROQ_QUOTA_COOLDOWN_UNTIL = time.time() + _GROQ_COOLDOWN_MINUTES * 60
+            print(f"[GROQ] Quota cooldown activated for {_GROQ_COOLDOWN_MINUTES} minutes")
         raise RuntimeError(f"Groq API HTTP {response.status_code}: {_short_error_detail(detail)}")
 
     data = response.json()
@@ -417,6 +428,13 @@ def _call_groq(messages: list, model_name: str, timeout: int = 30, timeout_retri
         raise RuntimeError("Groq returned 200 but content was empty.")
 
     print("[API] Groq chat completions success")
+    global _GROQ_REMAINING_TOKENS
+    try:
+        remaining_header = response.headers.get("x-ratelimit-remaining-tokens")
+        if remaining_header is not None:
+            _GROQ_REMAINING_TOKENS = int(remaining_header)
+    except (ValueError, TypeError):
+        pass
     return content.strip()
 
 
@@ -736,22 +754,30 @@ def _call_llm_cluster(
     # ── 1. Primary: Groq API ───────────────────────────────────────────────
     groq_key = config.groq_api_key
     if groq_key:
-        try:
-            groq_model = get_latest_groq_model()
-            if groq_model:
-                response = _call_groq(messages, groq_model, timeout=timeout)
-                return response, {"groq_used": True, "fallback_used": False, "fallback_source": ""}
-            print("[LLM CLUSTER] Groq skipped: no model resolved")
-        except Exception as exc:
-            last_error = exc
-            print(f"[LLM CLUSTER] Groq failed: {_short_error_detail(str(exc))}. Rotating to Nvidia.")
+        if _GROQ_QUOTA_COOLDOWN_UNTIL > time.time():
+            remaining_cooldown = int(_GROQ_QUOTA_COOLDOWN_UNTIL - time.time())
+            print(f"[LLM CLUSTER] Groq skipped: cooldown active ({remaining_cooldown}s remaining)")
+            last_error = RuntimeError(f"Groq skipped (cooldown {remaining_cooldown}s)")
+        elif _GROQ_REMAINING_TOKENS is not None and _GROQ_REMAINING_TOKENS < _GROQ_LOW_TOKEN_THRESHOLD:
+            print(f"[LLM CLUSTER] Groq skipped: only {_GROQ_REMAINING_TOKENS} tokens remaining (threshold: {_GROQ_LOW_TOKEN_THRESHOLD})")
+            last_error = RuntimeError(f"Groq skipped (low tokens: {_GROQ_REMAINING_TOKENS})")
+        else:
+            try:
+                groq_model = get_latest_groq_model()
+                if groq_model:
+                    response = _call_groq(messages, groq_model, timeout=timeout)
+                    return response, {"groq_used": True, "fallback_used": False, "fallback_source": ""}
+                print("[LLM CLUSTER] Groq skipped: no model resolved")
+            except Exception as exc:
+                last_error = exc
+                print(f"[LLM CLUSTER] Groq failed: {_short_error_detail(str(exc))}. Rotating to Nvidia.")
     else:
         print("[LLM CLUSTER] Groq unavailable: no API key")
 
     # ── 2. Fallback 1: NVIDIA API ─────────────────────────────────────────────
     nvidia_key = config.nvidia_api_key
     if nvidia_key:
-        nvidia_model = config.nvidia_model or "nvidia/llama-3.1-nv-8b-instruct"
+        nvidia_model = config.nvidia_model or "meta/llama-3.1-8b-instruct"
         nvidia_url = config.nvidia_base_url or "https://integrate.api.nvidia.com/v1"
         try:
             response = _call_openai_compat(
@@ -1620,9 +1646,17 @@ class MarcusBrain:
             except Exception as exc:
                 print(f"[STREAM ERROR] Groq streaming failed: {exc}")
                 traceback.print_exc()
-                fallback = "I apologize, but I'm having trouble processing your request right now."
-                full_reply = fallback
-                yield fallback
+                try:
+                    cluster_reply, cluster_meta = _call_llm_cluster(msgs, timeout=30)
+                    full_reply = cluster_reply
+                    self.last_response_meta = cluster_meta
+                    yield cluster_reply
+                except Exception as cluster_exc:
+                    print(f"[STREAM ERROR] Cluster fallback also failed: {cluster_exc}")
+                    traceback.print_exc()
+                    fallback = "I apologize, but I'm having trouble processing your request right now."
+                    full_reply = fallback
+                    yield fallback
 
             full_reply = _extract_and_log_feature(full_reply)
 
