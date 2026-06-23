@@ -626,6 +626,7 @@ let sessionsLoading = false;
 let sessionsLoadError = "";
 let sessionsLoadPromise = null;
 let currentChatId = "";
+let sessionFetchFailed = false;
 let sessionList = [];
 /** Incremented to cancel in-flight message hydration (checkSession vs newChat races). */
 let chatHydrationToken = 0;
@@ -1318,6 +1319,7 @@ async function loadSessions(options) {
         try {
             await waitForAuth();
             if (!isAuthenticated) return;
+            sessionFetchFailed = false;
 
             if (showLoading && sessionList.length === 0) {
                 sessionsLoading = true;
@@ -1349,12 +1351,14 @@ async function loadSessions(options) {
                 sessionsLoadError = "";
             } else {
                 sessionList = loadSessionsCache();
+                sessionFetchFailed = true;
                 sessionsLoadError = (lastErr && lastErr.message)
                     ? lastErr.message
                     : "Could not reach the server. Sessions may be out of date.";
             }
         } catch (err) {
             console.warn("[Sessions] load failed:", err);
+            sessionFetchFailed = true;
             sessionList = loadSessionsCache();
             sessionsLoadError = err.message || "Session load failed";
         } finally {
@@ -1418,15 +1422,12 @@ function renderSessionList() {
 
     list.innerHTML = "";
 
-    if (sessionsLoadError && sessionList.length === 0) {
-        renderSessionListError(sessionsLoadError);
-        var countElErr = document.getElementById("sessionCount");
-        if (countElErr) countElErr.textContent = "";
-        return;
-    }
-
     if (!Array.isArray(sessionList) || sessionList.length === 0) {
-        list.innerHTML = '<div style="padding:12px 8px;color:#475569;font-size:11px;text-align:center;">No previous sessions</div>';
+        if (sessionFetchFailed) {
+            list.innerHTML = '<div style="padding:12px 8px;color:#475569;font-size:11px;text-align:center;">Couldn\'t load sessions — <a href="#" onclick="loadSessions({force:true});return false" style="color:#00d4ff;text-decoration:underline;">tap to retry</a></div>';
+        } else {
+            list.innerHTML = '<div style="padding:12px 8px;color:#475569;font-size:11px;text-align:center;">No previous sessions</div>';
+        }
         var countEmpty = document.getElementById("sessionCount");
         if (countEmpty) countEmpty.textContent = "";
         return;
@@ -1798,6 +1799,8 @@ async function newChat() {
         renderSessionList();
         loadSessions({ showLoading: false, force: true }).catch(function (err) {
             console.warn("[New Chat] background session refresh failed:", err);
+            sessionsLoading = false;
+            if (typeof renderSessionList === "function") renderSessionList();
         });
         goTo("chat");
         closeSidebar();
