@@ -68,7 +68,7 @@ def get_config() -> APIConfig:
             "https://integrate.api.nvidia.com/v1",
         ).rstrip("/"),
         nvidia_model=os.getenv("NVIDIA_MODEL", "nvidia/llama-3.1-nv-8b-instruct").strip(),
-        gemini_api_key=os.getenv("GEMINI_API_KEY", "").strip(),
+        gemini_api_key=(os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_GENERATIVE_AI_API_KEY") or "").strip(),
         gemini_base_url=os.getenv(
             "GEMINI_BASE_URL",
             "https://generativelanguage.googleapis.com/v1beta",

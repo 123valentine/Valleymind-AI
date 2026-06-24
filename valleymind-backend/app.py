@@ -19,8 +19,9 @@ from flask import Flask, Response, jsonify, request, send_from_directory, sessio
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from core.brain import MarcusBrain, _call_llm_cluster, _CHAT_SYSTEM_PROMPT
-from core.config import PROJECT_ROOT
+from core.config import PROJECT_ROOT, get_config
 from core.tts import speak_marcus
+import core.image_gen as image_gen
 
 # ── Load .env for local dev ──────────────────────────────────────────────
 _env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
@@ -1137,6 +1138,48 @@ def api_chat_message():
     except Exception as e:
         print(f"[CRITICAL] /api/chat/message crashed: {e}")
         return jsonify({"status": "error", "message": "Internal server error"}), 500
+
+
+@app.route("/api/generate-image", methods=["POST"])
+def api_generate_image():
+    try:
+        user_id, error = _require_login()
+        if error:
+            return error
+
+        data = request.get_json(silent=True)
+        if not data:
+            return jsonify({"status": "error", "message": "No JSON body received"}), 400
+
+        prompt = str(data.get("prompt") or "").strip()
+        reference_image_raw = data.get("reference_image")
+        reference_image = None
+        if isinstance(reference_image_raw, dict):
+            ref_data = str(reference_image_raw.get("data") or "").strip()
+            ref_mime = str(reference_image_raw.get("mimeType") or "image/jpeg").strip()
+            if ref_data:
+                reference_image = {"data": ref_data, "mimeType": ref_mime}
+
+        if not prompt:
+            return jsonify({"status": "error", "message": "Please describe the image you want to create."}), 400
+
+        config = get_config()
+        api_key = config.gemini_api_key
+
+        result = image_gen.generate_image(prompt, api_key=api_key or None, enhance=bool(prompt), reference_image=reference_image)
+        return jsonify({
+            "status": "success",
+            "image_url": result["image_url"],
+            "revised_prompt": result["revised_prompt"],
+            "text": result.get("text", ""),
+        })
+
+    except Exception as e:
+        print(f"[IMAGE GEN ERROR] {e}")
+        return jsonify({
+            "status": "error",
+            "message": str(e)[:300] or "Image generation failed",
+        }), 500
 
 
 # ── Static frontend serving (same-origin, eliminates CORS) ──────────────

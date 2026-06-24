@@ -63,6 +63,27 @@
   .thinking-dot:nth-child(3){animation-delay:0.32s}
   @keyframes swimDots{0%,100%{transform:translateY(0) translateX(0);opacity:0.35}35%{transform:translateY(-5px) translateX(2px);opacity:1}70%{transform:translateY(2px) translateX(-1px);opacity:0.65}}
   .cs-badge { background:rgba(255,170,0,0.1); color:#ffaa00; border:1px solid rgba(255,170,0,0.3); }
+  .img-skeleton {
+    width:100%; max-width:320px; height:240px; border-radius:12px;
+    background:linear-gradient(90deg, rgba(0,212,255,0.06) 25%, rgba(0,212,255,0.16) 50%, rgba(0,212,255,0.06) 75%);
+    background-size:200% 100%;
+    animation:imgShimmer 1.6s ease-in-out infinite;
+    margin-bottom:8px;
+  }
+  @keyframes imgShimmer {
+    0% { background-position:200% 0; }
+    100% { background-position:-200% 0; }
+  }
+  .gen-image-wrap { position:relative; display:inline-block; max-width:100%; border-radius:12px; overflow:hidden; }
+  .gen-image-wrap img { display:block; max-width:100%; max-height:400px; border-radius:12px; }
+  .gen-image-download {
+    position:absolute; bottom:8px; right:8px; z-index:5;
+    width:36px; height:36px; border-radius:50%;
+    background:rgba(0,0,0,0.65); border:1px solid rgba(255,255,255,0.15);
+    color:#fff; cursor:pointer; display:flex; align-items:center; justify-content:center;
+    transition:all 0.2s; backdrop-filter:blur(4px);
+  }
+  .gen-image-download:hover { background:rgba(0,212,255,0.25); border-color:rgba(0,212,255,0.4); color:#00d4ff; }
 .ctx-menu { display:none; position:fixed; z-index:1000; background:rgba(10,20,30,0.95); backdrop-filter:blur(20px); border:1px solid rgba(0,212,255,0.2); border-radius:12px; padding:6px; min-width:170px; box-shadow:0 12px 40px rgba(0,0,0,0.7); }
 .ctx-menu.open { display:block; }
 .ctx-item { display:flex; align-items:center; gap:10px; padding:9px 14px; border-radius:8px; font-size:13px; color:#bbc9cf; cursor:pointer; transition:all 0.12s; }
@@ -355,10 +376,9 @@
           <span class="material-icons text-sm">gesture</span>
           <span class="font-label-caps text-xs uppercase tracking-wider">Sketch Tool</span>
         </a>
-        <a onclick="showComingSoon('Generate Images')" class="cursor-pointer text-slate-400 px-6 py-3 flex items-center gap-4 hover:bg-white/5 hover:text-white transition-all duration-300 border-l-4 border-transparent pl-14">
+        <a onclick="generateImagesTool()" class="cursor-pointer text-slate-400 px-6 py-3 flex items-center gap-4 hover:bg-white/5 hover:text-white transition-all duration-300 border-l-4 border-transparent pl-14">
           <span class="material-icons text-sm">image</span>
           <span class="font-label-caps text-xs uppercase tracking-wider">Generate Images</span>
-          <span class="ml-auto text-[8px] cs-badge px-2 py-0.5 rounded uppercase">Soon</span>
         </a>
         <a onclick="showComingSoon('Realistic Videos')" class="cursor-pointer text-slate-400 px-6 py-3 flex items-center gap-4 hover:bg-white/5 hover:text-white transition-all duration-300 border-l-4 border-transparent pl-14">
           <span class="material-icons text-sm">smart_display</span>
@@ -428,6 +448,24 @@
     </button>
   </div>
   <p style="color:#94a3b8;font-size:13px;line-height:1.5;margin-top:10px;">This feature is being prepared. Chat stays ready underneath.</p>
+</div>
+
+<!-- IMAGE GENERATION MODAL -->
+<div id="imageGenOverlay" onclick="closeImageGenModal()" style="position:fixed;inset:0;z-index:200;background:rgba(0,0,0,0.5);backdrop-filter:blur(4px);opacity:0;visibility:hidden;pointer-events:none;transition:opacity 0.2s ease,visibility 0.2s ease;"></div>
+<div id="imageGenModal" role="dialog" aria-modal="true" style="position:fixed;left:50%;top:50%;transform:translate(-50%,-46%) scale(0.98);z-index:210;width:min(480px,calc(100vw - 32px));background:rgba(14,20,23,0.98);border:1px solid rgba(0,212,255,0.24);border-radius:16px;padding:24px;box-shadow:0 20px 60px rgba(0,0,0,0.5);opacity:0;visibility:hidden;pointer-events:none;transition:opacity 0.2s ease,transform 0.2s ease,visibility 0.2s ease;">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+    <h2 style="color:#00d4ff;font-size:14px;font-weight:800;text-transform:uppercase;letter-spacing:0.15em;font-family:'Space Grotesk',sans-serif;margin:0;">Generate Image</h2>
+    <button onclick="closeImageGenModal()" style="background:transparent;border:none;color:#94a3b8;cursor:pointer;padding:4px;border-radius:8px;display:flex;">
+      <span class="material-icons" style="font-size:20px;">close</span>
+    </button>
+  </div>
+  <textarea id="imageGenPrompt" rows="3" placeholder="Describe the image you want to create..."
+    style="width:100%;background:#1a1f2e;border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:12px 14px;color:white;outline:none;font-size:14px;resize:none;box-sizing:border-box;font-family:'Inter',sans-serif;"></textarea>
+  <button id="imageGenSubmitBtn" onclick="submitImageGen()" style="margin-top:12px;width:100%;border:none;border-radius:12px;background:#00d4ff;color:#003642;font-weight:800;padding:12px 16px;cursor:pointer;text-transform:uppercase;letter-spacing:0.1em;font-family:'Space Grotesk',sans-serif;font-size:13px;display:flex;align-items:center;justify-content:center;gap:8px;">
+    <i data-lucide="sparkles" style="width:18px;height:18px;"></i>
+    Generate
+  </button>
+  <p id="imageGenStatus" style="min-height:18px;color:#ff6b7a;font-size:12px;margin-top:8px;"></p>
 </div>
 
 <!-- HEADER -->
@@ -2588,6 +2626,141 @@ document.addEventListener("DOMContentLoaded", function () {
         if (indicator) indicator.textContent = 'Failed to load PDF';
     }
 });
+
+/* === IMAGE GENERATION TOOL === */
+function generateImagesTool() {
+    closeSidebar();
+    var overlay = document.getElementById("imageGenOverlay");
+    var modal = document.getElementById("imageGenModal");
+    var prompt = document.getElementById("imageGenPrompt");
+    var status = document.getElementById("imageGenStatus");
+    if (prompt) prompt.value = "";
+    if (status) status.textContent = "";
+    if (overlay) { overlay.style.opacity = "1"; overlay.style.visibility = "visible"; overlay.style.pointerEvents = "auto"; }
+    if (modal) {
+        modal.style.opacity = "1"; modal.style.visibility = "visible";
+        modal.style.pointerEvents = "auto"; modal.style.transform = "translate(-50%,-50%) scale(1)";
+    }
+    setTimeout(function () { if (prompt) prompt.focus(); }, 200);
+}
+
+function closeImageGenModal() {
+    var overlay = document.getElementById("imageGenOverlay");
+    var modal = document.getElementById("imageGenModal");
+    if (overlay) { overlay.style.opacity = "0"; overlay.style.visibility = "hidden"; overlay.style.pointerEvents = "none"; }
+    if (modal) {
+        modal.style.opacity = "0"; modal.style.visibility = "hidden";
+        modal.style.pointerEvents = "none"; modal.style.transform = "translate(-50%,-46%) scale(0.98)";
+    }
+    focusChatInput();
+}
+
+function addImageSkeleton() {
+    removeThinkingIndicator(document.querySelector('[data-thinking="true"]'));
+    var container = document.getElementById("messages");
+    var welcome = document.getElementById("welcome");
+    if (welcome) welcome.style.display = "none";
+    var wrapper = document.createElement("div");
+    wrapper.className = "assistant-message";
+    var bubble = document.createElement("div");
+    bubble.className = "bubble";
+    var skeleton = document.createElement("div");
+    skeleton.className = "img-skeleton";
+    skeleton.id = "imgGenSkeleton";
+    var label = document.createElement("div");
+    label.style.cssText = "color:#64748b;font-size:11px;margin-top:4px;";
+    label.textContent = "Creating image...";
+    bubble.appendChild(skeleton);
+    bubble.appendChild(label);
+    wrapper.appendChild(bubble);
+    container.appendChild(wrapper);
+    container.scrollTop = container.scrollHeight;
+    return wrapper;
+}
+
+function removeImageSkeleton() {
+    var skel = document.getElementById("imgGenSkeleton");
+    if (skel) {
+        var parent = skel.closest(".assistant-message");
+        if (parent) parent.remove();
+    }
+}
+
+function renderGeneratedImage(imageUrl, revisedPrompt, altText) {
+    var container = document.getElementById("messages");
+    var welcome = document.getElementById("welcome");
+    if (welcome) welcome.style.display = "none";
+    var wrapper = document.createElement("div");
+    wrapper.className = "assistant-message";
+    var bubble = document.createElement("div");
+    bubble.className = "bubble";
+    var label = document.createElement("div");
+    label.style.cssText = "font-size:12px;color:#94a3b8;margin-bottom:8px;";
+    label.textContent = "Here's what I created:";
+    bubble.appendChild(label);
+    var imgWrap = document.createElement("div");
+    imgWrap.className = "gen-image-wrap";
+    var img = document.createElement("img");
+    img.src = imageUrl;
+    img.alt = revisedPrompt || "Generated image";
+    img.loading = "lazy";
+    imgWrap.appendChild(img);
+    var dlBtn = document.createElement("a");
+    dlBtn.className = "gen-image-download";
+    dlBtn.href = imageUrl;
+    dlBtn.download = "";
+    dlBtn.title = "Download image";
+    dlBtn.innerHTML = '<i data-lucide="download" style="width:18px;height:18px;"></i>';
+    dlBtn.onclick = function (e) {
+        e.stopPropagation();
+    };
+    imgWrap.appendChild(dlBtn);
+    bubble.appendChild(imgWrap);
+    if (revisedPrompt) {
+        var caption = document.createElement("div");
+        caption.style.cssText = "font-size:10px;color:#475569;margin-top:6px;font-style:italic;";
+        caption.textContent = revisedPrompt.slice(0, 120) + (revisedPrompt.length > 120 ? "..." : "");
+        bubble.appendChild(caption);
+    }
+    wrapper.appendChild(bubble);
+    container.appendChild(wrapper);
+    container.scrollTop = container.scrollHeight;
+    if (typeof lucide !== "undefined" && lucide.createIcons) lucide.createIcons();
+    if (typeof window.applyIconFallback === "function") window.applyIconFallback();
+}
+
+async function submitImageGen() {
+    var prompt = document.getElementById("imageGenPrompt");
+    var status = document.getElementById("imageGenStatus");
+    var btn = document.getElementById("imageGenSubmitBtn");
+    var text = prompt ? prompt.value.trim() : "";
+    if (status) status.textContent = "";
+    if (!text) { if (status) status.textContent = "Please describe the image you want to create."; return; }
+    closeImageGenModal();
+    addImageSkeleton();
+    if (btn) btn.disabled = true;
+    try {
+        var res = await apiFetch("/api/generate-image", {
+            method: "POST",
+            credentials: "include",
+            headers: authHeaders({ "Content-Type": "application/json" }),
+            body: JSON.stringify({ prompt: text }),
+            timeoutMs: 120000,
+        });
+        var data = await res.json();
+        if (!res.ok || data.status !== "success") {
+            throw new Error(data.message || "Image generation failed");
+        }
+        removeImageSkeleton();
+        renderGeneratedImage(data.image_url, data.revised_prompt || "", data.text || "");
+    } catch (err) {
+        removeImageSkeleton();
+        if (status) status.textContent = err.message || "Generation failed. Try again.";
+        addMessage("Image generation failed: " + (err.message || "Unknown error"), "ai");
+    } finally {
+        if (btn) btn.disabled = false;
+    }
+}
 
 /* === ICON FALLBACK SYSTEM (self-contained, zero CDN dependency) === */
 (function() {
