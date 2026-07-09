@@ -505,6 +505,23 @@ def _call_llm_cluster(
     else:
         print("[LLM CLUSTER] Gemini unavailable: no API key")
 
+    # ── 5. Provider Manager text providers (Alibaba, Baseten, etc.) ──────────
+    try:
+        import core.provider_manager as pm
+        manager = pm.get_manager()
+        result = manager.execute(
+            pm.Capability.TEXT,
+            messages=messages,
+            timeout=timeout,
+        )
+        if result.success:
+            content = result.data.get("content", "")
+            if content:
+                return content, {"groq_used": False, "fallback_used": True, "fallback_source": "ProviderManager"}
+    except Exception as exc:
+        last_error = exc
+        print(f"[LLM CLUSTER] ProviderManager TEXT failed: {_short_error_detail(str(exc))}.")
+
     raise RuntimeError(
         f"All LLM providers failed. Last error: {_short_error_detail(str(last_error))}"
     )

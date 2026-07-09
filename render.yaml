@@ -35,6 +35,8 @@ services:
         sync: false
       - key: API_SPORTS_KEY
         sync: false
+      - key: ALIBABA_MODEL_STUDIO_API_KEY
+        sync: false
     disk:
       name: valleymind-memory
       mountPath: /opt/render/project/src/memory_data

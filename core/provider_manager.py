@@ -14,8 +14,10 @@ from typing import Any
 
 
 class Capability(str, Enum):
+    TEXT = "text"
     IMAGE = "image"
     VIDEO = "video"
+    EMBEDDINGS = "embeddings"
     AUDIO = "audio"
     SPEECH = "speech"
     CODE = "code"
@@ -159,6 +161,7 @@ class ProviderManager:
 
     def __init__(self) -> None:
         self._providers: dict[Capability, list[BaseProvider]] = {
+            Capability.TEXT: [],
             Capability.IMAGE: [
                 PollinationsImageProvider(),
                 GeminiImageProvider(),
@@ -166,12 +169,32 @@ class ProviderManager:
             Capability.VIDEO: [
                 PlaceholderVideoProvider(),
             ],
+            Capability.EMBEDDINGS: [],
             Capability.AUDIO: [],
             Capability.SPEECH: [],
             Capability.CODE: [],
         }
+
+        # Auto-discover and register third-party providers
+        self._register_discovered("core.provider_alibaba")
+
         self.routing_log: list[RoutingLogEntry] = []
         self._max_log_entries = 500
+
+    # ── Internal auto-discovery ────────────────────────────────
+
+    def _register_discovered(self, module_path: str) -> None:
+        try:
+            import importlib
+            mod = importlib.import_module(module_path)
+            if not hasattr(mod, "discover"):
+                return
+            providers = mod.discover()
+            for p in providers:
+                if p.capability in self._providers:
+                    self._providers[p.capability].append(p)
+        except Exception as exc:
+            print(f"[PROVIDER] Discovery from {module_path} skipped: {exc}")
 
     # ── public API used by app.py ─────────────────────────────
 

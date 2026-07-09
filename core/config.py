@@ -36,6 +36,7 @@ class APIConfig:
     gemini_api_key: str
     gemini_base_url: str
     gemini_model: str
+    alibaba_api_key: str
 
 
 
@@ -74,6 +75,7 @@ def get_config() -> APIConfig:
             "https://generativelanguage.googleapis.com/v1beta",
         ).rstrip("/"),
         gemini_model=os.getenv("GEMINI_MODEL", "gemini-2.0-flash").strip(),
+        alibaba_api_key=os.getenv("ALIBABA_MODEL_STUDIO_API_KEY", "").strip(),
     )
 
 
