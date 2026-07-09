@@ -1,0 +1,9 @@
+[TRACE BOOT] app.root_path = C:\Users\EGBUJIE VALENTINE\Desktop\Valleymind-AI
+[TRACE BOOT] app.static_folder = C:\Users\EGBUJIE VALENTINE\Desktop\Valleymind-AI\../static
+[TRACE BOOT] PROJECT_ROOT = C:\Users\EGBUJIE VALENTINE\Desktop\Valleymind-AI
+ * Serving Flask app 'app'
+ * Debug mode: off
+[TRACE STATIC] SPA fallback for: /valleymind-ai
+[TRACE STATIC] SPA fallback for: /valleymind-ai
+[TRACE STATIC] SPA fallback for: /favicon.ico
+[TRACE STATIC] SPA fallback for: /favicon.ico

@@ -25,8 +25,15 @@ def _save_image(data: bytes, ext: str = "png") -> str:
     filename = f"{uuid.uuid4().hex}_{datetime.now():%Y%m%d%H%M%S}.{ext}"
     filepath = GENERATED_DIR / filename
     filepath.write_bytes(data)
-    print(f"[IMAGE GEN] Saved {filepath}")
-    return f"/static/generated/{filename}"
+    abs_path = filepath.resolve()
+    rel_url = f"/static/generated/{filename}"
+    print(f"[DEBUG IMAGE] Saved to absolute path: {abs_path}")
+    print(f"[DEBUG IMAGE] Relative URL returned: {rel_url}")
+    print(f"[DEBUG IMAGE] File exists after write: {filepath.exists()}")
+    print(f"[DEBUG IMAGE] File size: {filepath.stat().st_size}")
+    print(f"[DEBUG IMAGE] GENERATED_DIR: {GENERATED_DIR.resolve()}")
+    print(f"[DEBUG IMAGE] PROJECT_ROOT: {PROJECT_ROOT.resolve()}")
+    return rel_url
 
 
 def _call_gemini_text(prompt: str, system_prompt: str, api_key: str, model: str = "gemini-2.0-flash", timeout: int = 15) -> str:
@@ -96,13 +103,16 @@ def generate_image(
     encoded = quote(resolved_prompt)
     url = f"{POLLINATIONS_BASE}/{encoded}"
 
-    print(f"[IMAGE] Request Started — prompt: {resolved_prompt[:200]}")
+    print(f"[IMAGE FLOW] Pollinations request started — URL: {url[:150]}")
+    print(f"[IMAGE FLOW] Pollinations request started — prompt: {resolved_prompt[:200]}")
 
     if reference_image:
         print("[IMAGE GEN] Note: reference_image is not supported with Pollinations Flux (text-to-image only). Ignoring.")
 
     try:
+        print(f"[IMAGE FLOW] Pollinations request started")
         response = requests.get(url, timeout=60)
+        print(f"[IMAGE FLOW] Pollinations response received — status: {response.status_code}, type: {response.headers.get('content-type', 'unknown')}, size: {len(response.content)} bytes")
         if response.status_code != 200:
             raise RuntimeError(
                 f"Pollinations HTTP {response.status_code}: {response.text[:500]}"
@@ -119,6 +129,7 @@ def generate_image(
 
     image_url = _save_image(response.content, ext)
 
+    print(f"[IMAGE FLOW] Returning image_url: {image_url}")
     print("[IMAGE] Request Success")
     return {
         "image_url": image_url,

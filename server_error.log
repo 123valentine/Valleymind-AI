@@ -1,0 +1,4 @@
+Traceback (most recent call last):
+  File "C:\Users\EGBUJIE VALENTINE\Desktop\Valleymind-AI\app.py", line 24, in <module>
+    import core.provider_manager as pm
+ModuleNotFoundError: No module named 'core.provider_manager'

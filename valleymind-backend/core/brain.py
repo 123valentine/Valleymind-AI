@@ -1575,10 +1575,11 @@ class MarcusBrain:
                 try:
                     classification_prompt = [
                         {"role": "system", "content": (
-                            "Analyze the creator's message. Classify it into one of two semantic intents:\n"
+                            "Analyze the creator's message. Classify it into one of three semantic intents:\n"
                             "1. 'internal_roadmap': Brainstorming, future feature planning, app expansion, architecture, or code updates.\n"
                             "2. 'external_search': Asking for live outside world info, current news, real-time sports scores, or web lookups.\n"
-                            "Respond with exactly one word: either 'internal_roadmap' or 'external_search'. No punctuation, no extra text."
+                            "3. 'generate_image': Requesting to create, generate, render, or visualize something as an image.\n"
+                            "Respond with exactly one word: either 'internal_roadmap', 'external_search', or 'generate_image'. No punctuation, no extra text."
                         )},
                         {"role": "user", "content": message}
                     ]
@@ -1587,6 +1588,8 @@ class MarcusBrain:
 
                     if "internal_roadmap" in semantic_intent:
                         intent = "none"
+                    elif "generate_image" in semantic_intent:
+                        intent = "image"
                     else:
                         intent = "news"
                 except Exception as exc:
@@ -1594,6 +1597,36 @@ class MarcusBrain:
                     intent = classify_live_request(message)
             else:
                 intent = classify_live_request(message)
+
+            # ── IMAGE GENERATION FAST PATH ──────────────────
+            if intent == "image":
+                yield {"intent": "generating_image", "query": message}
+                image_result = None
+                try:
+                    import core.provider_manager as pm
+                    manager = pm.get_manager()
+                    result = manager.execute(
+                        pm.Capability.IMAGE,
+                        prompt=message,
+                        enhance=False,
+                    )
+                    if result.success:
+                        yield {
+                            "image_url": result.data["image_url"],
+                            "revised_prompt": result.data.get("revised_prompt", ""),
+                        }
+                        image_result = result.data
+                    else:
+                        yield {"error": "Image generation failed. Please try again."}
+                except Exception as exc:
+                    yield {"error": "Image generation failed. Please try again."}
+                if image_result:
+                    try:
+                        self.memory.add_message(cid, "assistant", f"[Generated image: {image_result.get('revised_prompt', message)[:100]}]", timestamp)
+                        self.memory.save_memory()
+                    except Exception as exc:
+                        print(f"[IMAGE GEN] Memory save skipped: {exc}")
+                return
 
             if intent == "none":
                 print(f"[FAST-PATH] LLM classified intent '{intent}' — conversational, no search")

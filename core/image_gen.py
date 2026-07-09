@@ -96,13 +96,16 @@ def generate_image(
     encoded = quote(resolved_prompt)
     url = f"{POLLINATIONS_BASE}/{encoded}"
 
-    print(f"[IMAGE] Request Started — prompt: {resolved_prompt[:200]}")
+    print(f"[IMAGE FLOW] Pollinations request started — URL: {url[:150]}")
+    print(f"[IMAGE FLOW] Pollinations request started — prompt: {resolved_prompt[:200]}")
 
     if reference_image:
         print("[IMAGE GEN] Note: reference_image is not supported with Pollinations Flux (text-to-image only). Ignoring.")
 
     try:
+        print(f"[IMAGE FLOW] Pollinations request started")
         response = requests.get(url, timeout=60)
+        print(f"[IMAGE FLOW] Pollinations response received — status: {response.status_code}, type: {response.headers.get('content-type', 'unknown')}, size: {len(response.content)} bytes")
         if response.status_code != 200:
             raise RuntimeError(
                 f"Pollinations HTTP {response.status_code}: {response.text[:500]}"
@@ -119,6 +122,7 @@ def generate_image(
 
     image_url = _save_image(response.content, ext)
 
+    print(f"[IMAGE FLOW] Returning image_url: {image_url}")
     print("[IMAGE] Request Success")
     return {
         "image_url": image_url,

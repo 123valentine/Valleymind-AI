@@ -1211,6 +1211,444 @@ def api_generate_image():
         }), 500
 
 
+# ── Settings API ─────────────────────────────────────────────────
+
+_SETTINGS_DIR = PROJECT_ROOT / "memory_data" / "settings"
+
+
+def _settings_path(user_id: str) -> Path:
+    p = _SETTINGS_DIR / _safe_user_id(user_id)
+    p.mkdir(parents=True, exist_ok=True)
+    return p / "settings.json"
+
+
+def _load_settings(user_id: str) -> dict:
+    fpath = _settings_path(user_id)
+    try:
+        if fpath.exists():
+            with open(fpath, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, dict):
+                return data
+    except (json.JSONDecodeError, OSError):
+        pass
+    return {}
+
+
+def _save_settings(user_id: str, data: dict):
+    fpath = _settings_path(user_id)
+    try:
+        fpath.parent.mkdir(parents=True, exist_ok=True)
+        tmp = str(fpath) + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+        os.replace(tmp, fpath)
+    except OSError as exc:
+        print(f"[ERROR] Failed to save settings: {exc}")
+
+
+def _get_section_settings(user_id: str, section: str) -> dict:
+    settings = _load_settings(user_id)
+    return settings.get(section, {})
+
+
+def _put_section_settings(user_id: str, section: str, data: dict):
+    settings = _load_settings(user_id)
+    settings[section] = data
+    _save_settings(user_id, settings)
+
+
+@app.route("/api/settings/<section>", methods=["GET", "POST", "PUT"])
+def api_settings(section):
+    user_id, error = _require_login()
+    if error:
+        return error
+    allowed = {
+        "account", "memory", "projects", "creator", "preferences",
+        "appearance", "notifications", "knowledge", "billing",
+        "privacy", "language", "integrations", "extensions",
+    }
+    if section not in allowed:
+        return jsonify({"status": "error", "message": "Unknown section"}), 400
+    if request.method == "GET":
+        data = _get_section_settings(user_id, section)
+        return jsonify({"status": "success", "section": section, "data": data})
+    body = request.get_json(silent=True) or {}
+    if not isinstance(body, dict):
+        return jsonify({"status": "error", "message": "Body must be a JSON object"}), 400
+    _put_section_settings(user_id, section, body)
+    return jsonify({"status": "success", "section": section, "message": "Saved"})
+
+
+# ── User profile endpoint ──────────────────────────────────────
+
+@app.route("/api/settings/profile", methods=["GET", "PUT"])
+def api_settings_profile():
+    user_id, error = _require_login()
+    if error:
+        return error
+    auth = _current_auth()
+    email = str(auth.get("email") or "").strip()
+    with _users_lock:
+        users = _load_users()
+        user = users.get(email, {})
+    if request.method == "GET":
+        return jsonify({
+            "status": "success",
+            "profile": {
+                "username": user.get("name", email.split("@")[0] if email else ""),
+                "email": email,
+                "avatar": user.get("picture", ""),
+                "is_creator": user.get("is_creator", False),
+                "created_at": user.get("created_at", ""),
+            }
+        })
+    body = request.get_json(silent=True) or {}
+    username = str(body.get("username") or "").strip()
+    with _users_lock:
+        users = _load_users()
+        if email in users:
+            if username:
+                users[email]["name"] = username
+            if "picture" in body:
+                users[email]["picture"] = str(body["picture"]).strip()
+            _save_users(users)
+    return jsonify({"status": "success", "message": "Profile updated"})
+
+
+# ── Memory fields API (long-term memory) ───────────────────────
+
+_MEMORY_FIELDS = [
+    "about_me", "my_goals", "current_projects", "long_term_vision",
+    "skills", "interests", "preferred_communication_style",
+    "always_remember", "never_remember",
+]
+
+
+@app.route("/api/settings/memory-fields", methods=["GET", "PUT"])
+def api_settings_memory_fields():
+    user_id, error = _require_login()
+    if error:
+        return error
+    if request.method == "GET":
+        data = _get_section_settings(user_id, "memory")
+        return jsonify({"status": "success", "fields": data})
+    body = request.get_json(silent=True) or {}
+    if not isinstance(body, dict):
+        return jsonify({"status": "error", "message": "Body must be a JSON object"}), 400
+    # Merge with existing
+    existing = _get_section_settings(user_id, "memory")
+    existing.update(body)
+    _put_section_settings(user_id, "memory", existing)
+    # Also update Marcus long-term memory
+    marcus = load_marcus(user_id)
+    if marcus:
+        for key, val in body.items():
+            if val:
+                marcus.memory.remember_preference(key, str(val)[:2000])
+    return jsonify({"status": "success", "message": "Memory updated"})
+
+
+# ── Memory timeline / review ───────────────────────────────────
+
+@app.route("/api/settings/memory-timeline", methods=["GET"])
+def api_settings_memory_timeline():
+    user_id, error = _require_login()
+    if error:
+        return error
+    marcus = load_marcus(user_id)
+    if not marcus:
+        return jsonify({"status": "success", "entries": []})
+    try:
+        mem = marcus.memory.get_full_memory()
+        prefs = mem.get("preferences", {})
+        identity = mem.get("identity", {})
+        entries = []
+        for k, v in prefs.items():
+            entries.append({"key": k, "value": str(v)[:200], "type": "preference", "time": ""})
+        for k, v in identity.items():
+            entries.append({"key": k, "value": str(v)[:200], "type": "identity", "time": ""})
+        return jsonify({"status": "success", "entries": entries})
+    except Exception as exc:
+        return jsonify({"status": "error", "message": str(exc)}), 500
+
+
+# ── Projects CRUD ──────────────────────────────────────────────
+
+@app.route("/api/settings/projects", methods=["GET", "POST"])
+@app.route("/api/settings/projects/<project_id>", methods=["PUT", "DELETE"])
+def api_settings_projects(project_id=None):
+    user_id, error = _require_login()
+    if error:
+        return error
+    settings = _load_settings(user_id)
+    projects = settings.get("projects_list", [])
+    if not isinstance(projects, list):
+        projects = []
+
+    if request.method == "GET":
+        return jsonify({"status": "success", "projects": projects})
+
+    if request.method == "POST":
+        body = request.get_json(silent=True) or {}
+        pid = f"proj_{secrets.token_hex(6)}"
+        project = {
+            "id": pid,
+            "name": str(body.get("name", "Untitled Project"))[:100],
+            "description": str(body.get("description", ""))[:2000],
+            "goal": str(body.get("goal", ""))[:500],
+            "deadline": str(body.get("deadline", ""))[:100],
+            "status": str(body.get("status", "active"))[:20],
+            "created_at": datetime.now().isoformat(),
+            "updated_at": datetime.now().isoformat(),
+        }
+        projects.append(project)
+        settings["projects_list"] = projects
+        _save_settings(user_id, settings)
+        # Update Marcus memory
+        marcus = load_marcus(user_id)
+        if marcus:
+            marcus.memory.remember_preference("current_project", project["name"])
+        return jsonify({"status": "success", "project": project})
+
+    if not project_id:
+        return jsonify({"status": "error", "message": "project_id required"}), 400
+
+    if request.method == "PUT":
+        body = request.get_json(silent=True) or {}
+        for p in projects:
+            if p.get("id") == project_id:
+                for key in ("name", "description", "goal", "deadline", "status"):
+                    if key in body:
+                        p[key] = str(body[key])[:2000]
+                p["updated_at"] = datetime.now().isoformat()
+                break
+        settings["projects_list"] = projects
+        _save_settings(user_id, settings)
+        return jsonify({"status": "success", "message": "Project updated"})
+
+    if request.method == "DELETE":
+        projects = [p for p in projects if p.get("id") != project_id]
+        settings["projects_list"] = projects
+        _save_settings(user_id, settings)
+        return jsonify({"status": "success", "message": "Project deleted"})
+
+    return jsonify({"status": "error", "message": "Method not allowed"}), 405
+
+
+# ── Storage usage (real data) ──────────────────────────────────
+
+def _get_storage_usage(user_id: str) -> dict:
+    usage = {"images_mb": 0, "videos_mb": 0, "documents_mb": 0, "knowledge_mb": 0, "memory_mb": 0, "cache_mb": 0}
+    try:
+        # Count generated images
+        gen_dir = PROJECT_ROOT / "static" / "generated"
+        if gen_dir.exists():
+            total_bytes = sum(f.stat().st_size for f in gen_dir.glob("**/*") if f.is_file())
+            usage["images_mb"] = round(total_bytes / (1024 * 1024), 1)
+
+        # Memory data
+        mem_dir = PROJECT_ROOT / "memory_data" / "users" / _safe_user_id(user_id)
+        if mem_dir.exists():
+            total_bytes = sum(f.stat().st_size for f in mem_dir.glob("**/*") if f.is_file())
+            usage["memory_mb"] = round(total_bytes / (1024 * 1024), 1)
+
+        # Settings/knowledge
+        settings_dir = PROJECT_ROOT / "memory_data" / "settings"
+        if settings_dir.exists():
+            total_bytes = sum(f.stat().st_size for f in settings_dir.glob("**/*") if f.is_file())
+            usage["documents_mb"] = round(total_bytes / (1024 * 1024), 1)
+
+        # Cache estimate
+        usage["cache_mb"] = round(usage["memory_mb"] * 0.15, 1)
+
+        total = sum(usage.values())
+        usage["total_mb"] = round(total, 1)
+        usage["available_mb"] = round(max(500 - total, 0), 1)
+        usage["used_pct"] = round(min((total / 500) * 100, 100), 1)
+    except Exception:
+        pass
+    return usage
+
+
+@app.route("/api/settings/storage", methods=["GET"])
+def api_settings_storage():
+    user_id, error = _require_login()
+    if error:
+        return error
+    return jsonify({"status": "success", "usage": _get_storage_usage(user_id)})
+
+
+# ── Usage analytics ────────────────────────────────────────────
+
+@app.route("/api/settings/usage", methods=["GET"])
+def api_settings_usage():
+    user_id, error = _require_login()
+    if error:
+        return error
+    marcus = load_marcus(user_id)
+    sessions = _load_sessions_index(user_id)
+    total_messages = sum(int(s.get("message_count", 0)) for s in sessions)
+    usage = {
+        "chat_sessions": len(sessions),
+        "chat_messages": total_messages,
+        "images_generated": len(list((PROJECT_ROOT / "static" / "generated").glob("*.png"))) if (PROJECT_ROOT / "static" / "generated").exists() else 0,
+        "memory_entries": len(marcus.memory.get_full_memory().get("preferences", {})) + len(marcus.memory.get_full_memory().get("identity", {})) if marcus else 0,
+        "knowledge_items": 0,
+        "storage_mb": _get_storage_usage(user_id).get("total_mb", 0),
+        "sessions": sessions[:50],
+    }
+    return jsonify({"status": "success", "usage": usage})
+
+
+# ── Knowledge items ────────────────────────────────────────────
+
+@app.route("/api/settings/knowledge", methods=["GET", "POST", "DELETE"])
+def api_settings_knowledge():
+    user_id, error = _require_login()
+    if error:
+        return error
+    settings = _load_settings(user_id)
+    items = settings.get("knowledge_items", [])
+    if not isinstance(items, list):
+        items = []
+
+    if request.method == "GET":
+        return jsonify({"status": "success", "items": items})
+
+    if request.method == "POST":
+        body = request.get_json(silent=True) or {}
+        item = {
+            "id": f"know_{secrets.token_hex(6)}",
+            "type": str(body.get("type", "note"))[:50],
+            "title": str(body.get("title", "Untitled"))[:200],
+            "content": str(body.get("content", ""))[:5000],
+            "created_at": datetime.now().isoformat(),
+        }
+        items.append(item)
+        settings["knowledge_items"] = items
+        _save_settings(user_id, settings)
+        return jsonify({"status": "success", "item": item})
+
+    if request.method == "DELETE":
+        body = request.get_json(silent=True) or {}
+        item_id = str(body.get("id") or "").strip()
+        items = [i for i in items if i.get("id") != item_id]
+        settings["knowledge_items"] = items
+        _save_settings(user_id, settings)
+        return jsonify({"status": "success", "message": "Deleted"})
+
+    return jsonify({"status": "error", "message": "Method not allowed"}), 405
+
+
+# ── Media library ──────────────────────────────────────────────
+
+@app.route("/api/settings/media", methods=["GET", "DELETE"])
+def api_settings_media():
+    user_id, error = _require_login()
+    if error:
+        return error
+    if request.method == "DELETE":
+        body = request.get_json(silent=True) or {}
+        url = str(body.get("url") or "").strip()
+        if url:
+            fname = url.rsplit("/", 1)[-1]
+            fpath = PROJECT_ROOT / "static" / "generated" / fname
+            if fpath.exists() and fpath.is_file():
+                fpath.unlink()
+                return jsonify({"status": "success", "message": "Deleted"})
+        return jsonify({"status": "error", "message": "File not found"}), 404
+    images = []
+    gen_dir = PROJECT_ROOT / "static" / "generated"
+    if gen_dir.exists():
+        for f in sorted(gen_dir.glob("*.*"), key=lambda x: x.stat().st_mtime, reverse=True):
+            ext = f.suffix.lower()
+            if ext in (".png", ".jpg", ".jpeg", ".gif", ".webp"):
+                images.append({
+                    "url": f"/static/generated/{f.name}",
+                    "name": f.name,
+                    "size_kb": round(f.stat().st_size / 1024, 1),
+                    "type": "image",
+                    "created_at": datetime.fromtimestamp(f.stat().st_mtime).isoformat(),
+                })
+    return jsonify({"status": "success", "images": images, "videos": []})
+
+
+# ── Billing/plans info ─────────────────────────────────────────
+
+@app.route("/api/settings/billing", methods=["GET"])
+def api_settings_billing():
+    user_id, error = _require_login()
+    if error:
+        return error
+    return jsonify({
+        "status": "success",
+        "plan": "free",
+        "subscription_status": "active",
+        "billing_history": [],
+        "payment_methods": [],
+        "invoices": [],
+        "usage": {
+            "monthly_chats": 0,
+            "monthly_images": 0,
+            "credits_remaining": 100,
+            "monthly_limit": 100,
+        },
+        "plans": {
+            "free": {
+                "name": "Free",
+                "price": 0,
+                "currency": "NGN",
+                "features": ["100 chats/month", "50 images/month", "Basic memory", "Standard support"],
+            },
+            "pro": {
+                "name": "Pro",
+                "price": 15000,
+                "currency": "NGN",
+                "features": ["Unlimited chats", "500 images/month", "Advanced memory", "Priority support", "Knowledge base", "Creator profile"],
+            },
+            "enterprise": {
+                "name": "Enterprise",
+                "price": 50000,
+                "currency": "NGN",
+                "features": ["Everything in Pro", "Unlimited images", "Team access", "Custom integrations", "Dedicated support", "API access"],
+            },
+        },
+    })
+
+
+# ── Login history / devices / active sessions ──────────────────
+
+@app.route("/api/settings/security", methods=["GET"])
+def api_settings_security():
+    user_id, error = _require_login()
+    if error:
+        return error
+    auth = _current_auth()
+    return jsonify({
+        "status": "success",
+        "two_factor_enabled": False,
+        "connected_accounts": [
+            {"provider": "google", "connected": bool(auth.get("email"))},
+        ],
+        "login_history": [
+            {
+                "time": datetime.now().isoformat(),
+                "ip": request.remote_addr or "127.0.0.1",
+                "device": request.headers.get("User-Agent", "Unknown")[:100],
+            }
+        ],
+        "devices": [
+            {
+                "name": request.headers.get("User-Agent", "Current Device")[:50],
+                "current": True,
+                "last_active": datetime.now().isoformat(),
+            }
+        ],
+        "active_sessions": 1,
+    })
+
+
 # ── Developer Mode API (internal only; never exposed in normal UI) ──────
 
 

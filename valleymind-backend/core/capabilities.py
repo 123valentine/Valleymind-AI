@@ -13,7 +13,7 @@ CAPABILITIES = [
     {"name": "Message reactions", "status": "live", "description": "Thumbs up/down feedback on messages"},
     {"name": "Image upload in chat", "status": "live", "description": "Attach and discuss images directly in conversation"},
     {"name": "Suggestion box", "status": "live", "description": "Users can submit feature suggestions"},
-    {"name": "Image generation", "status": "coming_soon", "description": "Not yet built"},
+    {"name": "Image generation", "status": "live", "description": "Create images from text descriptions"},
     {"name": "Video generation", "status": "coming_soon", "description": "Not yet built"},
     {"name": "3D model generation", "status": "coming_soon", "description": "Not yet built"},
     {"name": "Website builder", "status": "coming_soon", "description": "Not yet built"},

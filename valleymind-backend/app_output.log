@@ -1,0 +1,5 @@
+[TRACE BOOT] app.root_path = C:\Users\EGBUJIE VALENTINE\Desktop\Valleymind-AI\valleymind-backend
+[TRACE BOOT] app.static_folder = C:\Users\EGBUJIE VALENTINE\Desktop\Valleymind-AI\valleymind-backend\../static
+[TRACE BOOT] PROJECT_ROOT = C:\Users\EGBUJIE VALENTINE\Desktop\Valleymind-AI
+ * Serving Flask app 'app'
+ * Debug mode: off

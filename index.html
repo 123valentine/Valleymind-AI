@@ -14,6 +14,7 @@
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="/static/settings.js"></script>
 <script id="tailwind-config">
   tailwind.config = {
     darkMode: "class",
@@ -430,7 +431,7 @@
         <span id="sidebarUserBadge" style="font-size:11px;color:#64748b;">Active Creator</span>
       </div>
     </div>
-    <button id="settingsGearBtn" onclick="console.log('Gear clicked!'); const overlay = document.getElementById('settingsOverlay'); overlay.style.display = 'flex'; overlay.className = '';" style="position: relative; z-index: 99999 !important; background:none; border:none; color:#94a3b8; cursor:pointer; padding:8px; display:flex; align-items:center; justify-content:center; transition:color 0.2s;">
+    <button id="settingsGearBtn" onclick="openSettings()" style="position: relative; z-index: 99999 !important; background:none; border:none; color:#94a3b8; cursor:pointer; padding:8px; display:flex; align-items:center; justify-content:center; transition:color 0.2s;">
       <span class="material-icons" style="font-size:24px;">settings</span>
     </button>
   </div>
@@ -591,49 +592,152 @@
 </main>
 
 <!-- SETTINGS OVERLAY -->
-<div id="settingsOverlay" style="position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(2,6,23,0.88);backdrop-filter:blur(14px);z-index:99999 !important;display:none;flex-direction:column;align-items:center;justify-content:center;">
-  <div style="position:relative;width:1280px;max-width:95vw;height:720px;max-height:90vh;background:#0b1120;border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,0.6);overflow:hidden;border:1px solid rgba(34,211,238,0.15);">
-    
-    <!-- Close button -->
-    <button id="closeSettingsBtn" onclick="document.getElementById('settingsOverlay').style.display = 'none';" style="position:absolute;top:14px;right:18px;z-index:100;background:rgba(0,0,0,0.5);border:none;color:#f8fafc;font-size:26px;cursor:pointer;pointer-events:auto !important;width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;line-height:1;transition:background 0.2s;">&times;</button>
+<div id="settingsOverlay" style="position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(2,6,23,0.94);backdrop-filter:blur(20px);z-index:99999 !important;display:none;flex-direction:column;overflow:hidden;">
+  <div style="display:flex;flex-direction:column;height:100%;max-width:1200px;width:100%;margin:0 auto;padding:0;">
 
-    <!-- Page indicator -->
-    <div id="pdfPageIndicator" style="position:absolute;bottom:16px;left:50%;transform:translateX(-50%);z-index:100;background:rgba(0,0,0,0.65);color:#94a3b8;font-size:12px;padding:4px 14px;border-radius:20px;font-family:'Inter',sans-serif;pointer-events:none;">Loading...</div>
-
-    <!-- Prev button -->
-    <button id="pdfPrevBtn" onclick="prevPdfPage()" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);z-index:100;background:rgba(0,0,0,0.5);border:none;color:#f8fafc;font-size:30px;cursor:pointer;pointer-events:auto !important;width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;transition:background 0.2s;">&#8249;</button>
-
-    <!-- Next button -->
-    <button id="pdfNextBtn" onclick="nextPdfPage()" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);z-index:100;background:rgba(0,0,0,0.5);border:none;color:#f8fafc;font-size:30px;cursor:pointer;pointer-events:auto !important;width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;transition:background 0.2s;">&#8250;</button>
-
-    <!-- PDF Canvas -->
-    <canvas id="pdfCanvas" style="display:block;margin:0 auto;width:100%;height:100%;object-fit:contain;"></canvas>
-
-    <!-- PAGE 1 OVERLAYS -->
-    <div class="pdf-overlay pdf-overlay-1" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;display:none;">
-      <!-- Password Change click zone -->
-      <div onclick="goToPdfPage(2)" style="position:absolute;left:5%;top:30%;width:35%;height:8%;pointer-events:auto;cursor:pointer;" title="Go to Password Change"></div>
-      <!-- Theme Engine click zone -->
-      <div onclick="goToPdfPage(3)" style="position:absolute;left:5%;top:42%;width:35%;height:8%;pointer-events:auto;cursor:pointer;" title="Go to Theme Engine"></div>
-    </div>
-
-    <!-- PAGE 2 OVERLAYS (Password change form) -->
-    <div class="pdf-overlay pdf-overlay-2" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;display:none;">
-      <div style="position:absolute;left:50%;top:38%;width:30%;height:auto;pointer-events:auto;display:flex;flex-direction:column;gap:10px;transform:translateX(-50%);">
-        <input id="pdfOldPass" type="password" placeholder="Current password" style="width:100%;background:rgba(15,23,42,0.85);border:1px solid rgba(34,211,238,0.4);border-radius:8px;padding:10px 12px;color:#f8fafc;font-size:13px;outline:none;pointer-events:auto !important;">
-        <input id="pdfNewPass" type="password" placeholder="New password" style="width:100%;background:rgba(15,23,42,0.85);border:1px solid rgba(34,211,238,0.4);border-radius:8px;padding:10px 12px;color:#f8fafc;font-size:13px;outline:none;pointer-events:auto !important;">
-        <button onclick="pdfChangePassword()" style="width:100%;border:none;border-radius:8px;background:#0ea5e9;color:#fff;font-weight:600;padding:10px;cursor:pointer;pointer-events:auto !important;font-size:13px;">Update Password</button>
-        <p id="pdfPassStatus" style="font-size:11px;color:#94a3b8;margin:0;text-align:center;"></p>
+    <!-- Header -->
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 24px;border-bottom:1px solid rgba(255,255,255,0.06);flex-shrink:0;background:rgba(2,6,23,0.6);">
+      <div style="display:flex;align-items:center;gap:14px;">
+        <div style="width:32px;height:32px;border-radius:8px;background:linear-gradient(135deg,#00d4ff,#0ea5e9);display:flex;align-items:center;justify-content:center;">
+          <span style="color:#003642;font-size:16px;font-weight:900;font-family:'Space Grotesk',sans-serif;">V</span>
+        </div>
+        <div>
+          <span style="color:#f1f5f9;font-size:15px;font-weight:700;font-family:'Inter',sans-serif;letter-spacing:0.02em;">Settings</span>
+          <span style="color:#475569;font-size:10px;text-transform:uppercase;letter-spacing:0.15em;font-family:'Space Grotesk',sans-serif;font-weight:500;margin-left:8px;">Quantum v2.4</span>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <span id="settingsSaveIndicator" style="color:#22c55e;font-size:11px;font-family:'Inter',sans-serif;opacity:0;transition:opacity 0.3s;">Saved</span>
+        <button id="settingsCloseBtn" onclick="closeSettings()" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.08);color:#94a3b8;font-size:18px;cursor:pointer;width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;transition:all 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.12)';this.style.color='#f8fafc';this.style.borderColor='rgba(255,255,255,0.2)'" onmouseout="this.style.background='rgba(255,255,255,0.06)';this.style.color='#94a3b8';this.style.borderColor='rgba(255,255,255,0.08)'">&times;</button>
       </div>
     </div>
 
-    <!-- PAGE 3 OVERLAYS (Reset to Default) -->
-    <div class="pdf-overlay pdf-overlay-3" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;display:none;">
-      <button onclick="resetThemeColors()" style="position:absolute;left:30%;top:60%;width:18%;height:6%;pointer-events:auto !important;cursor:pointer;background:rgba(14,165,233,0.2);border:1px solid rgba(14,165,233,0.5);border-radius:8px;color:#f8fafc;font-weight:600;font-size:13px;backdrop-filter:blur(4px);">Reset to Default</button>
+    <!-- Body -->
+    <div style="display:flex;flex:1;overflow:hidden;">
+
+      <!-- Sidebar Navigation -->
+      <div style="width:200px;flex-shrink:0;overflow-y:auto;border-right:1px solid rgba(255,255,255,0.05);background:rgba(2,6,23,0.4);padding:12px 0;">
+        <div id="settingsNav" style="display:flex;flex-direction:column;gap:1px;"></div>
+      </div>
+
+      <!-- Content Area -->
+      <div style="flex:1;overflow-y:auto;padding:24px 28px;background:rgba(2,6,23,0.2);">
+        <div id="settingsContent"></div>
+      </div>
+
     </div>
 
   </div>
 </div>
+
+<!-- Settings system moved to /static/settings.js -->
+
+<!-- DEVELOPER MODE OVERLAY (hidden from normal users) -->
+<div id="devModeOverlay" style="position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(2,6,23,0.92);backdrop-filter:blur(14px);z-index:99999 !important;display:none;flex-direction:column;padding:24px;overflow-y:auto;">
+  <div style="max-width:960px;margin:0 auto;width:100%;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;">
+      <h2 style="color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:0.2em;font-family:'Space Grotesk',sans-serif;font-weight:600;">Developer Mode</h2>
+      <button onclick="closeDeveloperMode()" style="background:rgba(0,0,0,0.5);border:none;color:#f8fafc;font-size:22px;cursor:pointer;width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;">&times;</button>
+    </div>
+
+    <!-- Provider Status -->
+    <div style="margin-bottom:12px;">
+      <p style="color:#94a3b8;font-size:10px;text-transform:uppercase;letter-spacing:0.15em;font-family:'Space Grotesk',sans-serif;margin-bottom:8px;">Provider Status</p>
+      <div id="devProviderList" style="display:flex;flex-wrap:wrap;gap:8px;"></div>
+    </div>
+
+    <!-- Metrics -->
+    <div style="margin-bottom:12px;">
+      <p style="color:#94a3b8;font-size:10px;text-transform:uppercase;letter-spacing:0.15em;font-family:'Space Grotesk',sans-serif;margin-bottom:8px;">Metrics</p>
+      <div id="devMetrics" style="display:flex;flex-wrap:wrap;gap:8px;"></div>
+    </div>
+
+    <!-- Routing Log -->
+    <div style="margin-bottom:12px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+        <p style="color:#94a3b8;font-size:10px;text-transform:uppercase;letter-spacing:0.15em;font-family:'Space Grotesk',sans-serif;margin:0;">Routing Log</p>
+        <button onclick="refreshDevMode()" style="background:rgba(14,165,233,0.15);border:1px solid rgba(14,165,233,0.3);border-radius:6px;color:#38bdf8;font-size:10px;cursor:pointer;padding:4px 10px;font-family:'Inter',sans-serif;">Refresh</button>
+      </div>
+      <div id="devRoutingLog" style="background:rgba(0,0,0,0.4);border-radius:8px;padding:12px;max-height:320px;overflow-y:auto;font-family:'Courier New',monospace;font-size:11px;line-height:1.6;color:#64748b;"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+function openDeveloperMode() {
+    document.getElementById("devModeOverlay").style.display = "flex";
+    refreshDevMode();
+}
+function closeDeveloperMode() {
+    document.getElementById("devModeOverlay").style.display = "none";
+}
+async function refreshDevMode() {
+    try {
+        var res = await apiFetch("/api/dev/provider-status", {
+            credentials: "include",
+            headers: authHeaders(),
+        });
+        var data = await res.json();
+        if (data.status === "success") renderDevProviders(data);
+    } catch (_) {}
+    try {
+        var res2 = await apiFetch("/api/dev/routing-log?limit=50", {
+            credentials: "include",
+            headers: authHeaders(),
+        });
+        var data2 = await res2.json();
+        if (data2.status === "success") renderDevLog(data2.log);
+    } catch (_) {}
+}
+function renderDevProviders(data) {
+    var list = document.getElementById("devProviderList");
+    list.innerHTML = "";
+    (data.providers || []).forEach(function (p) {
+        var healthColor = p.health === "healthy" ? "#22c55e" : p.health === "degraded" ? "#eab308" : "#ef4444";
+        var card = document.createElement("div");
+        card.style.cssText = "background:rgba(0,0,0,0.4);border:1px solid rgba(255,255,255,0.06);border-radius:8px;padding:12px;min-width:160px;flex:1;";
+        card.innerHTML = '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">' +
+            '<span style="width:8px;height:8px;border-radius:50%;background:' + healthColor + ';"></span>' +
+            '<span style="color:#e2e8f0;font-size:12px;font-weight:600;font-family:\'Inter\',sans-serif;">' + p.name + '</span>' +
+            '</div>' +
+            '<div style="font-size:10px;color:#64748b;font-family:\'Inter\',sans-serif;">' +
+            'Capability: ' + p.capability + '<br>' +
+            'Priority: ' + p.priority + '<br>' +
+            'Avg Latency: ' + p.avg_latency_ms + 'ms<br>' +
+            'Requests: ' + p.total_requests +
+            (p.quota_remaining !== null ? '<br>Quota: ' + p.quota_remaining : '') +
+            '</div>';
+        list.appendChild(card);
+    });
+    var metrics = document.getElementById("devMetrics");
+    if (data.metrics) {
+        var m = data.metrics;
+        metrics.innerHTML = ['<span style="background:rgba(34,197,94,0.12);color:#22c55e;padding:4px 10px;border-radius:6px;font-size:10px;font-family:\'Inter\',sans-serif;">Healthy: ' + m.providers_healthy + '</span>',
+            '<span style="background:rgba(234,179,8,0.12);color:#eab308;padding:4px 10px;border-radius:6px;font-size:10px;font-family:\'Inter\',sans-serif;">Degraded: ' + m.providers_degraded + '</span>',
+            '<span style="background:rgba(239,68,68,0.12);color:#ef4444;padding:4px 10px;border-radius:6px;font-size:10px;font-family:\'Inter\',sans-serif;">Down: ' + m.providers_down + '</span>',
+            '<span style="background:rgba(148,163,184,0.12);color:#94a3b8;padding:4px 10px;border-radius:6px;font-size:10px;font-family:\'Inter\',sans-serif;">Total: ' + m.total_requests + '</span>',
+        ].join("");
+    }
+}
+function renderDevLog(log) {
+    var el = document.getElementById("devRoutingLog");
+    if (!log || log.length === 0) {
+        el.textContent = "[no routing entries yet]";
+        return;
+    }
+    el.innerHTML = log.slice().reverse().map(function (e) {
+        var icon = e.success ? "✓" : "✗";
+        var color = e.success ? "#22c55e" : "#ef4444";
+        var time = e.timestamp ? new Date(e.timestamp * 1000).toLocaleTimeString() : "";
+        return '<span style="color:' + color + ';">' + icon + '</span> ' +
+            '<span style="color:#64748b;">[' + time + ']</span> ' +
+            '<span style="color:#e2e8f0;">' + e.provider + '</span> ' +
+            '<span style="color:#64748b;">' + e.capability + '</span> ' +
+            (e.latency_ms ? '<span style="color:#94a3b8;">(' + e.latency_ms + 'ms)</span>' : "") +
+            (e.error ? ' <span style="color:#ef4444;">' + e.error.slice(0, 80) + '</span>' : "");
+    }).join("<br>");
+}
+</script>
 
 </body>
 <script>
@@ -656,6 +760,7 @@ const SESSIONS_CACHE_KEY = "valleymind_sessions_cache";
 const LAST_CHAT_KEY = "valleymind_last_chat_id";
 const SESSION_FETCH_MAX_RETRIES = 3;
 const SESSION_FETCH_RETRY_DELAY_MS = 900;
+const VALLEY_DEBUG = false;
 
 let authCheckComplete = false;
 let isAuthenticated = false;
@@ -875,6 +980,15 @@ function authHeaders(extra = {}) {
     return headers;
 }
 
+function logSidebarState(tag) {
+    if (typeof VALLEY_DEBUG === "undefined") return;
+    var el = document.getElementById("sidebar");
+    if (!el) return;
+    console.log("[" + tag + "] sidebar display=" + el.style.display +
+        " collapsed=" + document.body.classList.contains("sidebar-collapsed") +
+        " open=" + el.classList.contains("open"));
+}
+
 function setAppVisible(isVisible) {
     const login = document.getElementById("loginView");
     const sidebar = document.getElementById("sidebar");
@@ -885,10 +999,12 @@ function setAppVisible(isVisible) {
     if (sidebar) sidebar.style.display = isVisible ? "flex" : "none";
     if (header) header.style.display = isVisible ? "flex" : "none";
     if (main) main.style.display = isVisible ? "flex" : "none";
+
     if (!isVisible) {
         closeSidebar();
-        document.body.classList.remove("sidebar-collapsed");
     }
+    document.body.classList.remove("sidebar-collapsed");
+    logSidebarState("setAppVisible(" + isVisible + ")");
 }
 
 const messageStore = [];
@@ -1854,6 +1970,7 @@ function openSidebar() {
     document.body.classList.remove("sidebar-collapsed");
     sidebar.classList.add("open");
     document.body.classList.add("sidebar-open");
+    logSidebarState("openSidebar");
 }
 
 function closeSidebar(collapseDesktop = false) {
@@ -1864,6 +1981,7 @@ function closeSidebar(collapseDesktop = false) {
     if (collapseDesktop && window.matchMedia("(min-width: 769px)").matches) {
         document.body.classList.add("sidebar-collapsed");
     }
+    logSidebarState("closeSidebar(" + collapseDesktop + ")");
     focusChatInput();
 }
 
@@ -1881,6 +1999,7 @@ async function toggleSidebar() {
         openSidebar();
         if (isAuthenticated) await loadSessions({ showLoading: sessionList.length === 0 });
     }
+    logSidebarState("toggleSidebar");
 }
 
 function toggleSuggestionBox() {
@@ -1946,6 +2065,7 @@ async function checkSession() {
     authCheckComplete = false;
     isAuthenticated = false;
     setAppVisible(false);
+    logSidebarState("checkSession-start");
 
     authCheckPromise = (async function () {
         try {
@@ -1962,6 +2082,7 @@ async function checkSession() {
                 var statusNeedLogin = document.getElementById("statusText");
                 if (statusNeedLogin) statusNeedLogin.textContent = "Login Required";
                 renderGoogleButton();
+                logSidebarState("checkSession-not-auth");
                 return false;
             }
 
@@ -1979,22 +2100,28 @@ async function checkSession() {
 
             renderSessionListSkeleton();
 
-            await loadSessions({ showLoading: true });
+            // Non-fatal: session loading failure should never prevent sidebar from showing.
+            try {
+                await loadSessions({ showLoading: true });
 
-            if (sessionList.length > 0) {
-                currentChatId = getSessionId(sessionList[0]);
-            }
+                if (sessionList.length > 0) {
+                    currentChatId = getSessionId(sessionList[0]);
+                }
 
-            if (currentChatId) {
-                saveLastChatId(currentChatId);
-                await hydrateChatMessages(currentChatId);
-            } else {
-                chatHydrationToken++;
-                clearVisibleMessages();
-                messageStore.length = 0;
+                if (currentChatId) {
+                    saveLastChatId(currentChatId);
+                    await hydrateChatMessages(currentChatId);
+                } else {
+                    chatHydrationToken++;
+                    clearVisibleMessages();
+                    messageStore.length = 0;
+                }
+            } catch (sessionErr) {
+                console.warn("[checkSession] session loading degraded:", sessionErr);
             }
 
             setAppVisible(true);
+            logSidebarState("checkSession-authed");
             var status = document.getElementById("statusText");
             if (status) status.textContent = "Memory Online";
             var email = data.email || "";
@@ -2026,6 +2153,7 @@ async function checkSession() {
             var error = document.getElementById("loginError");
             if (error) error.textContent = err.message || "Backend unavailable";
             renderGoogleButton();
+            logSidebarState("checkSession-error");
             return false;
         } finally {
             authCheckComplete = true;
@@ -2209,7 +2337,16 @@ async function logout() {
         headers: authHeaders()
     });
     clearAuthToken();
+    localStorage.removeItem(SESSIONS_CACHE_KEY);
+    localStorage.removeItem(LAST_CHAT_KEY);
+    localStorage.removeItem("pinnedSessions");
+    sessionList = [];
+    currentChatId = "";
+    messageStore.length = 0;
+    chatHydrationToken++;
+    clearVisibleMessages();
     setAppVisible(false);
+    logSidebarState("logout");
 }
 
 window.send = async function () {
@@ -2320,12 +2457,46 @@ window.send = async function () {
                         var statusBubble = document.createElement("div");
                         statusBubble.className = "bubble";
                         statusBubble.style.cssText = "color:#94a3b8;font-style:italic;";
-                        statusBubble.textContent = "🔍 Searching the web...";
+                        if (evt.intent === "generating_image") {
+                            statusBubble.textContent = "🎨 Generating image...";
+                        } else {
+                            statusBubble.textContent = "🔍 Searching the web...";
+                        }
                         statusDiv.appendChild(statusBubble);
                         document.getElementById("messages").appendChild(statusDiv);
                         statusIndicator = statusDiv;
                         document.getElementById("messages").scrollTop = document.getElementById("messages").scrollHeight;
                     }
+                    continue;
+                }
+
+                /* ---- IMAGE URL FROM IMAGE GEN FAST PATH ---- */
+                if (evt.image_url) {
+                    console.log("[TRACE FE] SSE image_url received:", evt.image_url);
+                    removeThinkingIndicator(thinking);
+                    if (statusIndicator) {
+                        statusIndicator.remove();
+                        statusIndicator = null;
+                    }
+                    var imgDiv = document.createElement("div");
+                    imgDiv.className = "assistant-message";
+                    var imgBubble = document.createElement("div");
+                    imgBubble.className = "bubble";
+                    var img = document.createElement("img");
+                    console.log("[TRACE FE] Setting img.src to:", evt.image_url);
+                    img.src = evt.image_url;
+                    img.alt = evt.revised_prompt || "Generated image";
+                    img.style.cssText = "max-width:100%;border-radius:8px;margin-top:8px;";
+                    imgBubble.appendChild(img);
+                    if (evt.revised_prompt) {
+                        var caption = document.createElement("p");
+                        caption.style.cssText = "font-size:0.85em;color:#94a3b8;margin-top:4px;";
+                        caption.textContent = evt.revised_prompt;
+                        imgBubble.appendChild(caption);
+                    }
+                    imgDiv.appendChild(imgBubble);
+                    document.getElementById("messages").appendChild(imgDiv);
+                    document.getElementById("messages").scrollTop = document.getElementById("messages").scrollHeight;
                     continue;
                 }
 
@@ -2488,6 +2659,10 @@ document.addEventListener("DOMContentLoaded", () => {
             closeSuggestionBox();
             closeFloatingPanels();
         }
+        if (event.ctrlKey && event.shiftKey && event.key === "D") {
+            event.preventDefault();
+            if (typeof openDeveloperMode === "function") openDeveloperMode();
+        }
     });
 
     document.addEventListener("pointerdown", event => {
@@ -2538,94 +2713,13 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 });
 
-// Settings overlay toggle
-var settingsPdfDoc = null;
-var settingsPdfPage = 1;
-var settingsPdfTotalPages = 0;
-
-window.openSettings = function() {
-    var overlay = document.getElementById('settingsOverlay');
-    if (overlay) overlay.style.setProperty('display', 'flex', 'important');
-    settingsPdfPage = 1;
-    renderPdfPage(1);
-};
-window.closeSettings = function() {
-    var overlay = document.getElementById('settingsOverlay');
-    if (overlay) overlay.style.display = 'none';
-};
-function prevPdfPage() {
-    if (settingsPdfPage > 1) { settingsPdfPage--; renderPdfPage(settingsPdfPage); }
-}
-function nextPdfPage() {
-    if (settingsPdfPage < settingsPdfTotalPages) { settingsPdfPage++; renderPdfPage(settingsPdfPage); }
-}
-function goToPdfPage(n) {
-    if (n >= 1 && n <= settingsPdfTotalPages) { settingsPdfPage = n; renderPdfPage(n); }
-}
-function renderPdfPage(n) {
-    var canvas = document.getElementById('pdfCanvas');
-    var ctx = canvas.getContext('2d');
-    if (!settingsPdfDoc) return;
-    settingsPdfDoc.getPage(n).then(function (page) {
-        var viewport = page.getViewport({ scale: 1.5 });
-        canvas.width = viewport.width;
-        canvas.height = viewport.height;
-        var renderCtx = { canvasContext: ctx, viewport: viewport };
-        return page.render(renderCtx).promise;
-    }).then(function () {
-        document.getElementById('pdfPageIndicator').textContent = 'Page ' + n + ' of ' + settingsPdfTotalPages;
-        document.getElementById('pdfPrevBtn').style.display = n > 1 ? 'flex' : 'none';
-        document.getElementById('pdfNextBtn').style.display = n < settingsPdfTotalPages ? 'flex' : 'none';
-        updatePdfOverlays(n);
-    });
-}
-function updatePdfOverlays(n) {
-    document.querySelectorAll('.pdf-overlay').forEach(function (el) { el.style.display = 'none'; });
-    document.querySelectorAll('.pdf-overlay-' + n).forEach(function (el) { el.style.display = 'block'; });
-}
-function resetThemeColors() {
-    document.documentElement.style.setProperty('--accent-color', '#00d4ff');
-    document.documentElement.style.setProperty('--accent-hover', '#00b8d4');
-}
-function pdfChangePassword() {
-    var oldPass = document.getElementById('pdfOldPass').value;
-    var newPass = document.getElementById('pdfNewPass').value;
-    var status = document.getElementById('pdfPassStatus');
-    if (!oldPass || !newPass) { status.textContent = 'Fill in both fields.'; return; }
-    if (newPass.length < 4) { status.textContent = 'Password must be 4+ characters.'; return; }
-    apiFetch('/auth/change-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ current_password: oldPass, new_password: newPass })
-    }).then(function (r) { return r.json(); }).then(function (d) {
-        status.textContent = d.status === 'success' ? 'Password updated!' : d.message || 'Failed.';
-        if (d.status === 'success') { document.getElementById('pdfOldPass').value = ''; document.getElementById('pdfNewPass').value = ''; }
-    }).catch(function () { status.textContent = 'Connection error.'; });
-}
-
-document.addEventListener("DOMContentLoaded", function () {
-    var closeBtn = document.getElementById('closeSettingsBtn');
-    if (closeBtn) closeBtn.addEventListener('click', closeSettings);
-    // Load PDF
-    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-    try {
-        pdfjsLib.getDocument('/static/Valley Mind-AI Option B Suite.pdf').promise.then(function (doc) {
-            settingsPdfDoc = doc;
-            settingsPdfTotalPages = doc.numPages;
-            var indicator = document.getElementById('pdfPageIndicator');
-            if (indicator) indicator.textContent = 'Page 1 of ' + doc.numPages;
-            renderPdfPage(1);
-        }).catch(function (err) {
-            console.log('PDF loading bypassed');
-            var indicator = document.getElementById('pdfPageIndicator');
-            if (indicator) indicator.textContent = 'Failed to load PDF';
-        });
-    } catch (err) {
-        console.log('PDF loading bypassed');
-        var indicator = document.getElementById('pdfPageIndicator');
-        if (indicator) indicator.textContent = 'Failed to load PDF';
+window.addEventListener("pageshow", function (event) {
+    if (event.persisted) {
+        checkSession();
     }
 });
+
+// Settings now defined inline with the settings overlay HTML
 
 /* === IMAGE GENERATION TOOL === */
 function generateImagesTool() {
@@ -2687,6 +2781,8 @@ function removeImageSkeleton() {
 }
 
 function renderGeneratedImage(imageUrl, revisedPrompt, altText) {
+    console.log("[TRACE FE] renderGeneratedImage called with URL:", imageUrl);
+    console.log("[TRACE FE] renderGeneratedImage full URL (from location):", window.location.origin + imageUrl);
     var container = document.getElementById("messages");
     var welcome = document.getElementById("welcome");
     if (welcome) welcome.style.display = "none";
@@ -2704,6 +2800,8 @@ function renderGeneratedImage(imageUrl, revisedPrompt, altText) {
     img.src = imageUrl;
     img.alt = revisedPrompt || "Generated image";
     img.loading = "lazy";
+    img.onerror = function() { console.log("[TRACE FE] IMG LOAD FAILED for:", imageUrl); };
+    img.onload = function() { console.log("[TRACE FE] IMG LOAD SUCCESS for:", imageUrl); };
     imgWrap.appendChild(img);
     var dlBtn = document.createElement("a");
     dlBtn.className = "gen-image-download";
@@ -2740,11 +2838,12 @@ async function submitImageGen() {
     addImageSkeleton();
     if (btn) btn.disabled = true;
     try {
+        var payload = { prompt: text };
         var res = await apiFetch("/api/generate-image", {
             method: "POST",
             credentials: "include",
             headers: authHeaders({ "Content-Type": "application/json" }),
-            body: JSON.stringify({ prompt: text }),
+            body: JSON.stringify(payload),
             timeoutMs: 120000,
         });
         var data = await res.json();
@@ -2752,11 +2851,13 @@ async function submitImageGen() {
             throw new Error(data.message || "Image generation failed");
         }
         removeImageSkeleton();
+        console.log("[TRACE FE] Received image_url from API:", data.image_url);
+        console.log("[TRACE FE] Full API response:", JSON.stringify(data));
         renderGeneratedImage(data.image_url, data.revised_prompt || "", data.text || "");
     } catch (err) {
         removeImageSkeleton();
-        if (status) status.textContent = err.message || "Generation failed. Try again.";
-        addMessage("Image generation failed: " + (err.message || "Unknown error"), "ai");
+        if (status) status.textContent = "Generation failed. Try again.";
+        addMessage("Image generation failed. Please try again.", "ai");
     } finally {
         if (btn) btn.disabled = false;
     }

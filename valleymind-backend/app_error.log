@@ -1,0 +1,40 @@
+WARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:8000
+ * Running on http://192.168.10.181:8000
+Press CTRL+C to quit
+192.168.10.181 - - [08/Jul/2026 18:08:29] "GET / HTTP/1.1" 200 -
+192.168.10.181 - - [08/Jul/2026 18:08:31] "GET /static/valleymind-logo.png HTTP/1.1" 200 -
+192.168.10.181 - - [08/Jul/2026 18:08:41] "GET /static/valleymind-logo.png HTTP/1.1" 304 -
+192.168.10.181 - - [08/Jul/2026 18:08:41] "GET /auth/status HTTP/1.1" 200 -
+192.168.10.181 - - [08/Jul/2026 18:31:44] "GET / HTTP/1.1" 304 -
+192.168.10.181 - - [08/Jul/2026 18:32:18] "GET /static/valleymind-logo.png HTTP/1.1" 304 -
+192.168.10.181 - - [08/Jul/2026 18:32:21] "GET /auth/status HTTP/1.1" 200 -
+192.168.10.181 - - [08/Jul/2026 18:32:24] "GET /static/valleymind-logo.png HTTP/1.1" 304 -
+192.168.10.181 - - [08/Jul/2026 18:33:28] "POST /auth/login HTTP/1.1" 200 -
+192.168.10.181 - - [08/Jul/2026 18:33:28] "POST /auth/login HTTP/1.1" 200 -
+192.168.10.181 - - [08/Jul/2026 18:33:28] "POST /auth/login HTTP/1.1" 200 -
+192.168.10.181 - - [08/Jul/2026 18:33:28] "POST /auth/login HTTP/1.1" 200 -
+192.168.10.181 - - [08/Jul/2026 18:33:28] "POST /auth/login HTTP/1.1" 200 -
+192.168.10.181 - - [08/Jul/2026 18:33:28] "POST /auth/login HTTP/1.1" 200 -
+192.168.10.181 - - [08/Jul/2026 18:33:28] "POST /auth/login HTTP/1.1" 200 -
+192.168.10.181 - - [08/Jul/2026 18:33:28] "POST /auth/login HTTP/1.1" 200 -
+192.168.10.181 - - [08/Jul/2026 18:33:28] "POST /auth/login HTTP/1.1" 200 -
+192.168.10.181 - - [08/Jul/2026 18:33:28] "POST /auth/login HTTP/1.1" 200 -
+192.168.10.181 - - [08/Jul/2026 18:33:28] "POST /auth/login HTTP/1.1" 200 -
+192.168.10.181 - - [08/Jul/2026 18:33:28] "POST /auth/login HTTP/1.1" 200 -
+192.168.10.181 - - [08/Jul/2026 18:33:28] "POST /auth/login HTTP/1.1" 200 -
+192.168.10.181 - - [08/Jul/2026 18:33:28] "POST /auth/login HTTP/1.1" 200 -
+192.168.10.181 - - [08/Jul/2026 18:33:28] "POST /auth/login HTTP/1.1" 200 -
+192.168.10.181 - - [08/Jul/2026 18:33:28] "POST /auth/login HTTP/1.1" 200 -
+192.168.10.181 - - [08/Jul/2026 18:33:28] "POST /auth/login HTTP/1.1" 200 -
+192.168.10.181 - - [08/Jul/2026 18:33:29] "GET /auth/status HTTP/1.1" 200 -
+192.168.10.181 - - [08/Jul/2026 18:33:29] "GET /auth/status HTTP/1.1" 200 -
+192.168.10.181 - - [08/Jul/2026 18:33:33] "GET /chat/sessions HTTP/1.1" 200 -
+192.168.10.181 - - [08/Jul/2026 18:33:36] "GET /api/chat/messages?session_id=marcus_dcafd44dbafc8eb5 HTTP/1.1" 200 -
+192.168.10.181 - - [08/Jul/2026 18:33:38] "GET /api/chat/messages?session_id=marcus_dcafd44dbafc8eb5 HTTP/1.1" 200 -
+192.168.10.181 - - [08/Jul/2026 18:39:46] "POST /chat/stream HTTP/1.1" 200 -
+192.168.10.181 - - [08/Jul/2026 18:39:52] "GET /chat/sessions HTTP/1.1" 200 -
+192.168.10.181 - - [08/Jul/2026 18:52:41] "GET /api/chat/messages?session_id=marcus_816a3e833dc0aaa6 HTTP/1.1" 200 -
+192.168.10.181 - - [08/Jul/2026 18:53:42] "POST /chat/stream HTTP/1.1" 200 -
+192.168.10.181 - - [08/Jul/2026 18:53:48] "GET /chat/sessions HTTP/1.1" 200 -

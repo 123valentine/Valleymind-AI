@@ -190,18 +190,23 @@ def classify_live_request(message: str) -> str:
         return "CHAT"
 
     SYSTEM_PROMPT = (
-        "You classify user messages as 'CHAT' or 'SEARCH' based on SEMANTIC INTENT, not keyword matching.\n\n"
+        "You classify user messages as 'CHAT', 'SEARCH', or 'IMAGE_GEN' based on SEMANTIC INTENT, not keyword matching.\n\n"
+        "Return 'IMAGE_GEN' when the user wants to create, generate, render, draw, or visualize something as an image — "
+        "e.g. 'generate a futuristic city', 'create an image of a dragon', 'make a picture of a cyberpunk AI assistant', "
+        "'render a landscape', 'draw a character concept'. The key signal is requesting visual/synthetic media production.\n\n"
         "Return 'SEARCH' only when the user's actual intent is to find out what is currently true in the real world "
         "right now — current news, live scores, current prices, who currently holds a position, recent events, "
         "or anything where the answer could have changed recently and the user wants the current real-world fact.\n\n"
         "Return 'CHAT' for everything else, including: personal decisions, plans, opinions, strategy questions, "
         "requests for advice or pushback, hypothetical scenarios, questions about the user's own project or business, "
         "emotional or relationship topics, technical/coding help, and general knowledge that doesn't change over time.\n\n"
+        "Important nuance: a user saying 'imagine a world where...' or 'imagine if...' is CHAT (hypothetical reasoning), "
+        "not IMAGE_GEN. Only classify as IMAGE_GEN when they explicitly want a picture/image rendered.\n\n"
         "Judge by what the user is actually trying to accomplish, not by whether the message contains a topic word "
         "that sounds current (AI, money, technology, social media, etc.). A message can mention any trendy topic "
         "while still being a CHAT — for example, 'should I invest in AI video generation' is CHAT (a decision/opinion request), "
         "while 'what is the current price of AI video generation tools' is SEARCH (a real-world fact request).\n\n"
-        "Respond with exactly ONE word: CHAT or SEARCH."
+        "Respond with exactly ONE word: CHAT, SEARCH, or IMAGE_GEN."
     )
 
     try:
@@ -220,6 +225,8 @@ def classify_live_request(message: str) -> str:
         _log(f"LLM classification result: '{result}'")
         if result == "SEARCH":
             return "search"
+        if result == "IMAGE_GEN":
+            return "image"
         return "none"
     except Exception as exc:
         _log(f"LLM classification failed, defaulting to CHAT: {_safe_error(exc)}")
