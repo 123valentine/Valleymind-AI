@@ -20,6 +20,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 from core.brain import MarcusBrain, _call_llm_cluster, _CHAT_SYSTEM_PROMPT
 from core.config import PROJECT_ROOT, get_config
+from core.router import RouteDecision, get_router
 from core.tts import speak_marcus
 import core.provider_manager as pm
 
@@ -967,60 +968,20 @@ def chat():
 
         chat_id = str(data.get("chat_id") or "").strip()
         image_data = str(data.get("image") or "").strip()
+        source = str(data.get("source") or "").strip() or None
 
-        marcus = load_marcus(user_id)
+        # ── Route ─────────────────────────────────────────────────────
+        router = get_router()
+        decision = router.classify(message, has_image=bool(image_data), source=source)
 
-        if not marcus:
-            return jsonify({
-                "status": "error",
-                "message": "Marcus is not configured",
-            }), 404
-        auth = _current_auth()
-        _initialize_user_memory(marcus, auth.get("email", ""))
-        _debug_user_memory(user_id, marcus)
+        print(f"[Router] Dispatching /chat → {decision.capability.value}")
 
-        reply = marcus.respond(message, chat_id=chat_id, image_data=image_data)
-        response_meta = getattr(marcus, "last_response_meta", {}) or {}
-        voice = (
-            {"enabled": True, "spoken": False, "engine": "browser", "reason": "reply too long for blocking server TTS"}
-            if len(reply) > 900
-            else speak_marcus(reply)
-        )
+        # ── Dispatch ──────────────────────────────────────────────────
+        if decision.capability == pm.Capability.IMAGE:
+            return _dispatch_image_json(user_id, message, chat_id, image_data)
 
-        updated_title = None
-        if message and chat_id:
-            try:
-                sessions = _list_user_sessions(user_id)
-                current_title = None
-                for s in sessions:
-                    if s.get("chat_id") == chat_id:
-                        current_title = s.get("title", "")
-                        break
-                if current_title in (None, "", "New Chat", "Untitled Thread"):
-                    words = message.split()
-                    if len(words) >= 3:
-                            title = " ".join(words[:8]).rstrip(".,!?;:")
-                            if len(title) > 60:
-                                title = title[:60].rsplit(" ", 1)[0] if " " in title[:60] else title[:60]
-                            marcus.memory.set_title(chat_id, title)
-                            _upsert_chat_session_meta(user_id, chat_id, title=title)
-                            updated_title = title
-            except Exception as exc:
-                print(f"[WARN] Auto-title fallback failed: {exc}")
-
-        return jsonify({
-            "status": "success",
-            "chat_id": chat_id or f"{marcus.profile.key}_main_chat",
-            "character": "marcus",
-            "reply": reply,
-            "voice": voice,
-            "updated_title": updated_title,
-            "detected_route": str(response_meta.get("detected_route") or ""),
-            "groq_used": bool(response_meta.get("groq_used")),
-            "live_routing_used": bool(response_meta.get("live_routing_used")),
-            "fallback_used": bool(response_meta.get("fallback_used")),
-            "fallback_source": str(response_meta.get("fallback_source") or ""),
-        })
+        # ── Default: text → Marcus Brain ──────────────────────────────
+        return _dispatch_chat_json(user_id, message, chat_id, image_data)
 
     except Exception as e:
         print(f"[CRITICAL] /chat crashed: {e}")
@@ -1028,6 +989,204 @@ def chat():
             "status": "error",
             "message": "Internal server error",
         }), 500
+
+
+# ── Dispatch functions ────────────────────────────────────────────────────────
+# Router decides.  These functions execute.  Each one calls an existing pipeline
+# directly — no duplication of business logic.
+
+
+def _persist_chat_message(user_id: str, chat_id: str, role: str, content: str):
+    """Persist a single message to Marcus memory (best-effort)."""
+    marcus = load_marcus(user_id)
+    if not marcus:
+        return
+    resolved = chat_id or f"{marcus.profile.key}_main_chat"
+    try:
+        marcus.memory.add_message(resolved, role, content)
+    except Exception as exc:
+        print(f"[Dispatch] Failed to persist {role} message: {exc}")
+
+
+def _dispatch_image_json(user_id, message, chat_id, image_data):
+    """IMAGE → non-streaming JSON.  Reuses the existing ProviderManager image pipeline."""
+    print(f"[Router]   Dispatch: IMAGE (json) — prompt={message[:120]!r}")
+
+    _persist_chat_message(user_id, chat_id, "user", message)
+
+    config = get_config()
+    result = pm.get_manager().execute(
+        pm.Capability.IMAGE,
+        prompt=message,
+        api_key=config.gemini_api_key or None,
+        enhance=True,
+    )
+
+    if not result.success:
+        print(f"[Router]   IMAGE failed: {result.error}")
+        return jsonify({"status": "error", "message": "Image generation failed. Please try again."}), 500
+
+    image_url = result.data.get("image_url", "")
+    revised = result.data.get("revised_prompt", "")
+    print(f"[Router]   IMAGE success — provider={result.provider_name} latency={result.latency_ms:.0f}ms")
+
+    _persist_chat_message(user_id, chat_id, "assistant", f"[Generated image: {revised or message}]")
+
+    return jsonify({
+        "status": "success",
+        "image_url": image_url,
+        "revised_prompt": revised,
+        "text": result.data.get("text", ""),
+    })
+
+
+def _dispatch_image_stream(user_id, message, chat_id, image_data):
+    """IMAGE → SSE stream.  Reuses the existing ProviderManager image pipeline."""
+    print(f"[Router]   Dispatch: IMAGE (stream) — prompt={message[:120]!r}")
+
+    marcus = load_marcus(user_id)
+    resolved_chat_id = chat_id or (f"{marcus.profile.key}_main_chat" if marcus else chat_id)
+
+    if marcus:
+        try:
+            marcus.memory.add_message(resolved_chat_id, "user", message)
+        except Exception:
+            pass
+
+    config = get_config()
+
+    def generate():
+        yield f"data: {json.dumps({'intent': 'generating_image', 'query': message})}\n\n"
+
+        result = pm.get_manager().execute(
+            pm.Capability.IMAGE,
+            prompt=message,
+            api_key=config.gemini_api_key or None,
+            enhance=True,
+        )
+
+        if not result.success:
+            print(f"[Router]   IMAGE failed: {result.error}")
+            yield f"data: {json.dumps({'error': 'Image generation failed. Please try again.'})}\n\n"
+            yield f"data: {json.dumps({'done': True, 'chat_id': resolved_chat_id})}\n\n"
+            return
+
+        image_url = result.data.get("image_url", "")
+        revised = result.data.get("revised_prompt", "")
+        print(f"[Router]   IMAGE success — provider={result.provider_name} latency={result.latency_ms:.0f}ms")
+
+        yield f"data: {json.dumps({'image_url': image_url, 'revised_prompt': revised})}\n\n"
+
+        if marcus:
+            try:
+                marcus.memory.add_message(resolved_chat_id, "assistant", f"[Generated image: {revised or message}]")
+            except Exception:
+                pass
+
+        yield f"data: {json.dumps({'done': True, 'chat_id': resolved_chat_id})}\n\n"
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype='text/event-stream',
+        headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no', 'Connection': 'keep-alive'},
+    )
+
+
+def _dispatch_chat_json(user_id, message, chat_id, image_data):
+    """TEXT → non-streaming JSON.  Reuses Marcus Brain."""
+    marcus = load_marcus(user_id)
+    if not marcus:
+        return jsonify({"status": "error", "message": "Marcus is not configured"}), 404
+
+    auth = _current_auth()
+    _initialize_user_memory(marcus, auth.get("email", ""))
+
+    reply = marcus.respond(message, chat_id=chat_id, image_data=image_data)
+    meta = getattr(marcus, "last_response_meta", {}) or {}
+    voice = (
+        {"enabled": True, "spoken": False, "engine": "browser", "reason": "reply too long for blocking server TTS"}
+        if len(reply) > 900
+        else speak_marcus(reply)
+    )
+
+    updated_title = None
+    if message and chat_id:
+        try:
+            sessions = _list_user_sessions(user_id)
+            current_title = next((s.get("title", "") for s in sessions if s.get("chat_id") == chat_id), None)
+            if current_title in (None, "", "New Chat", "Untitled Thread"):
+                words = message.split()
+                if len(words) >= 3:
+                    title = " ".join(words[:8]).rstrip(".,!?;:")
+                    if len(title) > 60:
+                        title = title[:60].rsplit(" ", 1)[0] if " " in title[:60] else title[:60]
+                    marcus.memory.set_title(chat_id, title)
+                    _upsert_chat_session_meta(user_id, chat_id, title=title)
+                    updated_title = title
+        except Exception as exc:
+            print(f"[WARN] Auto-title fallback failed: {exc}")
+
+    return jsonify({
+        "status": "success",
+        "chat_id": chat_id or f"{marcus.profile.key}_main_chat",
+        "character": "marcus",
+        "reply": reply,
+        "voice": voice,
+        "updated_title": updated_title,
+        "detected_route": str(meta.get("detected_route") or ""),
+        "groq_used": bool(meta.get("groq_used")),
+        "live_routing_used": bool(meta.get("live_routing_used")),
+        "fallback_used": bool(meta.get("fallback_used")),
+        "fallback_source": str(meta.get("fallback_source") or ""),
+    })
+
+
+def _dispatch_chat_stream(user_id, message, chat_id, image_data):
+    """TEXT → SSE stream.  Reuses Marcus Brain."""
+    marcus = load_marcus(user_id)
+    if not marcus:
+        return jsonify({"status": "error", "message": "Marcus not configured"}), 404
+
+    auth = _current_auth()
+    _initialize_user_memory(marcus, auth.get("email", ""))
+    resolved_chat_id = chat_id or f"{marcus.profile.key}_main_chat"
+
+    def generate():
+        updated_title = None
+        if message and resolved_chat_id:
+            try:
+                sessions = _list_user_sessions(user_id)
+                current_title = next((s.get("title", "") for s in sessions if s.get("chat_id") == resolved_chat_id), None)
+                if current_title in (None, "", "New Chat", "Untitled Thread"):
+                    words = message.split()
+                    if len(words) >= 3:
+                        title = " ".join(words[:8]).rstrip(".,!?;:")
+                        if len(title) > 60:
+                            title = title[:60].rsplit(" ", 1)[0] if " " in title[:60] else title[:60]
+                        marcus.memory.set_title(resolved_chat_id, title)
+                        _upsert_chat_session_meta(user_id, resolved_chat_id, title=title)
+                        updated_title = title
+            except Exception as exc:
+                print(f"[WARN] Auto-title fallback failed: {exc}")
+
+        try:
+            for token in marcus.stream_respond(message, chat_id=resolved_chat_id, image_data=image_data):
+                if token is None:
+                    continue
+                if isinstance(token, dict):
+                    yield f"data: {json.dumps(token)}\n\n"
+                elif token:
+                    yield f"data: {json.dumps({'token': token})}\n\n"
+        except Exception as exc:
+            yield f"data: {json.dumps({'error': str(exc)})}\n\n"
+
+        yield f"data: {json.dumps({'done': True, 'chat_id': resolved_chat_id, 'updated_title': updated_title})}\n\n"
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype='text/event-stream',
+        headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no', 'Connection': 'keep-alive'},
+    )
 
 
 @app.route("/chat/stream", methods=["POST"])
@@ -1047,60 +1206,20 @@ def chat_stream():
 
         chat_id = str(data.get("chat_id") or "").strip()
         image_data = str(data.get("image") or "").strip()
+        source = str(data.get("source") or "").strip() or None
 
-        marcus = load_marcus(user_id)
-        if not marcus:
-            return jsonify({"status": "error", "message": "Marcus not configured"}), 404
+        # ── Route ─────────────────────────────────────────────────────
+        router = get_router()
+        decision = router.classify(message, has_image=bool(image_data), source=source)
 
-        auth = _current_auth()
-        _initialize_user_memory(marcus, auth.get("email", ""))
+        print(f"[Router] Dispatching /chat/stream → {decision.capability.value}")
 
-        resolved_chat_id = chat_id or f"{marcus.profile.key}_main_chat"
+        # ── Dispatch ──────────────────────────────────────────────────
+        if decision.capability == pm.Capability.IMAGE:
+            return _dispatch_image_stream(user_id, message, chat_id, image_data)
 
-        def generate():
-            updated_title = None
-            if message and resolved_chat_id:
-                try:
-                    sessions = _list_user_sessions(user_id)
-                    current_title = None
-                    for s in sessions:
-                        if s.get("chat_id") == resolved_chat_id:
-                            current_title = s.get("title", "")
-                            break
-                    if current_title in (None, "", "New Chat", "Untitled Thread"):
-                        words = message.split()
-                        if len(words) >= 3:
-                            title = " ".join(words[:8]).rstrip(".,!?;:")
-                            if len(title) > 60:
-                                title = title[:60].rsplit(" ", 1)[0] if " " in title[:60] else title[:60]
-                            marcus.memory.set_title(resolved_chat_id, title)
-                            _upsert_chat_session_meta(user_id, resolved_chat_id, title=title)
-                            updated_title = title
-                except Exception as exc:
-                    print(f"[WARN] Auto-title fallback failed: {exc}")
-
-            try:
-                for token in marcus.stream_respond(message, chat_id=resolved_chat_id, image_data=image_data):
-                    if token is None:
-                        continue
-                    if isinstance(token, dict):
-                        yield f"data: {json.dumps(token)}\n\n"
-                    elif token:
-                        yield f"data: {json.dumps({'token': token})}\n\n"
-            except Exception as exc:
-                yield f"data: {json.dumps({'error': str(exc)})}\n\n"
-
-            yield f"data: {json.dumps({'done': True, 'chat_id': resolved_chat_id, 'updated_title': updated_title})}\n\n"
-
-        return Response(
-            stream_with_context(generate()),
-            mimetype='text/event-stream',
-            headers={
-                'Cache-Control': 'no-cache',
-                'X-Accel-Buffering': 'no',
-                'Connection': 'keep-alive',
-            }
-        )
+        # ── Default: text → Marcus Brain (streaming) ──────────────────
+        return _dispatch_chat_stream(user_id, message, chat_id, image_data)
 
     except Exception as e:
         print(f"[CRITICAL] /chat/stream crashed: {e}")
@@ -1179,20 +1298,14 @@ def api_generate_image():
         )
 
         if not result.success:
-            print(f"[DEBUG APP] Provider execution FAILED: {result.error}")
+            print(f"[IMAGE] Provider execution failed: {result.error}")
             return jsonify({
                 "status": "error",
                 "message": "Image generation failed. Please try again.",
             }), 500
 
         image_url = result.data["image_url"]
-        abs_saved = (PROJECT_ROOT / "static" / "generated" / image_url.replace("/static/generated/", "")).resolve()
-        print(f"[DEBUG APP] Returning image_url: {image_url}")
-        print(f"[DEBUG APP] Absolute path on disk: {abs_saved}")
-        print(f"[DEBUG APP] File exists: {abs_saved.exists()}")
-        print(f"[DEBUG APP] Flask root_path: {app.root_path}")
-        print(f"[DEBUG APP] Flask static_folder: {app.static_folder}")
-        print(f"[DEBUG APP] Flask instance_path: {app.instance_path}")
+        print(f"[IMAGE] Success — url={image_url} provider={result.provider_name} latency={result.latency_ms:.0f}ms")
 
         return jsonify({
             "status": "success",
@@ -1203,7 +1316,7 @@ def api_generate_image():
 
     except Exception as e:
         import traceback
-        print(f"[DEBUG APP] EXCEPTION in api_generate_image: {e}")
+        print(f"[IMAGE] EXCEPTION in api_generate_image: {e}")
         traceback.print_exc()
         return jsonify({
             "status": "error",
