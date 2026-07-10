@@ -22,6 +22,7 @@ from core.brain import MarcusBrain, _call_llm_cluster, _CHAT_SYSTEM_PROMPT
 from core.config import PROJECT_ROOT, get_config
 from core.router import RouteDecision, get_router
 from core.tts import speak_marcus
+from core.video_dispatcher import get_video_dispatcher
 import core.provider_manager as pm
 
 # ── Load .env for local dev ──────────────────────────────────────────────
@@ -974,13 +975,22 @@ def chat():
         router = get_router()
         decision = router.classify(message, has_image=bool(image_data), source=source)
 
-        print(f"[Router] Dispatching /chat → {decision.capability.value}")
+        caps_str = ", ".join(c.value for c in decision.capabilities)
+        print(f"[Router] Dispatching /chat → [{caps_str}]")
 
         # ── Dispatch ──────────────────────────────────────────────────
-        if decision.capability == pm.Capability.IMAGE:
-            return _dispatch_image_json(user_id, message, chat_id, image_data)
+        has_text = pm.Capability.TEXT in decision.capabilities
+        has_image = pm.Capability.IMAGE in decision.capabilities
+        has_video = pm.Capability.VIDEO in decision.capabilities
 
-        # ── Default: text → Marcus Brain ──────────────────────────────
+        if has_video and has_text:
+            return _dispatch_video_text_json(user_id, message, chat_id, image_data)
+        if has_video:
+            return _dispatch_video_json(user_id, message, chat_id, image_data)
+        if has_text and has_image:
+            return _dispatch_multi_json(user_id, message, chat_id, image_data)
+        if has_image:
+            return _dispatch_image_json(user_id, message, chat_id, image_data)
         return _dispatch_chat_json(user_id, message, chat_id, image_data)
 
     except Exception as e:
@@ -1189,6 +1199,352 @@ def _dispatch_chat_stream(user_id, message, chat_id, image_data):
     )
 
 
+# ── Multi-capability dispatch (TEXT + IMAGE together) ────────────────────────
+# The router returned multiple capabilities.  We execute each pipeline in order
+# and stream/return them together.  Reuses all existing single-capability
+# dispatch logic internally — zero duplication of ProviderManager calls.
+
+
+def _dispatch_multi_json(user_id, message, chat_id, image_data):
+    """TEXT + IMAGE → non-streaming JSON.  Returns both text reply and image URL."""
+    print(f"[Router]   Dispatch: TEXT+IMAGE (json) — prompt={message[:120]!r}")
+
+    _persist_chat_message(user_id, chat_id, "user", message)
+
+    # ── 1. Generate text via Marcus Brain ─────────────────────────────
+    marcus = load_marcus(user_id)
+    text_reply = ""
+    if marcus:
+        auth = _current_auth()
+        _initialize_user_memory(marcus, auth.get("email", ""))
+        text_reply = marcus.respond(message, chat_id=chat_id, image_data=image_data)
+    meta = getattr(marcus, "last_response_meta", {}) or {} if marcus else {}
+
+    # ── 2. Generate image via ProviderManager ─────────────────────────
+    config = get_config()
+    image_result = pm.get_manager().execute(
+        pm.Capability.IMAGE,
+        prompt=message,
+        api_key=config.gemini_api_key or None,
+        enhance=True,
+    )
+
+    image_url = ""
+    revised = ""
+    if image_result.success:
+        image_url = image_result.data.get("image_url", "")
+        revised = image_result.data.get("revised_prompt", "")
+        print(f"[Router]   IMAGE success — provider={image_result.provider_name} latency={image_result.latency_ms:.0f}ms")
+    else:
+        print(f"[Router]   IMAGE failed: {image_result.error}")
+
+    # ── 3. Persist ────────────────────────────────────────────────────
+    assistant_content = text_reply
+    if image_url:
+        assistant_content += f"\n\n[Generated image: {revised or message}]"
+    _persist_chat_message(user_id, chat_id, "assistant", assistant_content)
+
+    voice = (
+        {"enabled": True, "spoken": False, "engine": "browser", "reason": "reply too long for blocking server TTS"}
+        if len(text_reply) > 900
+        else speak_marcus(text_reply)
+    )
+
+    return jsonify({
+        "status": "success",
+        "chat_id": chat_id or (f"{marcus.profile.key}_main_chat" if marcus else chat_id),
+        "character": "marcus",
+        "reply": text_reply,
+        "image_url": image_url,
+        "revised_prompt": revised,
+        "voice": voice,
+        "detected_route": str(meta.get("detected_route") or ""),
+        "groq_used": bool(meta.get("groq_used")),
+        "live_routing_used": bool(meta.get("live_routing_used")),
+        "fallback_used": bool(meta.get("fallback_used")),
+        "fallback_source": str(meta.get("fallback_source") or ""),
+    })
+
+
+def _dispatch_multi_stream(user_id, message, chat_id, image_data):
+    """TEXT + IMAGE → SSE stream.  Streams text tokens first, then sends image URL.
+
+    The frontend already handles both token events and image_url events in the
+    same stream — text accumulates into a bubble, image renders below it.
+    """
+    print(f"[Router]   Dispatch: TEXT+IMAGE (stream) — prompt={message[:120]!r}")
+
+    marcus = load_marcus(user_id)
+    auth = _current_auth()
+    resolved_chat_id = chat_id or (f"{marcus.profile.key}_main_chat" if marcus else chat_id)
+
+    if marcus:
+        _initialize_user_memory(marcus, auth.get("email", ""))
+        try:
+            marcus.memory.add_message(resolved_chat_id, "user", message)
+        except Exception:
+            pass
+
+    config = get_config()
+
+    def generate():
+        updated_title = None
+
+        # ── 1. Stream text tokens via Marcus Brain ────────────────────
+        if marcus:
+            try:
+                sessions = _list_user_sessions(user_id)
+                current_title = next((s.get("title", "") for s in sessions if s.get("chat_id") == resolved_chat_id), None)
+                if current_title in (None, "", "New Chat", "Untitled Thread"):
+                    words = message.split()
+                    if len(words) >= 3:
+                        title = " ".join(words[:8]).rstrip(".,!?;:")
+                        if len(title) > 60:
+                            title = title[:60].rsplit(" ", 1)[0] if " " in title[:60] else title[:60]
+                        marcus.memory.set_title(resolved_chat_id, title)
+                        _upsert_chat_session_meta(user_id, resolved_chat_id, title=title)
+                        updated_title = title
+            except Exception as exc:
+                print(f"[WARN] Auto-title fallback failed: {exc}")
+
+            try:
+                for token in marcus.stream_respond(message, chat_id=resolved_chat_id, image_data=image_data):
+                    if token is None:
+                        continue
+                    if isinstance(token, dict):
+                        yield f"data: {json.dumps(token)}\n\n"
+                    elif token:
+                        yield f"data: {json.dumps({'token': token})}\n\n"
+            except Exception as exc:
+                yield f"data: {json.dumps({'error': str(exc)})}\n\n"
+
+        # ── 2. Generate image via ProviderManager ─────────────────────
+        yield f"data: {json.dumps({'intent': 'generating_image', 'query': message})}\n\n"
+
+        image_result = pm.get_manager().execute(
+            pm.Capability.IMAGE,
+            prompt=message,
+            api_key=config.gemini_api_key or None,
+            enhance=True,
+        )
+
+        if image_result.success:
+            image_url = image_result.data.get("image_url", "")
+            revised = image_result.data.get("revised_prompt", "")
+            print(f"[Router]   IMAGE success — provider={image_result.provider_name} latency={image_result.latency_ms:.0f}ms")
+            yield f"data: {json.dumps({'image_url': image_url, 'revised_prompt': revised})}\n\n"
+
+            if marcus:
+                try:
+                    marcus.memory.add_message(resolved_chat_id, "assistant", f"[Generated image: {revised or message}]")
+                except Exception:
+                    pass
+        else:
+            print(f"[Router]   IMAGE failed: {image_result.error}")
+            yield f"data: {json.dumps({'error': 'Image generation failed. The text response above is still valid.'})}\n\n"
+
+        yield f"data: {json.dumps({'done': True, 'chat_id': resolved_chat_id, 'updated_title': updated_title})}\n\n"
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype='text/event-stream',
+        headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no', 'Connection': 'keep-alive'},
+    )
+
+
+# ── Video generation dispatch ────────────────────────────────────────────────
+# Video generation is fully asynchronous — the dispatcher manages the lifecycle
+# (submit → poll → download) and yields progress events for SSE streaming.
+# All ProviderManager interaction is encapsulated in the video providers.
+
+
+def _dispatch_video_json(user_id, message, chat_id, image_data):
+    """VIDEO → non-streaming JSON.  Blocks until video is ready or failed."""
+    print(f"[Router]   Dispatch: VIDEO (json) — prompt={message[:120]!r}")
+
+    _persist_chat_message(user_id, chat_id, "user", message)
+
+    dispatcher = get_video_dispatcher()
+    task = dispatcher.generate(message)
+
+    if task.status.value == "failed":
+        print(f"[Router]   VIDEO failed: {task.error}")
+        return jsonify({"status": "error", "message": task.error or "Video generation failed"}), 500
+
+    print(f"[Router]   VIDEO success — video_url={task.video_url}")
+
+    _persist_chat_message(user_id, chat_id, "assistant", f"[Generated video: {message}]")
+
+    return jsonify({
+        "status": "success",
+        "video_url": task.video_url,
+        "thumbnail_url": task.thumbnail_url,
+        "task_id": task.task_id,
+    })
+
+
+def _dispatch_video_stream(user_id, message, chat_id, image_data):
+    """VIDEO → SSE stream.  Streams lifecycle progress events, then final video URL."""
+    print(f"[Router]   Dispatch: VIDEO (stream) — prompt={message[:120]!r}")
+
+    marcus = load_marcus(user_id)
+    resolved_chat_id = chat_id or (f"{marcus.profile.key}_main_chat" if marcus else chat_id)
+
+    if marcus:
+        try:
+            marcus.memory.add_message(resolved_chat_id, "user", message)
+        except Exception:
+            pass
+
+    dispatcher = get_video_dispatcher()
+
+    def generate():
+        for event in dispatcher.generate_stream(message):
+            yield f"data: {json.dumps(event)}\n\n"
+
+            # Persist on completion
+            if event.get("video_url") and marcus:
+                try:
+                    marcus.memory.add_message(
+                        resolved_chat_id, "assistant",
+                        f"[Generated video: {message}]"
+                    )
+                except Exception:
+                    pass
+
+        yield f"data: {json.dumps({'done': True, 'chat_id': resolved_chat_id})}\n\n"
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype='text/event-stream',
+        headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no', 'Connection': 'keep-alive'},
+    )
+
+
+def _dispatch_video_text_json(user_id, message, chat_id, image_data):
+    """TEXT + VIDEO → non-streaming JSON.  Returns both text reply and video URL."""
+    print(f"[Router]   Dispatch: TEXT+VIDEO (json) — prompt={message[:120]!r}")
+
+    _persist_chat_message(user_id, chat_id, "user", message)
+
+    # ── 1. Generate text via Marcus Brain ─────────────────────────────
+    marcus = load_marcus(user_id)
+    text_reply = ""
+    if marcus:
+        auth = _current_auth()
+        _initialize_user_memory(marcus, auth.get("email", ""))
+        text_reply = marcus.respond(message, chat_id=chat_id, image_data=image_data)
+    meta = getattr(marcus, "last_response_meta", {}) or {} if marcus else {}
+
+    # ── 2. Generate video via VideoDispatcher ─────────────────────────
+    dispatcher = get_video_dispatcher()
+    task = dispatcher.generate(message)
+
+    video_url = ""
+    if task.status.value != "failed":
+        video_url = task.video_url
+        print(f"[Router]   VIDEO success — video_url={video_url}")
+    else:
+        print(f"[Router]   VIDEO failed: {task.error}")
+
+    # ── 3. Persist ────────────────────────────────────────────────────
+    assistant_content = text_reply
+    if video_url:
+        assistant_content += f"\n\n[Generated video: {message}]"
+    _persist_chat_message(user_id, chat_id, "assistant", assistant_content)
+
+    voice = (
+        {"enabled": True, "spoken": False, "engine": "browser", "reason": "reply too long for blocking server TTS"}
+        if len(text_reply) > 900
+        else speak_marcus(text_reply)
+    )
+
+    return jsonify({
+        "status": "success",
+        "chat_id": chat_id or (f"{marcus.profile.key}_main_chat" if marcus else chat_id),
+        "character": "marcus",
+        "reply": text_reply,
+        "video_url": video_url,
+        "task_id": task.task_id,
+        "voice": voice,
+        "detected_route": str(meta.get("detected_route") or ""),
+        "groq_used": bool(meta.get("groq_used")),
+        "live_routing_used": bool(meta.get("live_routing_used")),
+        "fallback_used": bool(meta.get("fallback_used")),
+        "fallback_source": str(meta.get("fallback_source") or ""),
+    })
+
+
+def _dispatch_video_text_stream(user_id, message, chat_id, image_data):
+    """TEXT + VIDEO → SSE stream.  Streams text first, then video progress + URL."""
+    print(f"[Router]   Dispatch: TEXT+VIDEO (stream) — prompt={message[:120]!r}")
+
+    marcus = load_marcus(user_id)
+    auth = _current_auth()
+    resolved_chat_id = chat_id or (f"{marcus.profile.key}_main_chat" if marcus else chat_id)
+
+    if marcus:
+        _initialize_user_memory(marcus, auth.get("email", ""))
+        try:
+            marcus.memory.add_message(resolved_chat_id, "user", message)
+        except Exception:
+            pass
+
+    dispatcher = get_video_dispatcher()
+
+    def generate():
+        updated_title = None
+
+        # ── 1. Stream text tokens via Marcus Brain ────────────────────
+        if marcus:
+            try:
+                sessions = _list_user_sessions(user_id)
+                current_title = next((s.get("title", "") for s in sessions if s.get("chat_id") == resolved_chat_id), None)
+                if current_title in (None, "", "New Chat", "Untitled Thread"):
+                    words = message.split()
+                    if len(words) >= 3:
+                        title = " ".join(words[:8]).rstrip(".,!?;:")
+                        if len(title) > 60:
+                            title = title[:60].rsplit(" ", 1)[0] if " " in title[:60] else title[:60]
+                        marcus.memory.set_title(resolved_chat_id, title)
+                        _upsert_chat_session_meta(user_id, resolved_chat_id, title=title)
+                        updated_title = title
+            except Exception as exc:
+                print(f"[WARN] Auto-title fallback failed: {exc}")
+
+            try:
+                for token in marcus.stream_respond(message, chat_id=resolved_chat_id, image_data=image_data):
+                    if token is None:
+                        continue
+                    if isinstance(token, dict):
+                        yield f"data: {json.dumps(token)}\n\n"
+                    elif token:
+                        yield f"data: {json.dumps({'token': token})}\n\n"
+            except Exception as exc:
+                yield f"data: {json.dumps({'error': str(exc)})}\n\n"
+
+        # ── 2. Generate video via VideoDispatcher ─────────────────────
+        for event in dispatcher.generate_stream(message):
+            yield f"data: {json.dumps(event)}\n\n"
+
+            if event.get("video_url") and marcus:
+                try:
+                    marcus.memory.add_message(
+                        resolved_chat_id, "assistant",
+                        f"[Generated video: {message}]"
+                    )
+                except Exception:
+                    pass
+
+        yield f"data: {json.dumps({'done': True, 'chat_id': resolved_chat_id, 'updated_title': updated_title})}\n\n"
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype='text/event-stream',
+        headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no', 'Connection': 'keep-alive'},
+    )
+
+
 @app.route("/chat/stream", methods=["POST"])
 def chat_stream():
     try:
@@ -1212,13 +1568,22 @@ def chat_stream():
         router = get_router()
         decision = router.classify(message, has_image=bool(image_data), source=source)
 
-        print(f"[Router] Dispatching /chat/stream → {decision.capability.value}")
+        caps_str = ", ".join(c.value for c in decision.capabilities)
+        print(f"[Router] Dispatching /chat/stream → [{caps_str}]")
 
         # ── Dispatch ──────────────────────────────────────────────────
-        if decision.capability == pm.Capability.IMAGE:
-            return _dispatch_image_stream(user_id, message, chat_id, image_data)
+        has_text = pm.Capability.TEXT in decision.capabilities
+        has_image = pm.Capability.IMAGE in decision.capabilities
+        has_video = pm.Capability.VIDEO in decision.capabilities
 
-        # ── Default: text → Marcus Brain (streaming) ──────────────────
+        if has_video and has_text:
+            return _dispatch_video_text_stream(user_id, message, chat_id, image_data)
+        if has_video:
+            return _dispatch_video_stream(user_id, message, chat_id, image_data)
+        if has_text and has_image:
+            return _dispatch_multi_stream(user_id, message, chat_id, image_data)
+        if has_image:
+            return _dispatch_image_stream(user_id, message, chat_id, image_data)
         return _dispatch_chat_stream(user_id, message, chat_id, image_data)
 
     except Exception as e:

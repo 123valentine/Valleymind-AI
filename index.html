@@ -2459,12 +2459,23 @@ window.send = async function () {
                         statusBubble.style.cssText = "color:#94a3b8;font-style:italic;";
                         if (evt.intent === "generating_image") {
                             statusBubble.textContent = "🎨 Generating image...";
+                        } else if (evt.intent === "generating_video") {
+                            statusBubble.textContent = "🎬 Preparing video generation...";
+                        } else if (evt.intent === "video_progress") {
+                            statusBubble.textContent = "🎬 " + (evt.status_message || "Generating video...");
                         } else {
                             statusBubble.textContent = "🔍 Searching the web...";
                         }
                         statusDiv.appendChild(statusBubble);
                         document.getElementById("messages").appendChild(statusDiv);
                         statusIndicator = statusDiv;
+                        document.getElementById("messages").scrollTop = document.getElementById("messages").scrollHeight;
+                    } else if (evt.intent === "video_progress" && statusIndicator) {
+                        /* Update existing status bubble with new progress */
+                        var existingBubble = statusIndicator.querySelector(".bubble");
+                        if (existingBubble) {
+                            existingBubble.textContent = "🎬 " + (evt.status_message || "Generating video...");
+                        }
                         document.getElementById("messages").scrollTop = document.getElementById("messages").scrollHeight;
                     }
                     continue;
@@ -2496,6 +2507,59 @@ window.send = async function () {
                     }
                     imgDiv.appendChild(imgBubble);
                     document.getElementById("messages").appendChild(imgDiv);
+                    document.getElementById("messages").scrollTop = document.getElementById("messages").scrollHeight;
+                    continue;
+                }
+
+                /* ---- VIDEO URL — RENDER PLAYER ---- */
+                if (evt.video_url) {
+                    console.log("[TRACE FE] SSE video_url received:", evt.video_url);
+                    removeThinkingIndicator(thinking);
+                    if (statusIndicator) {
+                        statusIndicator.remove();
+                        statusIndicator = null;
+                    }
+                    var vidDiv = document.createElement("div");
+                    vidDiv.className = "assistant-message";
+                    var vidBubble = document.createElement("div");
+                    vidBubble.className = "bubble";
+                    vidBubble.style.cssText = "padding:12px 16px;width:100%;";
+
+                    var video = document.createElement("video");
+                    video.src = evt.video_url;
+                    video.controls = true;
+                    video.preload = "metadata";
+                    video.style.cssText = "width:100%;max-height:480px;border-radius:8px;background:#000;";
+                    if (evt.thumbnail_url) video.poster = evt.thumbnail_url;
+                    vidBubble.appendChild(video);
+
+                    /* Action buttons row */
+                    var btnRow = document.createElement("div");
+                    btnRow.style.cssText = "display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;";
+
+                    var dlBtn = document.createElement("a");
+                    dlBtn.href = evt.video_url;
+                    dlBtn.download = "valleymind_video.mp4";
+                    dlBtn.textContent = "⬇ Download";
+                    dlBtn.style.cssText = "display:inline-block;padding:6px 14px;border-radius:6px;background:rgba(0,212,255,0.18);color:#00d4ff;text-decoration:none;font-size:0.85em;cursor:pointer;border:1px solid rgba(0,212,255,0.3);transition:background 0.2s;";
+                    dlBtn.onmouseenter = function(){ dlBtn.style.background = "rgba(0,212,255,0.35)"; };
+                    dlBtn.onmouseleave = function(){ dlBtn.style.background = "rgba(0,212,255,0.18)"; };
+                    btnRow.appendChild(dlBtn);
+
+                    var regenBtn = document.createElement("button");
+                    regenBtn.textContent = "🔄 Regenerate";
+                    regenBtn.style.cssText = "display:inline-block;padding:6px 14px;border-radius:6px;background:rgba(148,163,184,0.12);color:#94a3b8;text-decoration:none;font-size:0.85em;cursor:pointer;border:1px solid rgba(148,163,184,0.2);transition:background 0.2s;";
+                    regenBtn.onmouseenter = function(){ regenBtn.style.background = "rgba(148,163,184,0.25)"; };
+                    regenBtn.onmouseleave = function(){ regenBtn.style.background = "rgba(148,163,184,0.12)"; };
+                    regenBtn.onclick = function(){
+                        var input = document.getElementById("chat-input");
+                        if (input) { input.value = evt.query || "Regenerate this video"; input.focus(); }
+                    };
+                    btnRow.appendChild(regenBtn);
+                    vidBubble.appendChild(btnRow);
+
+                    vidDiv.appendChild(vidBubble);
+                    document.getElementById("messages").appendChild(vidDiv);
                     document.getElementById("messages").scrollTop = document.getElementById("messages").scrollHeight;
                     continue;
                 }
