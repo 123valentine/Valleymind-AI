@@ -20,6 +20,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 from core.brain import MarcusBrain, _call_llm_cluster, _CHAT_SYSTEM_PROMPT
 from core.config import PROJECT_ROOT, get_config
+from core.media_manager import get_media_manager
 from core.router import RouteDecision, get_router
 from core.tts import speak_marcus
 from core.video_dispatcher import get_video_dispatcher
@@ -1006,14 +1007,14 @@ def chat():
 # directly — no duplication of business logic.
 
 
-def _persist_chat_message(user_id: str, chat_id: str, role: str, content: str):
+def _persist_chat_message(user_id: str, chat_id: str, role: str, content: str, image_url: str = ""):
     """Persist a single message to Marcus memory (best-effort)."""
     marcus = load_marcus(user_id)
     if not marcus:
         return
     resolved = chat_id or f"{marcus.profile.key}_main_chat"
     try:
-        marcus.memory.add_message(resolved, role, content)
+        marcus.memory.add_message(resolved, role, content, image_url=image_url)
     except Exception as exc:
         print(f"[Dispatch] Failed to persist {role} message: {exc}")
 
@@ -1040,11 +1041,19 @@ def _dispatch_image_json(user_id, message, chat_id, image_data):
     revised = result.data.get("revised_prompt", "")
     print(f"[Router]   IMAGE success — provider={result.provider_name} latency={result.latency_ms:.0f}ms")
 
-    _persist_chat_message(user_id, chat_id, "assistant", f"[Generated image: {revised or message}]")
+    media = get_media_manager(user_id)
+    media_record = media.save_image(
+        image_url, prompt=message, revised_prompt=revised,
+        provider=result.provider_name, chat_id=chat_id,
+    )
+    stored_url = media_record["local_path"] if media_record else image_url
+
+    _persist_chat_message(user_id, chat_id, "assistant", f"[Image: {stored_url}]", image_url=stored_url)
+    _upsert_chat_session_meta(user_id, chat_id, message_count=2)
 
     return jsonify({
         "status": "success",
-        "image_url": image_url,
+        "image_url": stored_url,
         "revised_prompt": revised,
         "text": result.data.get("text", ""),
     })
@@ -1066,6 +1075,26 @@ def _dispatch_image_stream(user_id, message, chat_id, image_data):
     config = get_config()
 
     def generate():
+        updated_title = None
+        if message and resolved_chat_id:
+            try:
+                sessions = _list_user_sessions(user_id)
+                current_title = next((s.get("title", "") for s in sessions if s.get("chat_id") == resolved_chat_id), None)
+                if current_title in (None, "", "New Chat", "Untitled Thread"):
+                    words = message.split()
+                    if len(words) >= 3:
+                        title = " ".join(words[:8]).rstrip(".,!?;:")
+                        if len(title) > 60:
+                            title = title[:60].rsplit(" ", 1)[0] if " " in title[:60] else title[:60]
+                        if marcus:
+                            marcus.memory.set_title(resolved_chat_id, title)
+                        _upsert_chat_session_meta(user_id, resolved_chat_id, title=title, message_count=2)
+                        updated_title = title
+                    else:
+                        _upsert_chat_session_meta(user_id, resolved_chat_id, message_count=2)
+            except Exception as exc:
+                print(f"[WARN] Auto-title fallback failed: {exc}")
+
         yield f"data: {json.dumps({'intent': 'generating_image', 'query': message})}\n\n"
 
         result = pm.get_manager().execute(
@@ -1078,22 +1107,29 @@ def _dispatch_image_stream(user_id, message, chat_id, image_data):
         if not result.success:
             print(f"[Router]   IMAGE failed: {result.error}")
             yield f"data: {json.dumps({'error': 'Image generation failed. Please try again.'})}\n\n"
-            yield f"data: {json.dumps({'done': True, 'chat_id': resolved_chat_id})}\n\n"
+            yield f"data: {json.dumps({'done': True, 'chat_id': resolved_chat_id, 'updated_title': updated_title})}\n\n"
             return
 
         image_url = result.data.get("image_url", "")
         revised = result.data.get("revised_prompt", "")
         print(f"[Router]   IMAGE success — provider={result.provider_name} latency={result.latency_ms:.0f}ms")
 
-        yield f"data: {json.dumps({'image_url': image_url, 'revised_prompt': revised})}\n\n"
+        media = get_media_manager(user_id)
+        media_record = media.save_image(
+            image_url, prompt=message, revised_prompt=revised,
+            provider=result.provider_name, chat_id=resolved_chat_id,
+        )
+        stored_url = media_record["local_path"] if media_record else image_url
+
+        yield f"data: {json.dumps({'image_url': stored_url, 'revised_prompt': revised})}\n\n"
 
         if marcus:
             try:
-                marcus.memory.add_message(resolved_chat_id, "assistant", f"[Generated image: {revised or message}]")
+                marcus.memory.add_message(resolved_chat_id, "assistant", f"[Image: {stored_url}]", image_url=stored_url)
             except Exception:
                 pass
 
-        yield f"data: {json.dumps({'done': True, 'chat_id': resolved_chat_id})}\n\n"
+        yield f"data: {json.dumps({'done': True, 'chat_id': resolved_chat_id, 'updated_title': updated_title})}\n\n"
 
     return Response(
         stream_with_context(generate()),
@@ -1131,10 +1167,12 @@ def _dispatch_chat_json(user_id, message, chat_id, image_data):
                     if len(title) > 60:
                         title = title[:60].rsplit(" ", 1)[0] if " " in title[:60] else title[:60]
                     marcus.memory.set_title(chat_id, title)
-                    _upsert_chat_session_meta(user_id, chat_id, title=title)
+                    _upsert_chat_session_meta(user_id, chat_id, title=title, message_count=2)
                     updated_title = title
         except Exception as exc:
             print(f"[WARN] Auto-title fallback failed: {exc}")
+
+    _upsert_chat_session_meta(user_id, chat_id, message_count=2)
 
     return jsonify({
         "status": "success",
@@ -1174,10 +1212,12 @@ def _dispatch_chat_stream(user_id, message, chat_id, image_data):
                         if len(title) > 60:
                             title = title[:60].rsplit(" ", 1)[0] if " " in title[:60] else title[:60]
                         marcus.memory.set_title(resolved_chat_id, title)
-                        _upsert_chat_session_meta(user_id, resolved_chat_id, title=title)
+                        _upsert_chat_session_meta(user_id, resolved_chat_id, title=title, message_count=2)
                         updated_title = title
             except Exception as exc:
                 print(f"[WARN] Auto-title fallback failed: {exc}")
+
+        _upsert_chat_session_meta(user_id, resolved_chat_id, message_count=2)
 
         try:
             for token in marcus.stream_respond(message, chat_id=resolved_chat_id, image_data=image_data):
@@ -1235,14 +1275,22 @@ def _dispatch_multi_json(user_id, message, chat_id, image_data):
         image_url = image_result.data.get("image_url", "")
         revised = image_result.data.get("revised_prompt", "")
         print(f"[Router]   IMAGE success — provider={image_result.provider_name} latency={image_result.latency_ms:.0f}ms")
+
+        media = get_media_manager(user_id)
+        media_record = media.save_image(
+            image_url, prompt=message, revised_prompt=revised,
+            provider=image_result.provider_name, chat_id=chat_id,
+        )
+        image_url = media_record["local_path"] if media_record else image_url
     else:
         print(f"[Router]   IMAGE failed: {image_result.error}")
 
     # ── 3. Persist ────────────────────────────────────────────────────
     assistant_content = text_reply
     if image_url:
-        assistant_content += f"\n\n[Generated image: {revised or message}]"
-    _persist_chat_message(user_id, chat_id, "assistant", assistant_content)
+        assistant_content += f"\n\n[Image: {image_url}]"
+    _persist_chat_message(user_id, chat_id, "assistant", assistant_content, image_url=image_url)
+    _upsert_chat_session_meta(user_id, chat_id, message_count=2)
 
     voice = (
         {"enabled": True, "spoken": False, "engine": "browser", "reason": "reply too long for blocking server TTS"}
@@ -1302,10 +1350,12 @@ def _dispatch_multi_stream(user_id, message, chat_id, image_data):
                         if len(title) > 60:
                             title = title[:60].rsplit(" ", 1)[0] if " " in title[:60] else title[:60]
                         marcus.memory.set_title(resolved_chat_id, title)
-                        _upsert_chat_session_meta(user_id, resolved_chat_id, title=title)
+                        _upsert_chat_session_meta(user_id, resolved_chat_id, title=title, message_count=2)
                         updated_title = title
             except Exception as exc:
                 print(f"[WARN] Auto-title fallback failed: {exc}")
+
+            _upsert_chat_session_meta(user_id, resolved_chat_id, message_count=2)
 
             try:
                 for token in marcus.stream_respond(message, chat_id=resolved_chat_id, image_data=image_data):
@@ -1332,11 +1382,19 @@ def _dispatch_multi_stream(user_id, message, chat_id, image_data):
             image_url = image_result.data.get("image_url", "")
             revised = image_result.data.get("revised_prompt", "")
             print(f"[Router]   IMAGE success — provider={image_result.provider_name} latency={image_result.latency_ms:.0f}ms")
-            yield f"data: {json.dumps({'image_url': image_url, 'revised_prompt': revised})}\n\n"
+
+            media = get_media_manager(user_id)
+            media_record = media.save_image(
+                image_url, prompt=message, revised_prompt=revised,
+                provider=image_result.provider_name, chat_id=resolved_chat_id,
+            )
+            stored_url = media_record["local_path"] if media_record else image_url
+
+            yield f"data: {json.dumps({'image_url': stored_url, 'revised_prompt': revised})}\n\n"
 
             if marcus:
                 try:
-                    marcus.memory.add_message(resolved_chat_id, "assistant", f"[Generated image: {revised or message}]")
+                    marcus.memory.add_message(resolved_chat_id, "assistant", f"[Image: {stored_url}]", image_url=stored_url)
                 except Exception:
                     pass
         else:
@@ -1373,11 +1431,20 @@ def _dispatch_video_json(user_id, message, chat_id, image_data):
 
     print(f"[Router]   VIDEO success — video_url={task.video_url}")
 
-    _persist_chat_message(user_id, chat_id, "assistant", f"[Generated video: {message}]")
+    media = get_media_manager(user_id)
+    media_record = media.save_video(
+        task.video_url, prompt=message,
+        provider=task.metadata.get("provider_model", ""),
+        chat_id=chat_id,
+    )
+    stored_url = media_record["local_path"] if media_record else task.video_url
+
+    _persist_chat_message(user_id, chat_id, "assistant", f"[Video: {stored_url}]")
+    _upsert_chat_session_meta(user_id, chat_id, message_count=2)
 
     return jsonify({
         "status": "success",
-        "video_url": task.video_url,
+        "video_url": stored_url,
         "thumbnail_url": task.thumbnail_url,
         "task_id": task.task_id,
     })
@@ -1399,20 +1466,47 @@ def _dispatch_video_stream(user_id, message, chat_id, image_data):
     dispatcher = get_video_dispatcher()
 
     def generate():
+        updated_title = None
+        if message and resolved_chat_id:
+            try:
+                sessions = _list_user_sessions(user_id)
+                current_title = next((s.get("title", "") for s in sessions if s.get("chat_id") == resolved_chat_id), None)
+                if current_title in (None, "", "New Chat", "Untitled Thread"):
+                    words = message.split()
+                    if len(words) >= 3:
+                        title = " ".join(words[:8]).rstrip(".,!?;:")
+                        if len(title) > 60:
+                            title = title[:60].rsplit(" ", 1)[0] if " " in title[:60] else title[:60]
+                        if marcus:
+                            marcus.memory.set_title(resolved_chat_id, title)
+                        _upsert_chat_session_meta(user_id, resolved_chat_id, title=title, message_count=2)
+                        updated_title = title
+                    else:
+                        _upsert_chat_session_meta(user_id, resolved_chat_id, message_count=2)
+            except Exception as exc:
+                print(f"[WARN] Auto-title fallback failed: {exc}")
+
         for event in dispatcher.generate_stream(message):
             yield f"data: {json.dumps(event)}\n\n"
 
-            # Persist on completion
             if event.get("video_url") and marcus:
+                video_url = event["video_url"]
+                media = get_media_manager(user_id)
+                media_record = media.save_video(
+                    video_url, prompt=message,
+                    provider=event.get("task_id", ""),
+                    chat_id=resolved_chat_id,
+                )
+                stored_url = media_record["local_path"] if media_record else video_url
                 try:
                     marcus.memory.add_message(
                         resolved_chat_id, "assistant",
-                        f"[Generated video: {message}]"
+                        f"[Video: {stored_url}]"
                     )
                 except Exception:
                     pass
 
-        yield f"data: {json.dumps({'done': True, 'chat_id': resolved_chat_id})}\n\n"
+        yield f"data: {json.dumps({'done': True, 'chat_id': resolved_chat_id, 'updated_title': updated_title})}\n\n"
 
     return Response(
         stream_with_context(generate()),
@@ -1444,14 +1538,23 @@ def _dispatch_video_text_json(user_id, message, chat_id, image_data):
     if task.status.value != "failed":
         video_url = task.video_url
         print(f"[Router]   VIDEO success — video_url={video_url}")
+
+        media = get_media_manager(user_id)
+        media_record = media.save_video(
+            video_url, prompt=message,
+            provider=task.metadata.get("provider_model", ""),
+            chat_id=chat_id,
+        )
+        video_url = media_record["local_path"] if media_record else video_url
     else:
         print(f"[Router]   VIDEO failed: {task.error}")
 
     # ── 3. Persist ────────────────────────────────────────────────────
     assistant_content = text_reply
     if video_url:
-        assistant_content += f"\n\n[Generated video: {message}]"
+        assistant_content += f"\n\n[Video: {video_url}]"
     _persist_chat_message(user_id, chat_id, "assistant", assistant_content)
+    _upsert_chat_session_meta(user_id, chat_id, message_count=2)
 
     voice = (
         {"enabled": True, "spoken": False, "engine": "browser", "reason": "reply too long for blocking server TTS"}
@@ -1507,10 +1610,12 @@ def _dispatch_video_text_stream(user_id, message, chat_id, image_data):
                         if len(title) > 60:
                             title = title[:60].rsplit(" ", 1)[0] if " " in title[:60] else title[:60]
                         marcus.memory.set_title(resolved_chat_id, title)
-                        _upsert_chat_session_meta(user_id, resolved_chat_id, title=title)
+                        _upsert_chat_session_meta(user_id, resolved_chat_id, title=title, message_count=2)
                         updated_title = title
             except Exception as exc:
                 print(f"[WARN] Auto-title fallback failed: {exc}")
+
+            _upsert_chat_session_meta(user_id, resolved_chat_id, message_count=2)
 
             try:
                 for token in marcus.stream_respond(message, chat_id=resolved_chat_id, image_data=image_data):
@@ -1528,10 +1633,18 @@ def _dispatch_video_text_stream(user_id, message, chat_id, image_data):
             yield f"data: {json.dumps(event)}\n\n"
 
             if event.get("video_url") and marcus:
+                video_url = event["video_url"]
+                media = get_media_manager(user_id)
+                media_record = media.save_video(
+                    video_url, prompt=message,
+                    provider=event.get("task_id", ""),
+                    chat_id=resolved_chat_id,
+                )
+                stored_url = media_record["local_path"] if media_record else video_url
                 try:
                     marcus.memory.add_message(
                         resolved_chat_id, "assistant",
-                        f"[Generated video: {message}]"
+                        f"[Video: {stored_url}]"
                     )
                 except Exception:
                     pass
@@ -2154,6 +2267,92 @@ def dev_routing_log():
         "status": "success",
         "log": manager.recent_routing_log(limit=limit),
     })
+
+
+# ── Media Library API ────────────────────────────────────────────────────────
+
+
+@app.route("/api/media/images", methods=["GET"])
+def api_media_images():
+    """List user's images with optional search and pagination."""
+    user_id, error = _require_login()
+    if error:
+        return error
+
+    search = str(request.args.get("search") or "").strip()
+    chat_id = str(request.args.get("chat_id") or "").strip()
+    limit = min(int(request.args.get("limit") or 50), 200)
+    offset = max(int(request.args.get("offset") or 0), 0)
+
+    mgr = get_media_manager(user_id)
+    images = mgr.list_images(chat_id=chat_id, search=search, limit=limit, offset=offset)
+    total = mgr.count_images(chat_id=chat_id)
+    return jsonify({"status": "success", "images": images, "total": total})
+
+
+@app.route("/api/media/videos", methods=["GET"])
+def api_media_videos():
+    """List user's videos with optional search and pagination."""
+    user_id, error = _require_login()
+    if error:
+        return error
+
+    search = str(request.args.get("search") or "").strip()
+    chat_id = str(request.args.get("chat_id") or "").strip()
+    limit = min(int(request.args.get("limit") or 50), 200)
+    offset = max(int(request.args.get("offset") or 0), 0)
+
+    mgr = get_media_manager(user_id)
+    videos = mgr.list_videos(chat_id=chat_id, search=search, limit=limit, offset=offset)
+    total = mgr.count_videos(chat_id=chat_id)
+    return jsonify({"status": "success", "videos": videos, "total": total})
+
+
+@app.route("/api/media/<media_id>", methods=["GET"])
+def api_media_detail(media_id):
+    """Get a single media record."""
+    user_id, error = _require_login()
+    if error:
+        return error
+
+    mgr = get_media_manager(user_id)
+    record = mgr.get_media(media_id)
+    if not record:
+        return jsonify({"status": "error", "message": "Media not found"}), 404
+    return jsonify({"status": "success", "media": record})
+
+
+@app.route("/api/media/<media_id>", methods=["DELETE"])
+def api_media_delete(media_id):
+    """Delete a media item."""
+    user_id, error = _require_login()
+    if error:
+        return error
+
+    mgr = get_media_manager(user_id)
+    deleted = mgr.delete_media(media_id)
+    if not deleted:
+        return jsonify({"status": "error", "message": "Media not found"}), 404
+    return jsonify({"status": "success", "message": "Media deleted"})
+
+
+@app.route("/api/media/migrate", methods=["POST"])
+def api_media_migrate():
+    """One-time migration: index existing /static/generated/ files."""
+    user_id, error = _require_login()
+    if error:
+        return error
+
+    mgr = get_media_manager(user_id)
+    count = mgr.migrate_existing_static()
+    return jsonify({"status": "success", "migrated": count})
+
+
+@app.route("/static/media/users/<user_id>/<path:subpath>")
+def serve_user_media(user_id, subpath):
+    """Serve user media files from memory_data/users/{user_id}/media/."""
+    media_dir = PROJECT_ROOT / "memory_data" / "users" / user_id / "media"
+    return send_from_directory(str(media_dir), subpath)
 
 
 # ── Static frontend serving (same-origin, eliminates CORS) ──────────────

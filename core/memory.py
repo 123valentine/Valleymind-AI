@@ -56,7 +56,14 @@ class MemorySystem:
             return self._locks[chat_id]
 
     def load_long_term(self) -> dict:
-        # TODO: Implement Pinecone storage logic here
+        try:
+            if os.path.exists(self.long_term_file):
+                with open(self.long_term_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                if isinstance(data, dict):
+                    return data
+        except (json.JSONDecodeError, OSError) as exc:
+            print(f"[MEMORY] Failed to load long-term memory: {exc}")
         return _fresh_long_term()
 
     def reload(self) -> dict:
@@ -65,8 +72,14 @@ class MemorySystem:
             return self.long_term
 
     def save_long_term(self):
-        # TODO: Implement Pinecone storage logic here
-        pass
+        try:
+            os.makedirs(os.path.dirname(self.long_term_file), exist_ok=True)
+            tmp = self.long_term_file + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(self.long_term, f, indent=2, ensure_ascii=False)
+            os.replace(tmp, self.long_term_file)
+        except OSError as exc:
+            print(f"[MEMORY] Failed to save long-term memory: {exc}")
 
     def _creator_prefs_file(self) -> str:
         return os.path.join(self.base_folder, "creator_preferences.json")
@@ -166,12 +179,28 @@ class MemorySystem:
         return self.long_term
 
     def load_chat(self, chat_id: str) -> list:
-        # TODO: Implement Pinecone storage logic here
+        chat_file = os.path.join(self.base_folder, "chats", f"{chat_id}.json")
+        try:
+            if os.path.exists(chat_file):
+                with open(chat_file, "r", encoding="utf-8") as f:
+                    messages = json.load(f)
+                if isinstance(messages, list):
+                    return messages
+        except (json.JSONDecodeError, OSError) as exc:
+            print(f"[MEMORY] Failed to load chat {chat_id}: {exc}")
         return []
 
     def save_chat(self, chat_id: str, messages: list, title: str = ""):
-        # TODO: Implement Pinecone storage logic here
-        pass
+        chat_dir = os.path.join(self.base_folder, "chats")
+        chat_file = os.path.join(chat_dir, f"{chat_id}.json")
+        try:
+            os.makedirs(chat_dir, exist_ok=True)
+            tmp = chat_file + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(messages, f, indent=1, ensure_ascii=False)
+            os.replace(tmp, chat_file)
+        except OSError as exc:
+            print(f"[MEMORY] Failed to save chat {chat_id}: {exc}")
 
     def create_session(self, chat_id: str, title: str = "New Chat") -> dict:
         self._cache[chat_id] = []
@@ -232,10 +261,10 @@ class MemorySystem:
             self._cache[chat_id] = self.load_chat(chat_id)
         return self._cache[chat_id]
 
-    def add_message(self, chat_id: str, role: str, content: str, timestamp=None, image_data: str = ""):
+    def add_message(self, chat_id: str, role: str, content: str, timestamp=None, image_data: str = "", image_url: str = ""):
         role = str(role or "user").strip()
         content = str(content or "").strip()
-        if not content and not image_data:
+        if not content and not image_data and not image_url:
             print(f"[WARNING] add_message: empty content and no image for role '{role}'; skipping.")
             return
 
@@ -249,6 +278,8 @@ class MemorySystem:
             }
             if image_data:
                 msg["image_data"] = image_data
+            if image_url:
+                msg["image_url"] = image_url
             messages.append(msg)
             self.save_chat(chat_id, messages)
 
@@ -261,5 +292,9 @@ class MemorySystem:
         lock = self._get_lock(chat_id)
         with lock:
             self._cache.pop(chat_id, None)
-
-            # TODO: Implement Pinecone storage logic here
+            chat_file = os.path.join(self.base_folder, "chats", f"{chat_id}.json")
+            try:
+                if os.path.exists(chat_file):
+                    os.remove(chat_file)
+            except OSError as exc:
+                print(f"[MEMORY] Failed to clear chat {chat_id}: {exc}")
