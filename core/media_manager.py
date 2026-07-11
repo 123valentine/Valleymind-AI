@@ -130,16 +130,42 @@ class MediaManager:
             items = [r for r in items if r.get("chat_id") == chat_id]
 
         if search:
-            q = search.lower()
-            items = [
-                r
-                for r in items
-                if q in (r.get("prompt") or "").lower()
-                or q in (r.get("revised_prompt") or "").lower()
-            ]
+            items = self._semantic_search(items, search)
 
         items.sort(key=lambda r: r.get("created_at", ""), reverse=True)
         return items[offset : offset + limit]
+
+    def _semantic_search(self, items: list[dict], query: str) -> list[dict]:
+        """Fuzzy semantic search across prompt, revised_prompt, and provider fields."""
+        query_lower = query.lower()
+        query_words = [w for w in query_lower.split() if len(w) > 1]
+        scored: list[tuple[float, dict]] = []
+
+        for r in items:
+            score = 0.0
+            prompt = (r.get("prompt") or "").lower()
+            revised = (r.get("revised_prompt") or "").lower()
+            combined = prompt + " " + revised
+
+            if query_lower in prompt:
+                score += 10.0
+            if query_lower in revised:
+                score += 8.0
+
+            for word in query_words:
+                if word in prompt:
+                    score += 3.0
+                if word in revised:
+                    score += 2.5
+                for token in combined.split():
+                    if token.startswith(word) or word.startswith(token):
+                        score += 1.5
+
+            if score > 0:
+                scored.append((score, r))
+
+        scored.sort(key=lambda x: x[0], reverse=True)
+        return [r for _, r in scored]
 
     def count_images(self, *, chat_id: str = "") -> int:
         with self._lock:

@@ -227,6 +227,105 @@
     100% { opacity:1; transform:translateX(-50%) translateY(0); }
   }
 
+  /* ── Full-Screen Image Gallery Overlay ──────────────────────── */
+  #galleryOverlay {
+    position:fixed; inset:0; z-index:9998;
+    background:rgba(2,6,23,0.97); backdrop-filter:blur(20px);
+    display:none; flex-direction:column;
+    transform:translateY(100%);
+    transition:transform 0.4s cubic-bezier(0.4,0,0.2,1), opacity 0.3s ease;
+    opacity:0;
+  }
+  #galleryOverlay.open { display:flex; opacity:1; transform:translateY(0); }
+  #galleryOverlay.closing { display:flex; opacity:0; transform:translateY(100%); }
+  .gallery-header {
+    display:flex; align-items:center; justify-content:space-between;
+    padding:20px 32px; flex-shrink:0;
+    border-bottom:1px solid rgba(255,255,255,0.06);
+  }
+  .gallery-header h2 {
+    color:#e2e8f0; font-size:16px; font-weight:700; text-transform:uppercase;
+    letter-spacing:0.12em; font-family:'Space Grotesk',sans-serif; margin:0;
+  }
+  .gallery-header .gallery-count { color:#64748b; font-size:12px; margin-left:12px; }
+  .gallery-search-wrap {
+    flex:1; max-width:420px; margin:0 32px; position:relative;
+  }
+  .gallery-search-wrap input {
+    width:100%; background:rgba(255,255,255,0.04);
+    border:1px solid rgba(255,255,255,0.08); border-radius:12px;
+    padding:10px 16px 10px 40px; color:#e2e8f0; font-size:13px;
+    outline:none; transition:border-color 0.2s;
+    font-family:'Inter',sans-serif;
+  }
+  .gallery-search-wrap input:focus { border-color:rgba(0,212,255,0.4); }
+  .gallery-search-wrap input::placeholder { color:#475569; }
+  .gallery-search-wrap .search-icon {
+    position:absolute; left:14px; top:50%; transform:translateY(-50%);
+    color:#475569; pointer-events:none;
+  }
+  .gallery-close-btn {
+    background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.08);
+    border-radius:10px; padding:8px 16px; color:#94a3b8;
+    font-size:12px; font-weight:600; cursor:pointer;
+    display:flex; align-items:center; gap:6px;
+    transition:all 0.2s; font-family:'Space Grotesk',sans-serif;
+  }
+  .gallery-close-btn:hover { background:rgba(255,255,255,0.1); color:#e2e8f0; }
+  .gallery-body {
+    flex:1; overflow-y:auto; padding:24px 32px;
+  }
+  .gallery-grid {
+    display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr));
+    gap:16px;
+  }
+  .gallery-card {
+    background:rgba(15,23,42,0.6); border:1px solid rgba(255,255,255,0.06);
+    border-radius:14px; overflow:hidden; cursor:pointer;
+    transition:all 0.2s; position:relative;
+  }
+  .gallery-card:hover { border-color:rgba(0,212,255,0.2); transform:translateY(-2px);
+    box-shadow:0 8px 24px rgba(0,0,0,0.3); }
+  .gallery-card img {
+    width:100%; aspect-ratio:1; object-fit:cover; display:block;
+    background:#0f172a;
+  }
+  .gallery-card-info { padding:10px 14px; }
+  .gallery-card-prompt {
+    font-size:12px; color:#cbd5e1; line-height:1.4;
+    display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;
+    overflow:hidden; margin-bottom:4px;
+  }
+  .gallery-card-date { font-size:10px; color:#475569; }
+  .gallery-card-actions {
+    position:absolute; top:8px; right:8px;
+    display:flex; gap:4px; opacity:0; transition:opacity 0.15s;
+  }
+  .gallery-card:hover .gallery-card-actions { opacity:1; }
+  .gallery-card-actions button, .gallery-card-actions a {
+    background:rgba(0,0,0,0.6); backdrop-filter:blur(8px);
+    border:1px solid rgba(255,255,255,0.1); border-radius:8px;
+    padding:6px; color:#e2e8f0; cursor:pointer;
+    display:flex; transition:all 0.15s;
+  }
+  .gallery-card-actions button:hover, .gallery-card-actions a:hover {
+    background:rgba(0,212,255,0.2); border-color:rgba(0,212,255,0.3);
+  }
+  .gallery-empty {
+    text-align:center; padding:80px 24px; color:#475569;
+  }
+  .gallery-empty p { font-size:14px; margin-bottom:8px; }
+  .gallery-empty span { font-size:12px; color:#334155; }
+  .gallery-load-more {
+    text-align:center; padding:24px;
+  }
+  .gallery-load-more button {
+    background:transparent; border:1px solid rgba(0,212,255,0.2);
+    border-radius:10px; padding:8px 20px; color:#00d4ff;
+    font-size:12px; font-weight:600; cursor:pointer; transition:all 0.2s;
+  }
+  .gallery-load-more button:hover { background:rgba(0,212,255,0.1); }
+
   /* ── Sidebar Images Tab ─────────────────────────────────────── */
   .sidebar-img-item {
     display:flex; align-items:center; gap:10px;
@@ -621,21 +720,6 @@
       Sketch
     </div>
   </nav>
-  <!-- Image Gallery Panel (slides in when "Image Gallery" is active) -->
-  <div id="galleryPanel" style="display:none; padding:0 16px;">
-    <div style="padding:0 8px 8px 8px;">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
-        <p class="text-[9px] uppercase tracking-[0.2em] text-slate-500 font-label-caps">Generated Images</p>
-        <span id="galleryImageCount" class="text-[9px] text-slate-600 font-label-caps"></span>
-      </div>
-      <input id="gallerySearch" type="text" placeholder="Search images..." oninput="debounceGallerySearch()" style="width:100%;background:#1a1f2e;border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:7px 10px;color:white;font-size:11px;outline:none;box-sizing:border-box;margin-bottom:8px;">
-      <div id="galleryImageList" style="display:flex;flex-direction:column;gap:4px;max-height:calc(100vh - 420px);overflow-y:auto;"></div>
-      <div id="galleryEmpty" style="display:none;padding:24px 8px;color:#475569;font-size:11px;text-align:center;">No images yet</div>
-      <div id="galleryLoadMore" style="display:none;padding:8px;text-align:center;">
-        <button onclick="loadMoreGalleryImages()" style="background:transparent;border:1px solid rgba(0,212,255,0.2);border-radius:8px;padding:5px 12px;color:#00d4ff;font-size:10px;cursor:pointer;">Load More</button>
-      </div>
-    </div>
-  </div>
 
   <div class="px-6 mb-4">
     <button onclick="toggleSuggestionBox()" class="w-full py-2.5 px-4 rounded-xl border border-cyan-400/20 bg-white/5 text-slate-300 font-bold flex items-center justify-center gap-2 hover:text-cyan-300 hover:border-cyan-400/40 transition-all duration-300">
@@ -876,6 +960,34 @@
   <div class="viewer-toolbar">
     <a id="viewerDownloadBtn" href="" download class="vt-download">Download</a>
     <button class="vt-close" onclick="closeImageViewer()">Close</button>
+  </div>
+</div>
+
+<!-- FULL-SCREEN IMAGE GALLERY -->
+<div id="galleryOverlay">
+  <div class="gallery-header">
+    <div style="display:flex;align-items:center;">
+      <h2>Image Gallery</h2>
+      <span class="gallery-count" id="galleryImageCount"></span>
+    </div>
+    <div class="gallery-search-wrap">
+      <span class="search-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span>
+      <input id="gallerySearchInput" type="text" placeholder="Search images by description..." oninput="debounceGallerySearch()">
+    </div>
+    <button class="gallery-close-btn" onclick="closeGallery()">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      Close
+    </button>
+  </div>
+  <div class="gallery-body" id="galleryBody">
+    <div class="gallery-grid" id="galleryGrid"></div>
+    <div class="gallery-empty" id="galleryEmpty" style="display:none;">
+      <p>No images yet</p>
+      <span>Generated images will appear here</span>
+    </div>
+    <div class="gallery-load-more" id="galleryLoadMore" style="display:none;">
+      <button onclick="loadMoreGalleryImages()">Load More</button>
+    </div>
   </div>
 </div>
 
@@ -1511,10 +1623,6 @@ function addMessage(text, type = "ai", imageData, mediaUrl) {
     if (welcome) welcome.style.display = "none";
 
     var displayText = text || "";
-    if (type === "ai") {
-        displayText = displayText.replace(/\n?\n?\[Image:[^\]]*\]\s*$/, "").trim();
-    }
-
     const msgIndex = messageStore.length;
     var msgObj = { role: type === "user" ? "user" : "assistant", content: displayText, reaction: null };
     if (imageData) msgObj.image_data = imageData;
@@ -1533,9 +1641,29 @@ function addMessage(text, type = "ai", imageData, mediaUrl) {
         img.style.cssText = "max-width:100%;max-height:200px;border-radius:8px;margin-bottom:6px;display:block;";
         bubble.appendChild(img);
     }
-    if (displayText) {
+
+    var imageMatch = displayText.match(/\[Image:\s*([^\]]+)\]/);
+    var imageUrlFromText = imageMatch ? imageMatch[1].trim() : "";
+    var textWithoutImage = displayText.replace(/\n?\n?\[Image:[^\]]*\]\s*$/, "").trim();
+
+    var finalImageUrl = mediaUrl || imageUrlFromText;
+
+    if (finalImageUrl && type === "ai") {
+        var chatImgWrap = document.createElement("div");
+        chatImgWrap.style.cssText = "margin-bottom:8px;";
+        var chatImg = document.createElement("img");
+        chatImg.src = finalImageUrl;
+        chatImg.alt = "Generated image";
+        chatImg.loading = "lazy";
+        chatImg.style.cssText = "max-width:100%;max-height:400px;border-radius:12px;display:block;cursor:pointer;";
+        chatImg.onclick = function () { openImageViewer(finalImageUrl, textWithoutImage || ""); };
+        chatImgWrap.appendChild(chatImg);
+        bubble.appendChild(chatImgWrap);
+    }
+
+    if (textWithoutImage) {
         var txtSpan = document.createElement("span");
-        txtSpan.textContent = displayText;
+        txtSpan.textContent = textWithoutImage;
         bubble.appendChild(txtSpan);
     }
 
@@ -2321,18 +2449,47 @@ function navTo(view) {
     var active = document.getElementById("nav-" + view);
     if (active) active.classList.add("active");
 
-    var chatPanel = document.getElementById("sidebarPanel-chats");
-    var galleryPanel = document.getElementById("galleryPanel");
-    if (chatPanel) chatPanel.style.display = (view === "chat") ? "" : "none";
-    if (galleryPanel) galleryPanel.style.display = (view === "gallery") ? "" : "none";
-
-    if (view === "chat") {
+    if (view === "gallery") {
+        openGallery();
+    } else if (view === "chat") {
+        closeSidebar();
         focusChatInput();
-    } else if (view === "gallery") {
-        loadGalleryImages(true);
     } else if (view === "sketch") {
         goTo("sketch");
+    } else {
+        closeSidebar();
     }
+}
+
+function openGallery() {
+    closeSidebar();
+    var overlay = document.getElementById("galleryOverlay");
+    if (!overlay) return;
+    overlay.style.display = "flex";
+    requestAnimationFrame(function () {
+        overlay.classList.add("open");
+    });
+    loadGalleryImages(true);
+    setTimeout(function () {
+        var inp = document.getElementById("gallerySearchInput");
+        if (inp) inp.focus();
+    }, 400);
+}
+
+function closeGallery() {
+    var overlay = document.getElementById("galleryOverlay");
+    if (!overlay) return;
+    overlay.classList.remove("open");
+    overlay.classList.add("closing");
+    setTimeout(function () {
+        overlay.classList.remove("closing");
+        overlay.style.display = "none";
+        currentNavView = "chat";
+        document.querySelectorAll(".vm-nav-item").forEach(function (el) { el.classList.remove("active"); });
+        var chatNav = document.getElementById("nav-chat");
+        if (chatNav) chatNav.classList.add("active");
+        focusChatInput();
+    }, 400);
 }
 
 // ── Image Gallery Panel ─────────────────────────────────────────────────
@@ -2351,15 +2508,15 @@ function debounceGallerySearch() {
 async function loadGalleryImages(reset) {
     if (reset) {
         galleryOffset = 0;
-        var list = document.getElementById("galleryImageList");
-        if (list) list.innerHTML = "";
+        var grid = document.getElementById("galleryGrid");
+        if (grid) grid.innerHTML = "";
     }
     var empty = document.getElementById("galleryEmpty");
     var loadMore = document.getElementById("galleryLoadMore");
     if (empty) empty.style.display = "none";
     if (loadMore) loadMore.style.display = "none";
 
-    var search = (document.getElementById("gallerySearch") || {}).value || "";
+    var search = (document.getElementById("gallerySearchInput") || {}).value || "";
     try {
         var params = "?limit=30&offset=" + galleryOffset;
         if (search) params += "&search=" + encodeURIComponent(search);
@@ -2380,7 +2537,7 @@ async function loadGalleryImages(reset) {
         renderGalleryItems(images);
         if (loadMore) loadMore.style.display = (galleryOffset + images.length) < galleryTotal ? "" : "none";
     } catch (err) {
-        if (empty) { empty.style.display = ""; empty.textContent = "Failed to load images"; }
+        if (empty) { empty.style.display = ""; empty.querySelector("p").textContent = "Failed to load images"; }
     }
 }
 
@@ -2390,38 +2547,22 @@ function loadMoreGalleryImages() {
 }
 
 function renderGalleryItems(images) {
-    var list = document.getElementById("galleryImageList");
-    if (!list) return;
+    var grid = document.getElementById("galleryGrid");
+    if (!grid) return;
     images.forEach(function (img) {
-        var item = document.createElement("div");
-        item.className = "sidebar-img-item";
+        var card = document.createElement("div");
+        card.className = "gallery-card";
 
-        var thumb = document.createElement("img");
-        thumb.className = "img-thumb";
-        thumb.src = img.local_path || "";
-        thumb.loading = "lazy";
-        thumb.alt = "";
-        thumb.style.cursor = "pointer";
-        thumb.onclick = function (e) { e.stopPropagation(); openImageViewer(img.local_path, img.prompt || img.revised_prompt || ""); };
-        thumb.onerror = function () { this.style.background = "#1e293b"; };
-        item.appendChild(thumb);
-
-        var info = document.createElement("div");
-        info.className = "img-info";
-        info.style.cursor = "pointer";
-        info.onclick = function () { openImageViewer(img.local_path, img.prompt || img.revised_prompt || ""); };
-        var promptText = document.createElement("div");
-        promptText.className = "img-prompt-text";
-        promptText.textContent = img.prompt || "Untitled";
-        info.appendChild(promptText);
-        var dateText = document.createElement("div");
-        dateText.className = "img-date-text";
-        dateText.textContent = formatImageDate(img.created_at);
-        info.appendChild(dateText);
-        item.appendChild(info);
+        var imgEl = document.createElement("img");
+        imgEl.src = img.local_path || "";
+        imgEl.loading = "lazy";
+        imgEl.alt = img.prompt || "";
+        imgEl.onerror = function () { this.style.background = "#1e293b"; };
+        imgEl.onclick = function () { openImageViewer(img.local_path, img.prompt || img.revised_prompt || ""); };
+        card.appendChild(imgEl);
 
         var actions = document.createElement("div");
-        actions.className = "img-actions";
+        actions.className = "gallery-card-actions";
 
         var dlBtn = document.createElement("a");
         dlBtn.href = img.local_path || "#";
@@ -2436,22 +2577,29 @@ function renderGalleryItems(images) {
         editBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>';
         editBtn.onclick = function (e) {
             e.stopPropagation();
-            openGalleryEditPanel(img);
+            closeGallery();
+            var input = document.getElementById("chat-input");
+            if (input) { input.value = img.prompt || ""; input.focus(); }
         };
         actions.appendChild(editBtn);
 
-        item.appendChild(actions);
-        list.appendChild(item);
-    });
-}
+        card.appendChild(actions);
 
-function openGalleryEditPanel(img) {
-    closeSidebar();
-    var input = document.getElementById("chat-input");
-    if (input) {
-        input.value = img.prompt || "";
-        input.focus();
-    }
+        var info = document.createElement("div");
+        info.className = "gallery-card-info";
+        var promptText = document.createElement("div");
+        promptText.className = "gallery-card-prompt";
+        promptText.textContent = img.prompt || "Untitled";
+        info.appendChild(promptText);
+        var dateText = document.createElement("div");
+        dateText.className = "gallery-card-date";
+        dateText.textContent = formatImageDate(img.created_at);
+        info.appendChild(dateText);
+        card.appendChild(info);
+
+        card.onclick = function () { openImageViewer(img.local_path, img.prompt || img.revised_prompt || ""); };
+        grid.appendChild(card);
+    });
 }
 
 function formatImageDate(isoStr) {
@@ -2495,7 +2643,14 @@ function closeImageViewer() {
 }
 
 document.addEventListener("keydown", function (e) {
-    if (e.key === "Escape") closeImageViewer();
+    if (e.key === "Escape") {
+        var galleryOverlay = document.getElementById("galleryOverlay");
+        if (galleryOverlay && galleryOverlay.classList.contains("open")) {
+            closeGallery();
+        } else {
+            closeImageViewer();
+        }
+    }
 });
 
 // ── Image Generation Skeleton & Result Card ─────────────────────────────
@@ -2562,15 +2717,6 @@ function renderImageResultCard(imageUrl, prompt, revisedPrompt) {
         var card = document.createElement("div");
         card.className = "img-result-card";
 
-        var fadeTimer = null;
-
-        function startFadeOut() {
-            fadeTimer = setTimeout(function () {
-                card.classList.add("fading-out");
-                setTimeout(function () { wrapper.remove(); }, 700);
-            }, 4000);
-        }
-
         // Image
         var imgWrap = document.createElement("div");
         imgWrap.className = "card-image-wrap";
@@ -2616,7 +2762,6 @@ function renderImageResultCard(imageUrl, prompt, revisedPrompt) {
         editBtn.className = "btn-regenerate";
         editBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg> Edit';
         editBtn.onclick = function () {
-            clearTimeout(fadeTimer);
             card.classList.add("editing");
             editArea.style.display = "block";
             editInput.value = prompt || "";
@@ -2651,7 +2796,6 @@ function renderImageResultCard(imageUrl, prompt, revisedPrompt) {
             showImageGenSkeleton();
             var input = document.getElementById("chat-input");
             if (input) { input.value = newPrompt; sendMessage(); }
-            clearTimeout(fadeTimer);
             wrapper.remove();
         };
         editActions.appendChild(genBtn);
@@ -2662,7 +2806,6 @@ function renderImageResultCard(imageUrl, prompt, revisedPrompt) {
         cancelBtn.onclick = function () {
             card.classList.remove("editing");
             editArea.style.display = "none";
-            startFadeOut();
         };
         editActions.appendChild(cancelBtn);
 
@@ -2678,9 +2821,6 @@ function renderImageResultCard(imageUrl, prompt, revisedPrompt) {
 
         if (typeof lucide !== "undefined") lucide.createIcons();
         if (typeof window.applyIconFallback === "function") window.applyIconFallback();
-
-        if (currentNavView === "gallery") loadGalleryImages(true);
-        startFadeOut();
     }, remaining);
 }
 
@@ -3121,7 +3261,8 @@ window.send = async function () {
                         statusIndicator = null;
                     }
                     renderImageResultCard(evt.image_url, lastSentMessage || "", evt.revised_prompt || "");
-                    if (currentNavView === "gallery") loadGalleryImages(true);
+                    var galOvl = document.getElementById("galleryOverlay");
+                    if (galOvl && galOvl.classList.contains("open")) loadGalleryImages(true);
                     continue;
                 }
 
@@ -3466,36 +3607,25 @@ function renderGeneratedImage(imageUrl, revisedPrompt, altText) {
     wrapper.className = "assistant-message";
     var bubble = document.createElement("div");
     bubble.className = "bubble";
-    var label = document.createElement("div");
-    label.style.cssText = "font-size:12px;color:#94a3b8;margin-bottom:8px;";
-    label.textContent = "Image generated and saved to gallery.";
-    bubble.appendChild(label);
     var imgWrap = document.createElement("div");
-    imgWrap.style.cssText = "position:relative;display:inline-block;";
+    imgWrap.style.cssText = "margin-bottom:8px;";
     var img = document.createElement("img");
     img.src = imageUrl;
     img.alt = revisedPrompt || "Generated image";
     img.loading = "lazy";
-    img.style.cssText = "max-width:100%;max-height:400px;border-radius:12px;display:block;";
+    img.style.cssText = "max-width:100%;max-height:400px;border-radius:12px;display:block;cursor:pointer;";
+    img.onclick = function () { openImageViewer(imageUrl, revisedPrompt || altText || ""); };
     imgWrap.appendChild(img);
-    var dlBtn = document.createElement("a");
-    dlBtn.href = imageUrl;
-    dlBtn.download = (revisedPrompt || "image").substring(0, 50) + ".png";
-    dlBtn.title = "Download";
-    dlBtn.style.cssText = "position:absolute;bottom:10px;right:10px;background:rgba(0,0,0,0.6);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,0.1);border-radius:10px;padding:8px;color:#e2e8f0;display:flex;cursor:pointer;transition:all 0.2s;";
-    dlBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
-    dlBtn.onclick = function (e) { e.stopPropagation(); };
-    imgWrap.appendChild(dlBtn);
     bubble.appendChild(imgWrap);
+    if (revisedPrompt) {
+        var caption = document.createElement("div");
+        caption.style.cssText = "font-size:11px;color:#64748b;margin-top:4px;";
+        caption.textContent = revisedPrompt.slice(0, 120) + (revisedPrompt.length > 120 ? "..." : "");
+        bubble.appendChild(caption);
+    }
     wrapper.appendChild(bubble);
     container.appendChild(wrapper);
     container.scrollTop = container.scrollHeight;
-    if (currentNavView === "gallery") loadGalleryImages(true);
-    setTimeout(function () {
-        wrapper.style.transition = "opacity 0.5s ease";
-        wrapper.style.opacity = "0";
-        setTimeout(function () { wrapper.remove(); }, 600);
-    }, 5000);
 }
 
 async function submitImageGen() {
