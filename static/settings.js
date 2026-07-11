@@ -1,33 +1,32 @@
 // ── Settings System ──────────────────────────────────────────
 
 var SETTINGS_SECTIONS = [
-  { id: "account",       icon: "👤", label: "Account" },
-  { id: "memory",        icon: "🧠", label: "Memory" },
-  { id: "projects",      icon: "🚀", label: "Projects" },
-  { id: "creator",       icon: "🎯", label: "Creator Profile" },
-  { id: "preferences",   icon: "🤖", label: "AI Preferences" },
-  { id: "appearance",    icon: "🎨", label: "Appearance" },
-  { id: "notifications", icon: "🔔", label: "Notifications" },
-  { id: "knowledge",     icon: "📚", label: "Knowledge Base" },
-  { id: "media",         icon: "🖼️", label: "Media Library" },
-  { id: "storage",       icon: "📦", label: "Storage" },
-  { id: "billing",       icon: "💳", label: "Billing" },
-  { id: "privacy",       icon: "🔐", label: "Privacy & Security" },
-  { id: "language",      icon: "🌍", label: "Language & Region" },
-  { id: "integrations",  icon: "⚡", label: "Integrations" },
-  { id: "extensions",    icon: "🧩", label: "Extensions" },
-  { id: "usage",         icon: "📈", label: "Usage" },
+  { id: "account",       label: "Account" },
+  { id: "memory",        label: "Memory" },
+  { id: "projects",      label: "Projects" },
+  { id: "creator",       label: "Creator Profile" },
+  { id: "preferences",   label: "AI Preferences" },
+  { id: "appearance",    label: "Appearance" },
+  { id: "notifications", label: "Notifications" },
+  { id: "knowledge",     label: "Knowledge Base" },
+  { id: "media",         label: "Media Library" },
+  { id: "storage",       label: "Storage" },
+  { id: "billing",       label: "Billing" },
+  { id: "privacy",       label: "Privacy & Security" },
+  { id: "language",      label: "Language & Region" },
+  { id: "integrations",  label: "Integrations" },
+  { id: "extensions",    label: "Extensions" },
+  { id: "usage",         label: "Usage" },
 ];
 
 function buildSettingsNav() {
   var nav = document.getElementById("settingsNav");
   nav.innerHTML = SETTINGS_SECTIONS.map(function (s) {
     return '<div class="settings-nav-item" data-section="' + s.id + '" onclick="switchSettingsSection(\'' + s.id + '\')" style="display:flex;align-items:center;gap:10px;padding:10px 14px;cursor:pointer;color:#64748b;font-size:13px;font-family:\'Inter\',sans-serif;transition:all 0.15s;border-left:3px solid transparent;" onmouseover="if(!this.classList.contains(\'active\')){this.style.background=\'rgba(255,255,255,0.03)\';this.style.color=\'#e2e8f0\'}" onmouseout="if(!this.classList.contains(\'active\')){this.style.background=\'transparent\';this.style.color=\'#64748b\'}">' +
-      '<span style="font-size:14px;width:20px;text-align:center;">' + s.icon + '</span>' +
       '<span>' + s.label + '</span>' +
       '</div>';
   }).join("");
-  nav.innerHTML += '<div onclick="openDeveloperMode();closeSettings()" style="display:flex;align-items:center;gap:10px;padding:10px 14px;cursor:pointer;color:rgba(100,116,139,0.4);font-size:11px;font-family:\'Inter\',sans-serif;margin-top:12px;transition:color 0.2s;border-left:3px solid transparent;" onmouseover="this.style.color=\'rgba(100,116,139,0.7)\'" onmouseout="this.style.color=\'rgba(100,116,139,0.4)\'"><span style="font-size:10px;width:20px;text-align:center;">⚙</span><span>Advanced</span></div>';
+  nav.innerHTML += '<div onclick="openDeveloperMode();closeSettings()" style="display:flex;align-items:center;gap:10px;padding:10px 14px;cursor:pointer;color:rgba(100,116,139,0.4);font-size:11px;font-family:\'Inter\',sans-serif;margin-top:12px;transition:color 0.2s;border-left:3px solid transparent;" onmouseover="this.style.color=\'rgba(100,116,139,0.7)\'" onmouseout="this.style.color=\'rgba(100,116,139,0.4)\'"><span>Advanced</span></div>';
 }
 
 var _settingsCurrentSection = "account";
@@ -164,7 +163,7 @@ function _saveSettingsAndShow(section, data, statusId) {
 }
 
 // ══════════════════════════════════════════════════════════════
-// 👤 ACCOUNT
+// ACCOUNT
 // ══════════════════════════════════════════════════════════════
 
 function renderAccountSection(container) {
@@ -187,7 +186,7 @@ function renderAccountSection(container) {
       _SH.card("Connected Accounts", '<div style="display:flex;align-items:center;gap:12px;padding:8px 12px;background:rgba(15,23,42,0.5);border-radius:8px;"><div style="width:32px;height:32px;border-radius:50%;background:#4285F4;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:14px;flex-shrink:0;">G</div><div style="flex:1;"><span style="color:#e2e8f0;font-size:13px;font-family:\'Inter\',sans-serif;">Google</span><p style="color:#64748b;font-size:10px;margin:1px 0 0;font-family:\'Inter\',sans-serif;">Connected</p></div><span style="color:#22c55e;font-size:10px;font-family:\'Inter\',sans-serif;">✓ Linked</span></div>') +
       _SH.card("Active Sessions", '<p style="color:#64748b;font-size:12px;margin:0;font-family:\'Inter\',sans-serif;">1 active session (current device)</p>') +
       _SH.card("Login History", '<div style="color:#64748b;font-size:12px;font-family:\'Inter\',sans-serif;"><div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.04);"><span>Current session</span><span style="color:#475569;">Just now</span></div><p style="margin-top:8px;color:#475569;font-size:11px;">Full login history will appear here as you use ValleyMind.</p></div>') +
-      _SH.card("Devices", '<div style="display:flex;align-items:center;gap:12px;padding:8px 12px;background:rgba(15,23,42,0.5);border-radius:8px;"><span style="font-size:20px;">💻</span><div style="flex:1;"><span style="color:#e2e8f0;font-size:13px;font-family:\'Inter\',sans-serif;">Current Device</span><p style="color:#64748b;font-size:10px;margin:1px 0 0;font-family:\'Inter\',sans-serif;">Active now</p></div><span style="color:#22c55e;font-size:10px;font-family:\'Inter\',sans-serif;">Current</span></div>');
+      _SH.card("Devices", '<div style="display:flex;align-items:center;gap:12px;padding:8px 12px;background:rgba(15,23,42,0.5);border-radius:8px;"><div style="flex:1;"><span style="color:#e2e8f0;font-size:13px;font-family:\'Inter\',sans-serif;">Current Device</span><p style="color:#64748b;font-size:10px;margin:1px 0 0;font-family:\'Inter\',sans-serif;">Active now</p></div><span style="color:#22c55e;font-size:10px;font-family:\'Inter\',sans-serif;">Current</span></div>');
   }).catch(function () {
     container.innerHTML = _SH.sectionHeader("Account") + '<p style="color:#64748b;">Could not load profile.</p>';
   });
@@ -228,7 +227,7 @@ function updateProfile() {
 }
 
 // ══════════════════════════════════════════════════════════════
-// 🧠 MEMORY
+// MEMORY
 // ══════════════════════════════════════════════════════════════
 
 var MEMORY_FIELDS = [
@@ -314,7 +313,7 @@ function exportMemory() {
 }
 
 // ══════════════════════════════════════════════════════════════
-// 🚀 PROJECTS
+// PROJECTS
 // ══════════════════════════════════════════════════════════════
 
 function renderProjectsSection(container) {
@@ -363,7 +362,7 @@ function deleteProject(pid) {
 }
 
 // ══════════════════════════════════════════════════════════════
-// 🎯 CREATOR PROFILE
+// CREATOR PROFILE
 // ══════════════════════════════════════════════════════════════
 
 function renderCreatorSection(container) {
@@ -411,7 +410,7 @@ function saveCreatorProfile() {
 }
 
 // ══════════════════════════════════════════════════════════════
-// 🤖 AI PREFERENCES
+// AI PREFERENCES
 // ══════════════════════════════════════════════════════════════
 
 function renderPreferencesSection(container) {
@@ -437,7 +436,7 @@ function saveAIPreferences() {
 }
 
 // ══════════════════════════════════════════════════════════════
-// 🎨 APPEARANCE
+// APPEARANCE
 // ══════════════════════════════════════════════════════════════
 
 function renderAppearanceSection(container) {
@@ -478,7 +477,7 @@ function setSettingsAccent(color) {
 }
 
 // ══════════════════════════════════════════════════════════════
-// 🔔 NOTIFICATIONS
+// NOTIFICATIONS
 // ══════════════════════════════════════════════════════════════
 
 function renderNotificationsSection(container) {
@@ -509,7 +508,7 @@ function saveNotifications() {
 }
 
 // ══════════════════════════════════════════════════════════════
-// 📚 KNOWLEDGE BASE
+// KNOWLEDGE BASE
 // ══════════════════════════════════════════════════════════════
 
 function renderKnowledgeSection(container) {
@@ -518,8 +517,8 @@ function renderKnowledgeSection(container) {
     .then(function (r) { return r.json(); }).then(function (d) {
       var items = d.items || [];
       var listHtml = items.length > 0 ? items.map(function (item) {
-        var icons = { pdf: "📄", doc: "📝", website: "🌐", image: "🖼️", note: "📌" };
-        return '<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:rgba(15,23,42,0.5);border-radius:8px;margin-bottom:4px;"><span>' + (icons[item.type] || "📄") + '</span><div style="flex:1;"><span style="color:#e2e8f0;font-size:12px;">' + item.title + '</span></div><button onclick="deleteKnowledgeItem(\'' + item.id + '\')" style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:14px;">&times;</button></div>';
+        var icons = { pdf: "PDF", doc: "DOC", website: "WEB", image: "IMG", note: "NOTE" };
+        return '<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:rgba(15,23,42,0.5);border-radius:8px;margin-bottom:4px;"><div style="flex:1;"><span style="color:#e2e8f0;font-size:12px;">' + item.title + '</span></div><button onclick="deleteKnowledgeItem(\'' + item.id + '\')" style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:14px;">&times;</button></div>';
       }).join("") : '<p style="color:#475569;font-size:12px;">No items yet.</p>';
       container.innerHTML = _SH.sectionHeader("Knowledge Base", "Upload documents, PDFs, and notes — ValleyMind uses this for context") +
         _SH.card("Add to Knowledge Base", '<div style="display:flex;gap:8px;flex-wrap:wrap;">' + _SH.btn("Add Note", "showAddKnowledgeNote()") + _SH.btn("Upload PDF", "showComingSoon('PDF Upload')") + _SH.btn("Upload Document", "showComingSoon('Document Upload')") + _SH.btn("Add Website", "showComingSoon('Website Import')") + '</div><div id="knowledgeAddForm" style="margin-top:10px;"></div>') +
@@ -550,7 +549,7 @@ function deleteKnowledgeItem(id) {
 }
 
 // ══════════════════════════════════════════════════════════════
-// 🖼️ MEDIA LIBRARY
+// MEDIA LIBRARY
 // ══════════════════════════════════════════════════════════════
 
 function renderMediaSection(container) {
@@ -560,7 +559,7 @@ function renderMediaSection(container) {
       var images = d.images || [];
       var videos = d.videos || [];
       var imageHtml = images.length > 0 ? images.map(function (img) {
-        return '<div style="position:relative;border-radius:10px;overflow:hidden;border:1px solid rgba(255,255,255,0.06);background:rgba(15,23,42,0.5);"><img src="' + img.url + '" alt="' + img.name + '" style="width:100%;height:140px;object-fit:cover;display:block;" loading="lazy"><div style="padding:6px 8px;display:flex;align-items:center;justify-content:space-between;background:rgba(2,6,23,0.6);"><span style="color:#94a3b8;font-size:9px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100px;">' + img.name + '</span><div style="display:flex;gap:4px;"><a href="' + img.url + '" download style="background:none;border:none;color:#00d4ff;cursor:pointer;font-size:12px;text-decoration:none;" title="Download">⬇</a><button onclick="deleteMedia(\'' + img.url + '\')" style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:12px;padding:0;" title="Delete">&times;</button></div></div></div>';
+        return '<div style="position:relative;border-radius:10px;overflow:hidden;border:1px solid rgba(255,255,255,0.06);background:rgba(15,23,42,0.5);"><img src="' + img.url + '" alt="' + img.name + '" style="width:100%;height:140px;object-fit:cover;display:block;" loading="lazy"><div style="padding:6px 8px;display:flex;align-items:center;justify-content:space-between;background:rgba(2,6,23,0.6);"><span style="color:#94a3b8;font-size:9px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100px;">' + img.name + '</span><div style="display:flex;gap:4px;"><a href="' + img.url + '" download style="background:none;border:none;color:#00d4ff;cursor:pointer;font-size:12px;text-decoration:none;" title="Download">DL</a><button onclick="deleteMedia(\'' + img.url + '\')" style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:12px;padding:0;" title="Delete">&times;</button></div></div></div>';
       }).join("") : null;
       container.innerHTML = _SH.sectionHeader("Media Library", "All your generated images and videos in one place") +
         _SH.card("Images", imageHtml ? '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;">' + imageHtml + '</div>' : '<p style="color:#475569;font-size:12px;">No images yet. Generated images will appear here automatically.</p>') +
@@ -576,7 +575,7 @@ function deleteMedia(url) {
 }
 
 // ══════════════════════════════════════════════════════════════
-// 📦 STORAGE
+// STORAGE
 // ══════════════════════════════════════════════════════════════
 
 function renderStorageSection(container) {
@@ -609,7 +608,7 @@ function renderStorageSection(container) {
 }
 
 // ══════════════════════════════════════════════════════════════
-// 💳 BILLING
+// BILLING
 // ══════════════════════════════════════════════════════════════
 
 function renderBillingSection(container) {
@@ -639,7 +638,7 @@ function renderBillingSection(container) {
 }
 
 // ══════════════════════════════════════════════════════════════
-// 🔐 PRIVACY & SECURITY
+// PRIVACY & SECURITY
 // ══════════════════════════════════════════════════════════════
 
 function renderPrivacySection(container) {
@@ -696,7 +695,7 @@ function clearLocalCache() {
 }
 
 // ══════════════════════════════════════════════════════════════
-// 🌍 LANGUAGE & REGION
+// LANGUAGE & REGION
 // ══════════════════════════════════════════════════════════════
 
 function renderLanguageSection(container) {
@@ -719,38 +718,38 @@ function saveLanguagePrefs() {
 }
 
 // ══════════════════════════════════════════════════════════════
-// ⚡ INTEGRATIONS
+// INTEGRATIONS
 // ══════════════════════════════════════════════════════════════
 
 function renderIntegrationsSection(container) {
   var integrations = [
-    { name: "Google Drive", icon: "☁️", desc: "Connect your Google Drive files" },
-    { name: "OneDrive", icon: "☁️", desc: "Access Microsoft OneDrive documents" },
-    { name: "Dropbox", icon: "📦", desc: "Link your Dropbox storage" },
-    { name: "GitHub", icon: "🐙", desc: "Import code repositories" },
-    { name: "Notion", icon: "📝", desc: "Sync your Notion workspace" },
-    { name: "Calendar", icon: "📅", desc: "Connect your calendar for scheduling" },
+    { name: "Google Drive", desc: "Connect your Google Drive files" },
+    { name: "OneDrive", desc: "Access Microsoft OneDrive documents" },
+    { name: "Dropbox", desc: "Link your Dropbox storage" },
+    { name: "GitHub", desc: "Import code repositories" },
+    { name: "Notion", desc: "Sync your Notion workspace" },
+    { name: "Calendar", desc: "Connect your calendar for scheduling" },
   ];
   container.innerHTML = _SH.sectionHeader("Integrations", "Connect ValleyMind to your favorite tools") +
     _SH.card("Available Integrations", integrations.map(function (i) {
-      return '<div style="display:flex;align-items:center;gap:12px;padding:12px;background:rgba(15,23,42,0.5);border-radius:8px;margin-bottom:6px;"><span style="font-size:24px;">' + i.icon + '</span><div style="flex:1;"><span style="color:#e2e8f0;font-size:13px;font-weight:600;">' + i.name + '</span><p style="color:#64748b;font-size:11px;margin:2px 0 0;">' + i.desc + '</p></div><span style="background:rgba(100,116,139,0.15);color:#64748b;font-size:9px;padding:3px 8px;border-radius:4px;text-transform:uppercase;">Coming Soon</span></div>';
+      return '<div style="display:flex;align-items:center;gap:12px;padding:12px;background:rgba(15,23,42,0.5);border-radius:8px;margin-bottom:6px;"><div style="flex:1;"><span style="color:#e2e8f0;font-size:13px;font-weight:600;">' + i.name + '</span><p style="color:#64748b;font-size:11px;margin:2px 0 0;">' + i.desc + '</p></div><span style="background:rgba(100,116,139,0.15);color:#64748b;font-size:9px;padding:3px 8px;border-radius:4px;text-transform:uppercase;">Coming Soon</span></div>';
     }).join("")) +
     _SH.card("Future Integrations", '<p style="color:#64748b;font-size:12px;margin:0;">More integrations are in development: Slack, Discord, Trello, Figma, and more.</p>');
 }
 
 // ══════════════════════════════════════════════════════════════
-// 🧩 EXTENSIONS
+// EXTENSIONS
 // ══════════════════════════════════════════════════════════════
 
 function renderExtensionsSection(container) {
   container.innerHTML = _SH.sectionHeader("Extensions", "Extend ValleyMind with plugins and extensions") +
-    _SH.card("Extension Store", '<div style="text-align:center;padding:24px 0;"><span style="font-size:48px;">🧩</span><p style="color:#e2e8f0;font-size:15px;font-weight:600;margin:12px 0 4px;">Extension Marketplace</p><p style="color:#64748b;font-size:12px;max-width:400px;margin:0 auto;">The ValleyMind Extension Store is coming soon. Developers will be able to create and publish plugins.</p><div style="margin-top:16px;display:flex;justify-content:center;gap:8px;flex-wrap:wrap;">' +
+    _SH.card("Extension Store", '<div style="text-align:center;padding:24px 0;"><p style="color:#e2e8f0;font-size:15px;font-weight:600;margin:12px 0 4px;">Extension Marketplace</p><p style="color:#64748b;font-size:12px;max-width:400px;margin:0 auto;">The ValleyMind Extension Store is coming soon. Developers will be able to create and publish plugins.</p><div style="margin-top:16px;display:flex;justify-content:center;gap:8px;flex-wrap:wrap;">' +
       _SH.badge("Custom LLM Connectors") + _SH.badge("Data Sources") + _SH.badge("Export Formats") + _SH.badge("Workflow Automation") + _SH.badge("Custom Tools") + '</div></div>') +
     _SH.card("Installed Extensions", '<p style="color:#475569;font-size:12px;">No extensions installed yet.</p>');
 }
 
 // ══════════════════════════════════════════════════════════════
-// 📈 USAGE
+// USAGE
 // ══════════════════════════════════════════════════════════════
 
 function renderUsageSection(container) {

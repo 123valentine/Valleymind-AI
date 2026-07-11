@@ -157,7 +157,6 @@
   }
   .session-retry-btn:hover { background:rgba(0,212,255,0.15); }
   .hist-item.hist-active { background:rgba(0,212,255,0.08); border-left:3px solid #00d4ff; }
-  @keyframes pulse { 0%,100%{opacity:0.3} 50%{opacity:0.6} }
   .hist-item.hist-active .hist-text { color:#00d4ff; }
   .ai-content p{margin-bottom:8px} .ai-content p:last-child{margin-bottom:0}
   .ai-content strong{color:#a8e8ff;font-weight:600}
@@ -358,65 +357,12 @@
       <span class="font-label-caps text-sm uppercase tracking-wider">New Thread</span>
     </button>
   </div>
-  <!-- Sidebar Tabs -->
-  <div class="px-4 mb-3">
-    <div style="display:flex;gap:2px;background:rgba(255,255,255,0.04);border-radius:10px;padding:3px;">
-      <button onclick="switchSidebarTab('chats')" id="sidebarTab-chats" class="sidebar-tab-btn" style="flex:1;padding:6px 4px;border-radius:8px;border:none;background:rgba(0,212,255,0.15);color:#00d4ff;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;cursor:pointer;transition:all 0.2s;">
-        <span class="material-icons" style="font-size:14px;display:block;margin:0 auto 2px;">chat</span>Chats
-      </button>
-      <button onclick="switchSidebarTab('images')" id="sidebarTab-images" class="sidebar-tab-btn" style="flex:1;padding:6px 4px;border-radius:8px;border:none;background:transparent;color:#64748b;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;cursor:pointer;transition:all 0.2s;">
-        <span class="material-icons" style="font-size:14px;display:block;margin:0 auto 2px;">image</span>Images
-      </button>
-      <button onclick="switchSidebarTab('videos')" id="sidebarTab-videos" class="sidebar-tab-btn" style="flex:1;padding:6px 4px;border-radius:8px;border:none;background:transparent;color:#64748b;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;cursor:pointer;transition:all 0.2s;">
-        <span class="material-icons" style="font-size:14px;display:block;margin:0 auto 2px;">smart_display</span>Videos
-      </button>
-    </div>
-  </div>
-  <!-- Chats Tab Content -->
-  <div id="sidebarPanel-chats">
   <div id="newThreadHistoryDropdown" class="px-6 mb-2">
     <div class="flex items-center justify-between px-1 mb-2">
       <p class="text-[9px] uppercase tracking-[0.2em] text-slate-500 font-label-caps">// Recent Sessions</p>
       <span id="sessionCount" class="text-[9px] text-slate-600 font-label-caps"></span>
     </div>
     <div class="space-y-1" id="historyList"></div>
-  </div>
-  </div><!-- /sidebarPanel-chats -->
-  <!-- Images Tab Content -->
-  <div id="sidebarPanel-images" style="display:none;">
-    <div class="px-6 mb-2">
-      <div class="flex items-center justify-between px-1 mb-2">
-        <p class="text-[9px] uppercase tracking-[0.2em] text-slate-500 font-label-caps">// Image Library</p>
-        <span id="imageCount" class="text-[9px] text-slate-600 font-label-caps"></span>
-      </div>
-      <div class="px-1 mb-2">
-        <input id="imageSearchInput" type="text" placeholder="Search images..." oninput="debounceImageSearch()" style="width:100%;background:#1a1f2e;border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:7px 10px;color:white;font-size:11px;outline:none;box-sizing:border-box;">
-      </div>
-      <div id="imageLibraryGrid" style="display:grid;grid-template-columns:1fr 1fr;gap:6px;"></div>
-      <div id="imageLibrarySkeleton" style="display:none;"></div>
-      <div id="imageLibraryEmpty" style="display:none;padding:20px 8px;color:#475569;font-size:11px;text-align:center;">No images yet</div>
-      <div id="imageLibraryLoadMore" style="display:none;padding:8px;text-align:center;">
-        <button onclick="loadMoreImages()" style="background:transparent;border:1px solid rgba(0,212,255,0.2);border-radius:8px;padding:5px 12px;color:#00d4ff;font-size:10px;cursor:pointer;">Load More</button>
-      </div>
-    </div>
-  </div>
-  <!-- Videos Tab Content -->
-  <div id="sidebarPanel-videos" style="display:none;">
-    <div class="px-6 mb-2">
-      <div class="flex items-center justify-between px-1 mb-2">
-        <p class="text-[9px] uppercase tracking-[0.2em] text-slate-500 font-label-caps">// Video Library</p>
-        <span id="videoCount" class="text-[9px] text-slate-600 font-label-caps"></span>
-      </div>
-      <div class="px-1 mb-2">
-        <input id="videoSearchInput" type="text" placeholder="Search videos..." oninput="debounceVideoSearch()" style="width:100%;background:#1a1f2e;border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:7px 10px;color:white;font-size:11px;outline:none;box-sizing:border-box;">
-      </div>
-      <div id="videoLibraryGrid" style="display:grid;grid-template-columns:1fr;gap:6px;"></div>
-      <div id="videoLibrarySkeleton" style="display:none;"></div>
-      <div id="videoLibraryEmpty" style="display:none;padding:20px 8px;color:#475569;font-size:11px;text-align:center;">No videos yet</div>
-      <div id="videoLibraryLoadMore" style="display:none;padding:8px;text-align:center;">
-        <button onclick="loadMoreVideos()" style="background:transparent;border:1px solid rgba(0,212,255,0.2);border-radius:8px;padding:5px 12px;color:#00d4ff;font-size:10px;cursor:pointer;">Load More</button>
-      </div>
-    </div>
   </div>
   <nav class="space-y-1 mb-4" id="mainNav">
     <!-- LIBRARY ACCORDION -->
@@ -627,13 +573,13 @@
         <p style="color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:0.1em;">Draw · Label · Biology · Chemistry · Engineering · Architecture</p>
       </div>
       <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
-        <button onclick="setTool(this,'pen')" class="sketch-tool" style="padding:7px 14px;border-radius:10px;border:1px solid rgba(0,212,255,0.4);background:rgba(0,212,255,0.1);color:#00d4ff;font-size:11px;cursor:pointer;font-family:'Space Grotesk',sans-serif;letter-spacing:0.05em;">✏️ Pen</button>
-        <button onclick="setTool(this,'eraser')" class="sketch-tool" style="padding:7px 14px;border-radius:10px;border:1px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.05);color:#94a3b8;font-size:11px;cursor:pointer;font-family:'Space Grotesk',sans-serif;">⬜ Eraser</button>
-        <button onclick="setColor('#00d4ff')" style="padding:7px 14px;border-radius:10px;border:1px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.05);color:#00d4ff;font-size:11px;cursor:pointer;">🔵 Cyan</button>
-        <button onclick="setColor('#00ff88')" style="padding:7px 14px;border-radius:10px;border:1px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.05);color:#00ff88;font-size:11px;cursor:pointer;">🟢 Green</button>
-        <button onclick="setColor('#ff2d78')" style="padding:7px 14px;border-radius:10px;border:1px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.05);color:#ff2d78;font-size:11px;cursor:pointer;">🔴 Pink</button>
-        <button onclick="setColor('#ffffff')" style="padding:7px 14px;border-radius:10px;border:1px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.05);color:#fff;font-size:11px;cursor:pointer;">⚪ White</button>
-        <button onclick="clearCanvas()" style="padding:7px 14px;border-radius:10px;border:1px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.05);color:#94a3b8;font-size:11px;cursor:pointer;">🗑 Clear</button>
+        <button onclick="setTool(this,'pen')" class="sketch-tool" style="padding:7px 14px;border-radius:10px;border:1px solid rgba(0,212,255,0.4);background:rgba(0,212,255,0.1);color:#00d4ff;font-size:11px;cursor:pointer;font-family:'Space Grotesk',sans-serif;letter-spacing:0.05em;">Pen</button>
+        <button onclick="setTool(this,'eraser')" class="sketch-tool" style="padding:7px 14px;border-radius:10px;border:1px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.05);color:#94a3b8;font-size:11px;cursor:pointer;font-family:'Space Grotesk',sans-serif;">Eraser</button>
+        <button onclick="setColor('#00d4ff')" style="padding:7px 14px;border-radius:10px;border:1px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.05);color:#00d4ff;font-size:11px;cursor:pointer;">Cyan</button>
+        <button onclick="setColor('#00ff88')" style="padding:7px 14px;border-radius:10px;border:1px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.05);color:#00ff88;font-size:11px;cursor:pointer;">Green</button>
+        <button onclick="setColor('#ff2d78')" style="padding:7px 14px;border-radius:10px;border:1px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.05);color:#ff2d78;font-size:11px;cursor:pointer;">Pink</button>
+        <button onclick="setColor('#ffffff')" style="padding:7px 14px;border-radius:10px;border:1px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.05);color:#fff;font-size:11px;cursor:pointer;">White</button>
+        <button onclick="clearCanvas()" style="padding:7px 14px;border-radius:10px;border:1px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.05);color:#94a3b8;font-size:11px;cursor:pointer;">Clear</button>
       </div>
       <div id="canvasWrap" style="flex:1;border:1px solid rgba(0,212,255,0.15);border-radius:16px;background:#010810;position:relative;overflow:hidden;min-height:200px;background-image:linear-gradient(rgba(0,212,255,0.03) 1px,transparent 1px),linear-gradient(90deg,rgba(0,212,255,0.03) 1px,transparent 1px);background-size:32px 32px;">
         <canvas id="sketchCanvas" style="display:block;width:100%;height:100%;cursor:crosshair;touch-action:none;"></canvas>
@@ -947,315 +893,6 @@ function renderSessionListError(message) {
         (message || "Could not load sessions.") +
         '<br><button type="button" class="session-retry-btn" onclick="loadSessions({ force: true })">Retry</button>' +
         '</div>';
-}
-
-// ── Sidebar Tabs ────────────────────────────────────────────────────────
-var currentSidebarTab = "chats";
-
-function switchSidebarTab(tab) {
-    currentSidebarTab = tab;
-    ["chats", "images", "videos"].forEach(function (t) {
-        var btn = document.getElementById("sidebarTab-" + t);
-        var panel = document.getElementById("sidebarPanel-" + t);
-        if (btn) {
-            btn.style.background = t === tab ? "rgba(0,212,255,0.15)" : "transparent";
-            btn.style.color = t === tab ? "#00d4ff" : "#64748b";
-        }
-        if (panel) panel.style.display = t === tab ? "" : "none";
-    });
-    if (tab === "images") loadImageLibrary();
-    if (tab === "videos") loadVideoLibrary();
-}
-
-// ── Image Library ──────────────────────────────────────────────────────
-var imageLibraryOffset = 0;
-var imageLibraryTotal = 0;
-var imageSearchDebounce = null;
-
-function debounceImageSearch() {
-    clearTimeout(imageSearchDebounce);
-    imageSearchDebounce = setTimeout(function () {
-        imageLibraryOffset = 0;
-        loadImageLibrary(true);
-    }, 300);
-}
-
-async function loadImageLibrary(reset) {
-    if (reset) {
-        imageLibraryOffset = 0;
-        var grid = document.getElementById("imageLibraryGrid");
-        if (grid) grid.innerHTML = "";
-    }
-    var skeleton = document.getElementById("imageLibrarySkeleton");
-    var empty = document.getElementById("imageLibraryEmpty");
-    if (skeleton) skeleton.style.display = imageLibraryOffset === 0 ? "" : "none";
-    if (empty) empty.style.display = "none";
-
-    var search = (document.getElementById("imageSearchInput") || {}).value || "";
-    try {
-        var params = "?limit=20&offset=" + imageLibraryOffset;
-        if (search) params += "&search=" + encodeURIComponent(search);
-        var res = await apiFetch("/api/media/images" + params, {
-            credentials: "include",
-            headers: authHeaders(),
-            timeoutMs: 30000,
-        });
-        var data = await res.json();
-        if (skeleton) skeleton.style.display = "none";
-        var images = data.images || [];
-        imageLibraryTotal = data.total || 0;
-        var countEl = document.getElementById("imageCount");
-        if (countEl) countEl.textContent = imageLibraryTotal > 0 ? imageLibraryTotal + " images" : "";
-        if (images.length === 0 && imageLibraryOffset === 0) {
-            if (empty) empty.style.display = "";
-            return;
-        }
-        renderImageCards(images);
-        var loadMore = document.getElementById("imageLibraryLoadMore");
-        if (loadMore) loadMore.style.display = (imageLibraryOffset + images.length) < imageLibraryTotal ? "" : "none";
-    } catch (err) {
-        if (skeleton) skeleton.style.display = "none";
-        if (empty) { empty.style.display = ""; empty.textContent = "Failed to load images"; }
-    }
-}
-
-function loadMoreImages() {
-    imageLibraryOffset += 20;
-    loadImageLibrary(false);
-}
-
-function renderImageCards(images) {
-    var grid = document.getElementById("imageLibraryGrid");
-    if (!grid) return;
-    images.forEach(function (img) {
-        var card = document.createElement("div");
-        card.style.cssText = "position:relative;border-radius:8px;overflow:hidden;cursor:pointer;background:#111827;border:1px solid rgba(255,255,255,0.06);aspect-ratio:1;transition:border-color 0.2s;";
-        card.onmouseenter = function () { this.style.borderColor = "rgba(0,212,255,0.3)"; };
-        card.onmouseleave = function () { this.style.borderColor = "rgba(255,255,255,0.06)"; };
-
-        var imgEl = document.createElement("img");
-        imgEl.src = img.local_path || img.thumbnail_path || "";
-        imgEl.alt = img.prompt || "Generated image";
-        imgEl.loading = "lazy";
-        imgEl.style.cssText = "width:100%;height:100%;object-fit:cover;";
-        imgEl.onerror = function () { this.style.display = "none"; };
-        card.appendChild(imgEl);
-
-        var overlay = document.createElement("div");
-        overlay.style.cssText = "position:absolute;bottom:0;left:0;right:0;padding:6px 8px;background:linear-gradient(transparent,rgba(0,0,0,0.85));display:flex;gap:4px;justify-content:flex-end;opacity:0;transition:opacity 0.2s;";
-        card.onmouseenter = function () { overlay.style.opacity = "1"; };
-        card.onmouseleave = function () { overlay.style.opacity = "0"; };
-
-        var openBtn = document.createElement("button");
-        openBtn.innerHTML = '<span class="material-icons" style="font-size:14px;">open_in_new</span>';
-        openBtn.title = "Open image";
-        openBtn.style.cssText = "background:rgba(0,212,255,0.2);border:none;color:#00d4ff;border-radius:4px;padding:3px 5px;cursor:pointer;";
-        openBtn.onclick = function (e) { e.stopPropagation(); window.open(img.local_path, "_blank"); };
-        overlay.appendChild(openBtn);
-
-        var dlBtn = document.createElement("button");
-        dlBtn.innerHTML = '<span class="material-icons" style="font-size:14px;">download</span>';
-        dlBtn.title = "Download";
-        dlBtn.style.cssText = "background:rgba(255,255,255,0.1);border:none;color:#fff;border-radius:4px;padding:3px 5px;cursor:pointer;";
-        dlBtn.onclick = function (e) {
-            e.stopPropagation();
-            var a = document.createElement("a");
-            a.href = img.local_path;
-            a.download = (img.prompt || "image").substring(0, 50) + ".png";
-            a.click();
-        };
-        overlay.appendChild(dlBtn);
-
-        var delBtn = document.createElement("button");
-        delBtn.innerHTML = '<span class="material-icons" style="font-size:14px;">delete</span>';
-        delBtn.title = "Delete";
-        delBtn.style.cssText = "background:rgba(255,60,60,0.2);border:none;color:#ff6b7a;border-radius:4px;padding:3px 5px;cursor:pointer;";
-        delBtn.onclick = function (e) {
-            e.stopPropagation();
-            if (confirm("Delete this image?")) {
-                apiFetch("/api/media/" + img.media_id, {
-                    method: "DELETE",
-                    credentials: "include",
-                    headers: authHeaders(),
-                }).then(function () { card.remove(); imageLibraryTotal--; var c = document.getElementById("imageCount"); if (c) c.textContent = imageLibraryTotal > 0 ? imageLibraryTotal + " images" : ""; });
-            }
-        };
-        overlay.appendChild(delBtn);
-
-        if (img.chat_id) {
-            var chatBtn = document.createElement("button");
-            chatBtn.innerHTML = '<span class="material-icons" style="font-size:14px;">chat</span>';
-            chatBtn.title = "Open in chat";
-            chatBtn.style.cssText = "background:rgba(255,255,255,0.1);border:none;color:#fff;border-radius:4px;padding:3px 5px;cursor:pointer;";
-            chatBtn.onclick = function (e) { e.stopPropagation(); switchSidebarTab("chats"); switchSession(img.chat_id); };
-            overlay.appendChild(chatBtn);
-        }
-
-        card.appendChild(overlay);
-        grid.appendChild(card);
-    });
-}
-
-// ── Video Library ──────────────────────────────────────────────────────
-var videoLibraryOffset = 0;
-var videoLibraryTotal = 0;
-var videoSearchDebounce = null;
-
-function debounceVideoSearch() {
-    clearTimeout(videoSearchDebounce);
-    videoSearchDebounce = setTimeout(function () {
-        videoLibraryOffset = 0;
-        loadVideoLibrary(true);
-    }, 300);
-}
-
-async function loadVideoLibrary(reset) {
-    if (reset) {
-        videoLibraryOffset = 0;
-        var grid = document.getElementById("videoLibraryGrid");
-        if (grid) grid.innerHTML = "";
-    }
-    var skeleton = document.getElementById("videoLibrarySkeleton");
-    var empty = document.getElementById("videoLibraryEmpty");
-    if (skeleton) skeleton.style.display = videoLibraryOffset === 0 ? "" : "none";
-    if (empty) empty.style.display = "none";
-
-    var search = (document.getElementById("videoSearchInput") || {}).value || "";
-    try {
-        var params = "?limit=10&offset=" + videoLibraryOffset;
-        if (search) params += "&search=" + encodeURIComponent(search);
-        var res = await apiFetch("/api/media/videos" + params, {
-            credentials: "include",
-            headers: authHeaders(),
-            timeoutMs: 30000,
-        });
-        var data = await res.json();
-        if (skeleton) skeleton.style.display = "none";
-        var videos = data.videos || [];
-        videoLibraryTotal = data.total || 0;
-        var countEl = document.getElementById("videoCount");
-        if (countEl) countEl.textContent = videoLibraryTotal > 0 ? videoLibraryTotal + " videos" : "";
-        if (videos.length === 0 && videoLibraryOffset === 0) {
-            if (empty) empty.style.display = "";
-            return;
-        }
-        renderVideoCards(videos);
-        var loadMore = document.getElementById("videoLibraryLoadMore");
-        if (loadMore) loadMore.style.display = (videoLibraryOffset + videos.length) < videoLibraryTotal ? "" : "none";
-    } catch (err) {
-        if (skeleton) skeleton.style.display = "none";
-        if (empty) { empty.style.display = ""; empty.textContent = "Failed to load videos"; }
-    }
-}
-
-function loadMoreVideos() {
-    videoLibraryOffset += 10;
-    loadVideoLibrary(false);
-}
-
-function renderVideoCards(videos) {
-    var grid = document.getElementById("videoLibraryGrid");
-    if (!grid) return;
-    videos.forEach(function (vid) {
-        var card = document.createElement("div");
-        card.style.cssText = "position:relative;border-radius:8px;overflow:hidden;cursor:pointer;background:#111827;border:1px solid rgba(255,255,255,0.06);aspect-ratio:16/9;transition:border-color 0.2s;";
-        card.onmouseenter = function () { this.style.borderColor = "rgba(0,212,255,0.3)"; };
-        card.onmouseleave = function () { this.style.borderColor = "rgba(255,255,255,0.06)"; };
-
-        var vidEl = document.createElement("video");
-        vidEl.src = vid.local_path || "";
-        vidEl.preload = "metadata";
-        vidEl.muted = true;
-        vidEl.style.cssText = "width:100%;height:100%;object-fit:cover;";
-        vidEl.onmouseenter = function () { this.play(); };
-        vidEl.onmouseleave = function () { this.pause(); this.currentTime = 0; };
-        vidEl.onerror = function () { this.style.display = "none"; };
-        card.appendChild(vidEl);
-
-        var playOverlay = document.createElement("div");
-        playOverlay.style.cssText = "position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.3);pointer-events:none;";
-        playOverlay.innerHTML = '<span class="material-icons" style="font-size:32px;color:rgba(255,255,255,0.7);">play_circle</span>';
-        card.appendChild(playOverlay);
-
-        var prompt = document.createElement("div");
-        prompt.style.cssText = "position:absolute;bottom:0;left:0;right:0;padding:6px 8px;background:linear-gradient(transparent,rgba(0,0,0,0.9));font-size:10px;color:#cbd5e1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
-        prompt.textContent = vid.prompt || "Untitled video";
-        card.appendChild(prompt);
-
-        var overlay = document.createElement("div");
-        overlay.style.cssText = "position:absolute;top:4px;right:4px;display:flex;gap:3px;opacity:0;transition:opacity 0.2s;";
-        card.onmouseenter = function () { overlay.style.opacity = "1"; };
-        card.onmouseleave = function () { overlay.style.opacity = "0"; };
-
-        var playBtn = document.createElement("button");
-        playBtn.innerHTML = '<span class="material-icons" style="font-size:14px;">play_arrow</span>';
-        playBtn.title = "Play";
-        playBtn.style.cssText = "background:rgba(0,212,255,0.3);border:none;color:#00d4ff;border-radius:4px;padding:3px 5px;cursor:pointer;";
-        playBtn.onclick = function (e) { e.stopPropagation(); window.open(vid.local_path, "_blank"); };
-        overlay.appendChild(playBtn);
-
-        var dlBtn = document.createElement("button");
-        dlBtn.innerHTML = '<span class="material-icons" style="font-size:14px;">download</span>';
-        dlBtn.title = "Download";
-        dlBtn.style.cssText = "background:rgba(255,255,255,0.15);border:none;color:#fff;border-radius:4px;padding:3px 5px;cursor:pointer;";
-        dlBtn.onclick = function (e) {
-            e.stopPropagation();
-            var a = document.createElement("a");
-            a.href = vid.local_path;
-            a.download = (vid.prompt || "video").substring(0, 50) + ".mp4";
-            a.click();
-        };
-        overlay.appendChild(dlBtn);
-
-        var delBtn = document.createElement("button");
-        delBtn.innerHTML = '<span class="material-icons" style="font-size:14px;">delete</span>';
-        delBtn.title = "Delete";
-        delBtn.style.cssText = "background:rgba(255,60,60,0.2);border:none;color:#ff6b7a;border-radius:4px;padding:3px 5px;cursor:pointer;";
-        delBtn.onclick = function (e) {
-            e.stopPropagation();
-            if (confirm("Delete this video?")) {
-                apiFetch("/api/media/" + vid.media_id, {
-                    method: "DELETE",
-                    credentials: "include",
-                    headers: authHeaders(),
-                }).then(function () { card.remove(); videoLibraryTotal--; var c = document.getElementById("videoCount"); if (c) c.textContent = videoLibraryTotal > 0 ? videoLibraryTotal + " videos" : ""; });
-            }
-        };
-        overlay.appendChild(delBtn);
-
-        if (vid.chat_id) {
-            var chatBtn = document.createElement("button");
-            chatBtn.innerHTML = '<span class="material-icons" style="font-size:14px;">chat</span>';
-            chatBtn.title = "Open in chat";
-            chatBtn.style.cssText = "background:rgba(255,255,255,0.15);border:none;color:#fff;border-radius:4px;padding:3px 5px;cursor:pointer;";
-            chatBtn.onclick = function (e) { e.stopPropagation(); switchSidebarTab("chats"); switchSession(vid.chat_id); };
-            overlay.appendChild(chatBtn);
-        }
-
-        card.appendChild(overlay);
-        grid.appendChild(card);
-    });
-}
-
-// ── Skeleton loaders for media libraries ────────────────────────────────
-function renderImageLibrarySkeleton() {
-    var grid = document.getElementById("imageLibraryGrid");
-    if (!grid) return;
-    var html = "";
-    for (var i = 0; i < 6; i++) {
-        html += '<div style="border-radius:8px;background:rgba(255,255,255,0.03);aspect-ratio:1;animation:pulse 1.5s ease-in-out infinite;"></div>';
-    }
-    grid.innerHTML = html;
-}
-
-function renderVideoLibrarySkeleton() {
-    var grid = document.getElementById("videoLibraryGrid");
-    if (!grid) return;
-    var html = "";
-    for (var i = 0; i < 3; i++) {
-        html += '<div style="border-radius:8px;background:rgba(255,255,255,0.03);aspect-ratio:16/9;animation:pulse 1.5s ease-in-out infinite;"></div>';
-    }
-    grid.innerHTML = html;
 }
 
 /** Single fetch attempt — primary endpoint only. */
@@ -1620,7 +1257,7 @@ document.addEventListener("click", function (e) {
     }
 });
 
-function addMessage(text, type = "ai", imageData, mediaUrl) {
+function addMessage(text, type = "ai", imageData) {
     const container = document.getElementById("messages");
     const welcome = document.getElementById("welcome");
     if (!container) return;
@@ -1629,7 +1266,6 @@ function addMessage(text, type = "ai", imageData, mediaUrl) {
     const msgIndex = messageStore.length;
     var msgObj = { role: type === "user" ? "user" : "assistant", content: text, reaction: null };
     if (imageData) msgObj.image_data = imageData;
-    if (mediaUrl) msgObj.media_url = mediaUrl;
     messageStore.push(msgObj);
 
     const wrapper = document.createElement("div");
@@ -1643,26 +1279,6 @@ function addMessage(text, type = "ai", imageData, mediaUrl) {
         img.alt = "Uploaded image";
         img.style.cssText = "max-width:100%;max-height:200px;border-radius:8px;margin-bottom:6px;display:block;";
         bubble.appendChild(img);
-    }
-    // Render stored media (images/videos from persistence)
-    if (mediaUrl && !imageData) {
-        var isVideo = /\.(mp4|webm|mov)(\?|$)/i.test(mediaUrl);
-        if (isVideo) {
-            var vid = document.createElement("video");
-            vid.src = mediaUrl;
-            vid.controls = true;
-            vid.preload = "metadata";
-            vid.style.cssText = "max-width:100%;max-height:300px;border-radius:8px;margin-bottom:6px;display:block;background:#000;";
-            bubble.appendChild(vid);
-        } else {
-            var mediaImg = document.createElement("img");
-            mediaImg.src = mediaUrl;
-            mediaImg.alt = "Generated image";
-            mediaImg.loading = "lazy";
-            mediaImg.style.cssText = "max-width:100%;max-height:300px;border-radius:8px;margin-bottom:6px;display:block;cursor:pointer;";
-            mediaImg.onclick = function () { window.open(mediaUrl, "_blank"); };
-            bubble.appendChild(mediaImg);
-        }
     }
     if (text) {
         var txtSpan = document.createElement("span");
@@ -1795,19 +1411,7 @@ function renderChatHistory(messages) {
     if (!Array.isArray(messages) || messages.length === 0) return;
     messages.forEach(function (message) {
         const role = message.role === "assistant" ? "ai" : "user";
-        var content = message.content || "";
-        var imageData = message.image_data || null;
-
-        // Check for stored image/video URLs in message content
-        var mediaMatch = content.match(/^\[(Image|Video):\s*(.+?)\]$/);
-        var mediaUrl = mediaMatch ? mediaMatch[2] : (message.image_url || "");
-
-        // Strip media tags from text content for display
-        if (mediaMatch) {
-            content = "";
-        }
-
-        addMessage(content, role, imageData, mediaUrl);
+        addMessage(message.content || "", role, message.image_data || null);
         if (message.reaction) {
             const idx = messageStore.length - 1;
             messageStore[idx].reaction = message.reaction;
@@ -2136,13 +1740,13 @@ function openActionDropdown(event, chatId, currentTitle) {
         return opt;
     };
 
-    dropdown.appendChild(createOption("🔗 Share Thread", "#cbd5e1", function() {
+    dropdown.appendChild(createOption("Share Thread", "#cbd5e1", function() {
         var shareUrl = window.location.origin + "/share/" + chatId;
         navigator.clipboard.writeText(shareUrl);
         alert("Share link copied to clipboard!");
     }));
 
-    dropdown.appendChild(createOption("✏️ Rename Title", "#cbd5e1", async function() {
+    dropdown.appendChild(createOption("Rename Title", "#cbd5e1", async function() {
         var newTitle = prompt("Modify session title:", currentTitle);
         if (newTitle && newTitle.trim() !== "") {
             var res = await apiFetch("/chat/session/rename", {
@@ -2155,12 +1759,12 @@ function openActionDropdown(event, chatId, currentTitle) {
     }));
 
     var isCurrentlyPinned = getPinnedIds().indexOf(chatId) !== -1;
-    dropdown.appendChild(createOption(isCurrentlyPinned ? "📌 Unpin Thread" : "📌 Pin Thread", "#00d4ff", function() {
+    dropdown.appendChild(createOption(isCurrentlyPinned ? "Unpin Thread" : "Pin Thread", "#00d4ff", function() {
         togglePinSession(chatId);
         if (typeof renderSessionList === "function") renderSessionList();
     }));
 
-    dropdown.appendChild(createOption("🗑️ Delete Session", "#f43f5e", async function() {
+    dropdown.appendChild(createOption("Delete Session", "#f43f5e", async function() {
         if (confirm("Are you certain you want to destroy this chat log entry?")) {
             var res = await apiFetch("/chat/sessions/" + encodeURIComponent(chatId), {
                 method: "DELETE",
@@ -2496,17 +2100,12 @@ async function checkSession() {
 
             renderSessionListSkeleton();
 
-            // Restore last-active chat BEFORE loadSessions so renderSessionList()
-            // inside loadSessions keeps the active session visible (not filtered out).
-            currentChatId = loadLastChatId() || "";
-
             // Non-fatal: session loading failure should never prevent sidebar from showing.
             try {
                 await loadSessions({ showLoading: true });
 
-                if (!currentChatId && sessionList.length > 0) {
+                if (sessionList.length > 0) {
                     currentChatId = getSessionId(sessionList[0]);
-                    renderSessionList();
                 }
 
                 if (currentChatId) {
@@ -2786,7 +2385,7 @@ window.send = async function () {
     if (text) {
         addMessage(text, "user", pendingImageData || null);
     } else if (pendingImageData) {
-        addMessage("📷 Image attached", "user", pendingImageData);
+        addMessage("Image attached", "user", pendingImageData);
     }
     input.value = "";
     const thinking = addThinkingIndicator();
@@ -2859,13 +2458,13 @@ window.send = async function () {
                         statusBubble.className = "bubble";
                         statusBubble.style.cssText = "color:#94a3b8;font-style:italic;";
                         if (evt.intent === "generating_image") {
-                            statusBubble.textContent = "🎨 Generating image...";
+                            statusBubble.textContent = "Generating image...";
                         } else if (evt.intent === "generating_video") {
-                            statusBubble.textContent = "🎬 Preparing video generation...";
+                            statusBubble.textContent = "Preparing video generation...";
                         } else if (evt.intent === "video_progress") {
-                            statusBubble.textContent = "🎬 " + (evt.status_message || "Generating video...");
+                            statusBubble.textContent = (evt.status_message || "Generating video...");
                         } else {
-                            statusBubble.textContent = "🔍 Searching the web...";
+                            statusBubble.textContent = "Searching the web...";
                         }
                         statusDiv.appendChild(statusBubble);
                         document.getElementById("messages").appendChild(statusDiv);
@@ -2875,7 +2474,7 @@ window.send = async function () {
                         /* Update existing status bubble with new progress */
                         var existingBubble = statusIndicator.querySelector(".bubble");
                         if (existingBubble) {
-                            existingBubble.textContent = "🎬 " + (evt.status_message || "Generating video...");
+                            existingBubble.textContent = (evt.status_message || "Generating video...");
                         }
                         document.getElementById("messages").scrollTop = document.getElementById("messages").scrollHeight;
                     }
@@ -2948,7 +2547,7 @@ window.send = async function () {
                     btnRow.appendChild(dlBtn);
 
                     var regenBtn = document.createElement("button");
-                    regenBtn.textContent = "🔄 Regenerate";
+                    regenBtn.textContent = "Regenerate";
                     regenBtn.style.cssText = "display:inline-block;padding:6px 14px;border-radius:6px;background:rgba(148,163,184,0.12);color:#94a3b8;text-decoration:none;font-size:0.85em;cursor:pointer;border:1px solid rgba(148,163,184,0.2);transition:background 0.2s;";
                     regenBtn.onmouseenter = function(){ regenBtn.style.background = "rgba(148,163,184,0.25)"; };
                     regenBtn.onmouseleave = function(){ regenBtn.style.background = "rgba(148,163,184,0.12)"; };
