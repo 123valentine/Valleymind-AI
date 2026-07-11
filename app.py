@@ -1048,7 +1048,7 @@ def _dispatch_image_json(user_id, message, chat_id, image_data):
     )
     stored_url = media_record["local_path"] if media_record else image_url
 
-    _persist_chat_message(user_id, chat_id, "assistant", f"[Image: {stored_url}]", image_url=stored_url)
+    _persist_chat_message(user_id, chat_id, "assistant", "", image_url=stored_url)
 
     return jsonify({
         "status": "success",
@@ -1124,7 +1124,7 @@ def _dispatch_image_stream(user_id, message, chat_id, image_data):
 
         if marcus:
             try:
-                marcus.memory.add_message(resolved_chat_id, "assistant", f"[Image: {stored_url}]", image_url=stored_url)
+                marcus.memory.add_message(resolved_chat_id, "assistant", "", image_url=stored_url)
             except Exception:
                 pass
 
@@ -1281,10 +1281,7 @@ def _dispatch_multi_json(user_id, message, chat_id, image_data):
         print(f"[Router]   IMAGE failed: {image_result.error}")
 
     # ── 3. Persist ────────────────────────────────────────────────────
-    assistant_content = text_reply
-    if image_url:
-        assistant_content += f"\n\n[Image: {image_url}]"
-    _persist_chat_message(user_id, chat_id, "assistant", assistant_content, image_url=image_url)
+    _persist_chat_message(user_id, chat_id, "assistant", text_reply, image_url=image_url)
 
     voice = (
         {"enabled": True, "spoken": False, "engine": "browser", "reason": "reply too long for blocking server TTS"}
@@ -1386,7 +1383,7 @@ def _dispatch_multi_stream(user_id, message, chat_id, image_data):
 
             if marcus:
                 try:
-                    marcus.memory.add_message(resolved_chat_id, "assistant", f"[Image: {stored_url}]", image_url=stored_url)
+                    marcus.memory.add_message(resolved_chat_id, "assistant", "", image_url=stored_url)
                 except Exception:
                     pass
         else:
