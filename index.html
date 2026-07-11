@@ -85,6 +85,171 @@
     transition:all 0.2s; backdrop-filter:blur(4px);
   }
   .gen-image-download:hover { background:rgba(0,212,255,0.25); border-color:rgba(0,212,255,0.4); color:#00d4ff; }
+
+  /* ── Image Generation Skeleton Card ─────────────────────────── */
+  .img-gen-skeleton {
+    max-width:420px; border-radius:16px; overflow:hidden;
+    background:rgba(15,23,42,0.7); border:1px solid rgba(255,255,255,0.06);
+    backdrop-filter:blur(8px);
+  }
+  .img-gen-skeleton .skel-image {
+    width:100%; aspect-ratio:1; border-radius:0;
+    background:linear-gradient(90deg, rgba(0,212,255,0.04) 25%, rgba(0,212,255,0.12) 50%, rgba(0,212,255,0.04) 75%);
+    background-size:200% 100%;
+    animation:skelPulse 1.8s ease-in-out infinite;
+    position:relative;
+  }
+  .img-gen-skeleton .skel-image::after {
+    content:""; position:absolute; inset:0;
+    background:linear-gradient(180deg, transparent 60%, rgba(0,212,255,0.03) 100%);
+  }
+  .img-gen-skeleton .skel-body { padding:16px 20px; }
+  .img-gen-skeleton .skel-line {
+    height:12px; border-radius:6px; margin-bottom:10px;
+    background:linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.09) 50%, rgba(255,255,255,0.04) 75%);
+    background-size:200% 100%;
+    animation:skelPulse 1.8s ease-in-out infinite;
+  }
+  .img-gen-skeleton .skel-line:nth-child(2) { width:70%; animation-delay:0.15s; }
+  .img-gen-skeleton .skel-line:nth-child(3) { width:45%; animation-delay:0.3s; }
+  .img-gen-skeleton .skel-badge {
+    display:inline-block; margin-top:8px;
+    padding:4px 12px; border-radius:6px; font-size:10px; font-weight:600;
+    text-transform:uppercase; letter-spacing:0.1em;
+    background:rgba(0,212,255,0.08); color:rgba(0,212,255,0.5);
+    border:1px solid rgba(0,212,255,0.15);
+  }
+  @keyframes skelPulse {
+    0% { background-position:200% 0; }
+    100% { background-position:-200% 0; }
+  }
+
+  /* ── Premium Image Result Card ──────────────────────────────── */
+  .img-result-card {
+    max-width:420px; border-radius:16px; overflow:hidden;
+    background:rgba(15,23,42,0.7); border:1px solid rgba(255,255,255,0.06);
+    backdrop-filter:blur(8px);
+    animation:cardFadeIn 0.5s ease-out;
+  }
+  .img-result-card .card-image {
+    width:100%; display:block; cursor:pointer;
+    transition:transform 0.3s ease;
+  }
+  .img-result-card .card-image:hover { transform:scale(1.01); }
+  .img-result-card .card-body { padding:16px 20px; }
+  .img-result-card .card-prompt {
+    font-size:13px; color:#94a3b8; line-height:1.5; margin-bottom:8px;
+    display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;
+  }
+  .img-result-card .card-meta {
+    display:flex; align-items:center; justify-content:space-between;
+    font-size:11px; color:#475569; margin-bottom:12px;
+  }
+  .img-result-card .card-actions { display:flex; gap:8px; }
+  .img-result-card .card-actions a,
+  .img-result-card .card-actions button {
+    flex:1; display:flex; align-items:center; justify-content:center; gap:6px;
+    padding:8px 14px; border-radius:10px; font-size:12px; font-weight:600;
+    cursor:pointer; text-decoration:none; transition:all 0.2s; border:none;
+  }
+  .img-result-card .btn-download {
+    background:rgba(0,212,255,0.15); color:#00d4ff;
+    border:1px solid rgba(0,212,255,0.25) !important;
+  }
+  .img-result-card .btn-download:hover {
+    background:rgba(0,212,255,0.3);
+  }
+  .img-result-card .btn-regenerate {
+    background:rgba(148,163,184,0.1); color:#94a3b8;
+    border:1px solid rgba(148,163,184,0.2) !important;
+  }
+  .img-result-card .btn-regenerate:hover {
+    background:rgba(148,163,184,0.2); color:#e2e8f0;
+  }
+  @keyframes cardFadeIn {
+    0% { opacity:0; transform:translateY(8px) scale(0.98); }
+    100% { opacity:1; transform:translateY(0) scale(1); }
+  }
+
+  /* ── Image Viewer Overlay ───────────────────────────────────── */
+  #imageViewerOverlay {
+    position:fixed; inset:0; z-index:99999;
+    background:rgba(2,6,23,0.92); backdrop-filter:blur(20px);
+    display:none; flex-direction:column; align-items:center; justify-content:center;
+    padding:24px; cursor:default;
+  }
+  #imageViewerOverlay.open { display:flex; }
+  #imageViewerOverlay img {
+    max-width:min(90vw,800px); max-height:80vh; border-radius:12px;
+    object-fit:contain; box-shadow:0 20px 60px rgba(0,0,0,0.5);
+    animation:viewerZoomIn 0.3s ease-out;
+  }
+  .viewer-toolbar {
+    position:absolute; bottom:32px; left:50%; transform:translateX(-50%);
+    display:flex; gap:8px; padding:8px 12px; border-radius:14px;
+    background:rgba(10,20,30,0.85); backdrop-filter:blur(16px);
+    border:1px solid rgba(255,255,255,0.08);
+    animation:viewerToolbarIn 0.35s ease-out 0.15s both;
+  }
+  .viewer-toolbar button {
+    display:flex; align-items:center; gap:6px;
+    padding:8px 16px; border-radius:10px; border:none;
+    font-size:12px; font-weight:600; cursor:pointer;
+    transition:all 0.2s;
+  }
+  .viewer-toolbar .vt-download {
+    background:rgba(0,212,255,0.15); color:#00d4ff;
+  }
+  .viewer-toolbar .vt-download:hover {
+    background:rgba(0,212,255,0.3);
+  }
+  .viewer-toolbar .vt-close {
+    background:rgba(255,255,255,0.06); color:#94a3b8;
+  }
+  .viewer-toolbar .vt-close:hover {
+    background:rgba(255,255,255,0.12); color:#e2e8f0;
+  }
+  .viewer-prompt {
+    position:absolute; top:32px; left:50%; transform:translateX(-50%);
+    max-width:min(80vw,600px); text-align:center;
+    font-size:13px; color:#94a3b8; line-height:1.5;
+    padding:10px 20px; border-radius:12px;
+    background:rgba(10,20,30,0.7); backdrop-filter:blur(12px);
+    border:1px solid rgba(255,255,255,0.06);
+    animation:viewerToolbarIn 0.35s ease-out 0.1s both;
+  }
+  @keyframes viewerZoomIn {
+    0% { opacity:0; transform:scale(0.92); }
+    100% { opacity:1; transform:scale(1); }
+  }
+  @keyframes viewerToolbarIn {
+    0% { opacity:0; transform:translateX(-50%) translateY(10px); }
+    100% { opacity:1; transform:translateX(-50%) translateY(0); }
+  }
+
+  /* ── Sidebar Images Tab ─────────────────────────────────────── */
+  .sidebar-img-item {
+    display:flex; align-items:center; gap:10px;
+    padding:8px; border-radius:10px; cursor:pointer;
+    transition:all 0.15s; border:1px solid transparent;
+  }
+  .sidebar-img-item:hover {
+    background:rgba(0,212,255,0.06); border-color:rgba(0,212,255,0.12);
+  }
+  .sidebar-img-item .img-thumb {
+    width:44px; height:44px; border-radius:8px; object-fit:cover;
+    background:#111827; flex-shrink:0; border:1px solid rgba(255,255,255,0.06);
+  }
+  .sidebar-img-item .img-info {
+    flex:1; min-width:0;
+  }
+  .sidebar-img-item .img-info .img-prompt-text {
+    font-size:12px; color:#e2e8f0; white-space:nowrap;
+    overflow:hidden; text-overflow:ellipsis;
+  }
+  .sidebar-img-item .img-info .img-date-text {
+    font-size:10px; color:#475569; margin-top:2px;
+  }
 .ctx-menu { display:none; position:fixed; z-index:1000; background:rgba(10,20,30,0.95); backdrop-filter:blur(20px); border:1px solid rgba(0,212,255,0.2); border-radius:12px; padding:6px; min-width:170px; box-shadow:0 12px 40px rgba(0,0,0,0.7); }
 .ctx-menu.open { display:block; }
 .ctx-item { display:flex; align-items:center; gap:10px; padding:9px 14px; border-radius:8px; font-size:13px; color:#bbc9cf; cursor:pointer; transition:all 0.12s; }
@@ -357,12 +522,43 @@
       <span class="font-label-caps text-sm uppercase tracking-wider">New Thread</span>
     </button>
   </div>
+  <!-- Sidebar Tabs -->
+  <div class="px-4 mb-3">
+    <div style="display:flex;gap:2px;background:rgba(255,255,255,0.04);border-radius:10px;padding:3px;">
+      <button onclick="switchSidebarTab('chats')" id="sidebarTab-chats" class="sidebar-tab-btn" style="flex:1;padding:6px 4px;border-radius:8px;border:none;background:rgba(0,212,255,0.15);color:#00d4ff;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;cursor:pointer;transition:all 0.2s;">
+        Chats
+      </button>
+      <button onclick="switchSidebarTab('images')" id="sidebarTab-images" class="sidebar-tab-btn" style="flex:1;padding:6px 4px;border-radius:8px;border:none;background:transparent;color:#64748b;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;cursor:pointer;transition:all 0.2s;">
+        Images
+      </button>
+    </div>
+  </div>
+  <!-- Chats Tab Content -->
+  <div id="sidebarPanel-chats">
   <div id="newThreadHistoryDropdown" class="px-6 mb-2">
     <div class="flex items-center justify-between px-1 mb-2">
       <p class="text-[9px] uppercase tracking-[0.2em] text-slate-500 font-label-caps">// Recent Sessions</p>
       <span id="sessionCount" class="text-[9px] text-slate-600 font-label-caps"></span>
     </div>
     <div class="space-y-1" id="historyList"></div>
+  </div>
+  </div><!-- /sidebarPanel-chats -->
+  <!-- Images Tab Content -->
+  <div id="sidebarPanel-images" style="display:none;">
+    <div class="px-6 mb-2">
+      <div class="flex items-center justify-between px-1 mb-2">
+        <p class="text-[9px] uppercase tracking-[0.2em] text-slate-500 font-label-caps">// Generated Images</p>
+        <span id="sidebarImageCount" class="text-[9px] text-slate-600 font-label-caps"></span>
+      </div>
+      <div class="px-1 mb-2">
+        <input id="sidebarImageSearch" type="text" placeholder="Search images..." oninput="debounceSidebarImageSearch()" style="width:100%;background:#1a1f2e;border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:7px 10px;color:white;font-size:11px;outline:none;box-sizing:border-box;">
+      </div>
+      <div id="sidebarImageList" style="display:flex;flex-direction:column;gap:4px;"></div>
+      <div id="sidebarImageEmpty" style="display:none;padding:24px 8px;color:#475569;font-size:11px;text-align:center;">No images yet</div>
+      <div id="sidebarImageLoadMore" style="display:none;padding:8px;text-align:center;">
+        <button onclick="loadMoreSidebarImages()" style="background:transparent;border:1px solid rgba(0,212,255,0.2);border-radius:8px;padding:5px 12px;color:#00d4ff;font-size:10px;cursor:pointer;">Load More</button>
+      </div>
+    </div>
   </div>
   <nav class="space-y-1 mb-4" id="mainNav">
     <!-- LIBRARY ACCORDION -->
@@ -631,6 +827,16 @@
 </div>
 
 <!-- Settings system moved to /static/settings.js -->
+
+<!-- IMAGE VIEWER OVERLAY -->
+<div id="imageViewerOverlay" onclick="if(event.target===this)closeImageViewer()">
+  <div class="viewer-prompt" id="viewerPrompt"></div>
+  <img id="viewerImage" src="" alt="">
+  <div class="viewer-toolbar">
+    <a id="viewerDownloadBtn" href="" download class="vt-download">Download</a>
+    <button class="vt-close" onclick="closeImageViewer()">Close</button>
+  </div>
+</div>
 
 <!-- DEVELOPER MODE OVERLAY (hidden from normal users) -->
 <div id="devModeOverlay" style="position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(2,6,23,0.92);backdrop-filter:blur(14px);z-index:99999 !important;display:none;flex-direction:column;padding:24px;overflow-y:auto;">
@@ -1257,7 +1463,7 @@ document.addEventListener("click", function (e) {
     }
 });
 
-function addMessage(text, type = "ai", imageData) {
+function addMessage(text, type = "ai", imageData, mediaUrl) {
     const container = document.getElementById("messages");
     const welcome = document.getElementById("welcome");
     if (!container) return;
@@ -1266,6 +1472,7 @@ function addMessage(text, type = "ai", imageData) {
     const msgIndex = messageStore.length;
     var msgObj = { role: type === "user" ? "user" : "assistant", content: text, reaction: null };
     if (imageData) msgObj.image_data = imageData;
+    if (mediaUrl) msgObj.media_url = mediaUrl;
     messageStore.push(msgObj);
 
     const wrapper = document.createElement("div");
@@ -1279,6 +1486,15 @@ function addMessage(text, type = "ai", imageData) {
         img.alt = "Uploaded image";
         img.style.cssText = "max-width:100%;max-height:200px;border-radius:8px;margin-bottom:6px;display:block;";
         bubble.appendChild(img);
+    }
+    if (mediaUrl && !imageData) {
+        var mediaImg = document.createElement("img");
+        mediaImg.src = mediaUrl;
+        mediaImg.alt = "Generated image";
+        mediaImg.loading = "lazy";
+        mediaImg.style.cssText = "max-width:100%;max-height:300px;border-radius:8px;margin-bottom:6px;display:block;cursor:pointer;";
+        mediaImg.onclick = function () { openImageViewer(mediaUrl, text || ""); };
+        bubble.appendChild(mediaImg);
     }
     if (text) {
         var txtSpan = document.createElement("span");
@@ -1411,7 +1627,12 @@ function renderChatHistory(messages) {
     if (!Array.isArray(messages) || messages.length === 0) return;
     messages.forEach(function (message) {
         const role = message.role === "assistant" ? "ai" : "user";
-        addMessage(message.content || "", role, message.image_data || null);
+        var content = message.content || "";
+        var imageData = message.image_data || null;
+
+        var mediaUrl = message.image_url || "";
+
+        addMessage(content, role, imageData, mediaUrl);
         if (message.reaction) {
             const idx = messageStore.length - 1;
             messageStore[idx].reaction = message.reaction;
@@ -2061,6 +2282,271 @@ function toggleLibrary() {
 }
 function ctxDo() {}
 
+// ── Sidebar Tabs ────────────────────────────────────────────────────────
+var currentSidebarTab = "chats";
+
+function switchSidebarTab(tab) {
+    currentSidebarTab = tab;
+    ["chats", "images"].forEach(function (t) {
+        var btn = document.getElementById("sidebarTab-" + t);
+        var panel = document.getElementById("sidebarPanel-" + t);
+        if (btn) {
+            btn.style.background = t === tab ? "rgba(0,212,255,0.15)" : "transparent";
+            btn.style.color = t === tab ? "#00d4ff" : "#64748b";
+        }
+        if (panel) panel.style.display = t === tab ? "" : "none";
+    });
+    if (tab === "images") loadSidebarImages();
+}
+
+// ── Sidebar Images Library ──────────────────────────────────────────────
+var sidebarImageOffset = 0;
+var sidebarImageTotal = 0;
+var sidebarImageSearchTimer = null;
+
+function debounceSidebarImageSearch() {
+    clearTimeout(sidebarImageSearchTimer);
+    sidebarImageSearchTimer = setTimeout(function () {
+        sidebarImageOffset = 0;
+        loadSidebarImages(true);
+    }, 300);
+}
+
+async function loadSidebarImages(reset) {
+    if (reset) {
+        sidebarImageOffset = 0;
+        var list = document.getElementById("sidebarImageList");
+        if (list) list.innerHTML = "";
+    }
+    var empty = document.getElementById("sidebarImageEmpty");
+    var loadMore = document.getElementById("sidebarImageLoadMore");
+    if (empty) empty.style.display = "none";
+    if (loadMore) loadMore.style.display = "none";
+
+    var search = (document.getElementById("sidebarImageSearch") || {}).value || "";
+    try {
+        var params = "?limit=30&offset=" + sidebarImageOffset;
+        if (search) params += "&search=" + encodeURIComponent(search);
+        var res = await apiFetch("/api/media/images" + params, {
+            credentials: "include",
+            headers: authHeaders(),
+            timeoutMs: 30000,
+        });
+        var data = await res.json();
+        var images = data.images || [];
+        sidebarImageTotal = data.total || 0;
+        var countEl = document.getElementById("sidebarImageCount");
+        if (countEl) countEl.textContent = sidebarImageTotal > 0 ? sidebarImageTotal + " images" : "";
+        if (images.length === 0 && sidebarImageOffset === 0) {
+            if (empty) empty.style.display = "";
+            return;
+        }
+        renderSidebarImageItems(images);
+        if (loadMore) loadMore.style.display = (sidebarImageOffset + images.length) < sidebarImageTotal ? "" : "none";
+    } catch (err) {
+        if (empty) { empty.style.display = ""; empty.textContent = "Failed to load images"; }
+    }
+}
+
+function loadMoreSidebarImages() {
+    sidebarImageOffset += 30;
+    loadSidebarImages(false);
+}
+
+function renderSidebarImageItems(images) {
+    var list = document.getElementById("sidebarImageList");
+    if (!list) return;
+    images.forEach(function (img) {
+        var item = document.createElement("div");
+        item.className = "sidebar-img-item";
+        item.onclick = function () { openImageViewer(img.local_path, img.prompt || img.revised_prompt || ""); };
+
+        var thumb = document.createElement("img");
+        thumb.className = "img-thumb";
+        thumb.src = img.local_path || "";
+        thumb.loading = "lazy";
+        thumb.alt = "";
+        thumb.onerror = function () { this.style.background = "#1e293b"; };
+        item.appendChild(thumb);
+
+        var info = document.createElement("div");
+        info.className = "img-info";
+        var promptText = document.createElement("div");
+        promptText.className = "img-prompt-text";
+        promptText.textContent = img.prompt || "Untitled";
+        info.appendChild(promptText);
+        var dateText = document.createElement("div");
+        dateText.className = "img-date-text";
+        dateText.textContent = formatImageDate(img.created_at);
+        info.appendChild(dateText);
+        item.appendChild(info);
+
+        list.appendChild(item);
+    });
+}
+
+function formatImageDate(isoStr) {
+    if (!isoStr) return "";
+    try {
+        var d = new Date(isoStr);
+        var now = new Date();
+        var diffMs = now - d;
+        var diffMin = Math.floor(diffMs / 60000);
+        if (diffMin < 1) return "Just now";
+        if (diffMin < 60) return diffMin + "m ago";
+        var diffHr = Math.floor(diffMin / 60);
+        if (diffHr < 24) return diffHr + "h ago";
+        var diffDay = Math.floor(diffHr / 24);
+        if (diffDay < 7) return diffDay + "d ago";
+        return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    } catch (e) { return ""; }
+}
+
+// ── Image Viewer ────────────────────────────────────────────────────────
+function openImageViewer(src, prompt) {
+    var overlay = document.getElementById("imageViewerOverlay");
+    var img = document.getElementById("viewerImage");
+    var promptEl = document.getElementById("viewerPrompt");
+    var dlBtn = document.getElementById("viewerDownloadBtn");
+    if (!overlay || !img) return;
+    img.src = src;
+    if (promptEl) promptEl.textContent = prompt || "";
+    if (dlBtn) {
+        dlBtn.href = src;
+        dlBtn.download = (prompt || "image").substring(0, 50) + ".png";
+    }
+    overlay.classList.add("open");
+    document.body.style.overflow = "hidden";
+}
+
+function closeImageViewer() {
+    var overlay = document.getElementById("imageViewerOverlay");
+    if (overlay) overlay.classList.remove("open");
+    document.body.style.overflow = "";
+}
+
+document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") closeImageViewer();
+});
+
+// ── Image Generation Skeleton & Result Card ─────────────────────────────
+var _imgGenStartTime = 0;
+var _imgGenSkeletonEl = null;
+
+function showImageGenSkeleton() {
+    _imgGenStartTime = Date.now();
+    removeThinkingIndicator(null);
+
+    var wrapper = document.createElement("div");
+    wrapper.className = "assistant-message";
+    wrapper.id = "imgGenSkeletonWrapper";
+
+    var card = document.createElement("div");
+    card.className = "img-gen-skeleton";
+
+    var skelImage = document.createElement("div");
+    skelImage.className = "skel-image";
+    card.appendChild(skelImage);
+
+    var body = document.createElement("div");
+    body.className = "skel-body";
+    var line1 = document.createElement("div");
+    line1.className = "skel-line";
+    var line2 = document.createElement("div");
+    line2.className = "skel-line";
+    var line3 = document.createElement("div");
+    line3.className = "skel-line";
+    var badge = document.createElement("div");
+    badge.className = "skel-badge";
+    badge.textContent = "Generating";
+    body.appendChild(line1);
+    body.appendChild(line2);
+    body.appendChild(line3);
+    body.appendChild(badge);
+    card.appendChild(body);
+
+    wrapper.appendChild(card);
+    var container = document.getElementById("messages");
+    container.appendChild(wrapper);
+    container.scrollTop = container.scrollHeight;
+    _imgGenSkeletonEl = wrapper;
+}
+
+function removeImageGenSkeleton() {
+    if (_imgGenSkeletonEl) {
+        _imgGenSkeletonEl.remove();
+        _imgGenSkeletonEl = null;
+    }
+}
+
+function renderImageResultCard(imageUrl, prompt, revisedPrompt) {
+    removeImageGenSkeleton();
+
+    var elapsed = Date.now() - _imgGenStartTime;
+    var minWait = 8000;
+    var remaining = Math.max(0, minWait - elapsed);
+
+    setTimeout(function () {
+        var wrapper = document.createElement("div");
+        wrapper.className = "assistant-message";
+
+        var card = document.createElement("div");
+        card.className = "img-result-card";
+
+        var img = document.createElement("img");
+        img.className = "card-image";
+        img.src = imageUrl;
+        img.alt = revisedPrompt || prompt || "Generated image";
+        img.loading = "lazy";
+        img.onclick = function () { openImageViewer(imageUrl, revisedPrompt || prompt || ""); };
+        img.onerror = function () { this.style.display = "none"; };
+        card.appendChild(img);
+
+        var body = document.createElement("div");
+        body.className = "card-body";
+
+        var promptDiv = document.createElement("div");
+        promptDiv.className = "card-prompt";
+        promptDiv.textContent = revisedPrompt || prompt || "";
+        body.appendChild(promptDiv);
+
+        var meta = document.createElement("div");
+        meta.className = "card-meta";
+        var timeStr = (elapsed / 1000).toFixed(1) + "s";
+        meta.innerHTML = "<span>" + timeStr + " generation time</span>";
+        body.appendChild(meta);
+
+        var actions = document.createElement("div");
+        actions.className = "card-actions";
+
+        var dlBtn = document.createElement("a");
+        dlBtn.className = "btn-download";
+        dlBtn.href = imageUrl;
+        dlBtn.download = (prompt || "image").substring(0, 50) + ".png";
+        dlBtn.innerHTML = '<i data-lucide="download" style="width:14px;height:14px;"></i> Download';
+        actions.appendChild(dlBtn);
+
+        var regenBtn = document.createElement("button");
+        regenBtn.className = "btn-regenerate";
+        regenBtn.innerHTML = '<i data-lucide="refresh-cw" style="width:14px;height:14px;"></i> Regenerate';
+        regenBtn.onclick = function () {
+            var input = document.getElementById("chat-input");
+            if (input) { input.value = prompt || "Regenerate this image"; input.focus(); }
+        };
+        actions.appendChild(regenBtn);
+
+        body.appendChild(actions);
+        card.appendChild(body);
+        wrapper.appendChild(card);
+
+        var container = document.getElementById("messages");
+        container.appendChild(wrapper);
+        container.scrollTop = container.scrollHeight;
+
+        if (typeof lucide !== "undefined") lucide.createIcons();
+    }, remaining);
+}
+
 async function checkSession() {
     authCheckComplete = false;
     isAuthenticated = false;
@@ -2100,12 +2586,17 @@ async function checkSession() {
 
             renderSessionListSkeleton();
 
+            // Restore last-active chat BEFORE loadSessions so renderSessionList()
+            // inside loadSessions keeps the active session visible (not filtered out).
+            currentChatId = loadLastChatId() || "";
+
             // Non-fatal: session loading failure should never prevent sidebar from showing.
             try {
                 await loadSessions({ showLoading: true });
 
-                if (sessionList.length > 0) {
+                if (!currentChatId && sessionList.length > 0) {
                     currentChatId = getSessionId(sessionList[0]);
+                    renderSessionList();
                 }
 
                 if (currentChatId) {
@@ -2391,6 +2882,7 @@ window.send = async function () {
     const thinking = addThinkingIndicator();
 
     var streamError = null;
+    var lastSentMessage = text;
     try {
         var body = { message: text || "(image attached)" };
         if (currentChatId) body.chat_id = currentChatId;
@@ -2451,25 +2943,28 @@ window.send = async function () {
                 if (evt.intent) {
                     if (!statusIndicator) {
                         removeThinkingIndicator(thinking);
-                        var statusDiv = document.createElement("div");
-                        statusDiv.className = "assistant-message";
-                        statusDiv.dataset.statusEl = "true";
-                        var statusBubble = document.createElement("div");
-                        statusBubble.className = "bubble";
-                        statusBubble.style.cssText = "color:#94a3b8;font-style:italic;";
                         if (evt.intent === "generating_image") {
-                            statusBubble.textContent = "Generating image...";
-                        } else if (evt.intent === "generating_video") {
-                            statusBubble.textContent = "Preparing video generation...";
-                        } else if (evt.intent === "video_progress") {
-                            statusBubble.textContent = (evt.status_message || "Generating video...");
+                            showImageGenSkeleton();
+                            statusIndicator = document.getElementById("imgGenSkeletonWrapper");
                         } else {
-                            statusBubble.textContent = "Searching the web...";
+                            var statusDiv = document.createElement("div");
+                            statusDiv.className = "assistant-message";
+                            statusDiv.dataset.statusEl = "true";
+                            var statusBubble = document.createElement("div");
+                            statusBubble.className = "bubble";
+                            statusBubble.style.cssText = "color:#94a3b8;font-style:italic;";
+                            if (evt.intent === "generating_video") {
+                                statusBubble.textContent = "Preparing video generation...";
+                            } else if (evt.intent === "video_progress") {
+                                statusBubble.textContent = (evt.status_message || "Generating video...");
+                            } else {
+                                statusBubble.textContent = "Searching the web...";
+                            }
+                            statusDiv.appendChild(statusBubble);
+                            document.getElementById("messages").appendChild(statusDiv);
+                            statusIndicator = statusDiv;
+                            document.getElementById("messages").scrollTop = document.getElementById("messages").scrollHeight;
                         }
-                        statusDiv.appendChild(statusBubble);
-                        document.getElementById("messages").appendChild(statusDiv);
-                        statusIndicator = statusDiv;
-                        document.getElementById("messages").scrollTop = document.getElementById("messages").scrollHeight;
                     } else if (evt.intent === "video_progress" && statusIndicator) {
                         /* Update existing status bubble with new progress */
                         var existingBubble = statusIndicator.querySelector(".bubble");
@@ -2486,28 +2981,10 @@ window.send = async function () {
                     console.log("[TRACE FE] SSE image_url received:", evt.image_url);
                     removeThinkingIndicator(thinking);
                     if (statusIndicator) {
-                        statusIndicator.remove();
                         statusIndicator = null;
                     }
-                    var imgDiv = document.createElement("div");
-                    imgDiv.className = "assistant-message";
-                    var imgBubble = document.createElement("div");
-                    imgBubble.className = "bubble";
-                    var img = document.createElement("img");
-                    console.log("[TRACE FE] Setting img.src to:", evt.image_url);
-                    img.src = evt.image_url;
-                    img.alt = evt.revised_prompt || "Generated image";
-                    img.style.cssText = "max-width:100%;border-radius:8px;margin-top:8px;";
-                    imgBubble.appendChild(img);
-                    if (evt.revised_prompt) {
-                        var caption = document.createElement("p");
-                        caption.style.cssText = "font-size:0.85em;color:#94a3b8;margin-top:4px;";
-                        caption.textContent = evt.revised_prompt;
-                        imgBubble.appendChild(caption);
-                    }
-                    imgDiv.appendChild(imgBubble);
-                    document.getElementById("messages").appendChild(imgDiv);
-                    document.getElementById("messages").scrollTop = document.getElementById("messages").scrollHeight;
+                    renderImageResultCard(evt.image_url, lastSentMessage || "", evt.revised_prompt || "");
+                    if (currentSidebarTab === "images") loadSidebarImages(true);
                     continue;
                 }
 
@@ -2540,7 +3017,7 @@ window.send = async function () {
                     var dlBtn = document.createElement("a");
                     dlBtn.href = evt.video_url;
                     dlBtn.download = "valleymind_video.mp4";
-                    dlBtn.textContent = "⬇ Download";
+                    dlBtn.textContent = "Download";
                     dlBtn.style.cssText = "display:inline-block;padding:6px 14px;border-radius:6px;background:rgba(0,212,255,0.18);color:#00d4ff;text-decoration:none;font-size:0.85em;cursor:pointer;border:1px solid rgba(0,212,255,0.3);transition:background 0.2s;";
                     dlBtn.onmouseenter = function(){ dlBtn.style.background = "rgba(0,212,255,0.35)"; };
                     dlBtn.onmouseleave = function(){ dlBtn.style.background = "rgba(0,212,255,0.18)"; };

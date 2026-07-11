@@ -261,10 +261,10 @@ class MemorySystem:
             self._cache[chat_id] = self.load_chat(chat_id)
         return self._cache[chat_id]
 
-    def add_message(self, chat_id: str, role: str, content: str, timestamp=None, image_data: str = ""):
+    def add_message(self, chat_id: str, role: str, content: str, timestamp=None, image_data: str = "", image_url: str = ""):
         role = str(role or "user").strip()
         content = str(content or "").strip()
-        if not content and not image_data:
+        if not content and not image_data and not image_url:
             print(f"[WARNING] add_message: empty content and no image for role '{role}'; skipping.")
             return
 
@@ -278,6 +278,8 @@ class MemorySystem:
             }
             if image_data:
                 msg["image_data"] = image_data
+            if image_url:
+                msg["image_url"] = image_url
             messages.append(msg)
             self.save_chat(chat_id, messages)
 
