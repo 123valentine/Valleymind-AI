@@ -37,10 +37,11 @@ def get_db():
         try:
             from pymongo import MongoClient
 
+            # mongodb+srv:// already implies TLS with standard certificate
+            # verification -- no need to weaken it with
+            # tlsAllowInvalidCertificates.
             client = MongoClient(
                 uri,
-                tls=True,
-                tlsAllowInvalidCertificates=True,
                 serverSelectionTimeoutMS=10000,
                 connectTimeoutMS=10000,
                 socketTimeoutMS=30000,
