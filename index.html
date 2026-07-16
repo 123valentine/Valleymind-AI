@@ -228,6 +228,17 @@
   }
   #galleryOverlay.open { display:flex; opacity:1; transform:translateY(0); }
   #galleryOverlay.closing { display:flex; opacity:0; transform:translateY(100%); }
+  #videoGalleryOverlay {
+    position:fixed; inset:0; z-index:9998;
+    background:rgba(2,6,23,0.97); backdrop-filter:blur(20px);
+    display:none; flex-direction:column;
+    transform:translateY(100%);
+    transition:transform 0.4s cubic-bezier(0.4,0,0.2,1), opacity 0.3s ease;
+    opacity:0;
+  }
+  #videoGalleryOverlay.open { display:flex; opacity:1; transform:translateY(0); }
+  #videoGalleryOverlay.closing { display:flex; opacity:0; transform:translateY(100%); }
+  .gallery-card video { width:100%; height:100%; object-fit:cover; display:block; }
   .gallery-header {
     display:flex; align-items:center; justify-content:space-between;
     padding:20px 32px; flex-shrink:0;
@@ -697,9 +708,9 @@
       <span class="nav-icon"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg></span>
       Image Gallery
     </div>
-    <div class="vm-nav-item" onclick="showComingSoon('Video')">
-      Video
-      <span class="cs-badge">Soon</span>
+    <div class="vm-nav-item" onclick="navTo('videoGallery')" id="nav-videoGallery">
+      <span class="nav-icon"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="14" height="14" rx="2"/><path d="M21 8l-4 3 4 3V8z"/></svg></span>
+      Video Gallery
     </div>
     <div class="vm-nav-item" onclick="showComingSoon('Website')">
       Website
@@ -979,6 +990,34 @@
     </div>
     <div class="gallery-load-more" id="galleryLoadMore" style="display:none;">
       <button onclick="loadMoreGalleryImages()">Load More</button>
+    </div>
+  </div>
+</div>
+
+<!-- FULL-SCREEN VIDEO GALLERY -->
+<div id="videoGalleryOverlay">
+  <div class="gallery-header">
+    <div style="display:flex;align-items:center;">
+      <h2>Video Gallery</h2>
+      <span class="gallery-count" id="videoGalleryCount"></span>
+    </div>
+    <div class="gallery-search-wrap">
+      <span class="search-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></span>
+      <input id="videoGallerySearchInput" type="text" placeholder="Search videos by description..." oninput="debounceVideoGallerySearch()">
+    </div>
+    <button class="gallery-close-btn" onclick="closeVideoGallery()">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      Close
+    </button>
+  </div>
+  <div class="gallery-body" id="videoGalleryBody">
+    <div class="gallery-grid" id="videoGalleryGrid"></div>
+    <div class="gallery-empty" id="videoGalleryEmpty" style="display:none;">
+      <p>No videos yet</p>
+      <span>Generated videos will appear here</span>
+    </div>
+    <div class="gallery-load-more" id="videoGalleryLoadMore" style="display:none;">
+      <button onclick="loadMoreVideoGalleryItems()">Load More</button>
     </div>
   </div>
 </div>
@@ -2450,6 +2489,8 @@ function navTo(view) {
 
     if (view === "gallery") {
         openGallery();
+    } else if (view === "videoGallery") {
+        openVideoGallery();
     } else if (view === "chat") {
         closeSidebar();
         focusChatInput();
@@ -2584,6 +2625,129 @@ function renderGalleryItems(images) {
         card.appendChild(actions);
 
         card.onclick = function () { openImageViewer(img.local_path); };
+        grid.appendChild(card);
+    });
+}
+
+// ── Video Gallery Panel ─────────────────────────────────────────────────
+var videoGalleryOffset = 0;
+var videoGalleryTotal = 0;
+var videoGallerySearchTimer = null;
+
+function openVideoGallery() {
+    closeSidebar();
+    var overlay = document.getElementById("videoGalleryOverlay");
+    if (!overlay) return;
+    overlay.style.display = "flex";
+    requestAnimationFrame(function () {
+        overlay.classList.add("open");
+    });
+    loadVideoGalleryItems(true);
+    setTimeout(function () {
+        var inp = document.getElementById("videoGallerySearchInput");
+        if (inp) inp.focus();
+    }, 400);
+}
+
+function closeVideoGallery() {
+    var overlay = document.getElementById("videoGalleryOverlay");
+    if (!overlay) return;
+    overlay.classList.remove("open");
+    overlay.classList.add("closing");
+    setTimeout(function () {
+        overlay.classList.remove("closing");
+        overlay.style.display = "none";
+        currentNavView = "chat";
+        document.querySelectorAll(".vm-nav-item").forEach(function (el) { el.classList.remove("active"); });
+        var chatNav = document.getElementById("nav-chat");
+        if (chatNav) chatNav.classList.add("active");
+        focusChatInput();
+    }, 400);
+}
+
+function debounceVideoGallerySearch() {
+    clearTimeout(videoGallerySearchTimer);
+    videoGallerySearchTimer = setTimeout(function () {
+        videoGalleryOffset = 0;
+        loadVideoGalleryItems(true);
+    }, 300);
+}
+
+async function loadVideoGalleryItems(reset) {
+    if (reset) {
+        videoGalleryOffset = 0;
+        var grid = document.getElementById("videoGalleryGrid");
+        if (grid) grid.innerHTML = "";
+    }
+    var empty = document.getElementById("videoGalleryEmpty");
+    var loadMore = document.getElementById("videoGalleryLoadMore");
+    if (empty) empty.style.display = "none";
+    if (loadMore) loadMore.style.display = "none";
+
+    var search = (document.getElementById("videoGallerySearchInput") || {}).value || "";
+    try {
+        var params = "?limit=30&offset=" + videoGalleryOffset;
+        if (search) params += "&search=" + encodeURIComponent(search);
+        var res = await apiFetch("/api/media/videos" + params, {
+            credentials: "include",
+            headers: authHeaders(),
+            timeoutMs: 30000,
+        });
+        var data = await res.json();
+        var videos = data.videos || [];
+        videoGalleryTotal = data.total || 0;
+        var countEl = document.getElementById("videoGalleryCount");
+        if (countEl) countEl.textContent = videoGalleryTotal > 0 ? videoGalleryTotal + " videos" : "";
+        if (videos.length === 0 && videoGalleryOffset === 0) {
+            if (empty) empty.style.display = "";
+            return;
+        }
+        renderVideoGalleryItems(videos);
+        if (loadMore) loadMore.style.display = (videoGalleryOffset + videos.length) < videoGalleryTotal ? "" : "none";
+    } catch (err) {
+        if (empty) { empty.style.display = ""; empty.querySelector("p").textContent = "Failed to load videos"; }
+    }
+}
+
+function loadMoreVideoGalleryItems() {
+    videoGalleryOffset += 30;
+    loadVideoGalleryItems(false);
+}
+
+function renderVideoGalleryItems(videos) {
+    var grid = document.getElementById("videoGalleryGrid");
+    if (!grid) return;
+    videos.forEach(function (vid) {
+        var card = document.createElement("div");
+        card.className = "gallery-card";
+
+        var videoEl = document.createElement("video");
+        videoEl.src = vid.local_path || "";
+        videoEl.muted = true;
+        videoEl.loop = true;
+        videoEl.playsInline = true;
+        videoEl.preload = "metadata";
+        videoEl.onmouseenter = function () { videoEl.play().catch(function () {}); };
+        videoEl.onmouseleave = function () { videoEl.pause(); };
+        card.appendChild(videoEl);
+
+        var actions = document.createElement("div");
+        actions.className = "gallery-card-actions";
+
+        var dlBtn = document.createElement("a");
+        dlBtn.href = vid.local_path || "#";
+        dlBtn.download = "valleymind_video.mp4";
+        dlBtn.title = "Download";
+        dlBtn.onclick = function (e) { e.stopPropagation(); };
+        dlBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
+        actions.appendChild(dlBtn);
+
+        card.appendChild(actions);
+
+        card.onclick = function (e) {
+            if (e.target === dlBtn || dlBtn.contains(e.target)) return;
+            window.open(vid.local_path, "_blank");
+        };
         grid.appendChild(card);
     });
 }

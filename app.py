@@ -20,7 +20,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 from core.brain import MarcusBrain, _call_llm_cluster, _CHAT_SYSTEM_PROMPT
 from core.config import PROJECT_ROOT, get_config
-from core.db import auth_tokens_collection, app_config_collection, chats_collection, users_collection
+from core.db import auth_tokens_collection, app_config_collection, chats_collection, get_db, users_collection
 from core.media_manager import get_media_manager
 from core.router import RouteDecision, get_router
 from core.tts import speak_marcus
@@ -1552,11 +1552,15 @@ def _dispatch_video_json(user_id, message, chat_id, image_data):
 
     print(f"[Router]   VIDEO success — video_url={task.video_url}")
 
+    media = get_media_manager(user_id)
+    media_record = media.save_video(task.video_url, prompt=message, provider="AlibabaVideo", chat_id=chat_id)
+    stored_url = media_record["local_path"] if media_record else task.video_url
+
     _persist_chat_message(user_id, chat_id, "assistant", f"[Generated video: {message}]")
 
     return jsonify({
         "status": "success",
-        "video_url": task.video_url,
+        "video_url": stored_url,
         "thumbnail_url": task.thumbnail_url,
         "task_id": task.task_id,
     })
@@ -1579,6 +1583,14 @@ def _dispatch_video_stream(user_id, message, chat_id, image_data):
 
     def generate():
         for event in dispatcher.generate_stream(message):
+            if event.get("video_url"):
+                media = get_media_manager(user_id)
+                media_record = media.save_video(
+                    event["video_url"], prompt=message, provider="AlibabaVideo", chat_id=resolved_chat_id,
+                )
+                if media_record:
+                    event["video_url"] = media_record["local_path"]
+
             yield f"data: {json.dumps(event)}\n\n"
 
             # Persist on completion
@@ -1623,6 +1635,10 @@ def _dispatch_video_text_json(user_id, message, chat_id, image_data):
     if task.status.value != "failed":
         video_url = task.video_url
         print(f"[Router]   VIDEO success — video_url={video_url}")
+        media = get_media_manager(user_id)
+        media_record = media.save_video(video_url, prompt=message, provider="AlibabaVideo", chat_id=chat_id)
+        if media_record:
+            video_url = media_record["local_path"]
     else:
         print(f"[Router]   VIDEO failed: {task.error}")
 
@@ -1704,6 +1720,14 @@ def _dispatch_video_text_stream(user_id, message, chat_id, image_data):
 
         # ── 2. Generate video via VideoDispatcher ─────────────────────
         for event in dispatcher.generate_stream(message):
+            if event.get("video_url"):
+                media = get_media_manager(user_id)
+                media_record = media.save_video(
+                    event["video_url"], prompt=message, provider="AlibabaVideo", chat_id=resolved_chat_id,
+                )
+                if media_record:
+                    event["video_url"] = media_record["local_path"]
+
             yield f"data: {json.dumps(event)}\n\n"
 
             if event.get("video_url") and marcus:
@@ -2356,6 +2380,24 @@ def api_media_images():
     return jsonify({"status": "success", "images": images, "total": total})
 
 
+@app.route("/api/media/videos", methods=["GET"])
+def api_media_videos():
+    """List user's videos with optional search and pagination."""
+    user_id, error = _require_login()
+    if error:
+        return error
+
+    search = str(request.args.get("search") or "").strip()
+    chat_id = str(request.args.get("chat_id") or "").strip()
+    limit = min(int(request.args.get("limit") or 50), 200)
+    offset = max(int(request.args.get("offset") or 0), 0)
+
+    mgr = get_media_manager(user_id)
+    videos = mgr.list_videos(chat_id=chat_id, search=search, limit=limit, offset=offset)
+    total = mgr.count_videos(chat_id=chat_id)
+    return jsonify({"status": "success", "videos": videos, "total": total})
+
+
 @app.route("/api/media/<media_id>", methods=["GET"])
 def api_media_detail(media_id):
     """Get a single media record."""
@@ -2386,7 +2428,21 @@ def api_media_delete(media_id):
 
 @app.route("/static/media/users/<user_id>/<path:subpath>")
 def serve_user_media(user_id, subpath):
-    """Serve user media files from memory_data/users/{user_id}/media/."""
+    """Serve user media files from Mongo/GridFS, falling back to local disk."""
+    filename = subpath.rsplit("/", 1)[-1]
+    db = get_db()
+    if db is not None:
+        try:
+            import gridfs
+
+            bucket = gridfs.GridFSBucket(db)
+            grid_out = bucket.open_download_stream_by_name(filename)
+            data = grid_out.read()
+            content_type = (grid_out.metadata or {}).get("content_type") or "application/octet-stream"
+            return Response(data, mimetype=content_type)
+        except Exception as exc:
+            print(f"[MEDIA] GridFS serve miss for {filename}, falling back to local disk: {exc}")
+
     media_dir = PROJECT_ROOT / "memory_data" / "users" / user_id / "media"
     return send_from_directory(str(media_dir), subpath)
 
