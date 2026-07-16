@@ -42,7 +42,7 @@ if os.path.isfile(_env_path):
 
 
 
-app = Flask(__name__, static_folder='../static', static_url_path='/static')
+app = Flask(__name__, static_folder=str(PROJECT_ROOT / "static"), static_url_path='/static')
 print(f"[TRACE BOOT] app.root_path = {app.root_path}")
 print(f"[TRACE BOOT] app.static_folder = {app.static_folder}")
 print(f"[TRACE BOOT] PROJECT_ROOT = {PROJECT_ROOT}")
@@ -2267,7 +2267,7 @@ def serve_user_media(user_id, subpath):
 
 @app.route("/")
 def serve_index():
-    return send_from_directory("../", "index.html")
+    return send_from_directory(str(PROJECT_ROOT), "index.html")
 
 
 @app.route("/<path:path>")
@@ -2276,9 +2276,9 @@ def serve_frontend_assets(path):
 
     if path in allowed_files or path.startswith("static/"):
         import os as _os
-        resolved = _os.path.normpath(_os.path.join(app.root_path, "..", path))
+        resolved = _os.path.normpath(_os.path.join(str(PROJECT_ROOT), path))
         print(f"[TRACE STATIC] Requested: /{path}")
-        print(f"[TRACE STATIC] send_from_directory('../', '{path}')")
+        print(f"[TRACE STATIC] send_from_directory('{PROJECT_ROOT}', '{path}')")
         print(f"[TRACE STATIC] resolved absolute: {_os.path.abspath(resolved)}")
         print(f"[TRACE STATIC] exists: {_os.path.exists(resolved)}")
         print(f"[TRACE STATIC] app.root_path: {app.root_path}")
@@ -2287,7 +2287,7 @@ def serve_frontend_assets(path):
         print(f"[TRACE STATIC] CAUGHT-BY-CATCHALL: {path}")
         if not _os.path.exists(resolved):
             print(f"[TRACE STATIC] FILE DOES NOT EXIST at resolved path: {resolved}")
-        resp = send_from_directory("../", path)
+        resp = send_from_directory(str(PROJECT_ROOT), path)
         print(f"[TRACE STATIC] Response type: {type(resp).__name__}")
         try:
             print(f"[TRACE STATIC] Response status: {resp.status_code}")
@@ -2296,7 +2296,7 @@ def serve_frontend_assets(path):
         return resp
 
     print(f"[TRACE STATIC] SPA fallback for: /{path}")
-    return send_from_directory("../", "index.html")
+    return send_from_directory(str(PROJECT_ROOT), "index.html")
 
 
 if __name__ == "__main__":
