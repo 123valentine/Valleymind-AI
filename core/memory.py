@@ -1,9 +1,10 @@
 import json
 import os
 import threading
-from datetime import datetime
+from datetime import datetime, timezone
 
 from core.config import PROJECT_ROOT
+from core.db import chats_collection
 
 
 ASSISTANT_IDENTITY_NAMES = {"marcus"}
@@ -179,6 +180,17 @@ class MemorySystem:
         return self.long_term
 
     def load_chat(self, chat_id: str) -> list:
+        coll = chats_collection()
+        if coll is not None:
+            try:
+                doc = coll.find_one({"chat_id": chat_id, "user_id": self.user_id})
+                if doc and isinstance(doc.get("messages"), list):
+                    return doc["messages"]
+                if doc is not None:
+                    return []
+            except Exception as exc:
+                print(f"[MEMORY] Mongo load_chat failed for {chat_id}, falling back to local file: {exc}")
+
         chat_file = os.path.join(self.base_folder, "chats", f"{chat_id}.json")
         try:
             if os.path.exists(chat_file):
@@ -191,6 +203,27 @@ class MemorySystem:
         return []
 
     def save_chat(self, chat_id: str, messages: list, title: str = ""):
+        coll = chats_collection()
+        if coll is not None:
+            try:
+                now = datetime.now(timezone.utc)
+                existing = coll.find_one({"chat_id": chat_id})
+                doc = {
+                    "chat_id": chat_id,
+                    "user_id": self.user_id,
+                    "messages": messages,
+                    "message_count": len(messages),
+                    "last_activity": now,
+                    "created_at": (existing or {}).get("created_at", now),
+                }
+                resolved_title = title or (existing or {}).get("title", "")
+                if resolved_title:
+                    doc["title"] = resolved_title
+                coll.replace_one({"chat_id": chat_id}, doc, upsert=True)
+                return
+            except Exception as exc:
+                print(f"[MEMORY] Mongo save_chat failed for {chat_id}, falling back to local file: {exc}")
+
         chat_dir = os.path.join(self.base_folder, "chats")
         chat_file = os.path.join(chat_dir, f"{chat_id}.json")
         try:
@@ -292,6 +325,14 @@ class MemorySystem:
         lock = self._get_lock(chat_id)
         with lock:
             self._cache.pop(chat_id, None)
+
+            coll = chats_collection()
+            if coll is not None:
+                try:
+                    coll.delete_one({"chat_id": chat_id, "user_id": self.user_id})
+                except Exception as exc:
+                    print(f"[MEMORY] Mongo clear_chat failed for {chat_id}, falling back to local file: {exc}")
+
             chat_file = os.path.join(self.base_folder, "chats", f"{chat_id}.json")
             try:
                 if os.path.exists(chat_file):

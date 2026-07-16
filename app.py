@@ -20,6 +20,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 from core.brain import MarcusBrain, _call_llm_cluster, _CHAT_SYSTEM_PROMPT
 from core.config import PROJECT_ROOT, get_config
+from core.db import auth_tokens_collection, app_config_collection, chats_collection, users_collection
 from core.media_manager import get_media_manager
 from core.router import RouteDecision, get_router
 from core.tts import speak_marcus
@@ -70,10 +71,74 @@ _suggestions_file = PROJECT_ROOT / "memory_data" / "suggestions.json"
 _admin_whatsapp_number = "234915170571"
 
 
+def _get_auth_token(token: str) -> dict:
+    """Resolve a bearer token to its auth record. Mongo first, in-memory cache as fallback."""
+    if not token:
+        return {}
+    coll = auth_tokens_collection()
+    if coll is not None:
+        try:
+            doc = coll.find_one({"_id": token})
+            if doc:
+                auth = {
+                    "user_id": doc.get("user_id", ""),
+                    "email": doc.get("email", ""),
+                    "is_creator": doc.get("is_creator", False),
+                }
+                _auth_tokens[token] = auth
+                return auth
+        except Exception as exc:
+            print(f"[ERROR] Mongo _get_auth_token failed, using local cache: {exc}")
+    return _auth_tokens.get(token, {})
+
+
+def _set_auth_token(token: str, data: dict):
+    """Persist a bearer token so it survives process restarts, not just in-memory."""
+    _auth_tokens[token] = data
+    coll = auth_tokens_collection()
+    if coll is not None:
+        try:
+            doc = dict(data)
+            doc["_id"] = token
+            doc["created_at"] = datetime.now(timezone.utc)
+            coll.replace_one({"_id": token}, doc, upsert=True)
+        except Exception as exc:
+            print(f"[ERROR] Mongo _set_auth_token failed, token cached locally only: {exc}")
+
+
+def _delete_auth_token(token: str):
+    _auth_tokens.pop(token, None)
+    coll = auth_tokens_collection()
+    if coll is not None:
+        try:
+            coll.delete_one({"_id": token})
+        except Exception as exc:
+            print(f"[ERROR] Mongo _delete_auth_token failed: {exc}")
+
+
 def _load_session_secret() -> str:
     configured = os.getenv("SECRET_KEY", "").strip() or os.getenv("FLASK_SECRET_KEY", "").strip()
     if configured:
         return configured
+
+    coll = app_config_collection()
+    if coll is not None:
+        try:
+            doc = coll.find_one({"_id": "session_secret"})
+            if not doc or not doc.get("value"):
+                # $setOnInsert so concurrent workers racing here converge on
+                # one winner's value instead of each generating their own.
+                coll.update_one(
+                    {"_id": "session_secret"},
+                    {"$setOnInsert": {"value": secrets.token_hex(32)}},
+                    upsert=True,
+                )
+                doc = coll.find_one({"_id": "session_secret"})
+            if doc and doc.get("value"):
+                return str(doc["value"])
+        except Exception as exc:
+            print(f"[WARNING] Mongo session secret unavailable, falling back to local file: {exc}")
+
     try:
         _session_secret_file.parent.mkdir(parents=True, exist_ok=True)
         if _session_secret_file.exists():
@@ -104,6 +169,18 @@ def _safe_user_id(email: str) -> str:
 
 
 def _load_users() -> dict:
+    coll = users_collection()
+    if coll is not None:
+        try:
+            users = {}
+            for doc in coll.find({}):
+                email = doc.pop("_id", None)
+                if email:
+                    users[email] = doc
+            return users
+        except Exception as exc:
+            print(f"[ERROR] Mongo _load_users failed, falling back to local file: {exc}")
+
     try:
         if _users_file.exists():
             with open(_users_file, "r", encoding="utf-8") as file:
@@ -116,6 +193,17 @@ def _load_users() -> dict:
 
 
 def _save_users(users: dict):
+    coll = users_collection()
+    if coll is not None:
+        try:
+            for email, record in users.items():
+                doc = dict(record)
+                doc["_id"] = email
+                coll.replace_one({"_id": email}, doc, upsert=True)
+            return
+        except Exception as exc:
+            print(f"[ERROR] Mongo _save_users failed, falling back to local file: {exc}")
+
     try:
         _users_file.parent.mkdir(parents=True, exist_ok=True)
         tmp = str(_users_file) + ".tmp"
@@ -140,7 +228,7 @@ def _current_auth() -> dict:
         or ""
     ).strip()
     if token:
-        auth = _auth_tokens.get(token)
+        auth = _get_auth_token(token)
         if auth and auth.get("user_id"):
             session.permanent = True
             session["user_id"] = auth.get("user_id", "")
@@ -153,7 +241,7 @@ def _current_auth() -> dict:
         try:
             body_token = str((request.get_json(silent=True) or {}).get("session_token") or "").strip()
             if body_token:
-                auth = _auth_tokens.get(body_token)
+                auth = _get_auth_token(body_token)
                 if auth and auth.get("user_id"):
                     session.permanent = True
                     session["user_id"] = auth.get("user_id", "")
@@ -252,6 +340,12 @@ def _derive_initial_user_name(email: str) -> str:
 
 # ── SESSION HANDLING FUNCTIONS (adapted for Pinecone-backed architecture) ───────────────────────────────────────────────
 
+def _stringify_timestamp(value) -> str:
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    return str(value or "")
+
+
 def _normalize_session_doc(doc: dict) -> dict:
     """Normalize session records from chat_sessions or chats collections."""
     if not isinstance(doc, dict):
@@ -260,12 +354,10 @@ def _normalize_session_doc(doc: dict) -> dict:
     if not chat_id:
         return {}
     title = str(doc.get("title") or "Untitled Thread").strip() or "Untitled Thread"
-    last_updated = (
-        doc.get("last_updated")
-        or doc.get("last_activity")
-        or doc.get("created_at")
-        or ""
+    last_updated = _stringify_timestamp(
+        doc.get("last_updated") or doc.get("last_activity") or doc.get("created_at")
     )
+    created_at = _stringify_timestamp(doc.get("created_at")) or last_updated
     try:
         message_count = int(doc.get("message_count") or 0)
     except (TypeError, ValueError):
@@ -276,7 +368,7 @@ def _normalize_session_doc(doc: dict) -> dict:
         "title": title,
         "message_count": message_count,
         "last_updated": last_updated,
-        "created_at": doc.get("created_at") or last_updated,
+        "created_at": created_at,
     }
 
 
@@ -341,6 +433,16 @@ def _list_user_sessions(user_id: str) -> list:
     """List all sessions for a user, sorted by last_updated descending."""
     if not user_id:
         return []
+
+    coll = chats_collection()
+    if coll is not None:
+        try:
+            cursor = coll.find({"user_id": user_id}, {"messages": 0}).sort("last_activity", -1)
+            normalized = [_normalize_session_doc(doc) for doc in cursor]
+            return [doc for doc in normalized if doc]
+        except Exception as exc:
+            print(f"[ERROR] Mongo _list_user_sessions failed, falling back to local index: {exc}")
+
     try:
         sessions = _load_sessions_index(user_id)
         normalized_sessions = []
@@ -370,6 +472,25 @@ def _list_user_sessions(user_id: str) -> list:
 
 def _upsert_chat_session_meta(user_id: str, chat_id: str, title: str = "", message_count: int = 0):
     """Update or create session metadata in sessions index."""
+    coll = chats_collection()
+    if coll is not None:
+        try:
+            now = datetime.now(timezone.utc)
+            set_fields = {"user_id": user_id, "last_activity": now}
+            if title:
+                set_fields["title"] = title
+            update = {
+                "$set": set_fields,
+                "$max": {"message_count": message_count},
+                "$setOnInsert": {"chat_id": chat_id, "created_at": now},
+            }
+            if not title:
+                update["$setOnInsert"]["title"] = "New Chat"
+            coll.update_one({"chat_id": chat_id}, update, upsert=True)
+            return
+        except Exception as exc:
+            print(f"[ERROR] Mongo _upsert_chat_session_meta failed, falling back to local index: {exc}")
+
     try:
         now = datetime.now(timezone.utc).isoformat()
         sessions = _load_sessions_index(user_id)
@@ -400,6 +521,14 @@ def _upsert_chat_session_meta(user_id: str, chat_id: str, title: str = "", messa
 
 def _delete_chat_session_meta(user_id: str, chat_id: str):
     """Delete session metadata from sessions index."""
+    coll = chats_collection()
+    if coll is not None:
+        try:
+            coll.delete_one({"chat_id": chat_id, "user_id": user_id})
+            return
+        except Exception as exc:
+            print(f"[ERROR] Mongo _delete_chat_session_meta failed, falling back to local index: {exc}")
+
     try:
         sessions = _load_sessions_index(user_id)
         sessions = [s for s in sessions if s.get("chat_id") != chat_id]
@@ -736,7 +865,7 @@ def login():
         session["user"]["title"] = CREATOR_TITLE
 
     token = secrets.token_urlsafe(32)
-    _auth_tokens[token] = {"user_id": user_id, "email": email, "is_creator": is_creator}
+    _set_auth_token(token, {"user_id": user_id, "email": email, "is_creator": is_creator})
 
     marcus = load_marcus(user_id)
     if marcus:
@@ -829,7 +958,7 @@ def google_auth():
         session["user"]["title"] = CREATOR_TITLE
 
     token = secrets.token_urlsafe(32)
-    _auth_tokens[token] = {"user_id": user_id, "email": email, "is_creator": is_creator}
+    _set_auth_token(token, {"user_id": user_id, "email": email, "is_creator": is_creator})
 
     marcus = load_marcus(user_id)
     if marcus:
@@ -862,7 +991,7 @@ def logout():
         or ""
     ).strip()
     if token:
-        _auth_tokens.pop(token, None)
+        _delete_auth_token(token)
     session.clear()
     return jsonify({"status": "success", "authenticated": False})
 

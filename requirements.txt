@@ -12,3 +12,5 @@ wikipedia
 groq
 pinecone==5.4.1
 google-auth
+pymongo
+certifi
