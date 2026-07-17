@@ -1044,7 +1044,10 @@ class MarcusBrain:
             km = _get_knowledge_mgr()
             if mm:
                 try:
-                    global_memories = mm.recall_sync(message)
+                    recent_texts = [m.get("content", "") for m in self.memory.get_chat(cid)[-8:]]
+                    global_memories = mm.recall_sync(
+                        message, namespace=self.memory.user_id, exclude_texts=recent_texts,
+                    )
                     if global_memories:
                         print(f"[MEMORY] Injected {len(global_memories)} chars of cross-session memory")
                 except Exception as exc:
@@ -1081,7 +1084,7 @@ class MarcusBrain:
             # ── Save this interaction to Pinecone memory ──────────────
             if mm:
                 try:
-                    mm.save_sync(user_msg, reply, cid)
+                    mm.save_sync(user_msg, reply, cid, namespace=self.memory.user_id)
                 except Exception as exc:
                     print(f"[MEMORY] save_sync failed: {exc}")
 
@@ -1183,7 +1186,10 @@ class MarcusBrain:
             km = _get_knowledge_mgr()
             if mm:
                 try:
-                    global_memories = mm.recall_sync(message)
+                    recent_texts = [m.get("content", "") for m in self.memory.get_chat(cid)[-8:]]
+                    global_memories = mm.recall_sync(
+                        message, namespace=self.memory.user_id, exclude_texts=recent_texts,
+                    )
                     if global_memories:
                         print(f"[STREAM MEMORY] Injected {len(global_memories)} chars of cross-session memory")
                 except Exception as exc:
@@ -1222,7 +1228,7 @@ class MarcusBrain:
             # ── Save this interaction to Pinecone memory ──────────────
             if mm:
                 try:
-                    mm.save_sync(user_msg, full_reply, cid)
+                    mm.save_sync(user_msg, full_reply, cid, namespace=self.memory.user_id)
                 except Exception as exc:
                     print(f"[STREAM MEMORY] save_sync failed: {exc}")
 

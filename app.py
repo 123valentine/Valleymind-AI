@@ -12,7 +12,7 @@ import re
 import secrets
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from threading import Lock
+from threading import Lock, Thread
 from urllib.parse import quote
 
 from flask import Flask, Response, jsonify, request, send_from_directory, session, stream_with_context
@@ -1148,6 +1148,25 @@ def _persist_chat_message(user_id: str, chat_id: str, role: str, content: str, i
         print(f"[Dispatch] Failed to persist {role} message: {exc}")
 
 
+def _embed_media_exchange(user_id: str, prompt: str, kind: str, chat_id: str):
+    """Embed a media-generation exchange into semantic memory, off-thread.
+
+    Text chats are embedded inside MarcusBrain; media generations bypass the
+    brain, so without this a user's "remember that image you made me?" would
+    find nothing.
+    """
+    def _bg():
+        try:
+            from core.brain import _get_memory_mgr
+            mm = _get_memory_mgr()
+            if mm:
+                mm.save_sync(prompt, f"[generated a {kind} for this request]", chat_id, namespace=user_id)
+        except Exception as exc:
+            print(f"[MEMORY] media exchange embed failed: {exc}")
+
+    Thread(target=_bg, daemon=True).start()
+
+
 def _dispatch_image_json(user_id, message, chat_id, image_data):
     """IMAGE → non-streaming JSON.  Reuses the existing ProviderManager image pipeline."""
     print(f"[Router]   Dispatch: IMAGE (json) — prompt={message[:120]!r}")
@@ -1176,6 +1195,7 @@ def _dispatch_image_json(user_id, message, chat_id, image_data):
         provider=result.provider_name, chat_id=chat_id,
     )
     stored_url = media_record["local_path"] if media_record else image_url
+    _embed_media_exchange(user_id, message, "image", chat_id)
 
     _persist_chat_message(user_id, chat_id, "assistant", f"[Image: {stored_url}]", image_url=stored_url)
 
@@ -1248,6 +1268,7 @@ def _dispatch_image_stream(user_id, message, chat_id, image_data):
             provider=result.provider_name, chat_id=resolved_chat_id,
         )
         stored_url = media_record["local_path"] if media_record else image_url
+        _embed_media_exchange(user_id, message, "image", resolved_chat_id)
 
         yield f"data: {json.dumps({'image_url': stored_url, 'revised_prompt': revised})}\n\n"
 
@@ -1555,6 +1576,7 @@ def _dispatch_video_json(user_id, message, chat_id, image_data):
     media = get_media_manager(user_id)
     media_record = media.save_video(task.video_url, prompt=message, provider="AlibabaVideo", chat_id=chat_id)
     stored_url = media_record["local_path"] if media_record else task.video_url
+    _embed_media_exchange(user_id, message, "video", chat_id)
 
     _persist_chat_message(user_id, chat_id, "assistant", f"[Generated video: {message}]")
 
@@ -1590,6 +1612,7 @@ def _dispatch_video_stream(user_id, message, chat_id, image_data):
                 )
                 if media_record:
                     event["video_url"] = media_record["local_path"]
+                _embed_media_exchange(user_id, message, "video", resolved_chat_id)
 
             yield f"data: {json.dumps(event)}\n\n"
 

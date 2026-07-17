@@ -23,8 +23,14 @@ class MemoryManager:
         pinecone>=3.0.0
     """
 
-    EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-3-large").strip()
-    EMBEDDING_DIMS = int(os.getenv("EMBEDDING_DIMS", "3072").strip())
+    EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "openai/text-embedding-3-large").strip()
+    # Must match the Pinecone index dimension (existing indexes are 768).
+    # The `dimensions` request parameter makes text-embedding-3-* return
+    # vectors at exactly this size.
+    EMBEDDING_DIMS = int(os.getenv("EMBEDDING_DIMS", "768").strip())
+    # Calibrated empirically: correct matches score 0.35-0.45, wrong-topic and
+    # unrelated matches score below 0.12. 0.25 sits mid-band with margin.
+    RELEVANCE_THRESHOLD = float(os.getenv("MEMORY_RELEVANCE_THRESHOLD", "0.25").strip())
     OPENROUTER_URL = "https://openrouter.ai/api/v1/embeddings"
 
     def __init__(
@@ -91,7 +97,7 @@ class MemoryManager:
                         "Authorization": f"Bearer {self.openrouter_api_key}",
                         "Content-Type": "application/json",
                     },
-                    json={"model": self.EMBEDDING_MODEL, "input": text},
+                    json={"model": self.EMBEDDING_MODEL, "input": text, "dimensions": self.EMBEDDING_DIMS},
                 )
                 resp.raise_for_status()
                 payload = resp.json()
@@ -117,7 +123,7 @@ class MemoryManager:
                     "Authorization": f"Bearer {self.openrouter_api_key}",
                     "Content-Type": "application/json",
                 },
-                json={"model": self.EMBEDDING_MODEL, "input": text},
+                json={"model": self.EMBEDDING_MODEL, "input": text, "dimensions": self.EMBEDDING_DIMS},
                 timeout=30,
             )
             resp.raise_for_status()
@@ -129,21 +135,10 @@ class MemoryManager:
             logger.error("Unexpected OpenRouter sync response: %s", exc)
             raise
 
-    # ── public async API ─────────────────────────────────────────────
+    # ── shared helpers ───────────────────────────────────────────────
 
-    async def save_to_memory(self, user_input: str, ai_response: str, session_id: str):
-        if not user_input.strip() or not ai_response.strip():
-            logger.warning("save_to_memory skipped — empty input or response")
-            return
-
-        combined = f"User: {user_input}\nAssistant: {ai_response}"
-
-        try:
-            vector = await self._embed(combined)
-        except Exception as exc:
-            logger.error("Embedding failed in save_to_memory: %s", exc)
-            return
-
+    @staticmethod
+    def _build_metadata(user_input: str, ai_response: str, session_id: str) -> tuple[str, dict]:
         metadata = {
             "user_input": user_input,
             "ai_response": ai_response,
@@ -151,17 +146,76 @@ class MemoryManager:
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
         vector_id = f"{session_id}#{datetime.now(timezone.utc).timestamp()}"
+        return vector_id, metadata
 
+    def _format_matches(
+        self,
+        result,
+        min_score: float,
+        exclude_texts: Optional[list[str]] = None,
+    ) -> str:
+        """Filter matches by relevance and format the survivors.
+
+        Returns "" when nothing clears the threshold — the caller injects
+        nothing into context in that case.
+        """
+        matches = list(result.matches) if hasattr(result, "matches") else result.get("matches", [])
+        excluded = {t.strip() for t in (exclude_texts or []) if t and t.strip()}
+
+        lines = []
+        for match in matches:
+            meta = match.metadata if hasattr(match, "metadata") else match.get("metadata", {})
+            score = match.score if hasattr(match, "score") else match.get("score", 0)
+            if score < min_score:
+                continue
+            user_text = (meta or {}).get("user_input", "")
+            ai_text = (meta or {}).get("ai_response", "")
+            # Skip snippets already present in the short-term history block
+            if user_text.strip() in excluded:
+                continue
+            ts = (meta or {}).get("timestamp", "")
+            lines.append(
+                f"[{len(lines) + 1}] (relevance: {score:.3f}, {ts})\n"
+                f"    User: {user_text}\n"
+                f"    Assistant: {ai_text}"
+            )
+
+        if not lines:
+            return ""
+        return "Relevant History:\n" + "\n".join(lines)
+
+    # ── public async API ─────────────────────────────────────────────
+
+    async def save_to_memory(self, user_input: str, ai_response: str, session_id: str, namespace: str = ""):
+        if not user_input.strip() or not ai_response.strip():
+            logger.warning("save_to_memory skipped — empty input or response")
+            return
+
+        try:
+            vector = await self._embed(f"User: {user_input}\nAssistant: {ai_response}")
+        except Exception as exc:
+            logger.error("Embedding failed in save_to_memory: %s", exc)
+            return
+
+        vector_id, metadata = self._build_metadata(user_input, ai_response, session_id)
         try:
             await asyncio.to_thread(
                 self._index.upsert,
                 vectors=[(vector_id, vector, metadata)],
+                namespace=namespace or None,
             )
             logger.info("Upserted memory %s for session %s", vector_id, session_id)
         except Exception as exc:
             logger.error("Pinecone upsert failed: %s", exc)
 
-    async def recall_from_memory(self, user_input: str, top_k: int = 3) -> str:
+    async def recall_from_memory(
+        self,
+        user_input: str,
+        top_k: int = 5,
+        namespace: str = "",
+        min_score: Optional[float] = None,
+        exclude_texts: Optional[list[str]] = None,
+    ) -> str:
         if not user_input.strip():
             return ""
 
@@ -177,33 +231,25 @@ class MemoryManager:
                 vector=query_vector,
                 top_k=top_k,
                 include_metadata=True,
+                namespace=namespace or None,
             )
         except Exception as exc:
             logger.error("Pinecone query failed: %s", exc)
             return ""
 
-        matches = list(result.matches) if hasattr(result, "matches") else result.get("matches", [])
-        if not matches:
-            return ""
-
-        lines = []
-        for i, match in enumerate(matches, 1):
-            meta = match.metadata if hasattr(match, "metadata") else match.get("metadata", {})
-            score = match.score if hasattr(match, "score") else match.get("score", 0)
-            user_text = (meta or {}).get("user_input", "")
-            ai_text = (meta or {}).get("ai_response", "")
-            ts = (meta or {}).get("timestamp", "")
-            lines.append(
-                f"[{i}] (relevance: {score:.3f}, {ts})\n"
-                f"    User: {user_text}\n"
-                f"    Assistant: {ai_text}"
-            )
-
-        return "Relevant History:\n" + "\n".join(lines)
+        threshold = self.RELEVANCE_THRESHOLD if min_score is None else min_score
+        return self._format_matches(result, threshold, exclude_texts)
 
     # ── public sync API (for MarcusBrain respond / stream_respond) ───
 
-    def recall_sync(self, user_input: str, top_k: int = 3) -> str:
+    def recall_sync(
+        self,
+        user_input: str,
+        top_k: int = 5,
+        namespace: str = "",
+        min_score: Optional[float] = None,
+        exclude_texts: Optional[list[str]] = None,
+    ) -> str:
         if not user_input.strip():
             return ""
 
@@ -218,53 +264,29 @@ class MemoryManager:
                 vector=query_vector,
                 top_k=top_k,
                 include_metadata=True,
+                namespace=namespace or None,
             )
         except Exception as exc:
             logger.error("Pinecone query failed in recall_sync: %s", exc)
             return ""
 
-        matches = list(result.matches) if hasattr(result, "matches") else result.get("matches", [])
-        if not matches:
-            return ""
+        threshold = self.RELEVANCE_THRESHOLD if min_score is None else min_score
+        return self._format_matches(result, threshold, exclude_texts)
 
-        lines = []
-        for i, match in enumerate(matches, 1):
-            meta = match.metadata if hasattr(match, "metadata") else match.get("metadata", {})
-            score = match.score if hasattr(match, "score") else match.get("score", 0)
-            user_text = (meta or {}).get("user_input", "")
-            ai_text = (meta or {}).get("ai_response", "")
-            ts = (meta or {}).get("timestamp", "")
-            lines.append(
-                f"[{i}] (relevance: {score:.3f}, {ts})\n"
-                f"    User: {user_text}\n"
-                f"    Assistant: {ai_text}"
-            )
-
-        return "Relevant History:\n" + "\n".join(lines)
-
-    def save_sync(self, user_input: str, ai_response: str, session_id: str):
+    def save_sync(self, user_input: str, ai_response: str, session_id: str, namespace: str = ""):
         if not user_input.strip() or not ai_response.strip():
             logger.warning("save_sync skipped — empty input or response")
             return
 
-        combined = f"User: {user_input}\nAssistant: {ai_response}"
-
         try:
-            vector = self._embed_sync(combined)
+            vector = self._embed_sync(f"User: {user_input}\nAssistant: {ai_response}")
         except Exception as exc:
             logger.error("Embedding failed in save_sync: %s", exc)
             return
 
-        metadata = {
-            "user_input": user_input,
-            "ai_response": ai_response,
-            "session_id": session_id,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        }
-        vector_id = f"{session_id}#{datetime.now(timezone.utc).timestamp()}"
-
+        vector_id, metadata = self._build_metadata(user_input, ai_response, session_id)
         try:
-            self._index.upsert(vectors=[(vector_id, vector, metadata)])
+            self._index.upsert(vectors=[(vector_id, vector, metadata)], namespace=namespace or None)
             logger.info("Saved memory %s for session %s via sync", vector_id, session_id)
         except Exception as exc:
             logger.error("Pinecone upsert failed in save_sync: %s", exc)
