@@ -1328,6 +1328,7 @@ def _dispatch_chat_json(user_id, message, chat_id, image_data):
         "reply": reply,
         "voice": voice,
         "updated_title": updated_title,
+        "sources": meta.get("sources") or [],
         "detected_route": str(meta.get("detected_route") or ""),
         "groq_used": bool(meta.get("groq_used")),
         "live_routing_used": bool(meta.get("live_routing_used")),

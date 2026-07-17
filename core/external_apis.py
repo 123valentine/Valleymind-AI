@@ -1,7 +1,9 @@
 import json
 import os
 import re
+import threading
 from datetime import datetime
+from urllib.parse import urlparse
 import requests
 from groq import Groq
 
@@ -10,6 +12,72 @@ from core.config import get_config
 
 
 LIVE_DATA_UNAVAILABLE = "__LIVE_DATA_UNAVAILABLE__"
+
+# Per-thread capture of the sources behind the most recent search, so the chat
+# layer can surface them in the UI without threading a return value through the
+# entire string-based search pipeline. gunicorn runs threaded, so thread-local
+# keeps concurrent requests from clobbering each other.
+_search_ctx = threading.local()
+
+
+def _reset_search_sources():
+    _search_ctx.sources = []
+
+
+def _record_search_sources(items: list):
+    existing = getattr(_search_ctx, "sources", None)
+    if existing is None:
+        existing = []
+        _search_ctx.sources = existing
+    seen = {s.get("url") for s in existing}
+    for it in items:
+        url = it.get("url") or ""
+        if not url or url in seen:
+            continue
+        seen.add(url)
+        domain = ""
+        try:
+            domain = urlparse(url).netloc.replace("www.", "")
+        except Exception:
+            domain = ""
+        existing.append({"title": it.get("title", ""), "url": url, "domain": domain})
+
+
+def get_last_search_sources() -> list:
+    return list(getattr(_search_ctx, "sources", []) or [])
+
+
+# "search X for Y" / "check X for Z" / "look on X for W" — directed site search.
+_DIRECTED_SEARCH_RE = re.compile(
+    r"\b(?:search|check|look(?:\s+(?:on|at|in))?|find(?:\s+on)?)\s+"
+    r"(?:on\s+)?([a-z0-9][a-z0-9.\-]*\.[a-z]{2,}|[A-Z][a-zA-Z]+)\s+"
+    r"(?:for|about)\s+(.+)",
+    re.IGNORECASE,
+)
+
+# Bare domain words we can map to real hosts when the user names a site casually.
+_KNOWN_SITE_DOMAINS = {
+    "wikipedia": "wikipedia.org", "reddit": "reddit.com", "youtube": "youtube.com",
+    "bbc": "bbc.com", "cnn": "cnn.com", "github": "github.com",
+    "stackoverflow": "stackoverflow.com", "espn": "espn.com", "twitter": "twitter.com",
+    "x": "x.com", "amazon": "amazon.com", "imdb": "imdb.com",
+}
+
+
+def parse_directed_search(message: str):
+    """Return (site_domain, cleaned_query) if the user targeted a site, else (None, message)."""
+    m = _DIRECTED_SEARCH_RE.search(str(message or "").strip())
+    if not m:
+        return None, message
+    site_raw = m.group(1).strip().lower()
+    query = m.group(2).strip().rstrip("?.!")
+    if "." in site_raw:
+        site = site_raw
+    else:
+        site = _KNOWN_SITE_DOMAINS.get(site_raw)
+    if not site:
+        return None, message
+    return site, query
 CURRENT_SEASON = datetime.now().year
 PREMIER_LEAGUE_ID = 39
 
@@ -475,14 +543,18 @@ def _tinyfish_api_key() -> str:
     return os.getenv("TINYFISH_API_KEY", "").strip() or os.getenv("TF_API_KEY", "").strip()
 
 
-def _search_tinyfish(query: str) -> str:
+def _search_tinyfish(query: str, site: str = "") -> str:
     api_key = _tinyfish_api_key()
     if not api_key:
         _log("TinyFish skipped: TINYFISH_API_KEY not set")
         return ""
 
-    current_date_str = datetime.now().strftime("%B %Y")
-    execution_query = f"{query} {current_date_str} news updates"
+    if site:
+        # Directed search: constrain to the requested site, no date padding
+        execution_query = f"site:{site} {query}"
+    else:
+        current_date_str = datetime.now().strftime("%B %Y")
+        execution_query = f"{query} {current_date_str} news updates"
     _log(f"TinyFish query: {execution_query}")
 
     import urllib.request as _urllib_req
@@ -534,13 +606,14 @@ def _search_tinyfish(query: str) -> str:
         }
         for r in results[:5]
     ]
+    _record_search_sources(items)
     _log(f"TinyFish success: {len(items)} results")
     return _format_items("Live search results", items)
 
 
-def _search_general_web(query: str) -> str:
+def _search_general_web(query: str, site: str = "") -> str:
     try:
-        tf_context = _search_tinyfish(query)
+        tf_context = _search_tinyfish(query, site=site)
         if tf_context and tf_context != LIVE_DATA_UNAVAILABLE:
             return tf_context
     except Exception as exc:

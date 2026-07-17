@@ -1666,6 +1666,43 @@ document.addEventListener("click", function (e) {
     }
 });
 
+function renderSourceChips(bubbleEl, sources) {
+    if (!bubbleEl || !Array.isArray(sources) || !sources.length) return;
+    var bub = bubbleEl.querySelector(".bubble") || bubbleEl;
+    if (bub.querySelector(".source-chips")) return; // avoid duplicates
+    var wrap = document.createElement("div");
+    wrap.className = "source-chips";
+    wrap.style.cssText = "display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.08);";
+    var label = document.createElement("span");
+    label.textContent = "Sources";
+    label.style.cssText = "font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:#64748b;width:100%;font-family:'Space Grotesk',sans-serif;";
+    wrap.appendChild(label);
+    sources.slice(0, 6).forEach(function (s) {
+        if (!s || !s.url) return;
+        var domain = s.domain || (function () { try { return new URL(s.url).hostname.replace("www.", ""); } catch (e) { return s.url; } })();
+        var chip = document.createElement("a");
+        chip.href = s.url;
+        chip.target = "_blank";
+        chip.rel = "noopener noreferrer";
+        chip.title = s.title || domain;
+        chip.style.cssText = "display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);color:#cbd5e1;font-size:11px;text-decoration:none;max-width:200px;transition:background 0.15s;";
+        chip.onmouseenter = function () { chip.style.background = "rgba(0,212,255,0.12)"; };
+        chip.onmouseleave = function () { chip.style.background = "rgba(255,255,255,0.05)"; };
+        var fav = document.createElement("img");
+        fav.src = "https://www.google.com/s2/favicons?sz=32&domain=" + encodeURIComponent(domain);
+        fav.width = 14; fav.height = 14;
+        fav.style.cssText = "border-radius:3px;flex-shrink:0;";
+        fav.onerror = function () { fav.style.display = "none"; };
+        var txt = document.createElement("span");
+        txt.textContent = domain;
+        txt.style.cssText = "overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
+        chip.appendChild(fav);
+        chip.appendChild(txt);
+        wrap.appendChild(chip);
+    });
+    bub.appendChild(wrap);
+}
+
 function addMessage(text, type = "ai", imageData, mediaUrl) {
     const container = document.getElementById("messages");
     const welcome = document.getElementById("welcome");
@@ -3338,6 +3375,7 @@ window.send = async function () {
         var bubbleEl = null;
         var streamDone = false;
         var streamMeta = {};
+        var streamSources = [];
         var statusIndicator = null;
 
         while (true) {
@@ -3476,6 +3514,11 @@ window.send = async function () {
                     continue;
                 }
 
+                if (evt.sources !== undefined && Array.isArray(evt.sources) && evt.sources.length) {
+                    streamSources = evt.sources;
+                    continue;
+                }
+
                 if (evt.token !== undefined) {
                     if (evt.token === "" || evt.token === " ") continue;
 
@@ -3526,8 +3569,15 @@ window.send = async function () {
 
         if (!bubbleEl && !streamError) {
             removeThinkingIndicator(thinking);
-            if (fullReply) addMessage(fullReply, "ai");
+            if (fullReply) {
+                addMessage(fullReply, "ai");
+                var msgsC = document.getElementById("messages");
+                bubbleEl = msgsC ? msgsC.lastElementChild : null;
+            }
         }
+
+        var sourcesForRender = (streamSources && streamSources.length) ? streamSources : (streamMeta.sources || []);
+        if (bubbleEl && sourcesForRender.length) renderSourceChips(bubbleEl, sourcesForRender);
 
         if (streamMeta.chat_id && !currentChatId) currentChatId = streamMeta.chat_id;
 

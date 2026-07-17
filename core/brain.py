@@ -13,6 +13,9 @@ from core.external_apis import (
     classify_live_request,
     _search_general_web,
     LIVE_DATA_UNAVAILABLE,
+    parse_directed_search,
+    get_last_search_sources,
+    _reset_search_sources,
 )
 from core.memory import MemorySystem
 from core.memory_manager import MemoryManager
@@ -195,11 +198,12 @@ def _is_continuation_utterance(message: str) -> bool:
 
 
 
-def _fetch_live_context_force(message: str) -> str:
-    print(f"[SEARCH] Live context fetch for: {message[:80]}{'...' if len(message) > 80 else ''}")
+def _fetch_live_context_force(message: str, site: str = "") -> str:
+    label = f"site:{site} " if site else ""
+    print(f"[SEARCH] Live context fetch for: {label}{message[:80]}{'...' if len(message) > 80 else ''}")
 
     try:
-        result = _search_general_web(message)
+        result = _search_general_web(message, site=site)
         if result and result != LIVE_DATA_UNAVAILABLE:
             print(f"[SEARCH] Web search returned {len(result)} chars of live data")
             return result
@@ -1230,21 +1234,28 @@ class MarcusBrain:
                     print(f"[ERROR] Auto-title failed: {exc}")
 
             live_ctx = ""
+            self._pending_sources = []
+            directed_site, directed_query = parse_directed_search(message)
             intent = classify_live_request(message)
+            if directed_site:
+                intent = "search"  # explicit "search X for Y" always searches
             if intent == "none":
                 print(f"[FAST-PATH] LLM classified intent '{intent}' — conversational, no search")
             else:
-                print(f"[LIVE PATH] LLM classified intent '{intent}' — fetching live context")
-                search_message = message
-                if _is_continuation_utterance(message) and msg_count_before > 0:
+                print(f"[LIVE PATH] intent '{intent}' — fetching live context"
+                      + (f" (directed: {directed_site})" if directed_site else ""))
+                search_message = directed_query if directed_site else message
+                if not directed_site and _is_continuation_utterance(message) and msg_count_before > 0:
                     expanded = self._expand_continuation_query(cid, message)
                     if expanded and expanded != message:
                         search_message = expanded
 
                 try:
-                    live_ctx = _fetch_live_context_force(search_message)
+                    _reset_search_sources()
+                    live_ctx = _fetch_live_context_force(search_message, site=directed_site or "")
                     if live_ctx:
-                        print(f"[SEARCH] Live context loaded - injecting {len(live_ctx)} chars into LLM prompt")
+                        self._pending_sources = get_last_search_sources()
+                        print(f"[SEARCH] Live context loaded - {len(live_ctx)} chars, {len(self._pending_sources)} sources")
                     else:
                         print("[SEARCH] No live context found - proceeding with cached knowledge only")
                 except Exception as exc:
@@ -1280,6 +1291,7 @@ class MarcusBrain:
 
             envelope = self._think(cid, message, image_data, live_context=live_ctx, mongo_history=mongo_history, global_memories=global_memories, knowledge_data=knowledge_data)
             self.last_response_meta = envelope.get("meta") or self._metadata(False, True, "local")
+            self.last_response_meta["sources"] = list(getattr(self, "_pending_sources", []) or [])
             raw_reply = str(envelope.get("reply") or "").strip()
             reply = _sanitize_reply_for_chat(raw_reply, "") if raw_reply else FALLBACK_RESPONSE
 
@@ -1349,13 +1361,18 @@ class MarcusBrain:
                     print(f"[ERROR] Auto-title failed: {exc}")
 
             live_ctx = ""
+            self._pending_sources = []
+            directed_site, directed_query = parse_directed_search(message)
             intent = classify_live_request(message)
+            if directed_site:
+                intent = "search"
             if intent == "none":
                 print(f"[FAST-PATH] LLM classified intent '{intent}' — conversational, no search")
             else:
-                print(f"[LIVE PATH] LLM classified intent '{intent}' — fetching live context")
-                search_message = message
-                if _is_continuation_utterance(message) and msg_count_before > 0:
+                print(f"[LIVE PATH] intent '{intent}' — fetching live context"
+                      + (f" (directed: {directed_site})" if directed_site else ""))
+                search_message = directed_query if directed_site else message
+                if not directed_site and _is_continuation_utterance(message) and msg_count_before > 0:
                     expanded = self._expand_continuation_query(cid, message)
                     if expanded and expanded != message:
                         search_message = expanded
@@ -1364,12 +1381,16 @@ class MarcusBrain:
 
                 search_done = threading.Event()
                 search_result = [""]
+                search_sources = [[]]
 
                 def _do_search():
                     try:
-                        result = _fetch_live_context_force(search_message)
+                        _reset_search_sources()
+                        result = _fetch_live_context_force(search_message, site=directed_site or "")
                         if result:
                             search_result[0] = result
+                            # thread-local: must read inside this thread
+                            search_sources[0] = get_last_search_sources()
                     except Exception as exc:
                         print(f"[STREAM SEARCH ERROR] {exc}")
                     finally:
@@ -1385,9 +1406,15 @@ class MarcusBrain:
 
                 t.join(timeout=5)
                 live_ctx = search_result[0]
+                self._pending_sources = search_sources[0] or []
 
                 if live_ctx:
-                    print(f"[STREAM SEARCH] Live context loaded - injecting {len(live_ctx)} chars into LLM prompt")
+                    print(f"[STREAM SEARCH] Live context loaded - {len(live_ctx)} chars, {len(self._pending_sources)} sources")
+                    if self._pending_sources:
+                        # Yield a dict (not a JSON string) so the app.py SSE
+                        # wrapper emits it as a top-level {"sources": …} event
+                        # instead of nesting it inside {"token": …}.
+                        yield {"sources": self._pending_sources}
                 else:
                     print("[STREAM SEARCH] No live context found - proceeding with cached knowledge only")
 
