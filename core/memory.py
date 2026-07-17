@@ -169,8 +169,10 @@ class MemorySystem:
     def recall_preference(self, key: str):
         return self.long_term.get("preferences", {}).get(key)
 
-    def load_memory(self, user_id: str) -> dict:
-        self.user_id = user_id
+    def load_memory(self, user_id: str = "") -> dict:
+        # self.user_id is the storage owner (derived from the memory path at
+        # construction) and scopes every Mongo chat query. It must never be
+        # replaced with a character key, so the argument is ignored.
         return self.reload()
 
     def save_memory(self):

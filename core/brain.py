@@ -979,7 +979,7 @@ class MarcusBrain:
 
     def respond(self, message: str, chat_id: str = "", image_data: str = "", mongo_history: list = None) -> str:
         try:
-            self.memory.load_memory(self.profile.key)
+            self.memory.reload()
 
             message = (message or "").strip()
             if not message and not image_data:
@@ -1099,7 +1099,7 @@ class MarcusBrain:
 
     def stream_respond(self, message: str, chat_id: str = "", image_data: str = "", mongo_history: list = None):
         try:
-            self.memory.load_memory(self.profile.key)
+            self.memory.reload()
             message = (message or "").strip()
             if not message and not image_data:
                 return
