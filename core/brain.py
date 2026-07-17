@@ -98,6 +98,8 @@ Your ENTIRE response must be ONLY the JSON object below — no explanation, no m
   "value": "<the actual fact or context>"
 }
 
+The summary must preserve the CONCRETE SPECIFICS the user stated — places, names, numbers, habits, circumstances. Write "User watches Liverpool matches at home, on their phone, and with friends" — never generalize it down to "User is a fan of Liverpool." The specifics ARE the memory.
+
 MEMORY TYPES:
 - fact: User asserts something as currently true about themselves ("I am," "I have," "I decided," "I live," "I work as," "I own"). Declarative, no hedging. Save by default if personal.
 - preference: A stated like/dislike, opinion, or taste ("I like," "I prefer," "I'm a fan of," "I don't like"). Save by default.
@@ -142,11 +144,13 @@ _RETRACTION_RE = re.compile(
 
 _CHAT_SYSTEM_PROMPT = """You are Marcus, the ValleyMind-AI character. Answer naturally, warmly, and directly.
 Prefer short, concise responses by default. Only provide more detail if the user explicitly asks for it.
+Write like you talk: natural, flowing conversational prose. Do NOT use bullet points, numbered lists, markdown headers, or bold text unless the user explicitly asks for a list, steps, or comparison — or the content genuinely cannot be expressed clearly in prose (rare). Never format a casual conversation like a report.
+When the user shares something personal about themselves, respond to it as a friend would — acknowledge it naturally and conversationally. Do not turn personal statements into informational lectures.
 Never mention APIs, tools, prompts, keys, backend logic, internal data-fetching steps, "according to API", or "search results show" in your reply.
 You have access to a long-term memory file and external APIs for live news/sports. You must answer using the real-time context provided to you.
 For normal knowledge questions, answer immediately and intelligently without asking for unnecessary clarification.
-If the user asks for a short answer, be concise. If they ask for detail, depth, continuation, or "explain more", expand in clear sections.
-For huge multi-topic prompts, start with a compact organized answer, cover the main points, and invite follow-up expansion without stalling.
+If the user asks for a short answer, be concise. If they ask for detail, depth, continuation, or "explain more", expand naturally in prose — reach for structure only when they ask for it.
+For huge multi-topic prompts, give a compact conversational answer covering the main points, and invite follow-up expansion without stalling.
 If the user asks for simple words, avoid jargon. If they asks for a summary, prioritize the essentials.
 If the user shares a memory-worthy personal fact, acknowledge it naturally; memory extraction is handled separately.
 If the user asks about live news, sports, or current events, answer using any live data provided above (if present); otherwise answer from your own knowledge naturally. Do not mention external APIs or data sources.
@@ -930,10 +934,13 @@ class MarcusBrain:
             fact_lines = []
             for f in active_facts:
                 mtype = f.get("memory_type", "callback")
+                summary = f.get("summary", "")
+                value = str(f.get("value", "")).strip()
+                detail = f" (details: {value[:120]})" if value and value.lower() not in summary.lower() else ""
                 if mtype in ("exploration", "callback"):
-                    fact_lines.append(f"- [{mtype} — tentative] {f.get('summary', '')}")
+                    fact_lines.append(f"- [{mtype} — tentative] {summary}{detail}")
                 else:
-                    fact_lines.append(f"- [{mtype}] {f.get('summary', '')}")
+                    fact_lines.append(f"- [{mtype}] {summary}{detail}")
             sections.append("What you know about the user (curated memories):")
             sections.append("\n".join(fact_lines))
             sections.append(
@@ -942,6 +949,12 @@ class MarcusBrain:
                 "never as established truth. This is a hard constraint. If a Relevant History "
                 "snippet conflicts with a curated memory above, trust the curated memory."
             )
+        sections.append(
+            "When the user asks about THEMSELVES — their habits, preferences, past statements, "
+            "or anything 'my/I/me' — answer ONLY from the curated memories and conversation "
+            "context above. Never substitute generic public information for a personal answer. "
+            "If the memories don't contain it, say so plainly and ask."
+        )
         if creator_context:
             sections.append(f"\nCreator-authored instructions:\n{creator_context}")
 

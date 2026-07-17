@@ -181,7 +181,27 @@ def graceful_live_failure(intent: str) -> str:
     return "Live data is unavailable right now, so I cannot verify the current information."
 
 
+_SELF_REFERENTIAL_RE = re.compile(
+    r"\b("
+    r"(where|what|when|how|why|who|which)\s+(do|did|does|am|was|will|would|should|can|could)\s+i\b"
+    r"|what('s| is| was) my\b"
+    r"|(do|did) you (know|remember)\b"
+    r"|remind me (what|about|of)\b"
+    r"|what (did|have) i (say|said|tell|told|mention)\b"
+    r"|about me\b"
+    r")",
+    re.IGNORECASE,
+)
+
+
 def classify_live_request(message: str) -> str:
+    # Questions about the user themselves are answered from memory, never the
+    # web — short-circuit before any LLM call ("where do I watch football?",
+    # "what's my favorite team?").
+    if _SELF_REFERENTIAL_RE.search(str(message or "")):
+        print("[ROUTER AGENT] Self-referential question — memory, not search")
+        return "none"
+
     config = get_config()
     model = get_latest_groq_model()
     api_key = config.groq_api_key
@@ -191,12 +211,21 @@ def classify_live_request(message: str) -> str:
 
     SYSTEM_PROMPT = (
         "You classify user messages as 'CHAT' or 'SEARCH'.\n\n"
-        "Return 'SEARCH' for any query regarding news, current events, sports "
-        "transfers or scores, technology updates, recent developments, or any "
-        "time-sensitive information.\n"
-        "Return 'CHAT' only for basic greetings, casual conversation, identity "
+        "Return 'SEARCH' only when the user is ASKING FOR external, "
+        "time-sensitive information: news, current events, sports transfers "
+        "or scores, technology updates, recent developments.\n"
+        "Return 'CHAT' for basic greetings, casual conversation, identity "
         "questions, or static general knowledge that has no dependency on "
         "current timeline events.\n\n"
+        "CRITICAL RULES:\n"
+        "- Personal statements where the user shares something about THEMSELVES "
+        "('I watch Liverpool matches at home', 'I work as a nurse', 'I'm a fan "
+        "of Arsenal') are ALWAYS 'CHAT', even when they mention teams, news "
+        "topics, or products. Sharing is not asking.\n"
+        "- Questions about the user themselves or about earlier conversation "
+        "('where do I watch football?', 'what did I tell you about my job?', "
+        "'what's my favorite team?') are ALWAYS 'CHAT' — they are answered "
+        "from memory, not the web.\n\n"
         "Respond with exactly ONE word: either 'CHAT' or 'SEARCH'. "
         "Do not include punctuation, brackets, or any extra text."
     )
