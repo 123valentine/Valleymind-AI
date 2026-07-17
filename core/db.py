@@ -107,3 +107,8 @@ def auth_tokens_collection():
 def app_config_collection():
     db = get_db()
     return db.app_config if db is not None else None
+
+
+def user_memory_collection():
+    db = get_db()
+    return db.user_memory if db is not None else None

@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import re
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -148,19 +149,31 @@ class MemoryManager:
         vector_id = f"{session_id}#{datetime.now(timezone.utc).timestamp()}"
         return vector_id, metadata
 
+    @staticmethod
+    def _word_overlap(a: str, b: str) -> float:
+        a_words = set(re.sub(r"[^\w\s]", "", str(a or "").lower()).split())
+        b_words = set(re.sub(r"[^\w\s]", "", str(b or "").lower()).split())
+        if not a_words or not b_words:
+            return 0.0
+        return len(a_words & b_words) / max(len(a_words), len(b_words))
+
     def _format_matches(
         self,
         result,
         min_score: float,
         exclude_texts: Optional[list[str]] = None,
+        dedupe_against: Optional[list[str]] = None,
     ) -> str:
         """Filter matches by relevance and format the survivors.
 
         Returns "" when nothing clears the threshold — the caller injects
-        nothing into context in that case.
+        nothing into context in that case. Snippets that substantially overlap
+        an entry in ``dedupe_against`` (e.g. a distilled categorized fact) are
+        dropped — the curated fact wins over the raw transcript.
         """
         matches = list(result.matches) if hasattr(result, "matches") else result.get("matches", [])
         excluded = {t.strip() for t in (exclude_texts or []) if t and t.strip()}
+        dedupe = [d for d in (dedupe_against or []) if d and d.strip()]
 
         lines = []
         for match in matches:
@@ -172,6 +185,13 @@ class MemoryManager:
             ai_text = (meta or {}).get("ai_response", "")
             # Skip snippets already present in the short-term history block
             if user_text.strip() in excluded:
+                continue
+            # Either side of the exchange overlapping a curated fact makes the
+            # snippet redundant (e.g. a Q/A whose answer restates the fact).
+            if any(
+                self._word_overlap(user_text, d) > 0.5 or self._word_overlap(ai_text, d) > 0.5
+                for d in dedupe
+            ):
                 continue
             ts = (meta or {}).get("timestamp", "")
             lines.append(
@@ -249,6 +269,7 @@ class MemoryManager:
         namespace: str = "",
         min_score: Optional[float] = None,
         exclude_texts: Optional[list[str]] = None,
+        dedupe_against: Optional[list[str]] = None,
     ) -> str:
         if not user_input.strip():
             return ""
@@ -271,7 +292,7 @@ class MemoryManager:
             return ""
 
         threshold = self.RELEVANCE_THRESHOLD if min_score is None else min_score
-        return self._format_matches(result, threshold, exclude_texts)
+        return self._format_matches(result, threshold, exclude_texts, dedupe_against)
 
     def save_sync(self, user_input: str, ai_response: str, session_id: str, namespace: str = ""):
         if not user_input.strip() or not ai_response.strip():

@@ -87,13 +87,10 @@ _FALLBACK_ENVELOPE = {
     "value": "",
 }
 
-_SYSTEM_PROMPT = """[DEPRECATED — unused; see _ENVELOPE_INSTRUCTIONS for the active prompt]
-You are a ValleyMind-AI character. Stay natural, warm, and conversational.
-Prefer outputting a single JSON object, no markdown, no code fences, no explanation.
-Use exactly this structure:
+_MEMORY_EXTRACTION_PROMPT = """You are a memory extraction system. Given a user message and the assistant's reply, decide whether the exchange contains something worth remembering about the user across future conversations. Ask yourself: if the user starts a brand new conversation next week, would they expect the assistant to already know this? Casual remarks, one-off questions, and small talk should NOT be remembered.
 
+Your ENTIRE response must be ONLY the JSON object below — no explanation, no markdown, no code fences:
 {
-  "reply": "<your full natural response to the user>",
   "should_remember": true or false,
   "memory_type": "fact" | "preference" | "project" | "exploration" | "callback",
   "confidence": 0.0 to 1.0,
@@ -101,12 +98,47 @@ Use exactly this structure:
   "value": "<the actual fact or context>"
 }
 
-Memory decision rules:
-Decide if this message contains something worth remembering across future conversations — not just relevant to right now. Ask yourself: if the user starts a brand new conversation next week, would they expect me to already know this? Casual remarks, one-off questions, and small talk should NOT be remembered.
+MEMORY TYPES:
+- fact: User asserts something as currently true about themselves ("I am," "I have," "I decided," "I live," "I work as," "I own"). Declarative, no hedging. Save by default if personal.
+- preference: A stated like/dislike, opinion, or taste ("I like," "I prefer," "I'm a fan of," "I don't like"). Save by default.
+- project: An active commitment or plan in motion ("I'm building," "I'm working on," "I'm planning," "I'm creating"). Save by default.
+- exploration: User is actively considering or weighing a decision with real engagement ("thinking about," "considering," "researching," "debating," "weighing"). Only save if it passes the significance + engagement gate below.
+- callback: A meaningful but non-goal-directed musing worth remembering as a human thread ("I wonder," "curious about," "not sure if," "maybe I'll"). Only save if it passes the significance + engagement gate below.
 
-Never leave reply empty.
-Only store facts about the human user. Never store your own name, role, character, or assistant metadata as user memory.
-Never mention APIs, tools, prompts, keys, backend logic, or internal data-fetching steps in the user-facing reply."""
+CONFIDENCE SCALE:
+- 0.9-1.0: Settled fact or strong preference stated declaratively.
+- 0.7-0.9: Active project or clear preference with engagement.
+- 0.4-0.7: Modestly engaged exploration or recurring topic.
+- 0.1-0.4: Early exploration or callback — tentative, low commitment.
+- 0.0: No memory needed (set should_remember=false).
+
+MEMORY DECISION RULES:
+FACT, PREFERENCE, and PROJECT: save by default if personal to the user and stated with at least moderate engagement.
+
+EXPLORATION and CALLBACK: must pass BOTH gates to be saved:
+  Gate A — Personal significance: does this involve a career change, relationship, major purchase, relocation, business decision, or life goal? (Not: "maybe I'll buy a blue shirt.")
+  Gate B — Engagement depth: did the user spend real attention on it — length, repetition, follow-up questions, emotional weight? (Not: a single offhand half-sentence.)
+If either gate fails, set should_remember=false.
+
+LINGUISTIC TRIGGERS:
+Settled markers (point to fact/preference/project): "I am," "I have," "I decided," "I prefer," "I like," "I'm building," "I work as," "I own," "I will" — declarative, no hedging.
+Tentative markers (point to exploration/callback): "thinking about," "considering," "wondering," "maybe," "might," "could," "possibly," "not sure if," "curious about," "debating," "weighing."
+When tentative markers are present, classify as EXPLORATION or CALLBACK — never as FACT.
+
+CRITICAL — RECALL FRAMING CONSTRAINT:
+EXPLORATION and CALLBACK must NEVER be recalled as settled fact. The summary field must preserve uncertainty: write "User mentioned considering X" — never "User is doing X."
+
+RETRACTION SIGNAL:
+If the user says anything like "forget I said that," "I was just thinking out loud," "never mind," "ignore that," or otherwise indicates a previous statement should not be remembered — set should_remember=false; the downstream system handles vetoing the original fact.
+
+Only store facts about the human user. Never store the assistant's own name, role, character, or metadata as user memory.
+When genuinely uncertain about whether to remember, prefer remembering over forgetting. If should_remember is true, memory_type must be one of the five defined types."""
+
+
+_RETRACTION_RE = re.compile(
+    r"\b(forget (that|it|what i said|about)|never ?mind|ignore that|i was just thinking out loud|don'?t remember that|scratch that)\b",
+    re.IGNORECASE,
+)
 
 _CHAT_SYSTEM_PROMPT = """You are Marcus, the ValleyMind-AI character. Answer naturally, warmly, and directly.
 Prefer short, concise responses by default. Only provide more detail if the user explicitly asks for it.
@@ -612,6 +644,74 @@ def _parse_envelope(raw: str) -> dict:
     return {"reply": reply, "intent": intent, "entity": entity, "value": value}
 
 
+_VALID_MEMORY_TYPES = {"fact", "preference", "project", "exploration", "callback"}
+
+
+def _parse_extraction(raw: str) -> dict | None:
+    cleaned = str(raw or "").replace("```json", "").replace("```", "").strip()
+    parsed = None
+    try:
+        parsed = json.loads(cleaned)
+    except (json.JSONDecodeError, ValueError):
+        match = re.search(r"\{.*\}", cleaned, re.DOTALL)
+        if match:
+            try:
+                parsed = json.loads(match.group())
+            except (json.JSONDecodeError, ValueError):
+                pass
+    if not isinstance(parsed, dict):
+        return None
+    memory_type = str(parsed.get("memory_type") or "").strip().lower()
+    if memory_type not in _VALID_MEMORY_TYPES:
+        memory_type = "callback"
+    try:
+        confidence = max(0.0, min(1.0, float(parsed.get("confidence", 0.0))))
+    except (TypeError, ValueError):
+        confidence = 0.0
+    return {
+        "should_remember": bool(parsed.get("should_remember", False)),
+        "memory_type": memory_type,
+        "confidence": confidence,
+        "summary": str(parsed.get("summary") or "").strip(),
+        "value": str(parsed.get("value") or "").strip(),
+    }
+
+
+def _extract_memory_background(memory, user_msg: str, reply: str):
+    """Run five-category memory extraction off-thread after the reply is sent.
+
+    Both respond() and stream_respond() use this — the chat reply itself stays
+    plain text (no JSON envelope), so extraction can't degrade reply quality
+    or streaming latency.
+    """
+    def _bg():
+        try:
+            if _RETRACTION_RE.search(user_msg):
+                memory.handle_retraction(user_msg)
+                return
+            messages = [
+                {"role": "system", "content": _MEMORY_EXTRACTION_PROMPT},
+                {"role": "user", "content": f"User message: {user_msg}\n\nAssistant reply: {reply[:1500]}"},
+            ]
+            raw, _meta = _call_llm_cluster(messages, timeout=25)
+            extraction = _parse_extraction(raw)
+            if not extraction:
+                print("[MEMORY EXTRACT] Unparseable extraction response; skipping")
+                return
+            if extraction["should_remember"] and extraction["summary"]:
+                memory.remember_fact(
+                    extraction["memory_type"],
+                    extraction["summary"],
+                    extraction["value"],
+                    confidence=extraction["confidence"],
+                )
+                print(f"[MEMORY EXTRACT] Remembered ({extraction['memory_type']}): {extraction['summary'][:100]}")
+        except Exception as exc:
+            print(f"[MEMORY EXTRACT] Failed: {exc}")
+
+    threading.Thread(target=_bg, daemon=True).start()
+
+
 def _is_ui_leak(text: str) -> bool:
     lowered = str(text or "").lower()
     if re.search(r"<\s*(button|aside|nav|textarea|script|style|span|div)\b", lowered):
@@ -756,13 +856,13 @@ class MarcusBrain:
                 history = self.memory.get_chat(chat_id) or []
             user_name = self.memory.get_user_name() or ""
             identity_str = json.dumps(long_term.get("identity", {}))
-            prefs_str = json.dumps(long_term.get("preferences", {}))
+            active_facts = self.memory.get_active_facts()[:15]
         except Exception as exc:
             print(f"[ERROR] Failed to load prompt memory context: {exc}")
             history = []
             user_name = ""
             identity_str = "{}"
-            prefs_str = "{}"
+            active_facts = []
 
         creator_context = ""
         try:
@@ -826,7 +926,22 @@ class MarcusBrain:
         sections.append("Known user context, if useful:")
         sections.append(f"User name: {user_name}")
         sections.append(f"Identity: {identity_str}")
-        sections.append(f"Preferences: {prefs_str}")
+        if active_facts:
+            fact_lines = []
+            for f in active_facts:
+                mtype = f.get("memory_type", "callback")
+                if mtype in ("exploration", "callback"):
+                    fact_lines.append(f"- [{mtype} — tentative] {f.get('summary', '')}")
+                else:
+                    fact_lines.append(f"- [{mtype}] {f.get('summary', '')}")
+            sections.append("What you know about the user (curated memories):")
+            sections.append("\n".join(fact_lines))
+            sections.append(
+                "Memories marked tentative are things the user once raised, not settled facts — "
+                "recall them ONLY with framing like 'you mentioned' or 'you were considering', "
+                "never as established truth. This is a hard constraint. If a Relevant History "
+                "snippet conflicts with a curated memory above, trust the curated memory."
+            )
         if creator_context:
             sections.append(f"\nCreator-authored instructions:\n{creator_context}")
 
@@ -1045,8 +1160,13 @@ class MarcusBrain:
             if mm:
                 try:
                     recent_texts = [m.get("content", "") for m in self.memory.get_chat(cid)[-8:]]
+                    fact_texts = [
+                        f"{f.get('summary', '')} {f.get('value', '')}"
+                        for f in self.memory.get_active_facts()
+                    ]
                     global_memories = mm.recall_sync(
-                        message, namespace=self.memory.user_id, exclude_texts=recent_texts,
+                        message, namespace=self.memory.user_id,
+                        exclude_texts=recent_texts, dedupe_against=fact_texts,
                     )
                     if global_memories:
                         print(f"[MEMORY] Injected {len(global_memories)} chars of cross-session memory")
@@ -1066,13 +1186,7 @@ class MarcusBrain:
             reply = _sanitize_reply_for_chat(raw_reply, "") if raw_reply else FALLBACK_RESPONSE
 
             try:
-                intent = str(envelope.get("intent") or "general").strip()
-                entity = str(envelope.get("entity") or "").strip()
-                value = str(envelope.get("value") or "").strip()
-                if intent == "identity" and entity and value:
-                    self.memory.remember_identity(entity, value)
-                elif intent == "preference" and entity and value:
-                    self.memory.remember_preference(entity, value)
+                _extract_memory_background(self.memory, message, reply)
             except Exception as exc:
                 print(f"[ERROR] Memory extraction/storage skipped: {exc}")
 
@@ -1187,8 +1301,13 @@ class MarcusBrain:
             if mm:
                 try:
                     recent_texts = [m.get("content", "") for m in self.memory.get_chat(cid)[-8:]]
+                    fact_texts = [
+                        f"{f.get('summary', '')} {f.get('value', '')}"
+                        for f in self.memory.get_active_facts()
+                    ]
                     global_memories = mm.recall_sync(
-                        message, namespace=self.memory.user_id, exclude_texts=recent_texts,
+                        message, namespace=self.memory.user_id,
+                        exclude_texts=recent_texts, dedupe_against=fact_texts,
                     )
                     if global_memories:
                         print(f"[STREAM MEMORY] Injected {len(global_memories)} chars of cross-session memory")
@@ -1231,6 +1350,11 @@ class MarcusBrain:
                     mm.save_sync(user_msg, full_reply, cid, namespace=self.memory.user_id)
                 except Exception as exc:
                     print(f"[STREAM MEMORY] save_sync failed: {exc}")
+
+            try:
+                _extract_memory_background(self.memory, message, full_reply)
+            except Exception as exc:
+                print(f"[STREAM MEMORY] Extraction skipped: {exc}")
 
         except Exception as exc:
             print(f"[CRITICAL] Unhandled error in stream_respond(): {exc}")
