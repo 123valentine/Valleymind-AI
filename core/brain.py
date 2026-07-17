@@ -41,6 +41,16 @@ def _get_memory_mgr() -> MemoryManager | None:
 
 
 def _get_knowledge_mgr() -> MemoryManager | None:
+    # DISABLED: the knowledge index was populated by crawler.py, which upserts
+    # RANDOM embedding vectors (np.random.normal), not real embeddings — so
+    # recall against it returns semantic noise that only degrades responses.
+    # It is also dimension-incompatible (built at 3072/384 dims vs the current
+    # 768-dim embedding model). Kept off until the crawler is rebuilt to emit
+    # real embeddings into a compatible index (tracked as a separate task).
+    # Set ENABLE_KNOWLEDGE_INDEX=1 to force-enable once that rebuild lands.
+    if os.getenv("ENABLE_KNOWLEDGE_INDEX", "").strip() not in ("1", "true", "True"):
+        return None
+
     global _knowledge_mgr
     if _knowledge_mgr is None:
         with _pinecone_init_lock:
@@ -355,6 +365,52 @@ def _call_groq_stream(messages: list, model_name: str = "", timeout: int = 30):
         raise
 
 
+def _call_llm_cluster_stream(messages: list, timeout: int = 30):
+    """Stream tokens with full provider failover, invisible to the user.
+
+    Groq streams natively token-by-token. If Groq fails at any point BEFORE
+    emitting output, we fall through to the non-streaming cluster (OpenRouter →
+    NVIDIA → Gemini → ProviderManager) and yield its full result as one chunk —
+    the user still gets a real answer, never an apology, as long as any single
+    provider succeeds. Raises only if literally every provider fails.
+    """
+    config = get_config()
+
+    # ── Primary: Groq streaming ──────────────────────────────────────
+    if config.groq_api_key:
+        try:
+            model = get_latest_groq_model()
+            if model:
+                emitted = False
+                try:
+                    for token in _call_groq_stream(messages, model, timeout=timeout):
+                        emitted = True
+                        yield token
+                    if emitted:
+                        print("[LLM CLUSTER STREAM] Response served by: Groq")
+                        return
+                    # 200 but no content — treat as failure, fall through
+                    print("[LLM CLUSTER STREAM] Groq streamed no content. Rotating to fallback cluster.")
+                except Exception as exc:
+                    if emitted:
+                        # Already sent partial output; can't cleanly restart on
+                        # another provider mid-stream, so end here.
+                        print(f"[LLM CLUSTER STREAM] Groq failed mid-stream after output: {_short_error_detail(str(exc))}")
+                        return
+                    print(f"[LLM CLUSTER STREAM] Groq failed before output: {_short_error_detail(str(exc))}. Rotating to fallback cluster.")
+            else:
+                print("[LLM CLUSTER STREAM] Groq skipped: no model resolved. Rotating to fallback cluster.")
+        except Exception as exc:
+            print(f"[LLM CLUSTER STREAM] Groq setup failed: {_short_error_detail(str(exc))}. Rotating to fallback cluster.")
+    else:
+        print("[LLM CLUSTER STREAM] Groq unavailable: no API key. Rotating to fallback cluster.")
+
+    # ── Fallbacks: reuse the non-streaming rotation, emit as one chunk ─
+    response, meta = _call_llm_cluster_impl(messages, timeout=timeout)
+    print(f"[LLM CLUSTER STREAM] Response served by: {_served_by(meta)} (non-streamed fallback)")
+    yield response
+
+
 def _call_openai_compat(
     messages: list,
     model: str,
@@ -461,7 +517,20 @@ def _call_gemini(
     return text.strip()
 
 
-def _call_llm_cluster(
+def _served_by(meta: dict) -> str:
+    if meta.get("groq_used"):
+        return "Groq"
+    return meta.get("fallback_source") or "unknown"
+
+
+def _call_llm_cluster(messages: list, timeout: int = 30) -> tuple[str, dict]:
+    """Multi-provider LLM routing with full failover; logs which provider served."""
+    response, meta = _call_llm_cluster_impl(messages, timeout=timeout)
+    print(f"[LLM CLUSTER] Response served by: {_served_by(meta)}")
+    return response, meta
+
+
+def _call_llm_cluster_impl(
     messages: list,
     timeout: int = 30,
 ) -> tuple[str, dict]:
@@ -941,19 +1010,35 @@ class MarcusBrain:
                     fact_lines.append(f"- [{mtype} — tentative] {summary}{detail}")
                 else:
                     fact_lines.append(f"- [{mtype}] {summary}{detail}")
-            sections.append("What you know about the user (curated memories):")
+            sections.append("What you quietly know about the user (background context — NOT a script to recite):")
             sections.append("\n".join(fact_lines))
             sections.append(
+                "These are background context to help you understand who you're talking to. "
+                "Let them shape your tone and word choice subtly — do NOT announce them, list "
+                "them back, or bring them up unless the user's current message is actually about "
+                "that topic. A greeting like 'hi' gets a warm greeting back, not a recital of "
+                "what you remember. Weaving a remembered detail in naturally when it's relevant is "
+                "good; performing your memory is not.\n"
                 "Memories marked tentative are things the user once raised, not settled facts — "
-                "recall them ONLY with framing like 'you mentioned' or 'you were considering', "
-                "never as established truth. This is a hard constraint. If a Relevant History "
-                "snippet conflicts with a curated memory above, trust the curated memory."
+                "if they do come up, frame them ONLY with 'you mentioned' or 'you were "
+                "considering', never as established truth. If a Relevant History snippet conflicts "
+                "with a curated memory above, trust the curated memory."
             )
         sections.append(
-            "When the user asks about THEMSELVES — their habits, preferences, past statements, "
-            "or anything 'my/I/me' — answer ONLY from the curated memories and conversation "
+            "When the user directly asks about THEMSELVES — their habits, preferences, past "
+            "statements, or anything 'my/I/me' — answer from the curated memories and conversation "
             "context above. Never substitute generic public information for a personal answer. "
             "If the memories don't contain it, say so plainly and ask."
+        )
+        sections.append(
+            "You do NOT have live knowledge of the current state of the world unless real-time "
+            "context is provided to you in this prompt. Never assert or assume the current state "
+            "of time-sensitive things — which sports season is underway, current standings or "
+            "scores, who currently holds an office, what is 'in the news', what date-dependent "
+            "situation is happening now. If no live data is provided and the user's message "
+            "depends on current state, don't fake it: ask what they're following, or answer "
+            "without assuming the present moment (e.g. don't say 'how's the season going' when "
+            "you don't know if a season is even active)."
         )
         if creator_context:
             sections.append(f"\nCreator-authored instructions:\n{creator_context}")
@@ -1338,11 +1423,11 @@ class MarcusBrain:
             full_reply = ""
 
             try:
-                for token in _call_groq_stream(msgs):
+                for token in _call_llm_cluster_stream(msgs):
                     full_reply += token
                     yield token
             except Exception as exc:
-                print(f"[STREAM ERROR] Groq streaming failed: {exc}")
+                print(f"[STREAM ERROR] All LLM providers failed: {_short_error_detail(str(exc))}")
                 fallback = "I apologize, but I'm having trouble processing your request right now."
                 full_reply = fallback
                 yield fallback
