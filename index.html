@@ -1703,7 +1703,7 @@ function renderSourceChips(bubbleEl, sources) {
     bub.appendChild(wrap);
 }
 
-function addMessage(text, type = "ai", imageData, mediaUrl) {
+function addMessage(text, type = "ai", imageData, mediaUrl, videoUrl) {
     const container = document.getElementById("messages");
     const welcome = document.getElementById("welcome");
     if (!container) return;
@@ -1714,6 +1714,7 @@ function addMessage(text, type = "ai", imageData, mediaUrl) {
     var msgObj = { role: type === "user" ? "user" : "assistant", content: displayText, reaction: null };
     if (imageData) msgObj.image_data = imageData;
     if (mediaUrl) msgObj.media_url = mediaUrl;
+    if (videoUrl) msgObj.video_url = videoUrl;
     messageStore.push(msgObj);
 
     const wrapper = document.createElement("div");
@@ -1733,7 +1734,13 @@ function addMessage(text, type = "ai", imageData, mediaUrl) {
     var imageUrlFromText = imageMatch ? imageMatch[1].trim() : "";
     var textWithoutImage = displayText.replace(/\n?\n?\[Image:[^\]]*\]\s*$/, "").trim();
 
+    // Strip a trailing [Video: url] tag and recover the URL if no field was passed
+    var videoMatch = textWithoutImage.match(/\[Video:\s*([^\]]+)\]/);
+    var videoUrlFromText = videoMatch ? videoMatch[1].trim() : "";
+    var textWithoutMedia = textWithoutImage.replace(/\n?\n?\[Video:[^\]]*\]\s*$/, "").trim();
+
     var finalImageUrl = mediaUrl || imageUrlFromText;
+    var finalVideoUrl = videoUrl || videoUrlFromText;
 
     if (finalImageUrl && type === "ai") {
         var chatImgWrap = document.createElement("div");
@@ -1748,9 +1755,22 @@ function addMessage(text, type = "ai", imageData, mediaUrl) {
         bubble.appendChild(chatImgWrap);
     }
 
-    if (textWithoutImage) {
+    if (finalVideoUrl && type === "ai") {
+        var chatVidWrap = document.createElement("div");
+        chatVidWrap.style.cssText = "margin-bottom:8px;";
+        var chatVid = document.createElement("video");
+        chatVid.src = finalVideoUrl;
+        chatVid.controls = true;
+        chatVid.playsInline = true;
+        chatVid.preload = "metadata";
+        chatVid.style.cssText = "max-width:100%;max-height:400px;border-radius:12px;display:block;background:#0f172a;";
+        chatVidWrap.appendChild(chatVid);
+        bubble.appendChild(chatVidWrap);
+    }
+
+    if (textWithoutMedia) {
         var txtSpan = document.createElement("span");
-        txtSpan.textContent = textWithoutImage;
+        txtSpan.textContent = textWithoutMedia;
         bubble.appendChild(txtSpan);
     }
 
@@ -1883,8 +1903,9 @@ function renderChatHistory(messages) {
         var imageData = message.image_data || null;
 
         var mediaUrl = message.image_url || "";
+        var videoUrl = message.video_url || "";
 
-        addMessage(content, role, imageData, mediaUrl);
+        addMessage(content, role, imageData, mediaUrl, videoUrl);
         if (message.reaction) {
             const idx = messageStore.length - 1;
             messageStore[idx].reaction = message.reaction;

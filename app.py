@@ -1136,14 +1136,14 @@ def chat():
 # directly — no duplication of business logic.
 
 
-def _persist_chat_message(user_id: str, chat_id: str, role: str, content: str, image_url: str = ""):
+def _persist_chat_message(user_id: str, chat_id: str, role: str, content: str, image_url: str = "", video_url: str = ""):
     """Persist a single message to Marcus memory (best-effort)."""
     marcus = load_marcus(user_id)
     if not marcus:
         return
     resolved = chat_id or f"{marcus.profile.key}_main_chat"
     try:
-        marcus.memory.add_message(resolved, role, content, image_url=image_url)
+        marcus.memory.add_message(resolved, role, content, image_url=image_url, video_url=video_url)
     except Exception as exc:
         print(f"[Dispatch] Failed to persist {role} message: {exc}")
 
@@ -1165,6 +1165,82 @@ def _embed_media_exchange(user_id: str, prompt: str, kind: str, chat_id: str):
             print(f"[MEMORY] media exchange embed failed: {exc}")
 
     Thread(target=_bg, daemon=True).start()
+
+
+def _safe_persist_url(media_record: dict | None, source_url: str) -> str:
+    """Resolve the URL to persist for a media message. Prefer our permanent
+    GridFS path. If the GridFS save failed, only fall back to a URL that is our
+    OWN (``/static/...``) — never an external provider URL, which may carry an
+    expiry and rot. Returns "" if there's nothing safe to persist."""
+    if media_record and media_record.get("local_path"):
+        return media_record["local_path"]
+    if source_url.startswith("/static/"):
+        return source_url
+    return ""
+
+
+def _spawn_video_generation(user_id: str, chat_id: str, message: str) -> dict:
+    """Run the full video lifecycle (generate → download → GridFS save → persist)
+    in a background daemon thread, so it completes even if the browser
+    disconnects mid-generation. Returns a mutable ``state`` dict the SSE stream
+    can observe for progress and the final permanent URL.
+
+    The chat message is persisted with our OWN permanent GridFS URL — never the
+    provider's temporary signed URL (which carries an Expires param and would
+    rot within hours).
+    """
+    state = {"done": False, "status": "submitted", "stored_url": "", "error": ""}
+
+    def _run():
+        try:
+            dispatcher = get_video_dispatcher()
+            task = dispatcher.generate(message)
+            if task.status.value == "failed" or not task.video_url:
+                state.update(done=True, status="failed", error=task.error or "Video generation failed")
+                print(f"[VIDEO] Background generation failed: {task.error}")
+                return
+
+            media = get_media_manager(user_id)
+            media_record = media.save_video(
+                task.video_url, prompt=message, provider="AlibabaVideo", chat_id=chat_id,
+            )
+            stored_url = media_record["local_path"] if media_record else ""
+            if not stored_url:
+                state.update(done=True, status="failed", error="Video generated but could not be saved")
+                print("[VIDEO] Background save to gallery failed")
+                return
+
+            # Persist with our permanent URL so the video shows in the chat on
+            # every future reload, independent of the browser session.
+            _persist_chat_message(user_id, chat_id, "assistant", f"[Video: {stored_url}]", video_url=stored_url)
+            _embed_media_exchange(user_id, message, "video", chat_id)
+            state.update(done=True, status="completed", stored_url=stored_url)
+            print(f"[VIDEO] Background generation complete, persisted {stored_url}")
+        except Exception as exc:
+            state.update(done=True, status="failed", error=str(exc))
+            print(f"[VIDEO] Background generation crashed: {exc}")
+
+    Thread(target=_run, daemon=True).start()
+    return state
+
+
+def _stream_video_state(state: dict, resolved_chat_id: str, updated_title=None):
+    """SSE generator that tails a background video ``state`` and emits progress,
+    the final permanent URL, then done. Safe to abandon: if the client
+    disconnects, the background thread still finishes the save + persist."""
+    import time as _time
+    yield f"data: {json.dumps({'intent': 'generating_video', 'query': '', 'status': 'preparing', 'status_message': 'Preparing video generation...'})}\n\n"
+    while not state["done"]:
+        _time.sleep(2)
+        yield f"data: {json.dumps({'intent': 'video_progress', 'status': state['status'], 'status_message': 'Generating video, this can take a few minutes...'})}\n\n"
+    if state["error"]:
+        yield f"data: {json.dumps({'error': state['error']})}\n\n"
+    else:
+        yield f"data: {json.dumps({'video_url': state['stored_url']})}\n\n"
+    done_evt = {'done': True, 'chat_id': resolved_chat_id}
+    if updated_title:
+        done_evt['updated_title'] = updated_title
+    yield f"data: {json.dumps(done_evt)}\n\n"
 
 
 def _dispatch_image_json(user_id, message, chat_id, image_data):
@@ -1194,7 +1270,9 @@ def _dispatch_image_json(user_id, message, chat_id, image_data):
         image_url, prompt=message, revised_prompt=revised,
         provider=result.provider_name, chat_id=chat_id,
     )
-    stored_url = media_record["local_path"] if media_record else image_url
+    stored_url = _safe_persist_url(media_record, image_url)
+    if not stored_url:
+        return jsonify({"status": "error", "message": "Image generated but could not be saved. Please try again."}), 500
     _embed_media_exchange(user_id, message, "image", chat_id)
 
     _persist_chat_message(user_id, chat_id, "assistant", f"[Image: {stored_url}]", image_url=stored_url)
@@ -1267,7 +1345,11 @@ def _dispatch_image_stream(user_id, message, chat_id, image_data):
             image_url, prompt=message, revised_prompt=revised,
             provider=result.provider_name, chat_id=resolved_chat_id,
         )
-        stored_url = media_record["local_path"] if media_record else image_url
+        stored_url = _safe_persist_url(media_record, image_url)
+        if not stored_url:
+            yield f"data: {json.dumps({'error': 'Image generated but could not be saved. Please try again.'})}\n\n"
+            yield f"data: {json.dumps({'done': True, 'chat_id': resolved_chat_id, 'updated_title': updated_title})}\n\n"
+            return
         _embed_media_exchange(user_id, message, "image", resolved_chat_id)
 
         yield f"data: {json.dumps({'image_url': stored_url, 'revised_prompt': revised})}\n\n"
@@ -1576,10 +1658,15 @@ def _dispatch_video_json(user_id, message, chat_id, image_data):
 
     media = get_media_manager(user_id)
     media_record = media.save_video(task.video_url, prompt=message, provider="AlibabaVideo", chat_id=chat_id)
-    stored_url = media_record["local_path"] if media_record else task.video_url
+    if not media_record:
+        # Never fall back to task.video_url — it's a temporary signed URL that
+        # would rot. If GridFS save failed, report failure rather than persist
+        # a link that dies within hours.
+        return jsonify({"status": "error", "message": "Video generated but could not be saved. Please try again."}), 500
+    stored_url = media_record["local_path"]
     _embed_media_exchange(user_id, message, "video", chat_id)
 
-    _persist_chat_message(user_id, chat_id, "assistant", f"[Generated video: {message}]")
+    _persist_chat_message(user_id, chat_id, "assistant", f"[Video: {stored_url}]", video_url=stored_url)
 
     return jsonify({
         "status": "success",
@@ -1590,7 +1677,8 @@ def _dispatch_video_json(user_id, message, chat_id, image_data):
 
 
 def _dispatch_video_stream(user_id, message, chat_id, image_data):
-    """VIDEO → SSE stream.  Streams lifecycle progress events, then final video URL."""
+    """VIDEO → SSE stream. Generation runs in a background thread (survives
+    client disconnect); the stream just tails its progress."""
     print(f"[Router]   Dispatch: VIDEO (stream) — prompt={message[:120]!r}")
 
     marcus = load_marcus(user_id)
@@ -1602,35 +1690,10 @@ def _dispatch_video_stream(user_id, message, chat_id, image_data):
         except Exception:
             pass
 
-    dispatcher = get_video_dispatcher()
-
-    def generate():
-        for event in dispatcher.generate_stream(message):
-            if event.get("video_url"):
-                media = get_media_manager(user_id)
-                media_record = media.save_video(
-                    event["video_url"], prompt=message, provider="AlibabaVideo", chat_id=resolved_chat_id,
-                )
-                if media_record:
-                    event["video_url"] = media_record["local_path"]
-                _embed_media_exchange(user_id, message, "video", resolved_chat_id)
-
-            yield f"data: {json.dumps(event)}\n\n"
-
-            # Persist on completion
-            if event.get("video_url") and marcus:
-                try:
-                    marcus.memory.add_message(
-                        resolved_chat_id, "assistant",
-                        f"[Generated video: {message}]"
-                    )
-                except Exception:
-                    pass
-
-        yield f"data: {json.dumps({'done': True, 'chat_id': resolved_chat_id})}\n\n"
+    state = _spawn_video_generation(user_id, resolved_chat_id, message)
 
     return Response(
-        stream_with_context(generate()),
+        stream_with_context(_stream_video_state(state, resolved_chat_id)),
         mimetype='text/event-stream',
         headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no', 'Connection': 'keep-alive'},
     )
@@ -1656,21 +1719,22 @@ def _dispatch_video_text_json(user_id, message, chat_id, image_data):
     task = dispatcher.generate(message)
 
     video_url = ""
-    if task.status.value != "failed":
-        video_url = task.video_url
-        print(f"[Router]   VIDEO success — video_url={video_url}")
+    if task.status.value != "failed" and task.video_url:
+        print(f"[Router]   VIDEO success — provider url received")
         media = get_media_manager(user_id)
-        media_record = media.save_video(video_url, prompt=message, provider="AlibabaVideo", chat_id=chat_id)
+        media_record = media.save_video(task.video_url, prompt=message, provider="AlibabaVideo", chat_id=chat_id)
         if media_record:
-            video_url = media_record["local_path"]
+            video_url = media_record["local_path"]  # permanent GridFS URL only
+        else:
+            print("[Router]   VIDEO save-to-gallery failed; not persisting a temporary URL")
     else:
         print(f"[Router]   VIDEO failed: {task.error}")
 
     # ── 3. Persist ────────────────────────────────────────────────────
     assistant_content = text_reply
     if video_url:
-        assistant_content += f"\n\n[Generated video: {message}]"
-    _persist_chat_message(user_id, chat_id, "assistant", assistant_content)
+        assistant_content += f"\n\n[Video: {video_url}]"
+    _persist_chat_message(user_id, chat_id, "assistant", assistant_content, video_url=video_url)
 
     voice = (
         {"enabled": True, "spoken": False, "engine": "browser", "reason": "reply too long for blocking server TTS"}
@@ -1742,28 +1806,10 @@ def _dispatch_video_text_stream(user_id, message, chat_id, image_data):
             except Exception as exc:
                 yield f"data: {json.dumps({'error': str(exc)})}\n\n"
 
-        # ── 2. Generate video via VideoDispatcher ─────────────────────
-        for event in dispatcher.generate_stream(message):
-            if event.get("video_url"):
-                media = get_media_manager(user_id)
-                media_record = media.save_video(
-                    event["video_url"], prompt=message, provider="AlibabaVideo", chat_id=resolved_chat_id,
-                )
-                if media_record:
-                    event["video_url"] = media_record["local_path"]
-
-            yield f"data: {json.dumps(event)}\n\n"
-
-            if event.get("video_url") and marcus:
-                try:
-                    marcus.memory.add_message(
-                        resolved_chat_id, "assistant",
-                        f"[Generated video: {message}]"
-                    )
-                except Exception:
-                    pass
-
-        yield f"data: {json.dumps({'done': True, 'chat_id': resolved_chat_id, 'updated_title': updated_title})}\n\n"
+        # ── 2. Generate video in background (survives disconnect), tail it ─
+        state = _spawn_video_generation(user_id, resolved_chat_id, message)
+        for chunk in _stream_video_state(state, resolved_chat_id, updated_title=updated_title):
+            yield chunk
 
     return Response(
         stream_with_context(generate()),

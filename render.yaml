@@ -33,7 +33,7 @@ services:
       # Video generation holds a request for 5-10 min; workers must not be
       # reaped mid-generation. See gunicorn.conf.py.
       - key: GUNICORN_TIMEOUT
-        value: "1200"
+        value: "900"
       - key: GUNICORN_THREADS
         value: "4"
 
