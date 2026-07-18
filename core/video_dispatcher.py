@@ -21,10 +21,15 @@ Usage in app.py:
 from __future__ import annotations
 
 import importlib
+import os
 import time
 from typing import Any, Iterator
 
 from core.config import get_config
+
+# wan2.7-t2v routinely renders for 5-10 minutes, well past the old 300s cap.
+# Configurable so the ceiling can be tuned without a code change.
+_DEFAULT_MAX_POLL = int(os.getenv("VIDEO_MAX_POLL_SECONDS", "900"))
 from core.video_providers.base import (
     BaseVideoProvider,
     VideoTask,
@@ -138,7 +143,7 @@ class VideoDispatcher:
 
         # ── Poll until terminal ──────────────────────────────────────
         last_status = task.status
-        deadline = time.time() + kwargs.get("max_poll_seconds", 300)
+        deadline = time.time() + kwargs.get("max_poll_seconds", _DEFAULT_MAX_POLL)
 
         while not task.is_terminal and time.time() < deadline:
             time.sleep(kwargs.get("poll_interval", 5.0))
@@ -210,7 +215,7 @@ class VideoDispatcher:
 
     def _poll_until_done(self, task: VideoTask, **kwargs: Any) -> VideoTask:
         """Poll until terminal state or timeout."""
-        max_seconds = kwargs.get("max_poll_seconds", 300)
+        max_seconds = kwargs.get("max_poll_seconds", _DEFAULT_MAX_POLL)
         interval = kwargs.get("poll_interval", 5.0)
         deadline = time.time() + max_seconds
 

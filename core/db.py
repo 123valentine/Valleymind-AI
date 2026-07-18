@@ -44,7 +44,9 @@ def get_db():
                 uri,
                 serverSelectionTimeoutMS=10000,
                 connectTimeoutMS=10000,
-                socketTimeoutMS=30000,
+                # Generous socket timeout so multi-MB GridFS video uploads don't
+                # abort mid-write on slower links (videos can be ~10MB+).
+                socketTimeoutMS=120000,
                 maxPoolSize=10,
                 minPoolSize=1,
                 retryWrites=True,

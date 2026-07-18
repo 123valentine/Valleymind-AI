@@ -14,6 +14,7 @@ The API is fully asynchronous:
 
 from __future__ import annotations
 
+import os
 import time
 import uuid
 from datetime import datetime
@@ -27,9 +28,19 @@ from core.video_providers.base import BaseVideoProvider, VideoTask, VideoTaskSta
 
 
 # ── Endpoints ──────────────────────────────────────────────────────
+# Singapore / International accounts must use dashscope-intl.aliyuncs.com for
+# the DashScope video API (NOT maas.aliyuncs.com, which is only the
+# OpenAI/Anthropic-compatible text gateway). Override with DASHSCOPE_BASE if the
+# account is on the China mainland region (dashscope.aliyuncs.com).
 
-ALIBABA_VIDEO_URL = "https://dashscope.aliyuncs.com/api/v1/services/aigc/video-generation/generation"
-ALIBABA_TASK_URL = "https://dashscope.aliyuncs.com/api/v1/tasks"
+_DASHSCOPE_BASE = os.getenv("DASHSCOPE_BASE", "https://dashscope-intl.aliyuncs.com").rstrip("/")
+# wan2.7-era models use the .../video-synthesis path (the older wanx2.1 models
+# used .../generation, which now returns "url error" for wan2.7).
+ALIBABA_VIDEO_URL = f"{_DASHSCOPE_BASE}/api/v1/services/aigc/video-generation/video-synthesis"
+ALIBABA_TASK_URL = f"{_DASHSCOPE_BASE}/api/v1/tasks"
+
+# Current Singapore Wan text-to-video model (override with ALIBABA_VIDEO_MODEL).
+_DEFAULT_VIDEO_MODEL = os.getenv("ALIBABA_VIDEO_MODEL", "wan2.7-t2v-2026-06-12").strip()
 
 # Polling configuration
 POLL_INTERVAL = 5.0        # seconds between polls
@@ -104,16 +115,18 @@ class AlibabaVideoProvider(BaseVideoProvider):
             if not prompt:
                 raise RuntimeError("No prompt provided for video generation")
 
-            model = kwargs.get("model", "wanx2.1-t2v-turbo")
+            model = kwargs.get("model") or _DEFAULT_VIDEO_MODEL
 
             resp = requests.post(
                 ALIBABA_VIDEO_URL,
-                headers=_headers(),
+                # The video-synthesis endpoint is async-only: without this header
+                # DashScope rejects with "current user api does not support
+                # synchronous calls".
+                headers={**_headers(), "X-DashScope-Async": "enable"},
                 json={
                     "model": model,
                     "input": {"prompt": prompt},
                     "parameters": {
-                        "duration": kwargs.get("duration", "5"),
                         "size": kwargs.get("size", "1280*720"),
                     },
                 },
