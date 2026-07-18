@@ -39,6 +39,7 @@ def _discover_providers() -> list[BaseVideoProvider]:
     providers: list[BaseVideoProvider] = []
     module_paths = [
         "core.video_providers.alibaba",
+        "core.video_providers.fal",
     ]
 
     for module_path in module_paths:
