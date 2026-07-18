@@ -262,12 +262,31 @@ _SELF_REFERENTIAL_RE = re.compile(
 )
 
 
-def classify_live_request(message: str) -> str:
+# Short reactions / elaboration asks that continue the current thread. After a
+# search, these should draw on what was already found, not trigger a fresh one.
+_FOLLOWUP_RE = re.compile(
+    r"^\s*(oh+|ah+|wow|nice|cool|great|awesome|interesting|lol|haha|ok(ay)?|"
+    r"i see|got it|thanks?|thank you|yeah|yep|yes|no|right|true|makes sense|"
+    r"tell me more|go on|continue|more|elaborate|explain( more)?|why\??|how so\??|"
+    r"what do you think|really\??|and\?|so\?|hmm+)\s*[.!?]*\s*$",
+    re.IGNORECASE,
+)
+
+
+def classify_live_request(message: str, recent_context: str = "") -> str:
+    msg = str(message or "")
+
     # Questions about the user themselves are answered from memory, never the
     # web — short-circuit before any LLM call ("where do I watch football?",
     # "what's my favorite team?").
-    if _SELF_REFERENTIAL_RE.search(str(message or "")):
+    if _SELF_REFERENTIAL_RE.search(msg):
         print("[ROUTER AGENT] Self-referential question — memory, not search")
+        return "none"
+
+    # Conversational follow-ups / reactions continue the current thread from
+    # context — never a fresh search ("oh nice", "tell me more", "why?").
+    if _FOLLOWUP_RE.match(msg):
+        print("[ROUTER AGENT] Conversational follow-up — no re-search")
         return "none"
 
     config = get_config()
@@ -278,32 +297,44 @@ def classify_live_request(message: str) -> str:
         return "CHAT"
 
     SYSTEM_PROMPT = (
-        "You classify user messages as 'CHAT' or 'SEARCH'.\n\n"
-        "Return 'SEARCH' only when the user is ASKING FOR external, "
-        "time-sensitive information: news, current events, sports transfers "
-        "or scores, technology updates, recent developments.\n"
-        "Return 'CHAT' for basic greetings, casual conversation, identity "
-        "questions, or static general knowledge that has no dependency on "
-        "current timeline events.\n\n"
+        "You classify the user's LATEST message as 'CHAT' or 'SEARCH'.\n\n"
+        "Return 'SEARCH' only when the latest message is ASKING FOR external, "
+        "time-sensitive information NOT already covered in the recent "
+        "conversation: news, current events, sports transfers or scores, "
+        "technology updates, recent developments, live facts.\n"
+        "Return 'CHAT' for greetings, casual conversation, identity questions, "
+        "or static general knowledge.\n\n"
         "CRITICAL RULES:\n"
         "- Personal statements where the user shares something about THEMSELVES "
-        "('I watch Liverpool matches at home', 'I work as a nurse', 'I'm a fan "
-        "of Arsenal') are ALWAYS 'CHAT', even when they mention teams, news "
-        "topics, or products. Sharing is not asking.\n"
-        "- Questions about the user themselves or about earlier conversation "
-        "('where do I watch football?', 'what did I tell you about my job?', "
-        "'what's my favorite team?') are ALWAYS 'CHAT' — they are answered "
-        "from memory, not the web.\n\n"
+        "('I watch Liverpool matches at home', 'I work as a nurse') are ALWAYS "
+        "'CHAT', even when they mention teams, news topics, or products. "
+        "Sharing is not asking.\n"
+        "- Questions about the user themselves or earlier conversation "
+        "('where do I watch football?', 'what did I tell you about my job?') "
+        "are ALWAYS 'CHAT' — answered from memory, not the web.\n"
+        "- CONVERSATION CONTINUITY: if a search already happened and the latest "
+        "message is reacting to, asking to elaborate on, or discussing what was "
+        "JUST found ('tell me more about that', 'what do you think?', 'why did "
+        "that happen?'), classify 'CHAT' — the information is already in "
+        "context. Only classify 'SEARCH' if the latest message asks for "
+        "genuinely NEW live data not already covered above.\n\n"
         "Respond with exactly ONE word: either 'CHAT' or 'SEARCH'. "
-        "Do not include punctuation, brackets, or any extra text."
+        "No punctuation, no extra text."
     )
+
+    user_content = msg
+    if recent_context:
+        user_content = (
+            f"Recent conversation (for continuity — do NOT re-search what's "
+            f"already here):\n{recent_context}\n\nLatest message to classify:\n{msg}"
+        )
 
     try:
         client = Groq(api_key=api_key, base_url=config.groq_base_url)
         chat_completion = client.chat.completions.create(
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": message},
+                {"role": "user", "content": user_content},
             ],
             model=model,
             temperature=0.1,
@@ -312,7 +343,7 @@ def classify_live_request(message: str) -> str:
         result = chat_completion.choices[0].message.content.strip().upper()
         print(f"[ROUTER AGENT] Classified user intent as: {result}")
         _log(f"LLM classification result: '{result}'")
-        if result == "SEARCH":
+        if "SEARCH" in result:
             return "search"
         return "none"
     except Exception as exc:

@@ -1117,6 +1117,21 @@ class MarcusBrain:
             "live_routing_used": False,
         }
 
+    def _recent_context_for_routing(self, chat_id: str, limit: int = 6) -> str:
+        """Compact recent turns so the search classifier can tell a genuine new
+        data request from a follow-up that continues an already-searched thread."""
+        try:
+            history = self.memory.get_chat(chat_id) or []
+        except Exception:
+            return ""
+        lines = []
+        for msg in history[-limit:]:
+            role = msg.get("role", "user")
+            content = str(msg.get("content", "")).strip()
+            if content:
+                lines.append(f"{role.capitalize()}: {content[:240]}")
+        return "\n".join(lines)
+
     def _expand_continuation_query(self, chat_id: str, user_message: str) -> str:
         try:
             history = self.memory.get_chat(chat_id) or []
@@ -1236,7 +1251,7 @@ class MarcusBrain:
             live_ctx = ""
             self._pending_sources = []
             directed_site, directed_query = parse_directed_search(message)
-            intent = classify_live_request(message)
+            intent = classify_live_request(message, recent_context=self._recent_context_for_routing(cid))
             if directed_site:
                 intent = "search"  # explicit "search X for Y" always searches
             if intent == "none":
@@ -1363,7 +1378,7 @@ class MarcusBrain:
             live_ctx = ""
             self._pending_sources = []
             directed_site, directed_query = parse_directed_search(message)
-            intent = classify_live_request(message)
+            intent = classify_live_request(message, recent_context=self._recent_context_for_routing(cid))
             if directed_site:
                 intent = "search"
             if intent == "none":
