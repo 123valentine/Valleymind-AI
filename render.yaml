@@ -1,43 +1,111 @@
+# Render deployment blueprint for Valleymind-AI (root app).
+#
+# Every env var the code depends on is declared here so the required set is
+# documented and visible. Two kinds:
+#   - `sync: false`  -> a SECRET. Render does NOT store a value from this file;
+#                       you MUST set the value in the Render dashboard.
+#                       IMPORTANT: paste the RAW value with NO surrounding
+#                       quotes (Render does not strip quotes the way the local
+#                       .env parser does — a stray trailing " breaks the key).
+#   - `value: ...`   -> non-secret config with a safe default baked in here.
+#
+# Missing a `sync: false` secret in the dashboard fails the same way a dead key
+# does (silent degradation), so verify each one has a value set.
+
 services:
   - type: web
     name: valleymind-ai
     env: python
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn app:app
+    startCommand: gunicorn app:app        # gunicorn.conf.py is auto-loaded
     healthCheckPath: /auth/status
     envVars:
+      # ── Runtime / server ──────────────────────────────────────────
       - key: PYTHON_VERSION
         value: 3.11.9
-      - key: SECRET_KEY
+      - key: SECRET_KEY                    # Flask session signing
         generateValue: true
       - key: SESSION_COOKIE_SECURE
         value: "true"
       - key: SESSION_COOKIE_SAMESITE
         value: "None"
-      - key: ALLOWED_ORIGINS
-        value: ""
+      # Video generation holds a request for 5-10 min; workers must not be
+      # reaped mid-generation. See gunicorn.conf.py.
+      - key: GUNICORN_TIMEOUT
+        value: "1200"
+      - key: GUNICORN_THREADS
+        value: "4"
+
+      # ── Persistence (CRITICAL) ────────────────────────────────────
+      # Without MONGODB_URI the app silently falls back to the ephemeral
+      # container disk — the original disappearing-chats bug.
+      - key: MONGODB_URI
+        sync: false
+
+      # ── LLM cluster (Groq primary -> OpenRouter -> NVIDIA -> Gemini) ─
       - key: GROQ_API_KEY
         sync: false
       - key: GROQ_MODEL
-        value: ""
+        value: llama-3.3-70b-versatile
       - key: GROQ_BASE_URL
         value: https://api.groq.com/openai/v1
-      - key: NEWS_API_KEY
+      - key: OPENROUTER_API_KEY            # LLM fallback #1 AND all embeddings
         sync: false
-      - key: SPORTS_API_KEY
+      - key: NVIDIA_API_KEY                # LLM fallback #2
         sync: false
-      - key: API_KEY
+      - key: NVIDIA_MODEL
+        value: meta/llama-3.1-8b-instruct
+      - key: GEMINI_API_KEY                # LLM fallback #3 + image-prompt enhance
         sync: false
-      - key: NEWSCATCHER_API_KEY
+      - key: GOOGLE_GENERATIVE_AI_API_KEY  # accepted as an alias for GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-2.0-flash
+
+      # ── Semantic memory (Pinecone + OpenRouter embeddings) ────────
+      # EMBEDDING_DIMS MUST be 768 to match the existing index dimension.
+      - key: EMBEDDING_MODEL
+        value: openai/text-embedding-3-large
+      - key: EMBEDDING_DIMS
+        value: "768"
+      - key: PINECONE_API_KEY_MEMORY       # required; raw key, NO quotes
+        sync: false
+      - key: PINECONE_INDEX_MEMORY
+        value: valleymind-memory
+      - key: PINECONE_API_KEY              # general Pinecone key
+        sync: false
+      - key: PINECONE_API_KEY_KNOWLEDGE    # only used if ENABLE_KNOWLEDGE_INDEX=1
+        sync: false
+      - key: PINECONE_INDEX_KNOWLEDGE
+        value: valleymind-knowledge
+      - key: PINECONE_REGION
+        value: us-west1
+
+      # ── Live search + news/sports ─────────────────────────────────
+      - key: TINYFISH_API_KEY              # web search (live data + sources)
         sync: false
       - key: CURRENTS_API_KEY
         sync: false
       - key: API_SPORTS_KEY
         sync: false
-      - key: ALIBABA_MODEL_STUDIO_API_KEY
+
+      # ── Video generation ──────────────────────────────────────────
+      - key: ALIBABA_MODEL_STUDIO_API_KEY  # primary video provider (wan2.7)
         sync: false
-    disk:
-      name: valleymind-memory
-      mountPath: /opt/render/project/src/memory_data
-      sizeGB: 1
+      - key: DASHSCOPE_BASE                # Singapore/International endpoint
+        value: https://dashscope-intl.aliyuncs.com
+      - key: ALIBABA_VIDEO_MODEL
+        value: wan2.7-t2v-2026-06-12
+      - key: VIDEO_MAX_POLL_SECONDS
+        value: "900"
+      - key: FAL_KEY                       # fallback video provider (needs balance)
+        sync: false
+
+      # ── Auth ──────────────────────────────────────────────────────
+      - key: GOOGLE_CLIENT_ID              # Google Sign-In
+        sync: false
+
+# NOTE: no persistent disk is declared. Render's free tier does not support
+# persistent disks, and MongoDB/GridFS is now the source of truth for chats,
+# sessions, users, and media. Local memory_data/ is an ephemeral fallback only.
