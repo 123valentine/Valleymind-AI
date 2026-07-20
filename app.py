@@ -2498,6 +2498,112 @@ def dev_routing_log():
 # ── Media Library API ────────────────────────────────────────────────────────
 
 
+@app.route("/api/studio/run", methods=["POST"])
+def api_studio_run():
+    """ValleyMind Studio pipeline (SSE): Angelina writes -> Marcus breaks it into
+    scenes -> one storyboard image per scene. Text + image only; video generation
+    is not part of this pipeline and its kill switch is untouched."""
+    user_id, error = _require_login()
+    if error:
+        return error
+
+    data = request.get_json(silent=True) or {}
+    idea = str(data.get("idea") or "").strip()
+    if not idea:
+        return jsonify({"status": "error", "message": "An idea is required"}), 400
+
+    from core.brain import _call_llm_cluster, _call_llm_cluster_stream
+    import core.studio as studio
+
+    def generate():
+        try:
+            # ── Stage 1: Angelina writes (streamed token by token) ──────
+            yield f"data: {json.dumps({'stage': 'writing', 'status': 'working'})}\n\n"
+            script = ""
+            try:
+                for token in _call_llm_cluster_stream(studio.script_messages(idea)):
+                    if not token:
+                        continue
+                    script += token
+                    yield f"data: {json.dumps({'stage': 'writing', 'token': token})}\n\n"
+            except Exception as exc:
+                print(f"[STUDIO] script generation failed: {exc}")
+                yield f"data: {json.dumps({'error': 'Angelina could not finish the script. Please try again.'})}\n\n"
+                yield f"data: {json.dumps({'done': True})}\n\n"
+                return
+
+            # Character sheet — threaded through every later stage for continuity
+            sheet, sheet_text, look = {}, "", ""
+            try:
+                raw, _ = _call_llm_cluster(studio.character_sheet_messages(idea, script), timeout=40)
+                parsed = studio._parse_json_block(raw)
+                if isinstance(parsed, dict):
+                    sheet = parsed
+                    sheet_text = studio._sheet_to_text(parsed)
+                    look = str(parsed.get("look", "") or "").strip()
+            except Exception as exc:
+                print(f"[STUDIO] character sheet failed (continuing without): {exc}")
+
+            yield f"data: {json.dumps({'stage': 'writing', 'status': 'done', 'character_sheet': sheet, 'sheet_text': sheet_text})}\n\n"
+
+            # ── Stage 2: Marcus breaks it into numbered scenes ──────────
+            yield f"data: {json.dumps({'stage': 'directing', 'status': 'working'})}\n\n"
+            scenes = []
+            try:
+                raw, _ = _call_llm_cluster(studio.scene_messages(idea, script, sheet_text), timeout=60)
+                scenes = studio.normalize_scenes(studio._parse_json_block(raw))
+            except Exception as exc:
+                print(f"[STUDIO] scene breakdown failed: {exc}")
+
+            if not scenes:
+                yield f"data: {json.dumps({'error': 'Marcus could not break the script into scenes. Please try again.'})}\n\n"
+                yield f"data: {json.dumps({'done': True})}\n\n"
+                return
+
+            for scene in scenes:
+                yield f"data: {json.dumps({'stage': 'directing', 'scene': scene})}\n\n"
+            yield f"data: {json.dumps({'stage': 'directing', 'status': 'done', 'scene_count': len(scenes)})}\n\n"
+
+            # ── Stage 3: one storyboard frame per scene ─────────────────
+            yield f"data: {json.dumps({'stage': 'storyboard', 'status': 'working', 'total': len(scenes)})}\n\n"
+            config = get_config()
+            media = get_media_manager(user_id)
+            for scene in scenes:
+                prompt = studio.storyboard_prompt(scene, sheet_text, look)
+                try:
+                    result = pm.get_manager().execute(
+                        pm.Capability.IMAGE, prompt=prompt,
+                        api_key=config.gemini_api_key or None, enhance=False,
+                    )
+                    if not result.success:
+                        raise RuntimeError(result.error or "image provider failed")
+                    record = media.save_image(
+                        result.data.get("image_url", ""), prompt=prompt,
+                        provider=result.provider_name, chat_id=f"studio_{user_id}",
+                    )
+                    stored = _safe_persist_url(record, result.data.get("image_url", ""))
+                    if not stored:
+                        raise RuntimeError("could not store storyboard frame")
+                    yield f"data: {json.dumps({'stage': 'storyboard', 'frame': {'number': scene['number'], 'title': scene['title'], 'image_url': stored}})}\n\n"
+                except Exception as exc:
+                    print(f"[STUDIO] storyboard frame {scene.get('number')} failed: {exc}")
+                    yield f"data: {json.dumps({'stage': 'storyboard', 'frame_failed': scene.get('number')})}\n\n"
+
+            yield f"data: {json.dumps({'stage': 'storyboard', 'status': 'done'})}\n\n"
+            yield f"data: {json.dumps({'done': True})}\n\n"
+
+        except Exception as exc:
+            print(f"[STUDIO] pipeline crashed: {exc}")
+            yield f"data: {json.dumps({'error': 'The Studio run failed unexpectedly.'})}\n\n"
+            yield f"data: {json.dumps({'done': True})}\n\n"
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"},
+    )
+
+
 @app.route("/api/media/images", methods=["GET"])
 def api_media_images():
     """List user's images with optional search and pagination."""

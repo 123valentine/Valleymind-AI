@@ -253,9 +253,15 @@
   #studioOverlay.closing { display:flex; opacity:0; transform:translateY(100%); }
   .studio-body { flex:1; overflow-y:auto; padding:24px 32px; }
   .studio-inner { max-width:760px; margin:0 auto; }
+  /* Pinned bottom input bar — mirrors the main chat composer */
+  .studio-input-bar {
+    flex-shrink:0; padding:14px 32px 18px;
+    border-top:1px solid rgba(255,255,255,0.06);
+    background:rgba(2,6,23,0.75); backdrop-filter:blur(12px);
+  }
   .studio-prompt-wrap {
     background:rgba(15,23,42,0.7); border:1px solid rgba(255,255,255,0.08);
-    border-radius:16px; padding:16px; margin-bottom:10px;
+    border-radius:16px; padding:16px; width:100%;
   }
   .studio-prompt-wrap textarea {
     width:100%; background:transparent; border:none; outline:none; resize:none;
@@ -320,12 +326,57 @@
     margin-top:12px; padding-top:12px; border-top:1px solid rgba(255,255,255,0.06);
     color:#cbd5e1; font-size:13px; line-height:1.65; white-space:pre-wrap;
   }
+  /* Storyboard filmstrip */
+  .studio-filmstrip {
+    display:flex; gap:10px; overflow-x:auto; padding:12px 2px 4px;
+    -webkit-overflow-scrolling:touch;
+  }
+  .studio-frame {
+    flex:0 0 auto; width:150px; border-radius:10px; overflow:hidden;
+    border:1px solid rgba(255,255,255,0.08); background:rgba(2,6,23,0.6);
+  }
+  .studio-frame img { width:100%; aspect-ratio:1; object-fit:cover; display:block; cursor:pointer; }
+  .studio-frame .frame-label {
+    padding:6px 8px; font-size:10px; color:#94a3b8;
+    font-family:'Space Grotesk',sans-serif; letter-spacing:0.06em;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  .studio-frame.pending {
+    height:150px; width:150px;
+    background:linear-gradient(90deg, rgba(0,212,255,0.05) 25%, rgba(0,212,255,0.14) 50%, rgba(0,212,255,0.05) 75%);
+    background-size:200% 100%; animation:skelPulse 1.8s ease-in-out infinite;
+  }
+  /* Scene cards from Marcus */
+  .studio-scene {
+    border:1px solid rgba(255,255,255,0.07); border-radius:10px;
+    padding:10px 12px; margin-top:8px; background:rgba(2,6,23,0.4);
+    animation:sceneIn 0.35s ease both;
+  }
+  @keyframes sceneIn { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:none; } }
+  .studio-scene-title { color:#e2e8f0; font-size:12.5px; font-weight:700; margin-bottom:4px; }
+  .studio-scene-body { color:#94a3b8; font-size:12px; line-height:1.6; white-space:pre-wrap; }
+  .studio-scene-cam {
+    margin-top:6px; color:#00d4ff; font-size:11px; font-family:'Space Grotesk',sans-serif;
+    letter-spacing:0.04em;
+  }
+  .studio-sheet {
+    margin-top:10px; padding:10px 12px; border-radius:10px;
+    background:rgba(0,212,255,0.05); border:1px solid rgba(0,212,255,0.15);
+    color:#cbd5e1; font-size:12px; line-height:1.6; white-space:pre-wrap;
+  }
+  .studio-sheet-label {
+    font-size:10px; text-transform:uppercase; letter-spacing:0.12em; color:#00d4ff;
+    font-family:'Space Grotesk',sans-serif; margin-bottom:5px;
+  }
   @media(max-width:768px){
     .studio-body { padding:16px 14px; }
+    .studio-input-bar { padding:10px 14px 14px; }
     .studio-stage { padding:14px; }
     .studio-avatar { width:32px; height:32px; font-size:13px; }
     .studio-status { padding:4px 9px; font-size:9px; }
     .studio-role { font-size:10px; letter-spacing:0.08em; }
+    .studio-frame, .studio-frame.pending { width:120px; }
+    .studio-frame.pending { height:120px; }
   }
   .gallery-header {
     display:flex; align-items:center; justify-content:space-between;
@@ -1170,6 +1221,12 @@
   </div>
   <div class="studio-body">
     <div class="studio-inner">
+      <div id="studioStages"></div>
+    </div>
+  </div>
+  <!-- Pinned bottom input, full width of the column (mirrors the main chat input) -->
+  <div class="studio-input-bar">
+    <div class="studio-inner">
       <div class="studio-prompt-wrap">
         <textarea id="studioPrompt" rows="2" placeholder="Describe your movie idea — a logline, a scene, a feeling..."></textarea>
         <div class="studio-prompt-actions">
@@ -1177,8 +1234,6 @@
           <button class="studio-go-btn" id="studioGoBtn" onclick="runStudioPipeline()">Start Production</button>
         </div>
       </div>
-      <div class="studio-mock-note">Preview shell — running on mock data. No AI is connected yet.</div>
-      <div id="studioStages"></div>
     </div>
   </div>
 </div>
@@ -3057,30 +3112,31 @@ function renderVideoGalleryItems(videos) {
 
 // ── ValleyMind Studio (shell only — mock data, no AI wired yet) ─────────
 var STUDIO_STAGES = [
-    {
-        persona: "Angelina", initial: "A",
-        role: "Writer — story, dialogue, screenplay",
-        mock: "DRAFT v1 — three beats.\n\n1. Cold open: she finds the letter, doesn't open it.\n2. The drive out; the radio keeps cutting. Dialogue stays clipped — she isn't ready to say it out loud.\n3. She reads it at the water's edge. We don't hear the words.\n\nHanding this to Marcus for coverage."
-    },
-    {
-        persona: "Marcus", initial: "M",
-        role: "Director — scene breakdown, camera, framing",
-        mock: "SHOT LIST — 3 scenes, 11 setups.\n\nSc.1 — Slow push, 50mm, letter held out of focus in the foreground.\nSc.2 — Locked handheld from the back seat; keep her reflected, never centered.\nSc.3 — Wide, static, she's small in frame. Hold well past comfortable.\n\nElena has the pacing note: let 3 breathe."
-    },
-    {
-        persona: "Elena", initial: "E",
-        role: "Editor — clipping, assembly, transitions, pacing",
-        mock: "CUT v1 — 2m 48s.\n\nTrimmed 6s off the cold open; the hesitation reads better short.\nStraight cuts throughout except one slow dissolve into the water.\nHeld Marcus's final wide for 9 seconds. It earns it.\n\nAssembly locked."
-    }
+    { key: "writing",    persona: "Angelina", initial: "A", role: "Writer — story, dialogue, screenplay" },
+    { key: "directing",  persona: "Marcus",   initial: "M", role: "Director — scene breakdown, camera, framing" },
+    { key: "storyboard", persona: "Elena",    initial: "E", role: "Editor — storyboard assembly, pacing" }
 ];
 
 var studioState = [];        // "waiting" | "working" | "done" per stage
 var studioRunning = false;
 var studioTimers = [];
+// Live pipeline data
+var studioScript = "";
+var studioSheetText = "";
+var studioScenes = [];
+var studioFrames = [];       // {number, title, image_url}
+var studioExpectedFrames = 0;
 
 function clearStudioTimers() {
     studioTimers.forEach(function (t) { clearTimeout(t); });
     studioTimers = [];
+}
+
+function studioStageIndex(key) {
+    for (var i = 0; i < STUDIO_STAGES.length; i++) {
+        if (STUDIO_STAGES[i].key === key) return i;
+    }
+    return -1;
 }
 
 function openStudio() {
@@ -3089,7 +3145,10 @@ function openStudio() {
     if (!overlay) return;
     if (!studioState.length) resetStudio();
     overlay.style.display = "flex";
+    // rAF drives the slide-in; the timeout is a fallback so the overlay still
+    // opens if rAF is throttled (background/non-rendering contexts).
     requestAnimationFrame(function () { overlay.classList.add("open"); });
+    setTimeout(function () { overlay.classList.add("open"); }, 60);
     setTimeout(function () {
         var inp = document.getElementById("studioPrompt");
         if (inp) inp.focus();
@@ -3116,6 +3175,11 @@ function resetStudio() {
     clearStudioTimers();
     studioRunning = false;
     studioState = STUDIO_STAGES.map(function () { return "waiting"; });
+    studioScript = "";
+    studioSheetText = "";
+    studioScenes = [];
+    studioFrames = [];
+    studioExpectedFrames = 0;
     var btn = document.getElementById("studioGoBtn");
     if (btn) { btn.disabled = false; btn.textContent = "Start Production"; }
     var label = document.getElementById("studioStatusLabel");
@@ -3159,27 +3223,94 @@ function renderStudioStages() {
 
         card.appendChild(head);
 
-        if (status === "working") {
-            var skel = document.createElement("div");
-            skel.className = "studio-skeleton";
-            for (var k = 0; k < 3; k++) {
-                var line = document.createElement("div");
-                line.className = "skel-line";
-                skel.appendChild(line);
+        // ── Live content per stage ──────────────────────────────────
+        if (stage.key === "writing") {
+            if (studioScript) {
+                var scriptEl = document.createElement("div");
+                scriptEl.className = "studio-output";
+                scriptEl.textContent = studioScript;
+                card.appendChild(scriptEl);
             }
-            card.appendChild(skel);
-        } else if (status === "done") {
-            var out = document.createElement("div");
-            out.className = "studio-output";
-            out.textContent = stage.mock;
-            card.appendChild(out);
+            if (status === "done" && studioSheetText) {
+                var sheetWrap = document.createElement("div");
+                sheetWrap.className = "studio-sheet";
+                var sheetLbl = document.createElement("div");
+                sheetLbl.className = "studio-sheet-label";
+                sheetLbl.textContent = "Character sheet — kept consistent across scenes";
+                var sheetBody = document.createElement("div");
+                sheetBody.textContent = studioSheetText;
+                sheetWrap.appendChild(sheetLbl);
+                sheetWrap.appendChild(sheetBody);
+                card.appendChild(sheetWrap);
+            }
+            if (status === "working" && !studioScript) card.appendChild(studioSkeleton());
+        } else if (stage.key === "directing") {
+            studioScenes.forEach(function (sc) {
+                var s = document.createElement("div");
+                s.className = "studio-scene";
+                var t = document.createElement("div");
+                t.className = "studio-scene-title";
+                t.textContent = "Scene " + sc.number + " — " + sc.title;
+                var b = document.createElement("div");
+                b.className = "studio-scene-body";
+                b.textContent = sc.description;
+                s.appendChild(t);
+                s.appendChild(b);
+                if (sc.camera || sc.framing) {
+                    var c = document.createElement("div");
+                    c.className = "studio-scene-cam";
+                    c.textContent = [sc.framing, sc.camera].filter(Boolean).join("  •  ");
+                    s.appendChild(c);
+                }
+                card.appendChild(s);
+            });
+            if (status === "working" && !studioScenes.length) card.appendChild(studioSkeleton());
+        } else if (stage.key === "storyboard") {
+            if (studioFrames.length || studioExpectedFrames) {
+                var strip = document.createElement("div");
+                strip.className = "studio-filmstrip";
+                studioFrames.forEach(function (f) {
+                    var fr = document.createElement("div");
+                    fr.className = "studio-frame";
+                    var im = document.createElement("img");
+                    im.src = f.image_url;
+                    im.loading = "lazy";
+                    im.onclick = function () { openImageViewer(f.image_url); };
+                    var lb = document.createElement("div");
+                    lb.className = "frame-label";
+                    lb.textContent = "Sc " + f.number + " — " + f.title;
+                    fr.appendChild(im);
+                    fr.appendChild(lb);
+                    strip.appendChild(fr);
+                });
+                var pending = studioExpectedFrames - studioFrames.length;
+                for (var p = 0; p < pending; p++) {
+                    var ph = document.createElement("div");
+                    ph.className = "studio-frame pending";
+                    strip.appendChild(ph);
+                }
+                card.appendChild(strip);
+            } else if (status === "working") {
+                card.appendChild(studioSkeleton());
+            }
         }
 
         host.appendChild(card);
     });
 }
 
-function runStudioPipeline() {
+function studioSkeleton() {
+    var skel = document.createElement("div");
+    skel.className = "studio-skeleton";
+    for (var k = 0; k < 3; k++) {
+        var line = document.createElement("div");
+        line.className = "skel-line";
+        skel.appendChild(line);
+    }
+    return skel;
+}
+
+async function runStudioPipeline() {
     if (studioRunning) return;
     var promptEl = document.getElementById("studioPrompt");
     var idea = (promptEl && promptEl.value || "").trim();
@@ -3190,32 +3321,94 @@ function runStudioPipeline() {
 
     clearStudioTimers();
     studioRunning = true;
+    studioScript = "";
+    studioSheetText = "";
+    studioScenes = [];
+    studioFrames = [];
+    studioExpectedFrames = 0;
     studioState = STUDIO_STAGES.map(function () { return "waiting"; });
     var btn = document.getElementById("studioGoBtn");
     if (btn) { btn.disabled = true; btn.textContent = "In Production..."; }
     var label = document.getElementById("studioStatusLabel");
     renderStudioStages();
 
-    // Mock state machine: each stage works for a beat, then completes and
-    // hands off to the next. No LLM or provider is called.
-    var STAGE_MS = 1800;
-    STUDIO_STAGES.forEach(function (stage, i) {
-        studioTimers.push(setTimeout(function () {
-            studioState[i] = "working";
-            if (label) label.textContent = stage.persona + " is working...";
-            renderStudioStages();
-        }, i * STAGE_MS));
+    var body = document.querySelector(".studio-body");
+    var stickBottom = function () { if (body) body.scrollTop = body.scrollHeight; };
 
-        studioTimers.push(setTimeout(function () {
-            studioState[i] = "done";
-            renderStudioStages();
-            if (i === STUDIO_STAGES.length - 1) {
-                studioRunning = false;
-                if (btn) { btn.disabled = false; btn.textContent = "Run Again"; }
-                if (label) label.textContent = "Production complete";
+    function finish(msg) {
+        studioRunning = false;
+        if (btn) { btn.disabled = false; btn.textContent = "Run Again"; }
+        if (label) label.textContent = msg || "Production complete";
+        renderStudioStages();
+    }
+
+    try {
+        var res = await fetch(apiUrl("/api/studio/run"), {
+            method: "POST",
+            credentials: "include",
+            headers: authHeaders({ "Content-Type": "application/json" }),
+            body: JSON.stringify({ idea: idea })
+        });
+        if (!res.ok || !res.body) { finish("Studio run failed"); return; }
+
+        var reader = res.body.getReader();
+        var decoder = new TextDecoder();
+        var buffer = "";
+        var renderPending = false;
+        var scheduleRender = function () {
+            if (renderPending) return;
+            renderPending = true;
+            requestAnimationFrame(function () {
+                renderPending = false;
+                renderStudioStages();
+                stickBottom();
+            });
+        };
+
+        while (true) {
+            var chunk = await reader.read();
+            if (chunk.done) break;
+            buffer += decoder.decode(chunk.value, { stream: true });
+            var lines = buffer.split("\n");
+            buffer = lines.pop();
+
+            for (var i = 0; i < lines.length; i++) {
+                var line = lines[i].trim();
+                if (!line.startsWith("data: ")) continue;
+                var evt;
+                try { evt = JSON.parse(line.slice(6)); } catch (e) { continue; }
+
+                if (evt.error) { finish(evt.error); return; }
+                if (evt.done) { finish(); return; }
+
+                var idx = studioStageIndex(evt.stage);
+                if (idx === -1) continue;
+
+                if (evt.status === "working") {
+                    studioState[idx] = "working";
+                    if (label) label.textContent = STUDIO_STAGES[idx].persona + " is working...";
+                    if (evt.total) studioExpectedFrames = evt.total;
+                    scheduleRender();
+                } else if (evt.status === "done") {
+                    studioState[idx] = "done";
+                    if (evt.sheet_text) studioSheetText = evt.sheet_text;
+                    scheduleRender();
+                }
+
+                if (evt.token) { studioScript += evt.token; scheduleRender(); }
+                if (evt.scene) { studioScenes.push(evt.scene); scheduleRender(); }
+                if (evt.frame) { studioFrames.push(evt.frame); scheduleRender(); }
+                if (evt.frame_failed) {
+                    studioExpectedFrames = Math.max(0, studioExpectedFrames - 1);
+                    scheduleRender();
+                }
             }
-        }, (i + 1) * STAGE_MS));
-    });
+        }
+        finish();
+    } catch (err) {
+        console.warn("[Studio] run failed:", err);
+        finish("Studio run failed");
+    }
 }
 
 function formatImageDate(isoStr) {
