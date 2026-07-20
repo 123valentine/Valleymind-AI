@@ -507,10 +507,32 @@
   .msg-toolbar button:hover{background:rgba(0,212,255,0.1)}
   .msg-toolbar .up-active{color:#00ff88 !important;background:rgba(0,255,136,0.1) !important}
   .msg-toolbar .down-active{color:#ff6b7a !important;background:rgba(255,45,70,0.1) !important}
-  #imagePreviewBar{display:none;align-items:center;gap:10px;padding:8px 12px;margin-bottom:8px;background:#1a1f2e;border:1px solid rgba(255,255,255,0.1);border-radius:12px}
-  #imagePreviewBar img{width:48px;height:48px;object-fit:cover;border-radius:8px;border:1px solid rgba(0,212,255,0.3)}
-  #imagePreviewBar .remove-img{background:none;border:none;color:#64748b;cursor:pointer;padding:4px;border-radius:6px;display:flex;align-items:center}
-  #imagePreviewBar .remove-img:hover{color:#ff6b7a;background:rgba(255,45,70,0.1)}
+  /* ── Unified composer (input box) ─────────────────────────────── */
+  #composer{
+    background:#1a1f2e;border:1px solid rgba(255,255,255,0.1);
+    border-radius:24px;padding:4px 8px;
+    transition:border-color 0.18s ease, box-shadow 0.18s ease;
+  }
+  #composer.focused{ border-color:rgba(0,212,255,0.45); box-shadow:0 0 0 1px rgba(0,212,255,0.15); }
+  #composerRow{ display:flex; align-items:flex-end; gap:4px; }
+  #chatInput:focus{ outline:none !important; box-shadow:none !important; }
+  #composerChips{
+    display:none; flex-wrap:wrap; gap:6px;
+    padding:8px 6px 2px;
+  }
+  #composerChips.has-items{ display:flex; }
+  .composer-chip{
+    position:relative; width:56px; height:56px; border-radius:10px;
+    overflow:hidden; border:1px solid rgba(0,212,255,0.3); background:#000d14; flex-shrink:0;
+  }
+  .composer-chip img{ width:100%; height:100%; object-fit:cover; display:block; }
+  .composer-chip .chip-x{
+    position:absolute; top:2px; right:2px; width:18px; height:18px; border-radius:50%;
+    background:rgba(0,0,0,0.72); border:1px solid rgba(255,255,255,0.25); color:#fff;
+    cursor:pointer; display:flex; align-items:center; justify-content:center; padding:0;
+    font-size:11px; line-height:1;
+  }
+  .composer-chip .chip-x:hover{ background:rgba(255,45,70,0.85); }
 
   .library-arrow { transition:transform 0.35s ease; }
   .library-arrow.open { transform:rotate(-90deg); }
@@ -856,14 +878,14 @@
         <input type="file" id="chatImageInput" accept="image/*" style="display:none;">
         <input type="file" id="chatFileInput" style="display:none;">
 
-        <!-- IMAGE PREVIEW CONTAINER -->
-        <div id="imagePreviewContainer" style="display:none;position:relative;margin-bottom:8px;width:72px;height:72px;border-radius:12px;overflow:hidden;border:1px solid rgba(0,212,255,0.3);background:#000d14;">
-          <img id="imagePreviewThumb" src="" alt="preview" style="width:100%;height:100%;object-fit:cover;display:block;"/>
-          <button onclick="clearImageUpload()" title="Remove image" style="position:absolute;top:2px;right:2px;width:20px;height:20px;border-radius:50%;background:rgba(0,0,0,0.7);border:1px solid rgba(255,255,255,0.2);color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;font-size:12px;line-height:1;">✕</button>
-        </div>
+        <!-- UNIFIED COMPOSER (chips row on top, input row below) -->
+        <div id="composer">
 
-        <!-- UNIFIED PILL -->
-        <div style="display:flex;align-items:center;background:#1a1f2e;border:1px solid rgba(255,255,255,0.1);border-radius:24px;padding:6px 8px;gap:4px;">
+          <!-- Attached-image chips (inside the box, above the text line) -->
+          <div id="composerChips"></div>
+
+          <!-- Input row -->
+          <div id="composerRow">
 
           <!-- Plus button with floating menu -->
           <div style="position:relative;">
@@ -887,12 +909,12 @@
             </div>
           </div>
 
-          <!-- Textarea -->
-          <textarea id="chatInput" rows="1" placeholder="Message Valley Mind-AI..."
-            style="flex:1;background:transparent;border:none;outline:none;color:white;font-size:15px;line-height:1.6;resize:none;padding:8px 4px;max-height:150px;font-family:'Inter',sans-serif;overflow-y:auto;"></textarea>
+          <!-- Textarea (autogrows via JS) -->
+          <textarea id="chatInput" rows="1" placeholder="Reply to Marcus..."
+            style="flex:1;background:transparent;border:none;outline:none;box-shadow:none;color:white;font-size:15px;line-height:1.5;resize:none;padding:8px 4px;min-height:24px;max-height:180px;font-family:'Inter',sans-serif;overflow-y:hidden;"></textarea>
 
           <!-- Right cluster -->
-          <div style="display:flex;align-items:center;gap:2px;">
+          <div style="display:flex;align-items:flex-end;gap:2px;">
             <!-- Mic -->
             <button id="micBtn" onclick="toggleVoice()" style="width:36px;height:36px;border-radius:50%;background:transparent;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#94a3b8;transition:all 0.2s;" onmouseover="this.style.color='#00d4ff'" onmouseout="this.style.color='#94a3b8'">
               <i data-lucide="mic" style="width:18px;height:18px;"></i>
@@ -903,7 +925,8 @@
             </button>
           </div>
 
-        </div>
+          </div><!-- /composerRow -->
+        </div><!-- /composer -->
         <p style="text-align:center;font-size:10px;color:#334155;margin-top:10px;text-transform:uppercase;letter-spacing:0.15em;font-family:'Space Grotesk',sans-serif;">Valley Mind-AI can make mistakes. Verify critical information.</p>
       </div>
     </div>
@@ -1432,20 +1455,86 @@ document.getElementById('chatImageInput').addEventListener('change', function (e
     var reader = new FileReader();
     reader.onload = function (e) {
         pendingImageData = e.target.result;
-        var container = document.getElementById("imagePreviewContainer");
-        var thumb = document.getElementById("imagePreviewThumb");
-        if (thumb) thumb.src = pendingImageData;
-        if (container) container.style.display = "block";
+        renderComposerChips();
     };
     reader.readAsDataURL(file);
 });
 
+/* Render attached-image chips INSIDE the composer, above the text line. */
+function renderComposerChips() {
+    var chips = document.getElementById("composerChips");
+    if (!chips) return;
+    chips.innerHTML = "";
+    if (pendingImageData) {
+        var chip = document.createElement("div");
+        chip.className = "composer-chip";
+        var img = document.createElement("img");
+        img.src = pendingImageData;
+        img.alt = "attachment";
+        var x = document.createElement("button");
+        x.className = "chip-x";
+        x.type = "button";
+        x.title = "Remove image";
+        x.textContent = "✕";
+        x.onclick = function (ev) { ev.stopPropagation(); clearImageUpload(); };
+        chip.appendChild(img);
+        chip.appendChild(x);
+        chips.appendChild(chip);
+    }
+    chips.classList.toggle("has-items", !!pendingImageData);
+}
+
 function clearImageUpload() {
     pendingImageData = null;
-    var container = document.getElementById("imagePreviewContainer");
     var uploader = document.getElementById("chatImageInput");
-    if (container) container.style.display = "none";
     if (uploader) uploader.value = "";
+    renderComposerChips();
+}
+
+/* Autogrow the textarea downward up to its max-height, then scroll internally. */
+function autoGrowInput() {
+    var input = document.getElementById("chatInput");
+    if (!input) return;
+    input.style.height = "auto";
+    var max = 180;
+    var h = Math.min(input.scrollHeight, max);
+    input.style.height = h + "px";
+    input.style.overflowY = input.scrollHeight > max ? "auto" : "hidden";
+}
+
+function resetComposerHeight() {
+    var input = document.getElementById("chatInput");
+    if (input) { input.style.height = "auto"; input.style.overflowY = "hidden"; }
+}
+
+/* ── Placeholder / send-button state (status indicator, NOT a lock) ── */
+function activePersonaName() {
+    try {
+        var n = (window.currentCharacterName || window.activePersona || "").trim();
+        if (n) return n.charAt(0).toUpperCase() + n.slice(1);
+    } catch (e) {}
+    return "Marcus";
+}
+
+function setInputPlaceholder(stateKey) {
+    var input = document.getElementById("chatInput");
+    if (!input) return;
+    var name = activePersonaName();
+    var map = {
+        idle: "Reply to " + name + "...",
+        sending: "Sending...",
+        thinking: name + " is thinking...",
+    };
+    input.setAttribute("placeholder", map[stateKey] || map.idle);
+}
+
+function updateSendButtonDim() {
+    var input = document.getElementById("chatInput");
+    var sendBtn = document.getElementById("sendBtn");
+    if (!input || !sendBtn) return;
+    var empty = !input.value.trim() && !pendingImageData;
+    sendBtn.style.opacity = empty ? "0.4" : "1";
+    sendBtn.style.cursor = empty ? "default" : "pointer";
 }
 
 function setThinkingState(thinking) {
@@ -1453,7 +1542,8 @@ function setThinkingState(thinking) {
     const input = document.getElementById("chatInput");
     const sendBtn = document.getElementById("sendBtn");
     const sendIcon = document.getElementById("sendIcon");
-    if (input) input.disabled = thinking;
+    // Input stays USABLE throughout — placeholder is the status indicator.
+    if (input) input.disabled = false;
     if (sendBtn) sendBtn.disabled = thinking;
     if (sendIcon) {
         sendIcon.setAttribute("data-lucide", thinking ? "circle-stop" : "send");
@@ -1461,6 +1551,7 @@ function setThinkingState(thinking) {
             lucide.createIcons();
         }
     }
+    setInputPlaceholder(thinking ? "thinking" : "idle");
     if (typeof window.applyIconFallback === 'function') window.applyIconFallback();
 }
 
@@ -1665,6 +1756,20 @@ document.addEventListener("click", function (e) {
         closeMessageContextMenu();
     }
 });
+
+function applyVideoGenAvailability() {
+    // Video generation is chat-triggered — there is no dedicated button to grey
+    // out. When the global kill switch is off the backend returns an instant
+    // "unavailable" message (no provider is ever called), which renders inline
+    // like any assistant reply. This hook reflects the flag on any element
+    // tagged [data-video-gen] so future video-generation controls stay in sync.
+    var disabled = window.VIDEO_GEN_ENABLED === false;
+    document.querySelectorAll('[data-video-gen]').forEach(function (el) {
+        el.style.opacity = disabled ? '0.45' : '1';
+        el.style.pointerEvents = disabled ? 'none' : 'auto';
+        if (disabled) el.title = 'Video generation is currently unavailable';
+    });
+}
 
 function renderSourceChips(bubbleEl, sources) {
     if (!bubbleEl || !Array.isArray(sources) || !sources.length) return;
@@ -3068,6 +3173,11 @@ async function checkSession() {
             isAuthenticated = true;
             authCheckComplete = true;
 
+            // Global video-generation kill switch (fails closed). Playback and
+            // the Video Gallery are unaffected — this gates generation only.
+            window.VIDEO_GEN_ENABLED = data.video_generation_enabled === true;
+            applyVideoGenAvailability();
+
             var splash = document.getElementById("brandSplashScreen");
             var login = document.getElementById("loginView");
             if (splash) {
@@ -3365,12 +3475,17 @@ window.send = async function () {
         }
     }
 
+    var sentImage = pendingImageData;
     if (text) {
-        addMessage(text, "user", pendingImageData || null);
-    } else if (pendingImageData) {
-        addMessage("Image attached", "user", pendingImageData);
+        addMessage(text, "user", sentImage || null);
+    } else if (sentImage) {
+        addMessage("Image attached", "user", sentImage);
     }
     input.value = "";
+    clearImageUpload();          // clear chips now that they've been sent
+    resetComposerHeight();       // shrink box back to single line
+    updateSendButtonDim();
+    setInputPlaceholder("sending");
     const thinking = addThinkingIndicator();
 
     var streamError = null;
@@ -3378,7 +3493,7 @@ window.send = async function () {
     try {
         var body = { message: text || "(image attached)" };
         if (currentChatId) body.chat_id = currentChatId;
-        if (pendingImageData) body.image = pendingImageData;
+        if (sentImage) body.image = sentImage;
 
         var streamRes = await fetch(apiUrl("/chat/stream"), {
             method: "POST",
@@ -3389,6 +3504,7 @@ window.send = async function () {
 
         if (!streamRes.ok) throw new Error("Stream endpoint returned " + streamRes.status);
 
+        setInputPlaceholder("thinking");
         var reader = streamRes.body.getReader();
         var decoder = new TextDecoder("utf-8");
         var buffer = "";
@@ -3698,6 +3814,15 @@ document.addEventListener("DOMContentLoaded", () => {
                 send();
             }
         });
+        input.addEventListener("input", function () {
+            autoGrowInput();
+            updateSendButtonDim();
+        });
+        var composerEl = document.getElementById("composer");
+        input.addEventListener("focus", function () { if (composerEl) composerEl.classList.add("focused"); });
+        input.addEventListener("blur", function () { if (composerEl) composerEl.classList.remove("focused"); });
+        setInputPlaceholder("idle");
+        updateSendButtonDim();
     }
 
     document.addEventListener("keydown", event => {

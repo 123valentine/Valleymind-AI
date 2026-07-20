@@ -613,6 +613,7 @@ def auth_status():
         "character": "marcus",
         "memory_loaded": bool(marcus),
         "is_creator": _is_creator(email_auth),
+        "video_generation_enabled": _video_generation_enabled(),
     })
 
 
@@ -1243,6 +1244,59 @@ def _stream_video_state(state: dict, resolved_chat_id: str, updated_title=None):
     yield f"data: {json.dumps(done_evt)}\n\n"
 
 
+# ── Video generation kill switch ─────────────────────────────────────────────
+
+VIDEO_DISABLED_MESSAGE = (
+    "Video generation is currently unavailable — it's turned off right now. "
+    "Everything else still works, and any videos you've already made remain "
+    "playable in your Video Gallery."
+)
+
+
+def _video_generation_enabled() -> bool:
+    """Global kill switch for video generation. FAILS CLOSED: only an explicit
+    truthy VIDEO_GENERATION_ENABLED turns it on; a missing or misconfigured var
+    leaves video OFF. Applies to ALL users including the creator — no bypass.
+
+    This is a permanent outer gate. Any future paywall / entitlement check must
+    sit INSIDE this flag (only consulted when this returns True), never replace
+    it: `if _video_generation_enabled() and user_has_video_access(...)`.
+    """
+    return os.getenv("VIDEO_GENERATION_ENABLED", "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _video_disabled_json(user_id, message, chat_id):
+    """JSON response for a blocked video request. No provider is ever called."""
+    resolved = chat_id or f"marcus_main_chat"
+    _persist_chat_message(user_id, resolved, "user", message)
+    _persist_chat_message(user_id, resolved, "assistant", VIDEO_DISABLED_MESSAGE)
+    return jsonify({
+        "status": "success",
+        "chat_id": resolved,
+        "character": "marcus",
+        "reply": VIDEO_DISABLED_MESSAGE,
+        "video_disabled": True,
+    })
+
+
+def _video_disabled_stream(user_id, message, chat_id):
+    """SSE response for a blocked video request. No provider is ever called."""
+    marcus = load_marcus(user_id)
+    resolved = chat_id or (f"{marcus.profile.key}_main_chat" if marcus else chat_id)
+    _persist_chat_message(user_id, resolved, "user", message)
+    _persist_chat_message(user_id, resolved, "assistant", VIDEO_DISABLED_MESSAGE)
+
+    def generate():
+        yield f"data: {json.dumps({'token': VIDEO_DISABLED_MESSAGE})}\n\n"
+        yield f"data: {json.dumps({'done': True, 'chat_id': resolved, 'video_disabled': True})}\n\n"
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype='text/event-stream',
+        headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no', 'Connection': 'keep-alive'},
+    )
+
+
 def _dispatch_image_json(user_id, message, chat_id, image_data):
     """IMAGE → non-streaming JSON.  Reuses the existing ProviderManager image pipeline."""
     print(f"[Router]   Dispatch: IMAGE (json) — prompt={message[:120]!r}")
@@ -1643,6 +1697,9 @@ def _dispatch_multi_stream(user_id, message, chat_id, image_data):
 
 def _dispatch_video_json(user_id, message, chat_id, image_data):
     """VIDEO → non-streaming JSON.  Blocks until video is ready or failed."""
+    if not _video_generation_enabled():
+        print("[Router]   VIDEO blocked — generation disabled (kill switch)")
+        return _video_disabled_json(user_id, message, chat_id)
     print(f"[Router]   Dispatch: VIDEO (json) — prompt={message[:120]!r}")
 
     _persist_chat_message(user_id, chat_id, "user", message)
@@ -1679,6 +1736,9 @@ def _dispatch_video_json(user_id, message, chat_id, image_data):
 def _dispatch_video_stream(user_id, message, chat_id, image_data):
     """VIDEO → SSE stream. Generation runs in a background thread (survives
     client disconnect); the stream just tails its progress."""
+    if not _video_generation_enabled():
+        print("[Router]   VIDEO blocked — generation disabled (kill switch)")
+        return _video_disabled_stream(user_id, message, chat_id)
     print(f"[Router]   Dispatch: VIDEO (stream) — prompt={message[:120]!r}")
 
     marcus = load_marcus(user_id)
@@ -1701,6 +1761,9 @@ def _dispatch_video_stream(user_id, message, chat_id, image_data):
 
 def _dispatch_video_text_json(user_id, message, chat_id, image_data):
     """TEXT + VIDEO → non-streaming JSON.  Returns both text reply and video URL."""
+    if not _video_generation_enabled():
+        print("[Router]   TEXT+VIDEO blocked — generation disabled (kill switch)")
+        return _video_disabled_json(user_id, message, chat_id)
     print(f"[Router]   Dispatch: TEXT+VIDEO (json) — prompt={message[:120]!r}")
 
     _persist_chat_message(user_id, chat_id, "user", message)
@@ -1760,6 +1823,9 @@ def _dispatch_video_text_json(user_id, message, chat_id, image_data):
 
 def _dispatch_video_text_stream(user_id, message, chat_id, image_data):
     """TEXT + VIDEO → SSE stream.  Streams text first, then video progress + URL."""
+    if not _video_generation_enabled():
+        print("[Router]   TEXT+VIDEO blocked — generation disabled (kill switch)")
+        return _video_disabled_stream(user_id, message, chat_id)
     print(f"[Router]   Dispatch: TEXT+VIDEO (stream) — prompt={message[:120]!r}")
 
     marcus = load_marcus(user_id)
