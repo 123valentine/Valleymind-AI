@@ -239,6 +239,94 @@
   #videoGalleryOverlay.open { display:flex; opacity:1; transform:translateY(0); }
   #videoGalleryOverlay.closing { display:flex; opacity:0; transform:translateY(100%); }
   .gallery-card video { width:100%; height:100%; object-fit:cover; display:block; }
+
+  /* ── ValleyMind Studio ──────────────────────────────────────── */
+  #studioOverlay {
+    position:fixed; inset:0; z-index:9998;
+    background:rgba(2,6,23,0.97); backdrop-filter:blur(20px);
+    display:none; flex-direction:column;
+    transform:translateY(100%);
+    transition:transform 0.4s cubic-bezier(0.4,0,0.2,1), opacity 0.3s ease;
+    opacity:0;
+  }
+  #studioOverlay.open { display:flex; opacity:1; transform:translateY(0); }
+  #studioOverlay.closing { display:flex; opacity:0; transform:translateY(100%); }
+  .studio-body { flex:1; overflow-y:auto; padding:24px 32px; }
+  .studio-inner { max-width:760px; margin:0 auto; }
+  .studio-prompt-wrap {
+    background:rgba(15,23,42,0.7); border:1px solid rgba(255,255,255,0.08);
+    border-radius:16px; padding:16px; margin-bottom:10px;
+  }
+  .studio-prompt-wrap textarea {
+    width:100%; background:transparent; border:none; outline:none; resize:none;
+    color:#e2e8f0; font-size:15px; line-height:1.5; font-family:'Inter',sans-serif;
+    min-height:56px; max-height:160px;
+  }
+  .studio-prompt-wrap textarea::placeholder { color:#475569; }
+  .studio-prompt-actions { display:flex; justify-content:space-between; align-items:center; gap:10px; margin-top:8px; }
+  .studio-go-btn {
+    background:linear-gradient(135deg,#00d4ff,#0ea5e9); border:none; border-radius:10px;
+    padding:9px 20px; color:#003642; font-size:13px; font-weight:800; cursor:pointer;
+    font-family:'Space Grotesk',sans-serif; letter-spacing:0.04em; transition:opacity 0.2s;
+  }
+  .studio-go-btn:disabled { opacity:0.45; cursor:not-allowed; }
+  .studio-reset-btn {
+    background:transparent; border:1px solid rgba(255,255,255,0.12); border-radius:10px;
+    padding:8px 14px; color:#94a3b8; font-size:12px; cursor:pointer; transition:all 0.2s;
+  }
+  .studio-reset-btn:hover { color:#e2e8f0; border-color:rgba(255,255,255,0.25); }
+  .studio-mock-note {
+    font-size:11px; color:#64748b; margin:2px 0 18px; letter-spacing:0.03em;
+  }
+
+  .studio-stage {
+    background:rgba(15,23,42,0.6); border:1px solid rgba(255,255,255,0.06);
+    border-radius:14px; padding:16px 18px; margin-bottom:12px;
+    transition:border-color 0.3s, background 0.3s;
+  }
+  .studio-stage.working { border-color:rgba(0,212,255,0.35); background:rgba(0,212,255,0.04); }
+  .studio-stage.done { border-color:rgba(34,197,94,0.28); }
+  .studio-stage-head { display:flex; align-items:center; gap:12px; }
+  .studio-avatar {
+    width:38px; height:38px; border-radius:50%; flex-shrink:0;
+    display:flex; align-items:center; justify-content:center;
+    font-family:'Space Grotesk',sans-serif; font-weight:800; font-size:15px;
+    background:rgba(0,212,255,0.1); color:#00d4ff; border:1px solid rgba(0,212,255,0.25);
+  }
+  .studio-stage.done .studio-avatar { background:rgba(34,197,94,0.1); color:#22c55e; border-color:rgba(34,197,94,0.3); }
+  .studio-stage-meta { flex:1; min-width:0; }
+  .studio-persona { color:#f1f5f9; font-size:14px; font-weight:700; font-family:'Inter',sans-serif; }
+  .studio-role { color:#64748b; font-size:11px; text-transform:uppercase; letter-spacing:0.12em; font-family:'Space Grotesk',sans-serif; margin-top:2px; }
+  .studio-status {
+    font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.1em;
+    padding:5px 11px; border-radius:999px; white-space:nowrap;
+    font-family:'Space Grotesk',sans-serif;
+  }
+  .studio-status.waiting { background:rgba(148,163,184,0.1); color:#64748b; border:1px solid rgba(148,163,184,0.18); }
+  .studio-status.working { background:rgba(0,212,255,0.12); color:#00d4ff; border:1px solid rgba(0,212,255,0.3); }
+  .studio-status.done { background:rgba(34,197,94,0.12); color:#22c55e; border:1px solid rgba(34,197,94,0.3); }
+
+  /* Working state: shimmer skeleton (same skelPulse pattern as the input box) */
+  .studio-skeleton { margin-top:14px; }
+  .studio-skeleton .skel-line {
+    height:11px; border-radius:6px; margin-bottom:9px;
+    background:linear-gradient(90deg, rgba(0,212,255,0.05) 25%, rgba(0,212,255,0.14) 50%, rgba(0,212,255,0.05) 75%);
+    background-size:200% 100%;
+    animation:skelPulse 1.8s ease-in-out infinite;
+  }
+  .studio-skeleton .skel-line:nth-child(2) { width:78%; animation-delay:0.15s; }
+  .studio-skeleton .skel-line:nth-child(3) { width:52%; animation-delay:0.3s; }
+  .studio-output {
+    margin-top:12px; padding-top:12px; border-top:1px solid rgba(255,255,255,0.06);
+    color:#cbd5e1; font-size:13px; line-height:1.65; white-space:pre-wrap;
+  }
+  @media(max-width:768px){
+    .studio-body { padding:16px 14px; }
+    .studio-stage { padding:14px; }
+    .studio-avatar { width:32px; height:32px; font-size:13px; }
+    .studio-status { padding:4px 9px; font-size:9px; }
+    .studio-role { font-size:10px; letter-spacing:0.08em; }
+  }
   .gallery-header {
     display:flex; align-items:center; justify-content:space-between;
     padding:20px 32px; flex-shrink:0;
@@ -753,6 +841,10 @@
       <span class="nav-icon"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="14" height="14" rx="2"/><path d="M21 8l-4 3 4 3V8z"/></svg></span>
       Video Gallery
     </div>
+    <div class="vm-nav-item" onclick="navTo('studio')" id="nav-studio">
+      <span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M3 7h18v12a1 1 0 01-1 1H4a1 1 0 01-1-1V7z"/><path d="M3 7l3.5-3.5M9 7l3.5-3.5M15 7l3.5-3.5"/></svg></span>
+      Studio
+    </div>
     <div class="vm-nav-item" onclick="showComingSoon('Website')">
       Website
       <span class="cs-badge">Soon</span>
@@ -1060,6 +1152,33 @@
     </div>
     <div class="gallery-load-more" id="videoGalleryLoadMore" style="display:none;">
       <button onclick="loadMoreVideoGalleryItems()">Load More</button>
+    </div>
+  </div>
+</div>
+
+<!-- FULL-SCREEN VALLEYMIND STUDIO -->
+<div id="studioOverlay">
+  <div class="gallery-header">
+    <div style="display:flex;align-items:center;">
+      <h2>ValleyMind Studio</h2>
+      <span class="gallery-count" id="studioStatusLabel"></span>
+    </div>
+    <button class="gallery-close-btn" onclick="closeStudio()">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      Close
+    </button>
+  </div>
+  <div class="studio-body">
+    <div class="studio-inner">
+      <div class="studio-prompt-wrap">
+        <textarea id="studioPrompt" rows="2" placeholder="Describe your movie idea — a logline, a scene, a feeling..."></textarea>
+        <div class="studio-prompt-actions">
+          <button class="studio-reset-btn" onclick="resetStudio()">Reset</button>
+          <button class="studio-go-btn" id="studioGoBtn" onclick="runStudioPipeline()">Start Production</button>
+        </div>
+      </div>
+      <div class="studio-mock-note">Preview shell — running on mock data. No AI is connected yet.</div>
+      <div id="studioStages"></div>
     </div>
   </div>
 </div>
@@ -2673,6 +2792,8 @@ function navTo(view) {
         openGallery();
     } else if (view === "videoGallery") {
         openVideoGallery();
+    } else if (view === "studio") {
+        openStudio();
     } else if (view === "chat") {
         closeSidebar();
         focusChatInput();
@@ -2931,6 +3052,169 @@ function renderVideoGalleryItems(videos) {
             window.open(vid.local_path, "_blank");
         };
         grid.appendChild(card);
+    });
+}
+
+// ── ValleyMind Studio (shell only — mock data, no AI wired yet) ─────────
+var STUDIO_STAGES = [
+    {
+        persona: "Angelina", initial: "A",
+        role: "Writer — story, dialogue, screenplay",
+        mock: "DRAFT v1 — three beats.\n\n1. Cold open: she finds the letter, doesn't open it.\n2. The drive out; the radio keeps cutting. Dialogue stays clipped — she isn't ready to say it out loud.\n3. She reads it at the water's edge. We don't hear the words.\n\nHanding this to Marcus for coverage."
+    },
+    {
+        persona: "Marcus", initial: "M",
+        role: "Director — scene breakdown, camera, framing",
+        mock: "SHOT LIST — 3 scenes, 11 setups.\n\nSc.1 — Slow push, 50mm, letter held out of focus in the foreground.\nSc.2 — Locked handheld from the back seat; keep her reflected, never centered.\nSc.3 — Wide, static, she's small in frame. Hold well past comfortable.\n\nElena has the pacing note: let 3 breathe."
+    },
+    {
+        persona: "Elena", initial: "E",
+        role: "Editor — clipping, assembly, transitions, pacing",
+        mock: "CUT v1 — 2m 48s.\n\nTrimmed 6s off the cold open; the hesitation reads better short.\nStraight cuts throughout except one slow dissolve into the water.\nHeld Marcus's final wide for 9 seconds. It earns it.\n\nAssembly locked."
+    }
+];
+
+var studioState = [];        // "waiting" | "working" | "done" per stage
+var studioRunning = false;
+var studioTimers = [];
+
+function clearStudioTimers() {
+    studioTimers.forEach(function (t) { clearTimeout(t); });
+    studioTimers = [];
+}
+
+function openStudio() {
+    closeSidebar();
+    var overlay = document.getElementById("studioOverlay");
+    if (!overlay) return;
+    if (!studioState.length) resetStudio();
+    overlay.style.display = "flex";
+    requestAnimationFrame(function () { overlay.classList.add("open"); });
+    setTimeout(function () {
+        var inp = document.getElementById("studioPrompt");
+        if (inp) inp.focus();
+    }, 400);
+}
+
+function closeStudio() {
+    var overlay = document.getElementById("studioOverlay");
+    if (!overlay) return;
+    overlay.classList.remove("open");
+    overlay.classList.add("closing");
+    setTimeout(function () {
+        overlay.classList.remove("closing");
+        overlay.style.display = "none";
+        currentNavView = "chat";
+        document.querySelectorAll(".vm-nav-item").forEach(function (el) { el.classList.remove("active"); });
+        var chatNav = document.getElementById("nav-chat");
+        if (chatNav) chatNav.classList.add("active");
+        focusChatInput();
+    }, 400);
+}
+
+function resetStudio() {
+    clearStudioTimers();
+    studioRunning = false;
+    studioState = STUDIO_STAGES.map(function () { return "waiting"; });
+    var btn = document.getElementById("studioGoBtn");
+    if (btn) { btn.disabled = false; btn.textContent = "Start Production"; }
+    var label = document.getElementById("studioStatusLabel");
+    if (label) label.textContent = "";
+    renderStudioStages();
+}
+
+function renderStudioStages() {
+    var host = document.getElementById("studioStages");
+    if (!host) return;
+    host.innerHTML = "";
+    STUDIO_STAGES.forEach(function (stage, i) {
+        var status = studioState[i] || "waiting";
+        var card = document.createElement("div");
+        card.className = "studio-stage " + status;
+
+        var head = document.createElement("div");
+        head.className = "studio-stage-head";
+
+        var avatar = document.createElement("div");
+        avatar.className = "studio-avatar";
+        avatar.textContent = stage.initial;
+        head.appendChild(avatar);
+
+        var meta = document.createElement("div");
+        meta.className = "studio-stage-meta";
+        var nameEl = document.createElement("div");
+        nameEl.className = "studio-persona";
+        nameEl.textContent = stage.persona;
+        var roleEl = document.createElement("div");
+        roleEl.className = "studio-role";
+        roleEl.textContent = stage.role;
+        meta.appendChild(nameEl);
+        meta.appendChild(roleEl);
+        head.appendChild(meta);
+
+        var pill = document.createElement("span");
+        pill.className = "studio-status " + status;
+        pill.textContent = status;
+        head.appendChild(pill);
+
+        card.appendChild(head);
+
+        if (status === "working") {
+            var skel = document.createElement("div");
+            skel.className = "studio-skeleton";
+            for (var k = 0; k < 3; k++) {
+                var line = document.createElement("div");
+                line.className = "skel-line";
+                skel.appendChild(line);
+            }
+            card.appendChild(skel);
+        } else if (status === "done") {
+            var out = document.createElement("div");
+            out.className = "studio-output";
+            out.textContent = stage.mock;
+            card.appendChild(out);
+        }
+
+        host.appendChild(card);
+    });
+}
+
+function runStudioPipeline() {
+    if (studioRunning) return;
+    var promptEl = document.getElementById("studioPrompt");
+    var idea = (promptEl && promptEl.value || "").trim();
+    if (!idea) {
+        if (promptEl) promptEl.focus();
+        return;
+    }
+
+    clearStudioTimers();
+    studioRunning = true;
+    studioState = STUDIO_STAGES.map(function () { return "waiting"; });
+    var btn = document.getElementById("studioGoBtn");
+    if (btn) { btn.disabled = true; btn.textContent = "In Production..."; }
+    var label = document.getElementById("studioStatusLabel");
+    renderStudioStages();
+
+    // Mock state machine: each stage works for a beat, then completes and
+    // hands off to the next. No LLM or provider is called.
+    var STAGE_MS = 1800;
+    STUDIO_STAGES.forEach(function (stage, i) {
+        studioTimers.push(setTimeout(function () {
+            studioState[i] = "working";
+            if (label) label.textContent = stage.persona + " is working...";
+            renderStudioStages();
+        }, i * STAGE_MS));
+
+        studioTimers.push(setTimeout(function () {
+            studioState[i] = "done";
+            renderStudioStages();
+            if (i === STUDIO_STAGES.length - 1) {
+                studioRunning = false;
+                if (btn) { btn.disabled = false; btn.textContent = "Run Again"; }
+                if (label) label.textContent = "Production complete";
+            }
+        }, (i + 1) * STAGE_MS));
     });
 }
 
