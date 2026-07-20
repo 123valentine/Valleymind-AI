@@ -20,14 +20,17 @@ def _clean_text(text: str) -> str:
     return text.strip()
 
 
-async def _edge_to_file(text: str, output_path: Path):
+DEFAULT_VOICE = "en-US-GuyNeural"
+
+
+async def _edge_to_file(text: str, output_path: Path, voice: str = DEFAULT_VOICE):
     import edge_tts
 
-    communicate = edge_tts.Communicate(text, "en-US-GuyNeural")
+    communicate = edge_tts.Communicate(text, voice or DEFAULT_VOICE)
     await communicate.save(str(output_path))
 
 
-def speak_marcus(text: str) -> dict:
+def speak_marcus(text: str, voice: str = DEFAULT_VOICE) -> dict:
     """
     Optional Marcus-only local TTS.
 
@@ -45,7 +48,7 @@ def speak_marcus(text: str) -> dict:
         TTS_FOLDER.mkdir(parents=True, exist_ok=True)
         filename = _safe_filename()
         output_path = TTS_FOLDER / filename
-        asyncio.run(asyncio.wait_for(_edge_to_file(text[:1600], output_path), timeout=15))
+        asyncio.run(asyncio.wait_for(_edge_to_file(text[:1600], output_path, voice), timeout=15))
         if output_path.exists() and output_path.stat().st_size > 0:
             print(f"[TTS] Edge TTS generated: {filename}")
             return {

@@ -1052,6 +1052,16 @@
             </div>
           </div>
 
+          <!-- Persona switcher -->
+          <div style="position:relative;">
+            <button id="personaBtn" onclick="togglePersonaMenu()" title="Who you're talking to"
+              style="height:36px;padding:0 10px;border-radius:18px;background:rgba(0,212,255,0.1);border:1px solid rgba(0,212,255,0.25);cursor:pointer;display:flex;align-items:center;gap:6px;color:#00d4ff;font-size:12px;font-weight:700;font-family:'Space Grotesk',sans-serif;transition:all 0.2s;white-space:nowrap;">
+              <span id="personaBtnLabel">Marcus</span>
+              <i data-lucide="chevron-up" style="width:13px;height:13px;"></i>
+            </button>
+            <div id="personaMenu" style="display:none;position:absolute;bottom:calc(100% + 8px);left:0;background:#0f172a;border:1px solid rgba(0,212,255,0.2);border-radius:12px;padding:6px;min-width:200px;box-shadow:0 12px 40px rgba(0,0,0,0.7);z-index:100;"></div>
+          </div>
+
           <!-- Textarea (autogrows via JS) -->
           <textarea id="chatInput" rows="1" placeholder="Reply to Marcus..."
             style="flex:1;background:transparent;border:none;outline:none;box-shadow:none;color:white;font-size:15px;line-height:1.5;resize:none;padding:8px 4px;min-height:24px;max-height:180px;font-family:'Inter',sans-serif;overflow-y:hidden;"></textarea>
@@ -1231,7 +1241,7 @@
         <textarea id="studioPrompt" rows="2" placeholder="Describe your movie idea — a logline, a scene, a feeling..."></textarea>
         <div class="studio-prompt-actions">
           <button class="studio-reset-btn" onclick="resetStudio()">Reset</button>
-          <button class="studio-go-btn" id="studioGoBtn" onclick="runStudioPipeline()">Start Production</button>
+          <button class="studio-go-btn" id="studioGoBtn" onclick="studioSubmit()">Start Production</button>
         </div>
       </div>
     </div>
@@ -3110,7 +3120,60 @@ function renderVideoGalleryItems(videos) {
     });
 }
 
-// ── ValleyMind Studio (shell only — mock data, no AI wired yet) ─────────
+// ── Persona switching ──────────────────────────────────────────────────
+var CREW = [
+    { key: "marcus",   name: "Marcus",   role: "Director — scenes, camera, framing" },
+    { key: "angelina", name: "Angelina", role: "Writer — story, dialogue, screenplay" },
+    { key: "elena",    name: "Elena",    role: "Editor — assembly, transitions, pacing" }
+];
+var currentPersona = "marcus";
+
+function crewMember(key) {
+    for (var i = 0; i < CREW.length; i++) if (CREW[i].key === key) return CREW[i];
+    return CREW[0];
+}
+
+function togglePersonaMenu() {
+    var menu = document.getElementById("personaMenu");
+    if (!menu) return;
+    if (menu.style.display === "block") { menu.style.display = "none"; return; }
+    menu.innerHTML = "";
+    CREW.forEach(function (m) {
+        var item = document.createElement("div");
+        var active = m.key === currentPersona;
+        item.style.cssText = "padding:9px 12px;border-radius:8px;cursor:pointer;transition:all 0.12s;" +
+            (active ? "background:rgba(0,212,255,0.1);" : "");
+        item.innerHTML = '<div style="color:' + (active ? "#00d4ff" : "#e2e8f0") + ';font-size:13px;font-weight:700;">' + m.name + '</div>' +
+            '<div style="color:#64748b;font-size:10.5px;margin-top:2px;">' + m.role + '</div>';
+        item.onmouseover = function () { if (!active) item.style.background = "rgba(255,255,255,0.05)"; };
+        item.onmouseout = function () { if (!active) item.style.background = "transparent"; };
+        item.onclick = function () { setPersona(m.key); menu.style.display = "none"; };
+        menu.appendChild(item);
+    });
+    menu.style.display = "block";
+}
+
+function setPersona(key) {
+    currentPersona = crewMember(key).key;
+    var m = crewMember(currentPersona);
+    var lbl = document.getElementById("personaBtnLabel");
+    if (lbl) lbl.textContent = m.name;
+    var input = document.getElementById("chatInput");
+    if (input) input.placeholder = "Reply to " + m.name + "...";
+    var sInput = document.getElementById("studioPrompt");
+    if (sInput && studioRunning) sInput.placeholder = "Send a note to " + m.name + " mid-run...";
+}
+
+document.addEventListener("click", function (e) {
+    var menu = document.getElementById("personaMenu");
+    var btn = document.getElementById("personaBtn");
+    if (!menu || !btn) return;
+    if (menu.style.display === "block" && !menu.contains(e.target) && !btn.contains(e.target)) {
+        menu.style.display = "none";
+    }
+});
+
+// ── ValleyMind Studio ──────────────────────────────────────────────────
 var STUDIO_STAGES = [
     { key: "writing",    persona: "Angelina", initial: "A", role: "Writer — story, dialogue, screenplay" },
     { key: "directing",  persona: "Marcus",   initial: "M", role: "Director — scene breakdown, camera, framing" },
@@ -3126,6 +3189,9 @@ var studioSheetText = "";
 var studioScenes = [];
 var studioFrames = [];       // {number, title, image_url}
 var studioExpectedFrames = 0;
+var studioRunId = "";
+var studioNotes = [];        // late direction the user sent mid-run
+var studioQuestion = "";     // a question the crew asked back
 
 function clearStudioTimers() {
     studioTimers.forEach(function (t) { clearTimeout(t); });
@@ -3180,11 +3246,42 @@ function resetStudio() {
     studioScenes = [];
     studioFrames = [];
     studioExpectedFrames = 0;
+    studioRunId = "";
+    studioNotes = [];
+    studioQuestion = "";
     var btn = document.getElementById("studioGoBtn");
     if (btn) { btn.disabled = false; btn.textContent = "Start Production"; }
     var label = document.getElementById("studioStatusLabel");
     if (label) label.textContent = "";
+    var p = document.getElementById("studioPrompt");
+    if (p) p.placeholder = "Describe your movie idea — a logline, a scene, a feeling...";
     renderStudioStages();
+}
+
+// The bottom box is dual-purpose: it starts a run, and while a run is live it
+// sends notes/answers to the crew that the pipeline picks up mid-flight.
+function studioSubmit() {
+    if (studioRunning) { sendStudioNote(); } else { runStudioPipeline(); }
+}
+
+async function sendStudioNote() {
+    var el = document.getElementById("studioPrompt");
+    var text = (el && el.value || "").trim();
+    if (!text || !studioRunId) return;
+    el.value = "";
+    studioNotes.push({ who: "You", text: text });
+    studioQuestion = "";
+    renderStudioStages();
+    try {
+        await apiFetch("/api/studio/note", {
+            method: "POST",
+            credentials: "include",
+            headers: authHeaders({ "Content-Type": "application/json" }),
+            body: JSON.stringify({ run_id: studioRunId, text: text })
+        });
+    } catch (err) {
+        console.warn("[Studio] note failed:", err);
+    }
 }
 
 function renderStudioStages() {
@@ -3297,6 +3394,36 @@ function renderStudioStages() {
 
         host.appendChild(card);
     });
+
+    // Crew questions + the user's mid-run notes, shown as a small thread
+    if (studioQuestion || studioNotes.length) {
+        var thread = document.createElement("div");
+        thread.className = "studio-stage";
+        if (studioQuestion) {
+            var q = document.createElement("div");
+            q.className = "studio-sheet";
+            var ql = document.createElement("div");
+            ql.className = "studio-sheet-label";
+            ql.textContent = "Marcus is asking";
+            var qb = document.createElement("div");
+            qb.textContent = studioQuestion;
+            q.appendChild(ql); q.appendChild(qb);
+            thread.appendChild(q);
+        }
+        studioNotes.forEach(function (n) {
+            var row = document.createElement("div");
+            row.className = "studio-scene";
+            var t = document.createElement("div");
+            t.className = "studio-scene-title";
+            t.textContent = n.who;
+            var b = document.createElement("div");
+            b.className = "studio-scene-body";
+            b.textContent = n.text;
+            row.appendChild(t); row.appendChild(b);
+            thread.appendChild(row);
+        });
+        host.appendChild(thread);
+    }
 }
 
 function studioSkeleton() {
@@ -3326,9 +3453,17 @@ async function runStudioPipeline() {
     studioScenes = [];
     studioFrames = [];
     studioExpectedFrames = 0;
+    studioNotes = [];
+    studioQuestion = "";
+    studioRunId = "run_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8);
     studioState = STUDIO_STAGES.map(function () { return "waiting"; });
     var btn = document.getElementById("studioGoBtn");
-    if (btn) { btn.disabled = true; btn.textContent = "In Production..."; }
+    // The input stays live during a run so the user can redirect the crew
+    if (btn) { btn.textContent = "Send Note"; }
+    if (promptEl) {
+        promptEl.value = "";
+        promptEl.placeholder = "Change your mind? e.g. \"rename the lead to Ada\", \"make scene 3 at night\"";
+    }
     var label = document.getElementById("studioStatusLabel");
     renderStudioStages();
 
@@ -3337,8 +3472,10 @@ async function runStudioPipeline() {
 
     function finish(msg) {
         studioRunning = false;
+        studioQuestion = "";
         if (btn) { btn.disabled = false; btn.textContent = "Run Again"; }
         if (label) label.textContent = msg || "Production complete";
+        if (promptEl) promptEl.placeholder = "Describe your movie idea — a logline, a scene, a feeling...";
         renderStudioStages();
     }
 
@@ -3347,7 +3484,7 @@ async function runStudioPipeline() {
             method: "POST",
             credentials: "include",
             headers: authHeaders({ "Content-Type": "application/json" }),
-            body: JSON.stringify({ idea: idea })
+            body: JSON.stringify({ idea: idea, run_id: studioRunId })
         });
         if (!res.ok || !res.body) { finish("Studio run failed"); return; }
 
@@ -3380,6 +3517,19 @@ async function runStudioPipeline() {
 
                 if (evt.error) { finish(evt.error); return; }
                 if (evt.done) { finish(); return; }
+
+                // Crew asking the user something back
+                if (evt.question) {
+                    studioQuestion = evt.question;
+                    if (label) label.textContent = "Marcus has a question";
+                    scheduleRender();
+                    continue;
+                }
+                if (evt.question_resolved) {
+                    studioQuestion = "";
+                    scheduleRender();
+                    continue;
+                }
 
                 var idx = studioStageIndex(evt.stage);
                 if (idx === -1) continue;
@@ -3968,7 +4118,7 @@ window.send = async function () {
     var streamError = null;
     var lastSentMessage = text;
     try {
-        var body = { message: text || "(image attached)" };
+        var body = { message: text || "(image attached)", persona: currentPersona };
         if (currentChatId) body.chat_id = currentChatId;
         if (sentImage) body.image = sentImage;
 
@@ -4221,7 +4371,7 @@ window.send = async function () {
     if (streamError) {
         try {
             removeThinkingIndicator(thinking);
-            var body2 = { message: text || "(image attached)" };
+            var body2 = { message: text || "(image attached)", persona: currentPersona };
             if (currentChatId) body2.chat_id = currentChatId;
             if (pendingImageData) body2.image = pendingImageData;
             var fallbackRes = await apiFetch("/chat", {

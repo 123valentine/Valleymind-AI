@@ -10,6 +10,7 @@ import json
 import os
 import re
 import secrets
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from threading import Lock, Thread
@@ -544,17 +545,40 @@ def load_marcus(user_id: str):
     if not user_id:
         return None
 
+    return load_persona_brain(user_id, "marcus")
+
+
+VALID_PERSONAS = ("marcus", "elena", "angelina")
+
+
+def normalize_persona(value: str) -> str:
+    """Only the three known crew members; anything else falls back to Marcus."""
+    p = str(value or "").strip().lower()
+    return p if p in VALID_PERSONAS else "marcus"
+
+
+def load_persona_brain(user_id: str, persona: str = "marcus"):
+    """Brain for a specific persona. Personality comes from that character's
+    behavior.json, but long-term memory stays SHARED across all three — who is
+    speaking changes the voice, not what the assistant knows about the user."""
+    user_id = str(user_id or "").strip()
+    if not user_id:
+        return None
+    persona = normalize_persona(persona)
+    cache_key = f"{user_id}:{persona}"
+
     with _marcus_lock:
-        cached = _cache_marcus_by_user.get(user_id)
+        cached = _cache_marcus_by_user.get(cache_key)
     if cached is not None:
         return cached
 
-    char_folder = PROJECT_ROOT / "character" / "marcus"
-    behavior_path = char_folder / "behavior.json"
+    behavior_path = PROJECT_ROOT / "character" / persona / "behavior.json"
+    # Shared memory path for every persona (deliberately the marcus folder) so
+    # user facts never fragment per-voice.
     memory_path = PROJECT_ROOT / "memory_data" / "users" / user_id / "marcus" / "long_term.json"
 
     if not behavior_path.exists():
-        print(f"[ERROR] Marcus behavior.json not found at {behavior_path}")
+        print(f"[ERROR] behavior.json not found for persona '{persona}' at {behavior_path}")
         return None
 
     try:
@@ -563,10 +587,10 @@ def load_marcus(user_id: str):
             behavior_file=str(behavior_path),
         )
         with _marcus_lock:
-            _cache_marcus_by_user[user_id] = brain
+            _cache_marcus_by_user[cache_key] = brain
         return brain
     except Exception as exc:
-        print(f"[ERROR] Failed to instantiate Marcus brain: {exc}")
+        print(f"[ERROR] Failed to instantiate '{persona}' brain: {exc}")
         return None
 
 
@@ -1101,6 +1125,7 @@ def chat():
         chat_id = str(data.get("chat_id") or "").strip()
         image_data = str(data.get("image") or "").strip()
         source = str(data.get("source") or "").strip() or None
+        persona = normalize_persona(data.get("persona"))
 
         # ── Route ─────────────────────────────────────────────────────
         router = get_router()
@@ -1122,7 +1147,7 @@ def chat():
             return _dispatch_multi_json(user_id, message, chat_id, image_data)
         if has_image:
             return _dispatch_image_json(user_id, message, chat_id, image_data)
-        return _dispatch_chat_json(user_id, message, chat_id, image_data)
+        return _dispatch_chat_json(user_id, message, chat_id, image_data, persona=persona)
 
     except Exception as e:
         print(f"[CRITICAL] /chat crashed: {e}")
@@ -1423,9 +1448,9 @@ def _dispatch_image_stream(user_id, message, chat_id, image_data):
     )
 
 
-def _dispatch_chat_json(user_id, message, chat_id, image_data):
-    """TEXT → non-streaming JSON.  Reuses Marcus Brain."""
-    marcus = load_marcus(user_id)
+def _dispatch_chat_json(user_id, message, chat_id, image_data, persona="marcus"):
+    """TEXT → non-streaming JSON, in the selected persona's voice."""
+    marcus = load_persona_brain(user_id, persona)
     if not marcus:
         return jsonify({"status": "error", "message": "Marcus is not configured"}), 404
 
@@ -1437,7 +1462,8 @@ def _dispatch_chat_json(user_id, message, chat_id, image_data):
     voice = (
         {"enabled": True, "spoken": False, "engine": "browser", "reason": "reply too long for blocking server TTS"}
         if len(reply) > 900
-        else speak_marcus(reply)
+        # Each crew member speaks in their own configured voice
+        else speak_marcus(reply, voice=getattr(marcus.profile, "voice", "") or "en-US-GuyNeural")
     )
 
     updated_title = None
@@ -1460,7 +1486,7 @@ def _dispatch_chat_json(user_id, message, chat_id, image_data):
     return jsonify({
         "status": "success",
         "chat_id": chat_id or f"{marcus.profile.key}_main_chat",
-        "character": "marcus",
+        "character": normalize_persona(persona),
         "reply": reply,
         "voice": voice,
         "updated_title": updated_title,
@@ -1473,9 +1499,9 @@ def _dispatch_chat_json(user_id, message, chat_id, image_data):
     })
 
 
-def _dispatch_chat_stream(user_id, message, chat_id, image_data):
-    """TEXT → SSE stream.  Reuses Marcus Brain."""
-    marcus = load_marcus(user_id)
+def _dispatch_chat_stream(user_id, message, chat_id, image_data, persona="marcus"):
+    """TEXT → SSE stream, in the selected persona's voice."""
+    marcus = load_persona_brain(user_id, persona)
     if not marcus:
         return jsonify({"status": "error", "message": "Marcus not configured"}), 404
 
@@ -1902,6 +1928,7 @@ def chat_stream():
         chat_id = str(data.get("chat_id") or "").strip()
         image_data = str(data.get("image") or "").strip()
         source = str(data.get("source") or "").strip() or None
+        persona = normalize_persona(data.get("persona"))
 
         # ── Route ─────────────────────────────────────────────────────
         router = get_router()
@@ -1923,7 +1950,7 @@ def chat_stream():
             return _dispatch_multi_stream(user_id, message, chat_id, image_data)
         if has_image:
             return _dispatch_image_stream(user_id, message, chat_id, image_data)
-        return _dispatch_chat_stream(user_id, message, chat_id, image_data)
+        return _dispatch_chat_stream(user_id, message, chat_id, image_data, persona=persona)
 
     except Exception as e:
         print(f"[CRITICAL] /chat/stream crashed: {e}")
@@ -2498,6 +2525,43 @@ def dev_routing_log():
 # ── Media Library API ────────────────────────────────────────────────────────
 
 
+# Live Studio runs: run_id -> {"notes": [...], "answer": str|None}. Lets the
+# user redirect a run while it is in flight ("rename the lead", "scene 3 at
+# night") and lets the crew ask a clarifying question back mid-run.
+_studio_runs = {}
+_studio_runs_lock = Lock()
+
+
+def _studio_take_notes(run_id: str) -> list:
+    """Drain any notes the user has added since the last stage boundary."""
+    if not run_id:
+        return []
+    with _studio_runs_lock:
+        run = _studio_runs.get(run_id)
+        if not run or not run["notes"]:
+            return []
+        notes, run["notes"] = run["notes"], []
+        return notes
+
+
+@app.route("/api/studio/note", methods=["POST"])
+def api_studio_note():
+    """Add a mid-run note, or answer a question the crew asked."""
+    user_id, error = _require_login()
+    if error:
+        return error
+    data = request.get_json(silent=True) or {}
+    run_id = str(data.get("run_id") or "").strip()
+    text = str(data.get("text") or "").strip()
+    if not run_id or not text:
+        return jsonify({"status": "error", "message": "run_id and text are required"}), 400
+    with _studio_runs_lock:
+        run = _studio_runs.setdefault(run_id, {"notes": [], "answer": None})
+        run["notes"].append(text)
+        run["answer"] = text
+    return jsonify({"status": "success"})
+
+
 @app.route("/api/studio/run", methods=["POST"])
 def api_studio_run():
     """ValleyMind Studio pipeline (SSE): Angelina writes -> Marcus breaks it into
@@ -2509,13 +2573,27 @@ def api_studio_run():
 
     data = request.get_json(silent=True) or {}
     idea = str(data.get("idea") or "").strip()
+    run_id = str(data.get("run_id") or "").strip()
     if not idea:
         return jsonify({"status": "error", "message": "An idea is required"}), 400
 
     from core.brain import _call_llm_cluster, _call_llm_cluster_stream
     import core.studio as studio
 
+    if run_id:
+        with _studio_runs_lock:
+            _studio_runs.setdefault(run_id, {"notes": [], "answer": None})
+
     def generate():
+        notes_applied = []
+
+        def fold_notes():
+            """Pick up any late direction the user typed while this run is live."""
+            fresh = _studio_take_notes(run_id)
+            if fresh:
+                notes_applied.extend(fresh)
+            return notes_applied
+
         try:
             # ── Stage 1: Angelina writes (streamed token by token) ──────
             yield f"data: {json.dumps({'stage': 'writing', 'status': 'working'})}\n\n"
@@ -2546,11 +2624,35 @@ def api_studio_run():
 
             yield f"data: {json.dumps({'stage': 'writing', 'status': 'done', 'character_sheet': sheet, 'sheet_text': sheet_text})}\n\n"
 
+            # ── Ambiguity check: the crew may ask one question back ─────
+            if run_id:
+                try:
+                    q_raw, _ = _call_llm_cluster(studio.clarify_messages(idea, script), timeout=25)
+                    question = studio.parse_question(q_raw)
+                    if question:
+                        yield f"data: {json.dumps({'question': question, 'persona': 'Marcus'})}\n\n"
+                        # Give the user a short window to answer; whatever they
+                        # type lands in the run's notes and is folded in below.
+                        waited = 0.0
+                        while waited < 20.0:
+                            time.sleep(1.0)
+                            waited += 1.0
+                            with _studio_runs_lock:
+                                run = _studio_runs.get(run_id) or {}
+                                if run.get("answer"):
+                                    break
+                        answered = fold_notes()
+                        yield f"data: {json.dumps({'question_resolved': True, 'notes': answered})}\n\n"
+                except Exception as exc:
+                    print(f"[STUDIO] clarify step skipped: {exc}")
+
             # ── Stage 2: Marcus breaks it into numbered scenes ──────────
             yield f"data: {json.dumps({'stage': 'directing', 'status': 'working'})}\n\n"
             scenes = []
             try:
-                raw, _ = _call_llm_cluster(studio.scene_messages(idea, script, sheet_text), timeout=60)
+                raw, _ = _call_llm_cluster(
+                    studio.scene_messages(idea, script, sheet_text, notes=fold_notes()), timeout=60,
+                )
                 scenes = studio.normalize_scenes(studio._parse_json_block(raw))
             except Exception as exc:
                 print(f"[STUDIO] scene breakdown failed: {exc}")
@@ -2569,7 +2671,8 @@ def api_studio_run():
             config = get_config()
             media = get_media_manager(user_id)
             for scene in scenes:
-                prompt = studio.storyboard_prompt(scene, sheet_text, look)
+                # Late direction can land between frames — pick it up per frame
+                prompt = studio.storyboard_prompt(scene, sheet_text, look, notes=fold_notes())
                 try:
                     result = pm.get_manager().execute(
                         pm.Capability.IMAGE, prompt=prompt,

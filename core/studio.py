@@ -101,7 +101,19 @@ def character_sheet_messages(idea: str, script: str) -> list[dict]:
 
 # ── Stage 2: Marcus directs ─────────────────────────────────────────────────
 
-def scene_messages(idea: str, script: str, sheet_text: str) -> list[dict]:
+def _notes_block(notes: list[str] | None) -> str:
+    """Late direction the user typed mid-run — applied on top of everything."""
+    notes = [n for n in (notes or []) if str(n).strip()]
+    if not notes:
+        return ""
+    joined = "\n".join(f"- {n}" for n in notes)
+    return (
+        "\n\nLATE DIRECTION FROM THE USER — these override earlier choices and "
+        f"must be applied:\n{joined}"
+    )
+
+
+def scene_messages(idea: str, script: str, sheet_text: str, notes: list[str] | None = None) -> list[dict]:
     return [
         {"role": "system", "content": (
             _persona_prompt("marcus")
@@ -113,6 +125,7 @@ def scene_messages(idea: str, script: str, sheet_text: str) -> list[dict]:
               '[{"number":1,"title":"short scene title","description":"what we see, visually concrete",'
               '"camera":"lens/movement, e.g. 50mm slow push","framing":"e.g. medium close-up, low angle"}]\n'
               "No markdown, no commentary."
+            + _notes_block(notes)
         )},
         {"role": "user", "content": (
             f"IDEA: {idea}\n\nCHARACTER SHEET:\n{sheet_text}\n\nANGELINA'S SCREENPLAY:\n{script[:6000]}"
@@ -120,9 +133,33 @@ def scene_messages(idea: str, script: str, sheet_text: str) -> list[dict]:
     ]
 
 
+# ── Clarifying question (asked back to the user when genuinely ambiguous) ────
+
+def clarify_messages(idea: str, script: str) -> list[dict]:
+    return [
+        {"role": "system", "content": (
+            _persona_prompt("marcus")
+            + "\n\nYou are about to direct this. If something genuinely important is ambiguous "
+              "and would change how you shoot it (setting, era, tone, who the lead is), ask the "
+              "user ONE short question. If nothing important is unclear, say nothing.\n\n"
+              'Respond with ONLY JSON: {"question":"<one short question, or empty string>"}'
+        )},
+        {"role": "user", "content": f"IDEA: {idea}\n\nSCREENPLAY:\n{script[:3000]}"},
+    ]
+
+
+def parse_question(raw: str) -> str:
+    parsed = _parse_json_block(raw)
+    if isinstance(parsed, dict):
+        q = str(parsed.get("question", "") or "").strip()
+        # Guard against the model returning filler instead of a real question
+        return q if len(q) > 5 else ""
+    return ""
+
+
 # ── Stage 3: storyboard prompt per scene ────────────────────────────────────
 
-def storyboard_prompt(scene: dict, sheet_text: str, look: str = "") -> str:
+def storyboard_prompt(scene: dict, sheet_text: str, look: str = "", notes: list[str] | None = None) -> str:
     """Build one image prompt from the scene + the shared character sheet."""
     parts = [
         "Cinematic film storyboard frame.",
@@ -138,6 +175,10 @@ def storyboard_prompt(scene: dict, sheet_text: str, look: str = "") -> str:
         parts.append(f"Characters (keep consistent): {sheet_text}")
     if look:
         parts.append(f"Visual style: {look}")
+    for n in (notes or []):
+        n = str(n).strip()
+        if n:
+            parts.append(n)
     return " ".join(p for p in parts if p)[:1200]
 
 

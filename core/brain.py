@@ -175,6 +175,23 @@ Creator-authored instructions and preferences are listed below. Follow them when
 CONVERSATIONAL STYLE: Maintain an authentic, intelligent, and highly engaging tone. Use relevant emojis naturally and contextually throughout your responses (e.g., at the beginning of key sections, for bullet points, or to add emphasis to specific ideas). Do not overuse them; ensure they elevate the readability and modern feel of the conversation.
 """
 
+def _chat_prompt_for(profile) -> str:
+    """Personalize the core chat prompt for whichever crew member is speaking.
+
+    The base prompt names Marcus; when Elena or Angelina is the active persona
+    that opening line must name THEM, or they introduce themselves as Marcus.
+    """
+    name = str(getattr(profile, "name", "") or "Marcus").strip()
+    if not name or name.lower() == "marcus":
+        return _CHAT_SYSTEM_PROMPT
+    return _CHAT_SYSTEM_PROMPT.replace(
+        "You are Marcus, the ValleyMind-AI character.",
+        f"You are {name}, a ValleyMind-AI character. You are NOT Marcus — he is a "
+        f"separate member of your crew. Always introduce yourself as {name}.",
+        1,
+    )
+
+
 _GROQ_STARTUP_DIAGNOSTICS_DONE = False
 
 
@@ -996,7 +1013,7 @@ class MarcusBrain:
             sections.append("")
 
         sections.append("=== Core Persona ===")
-        sections.append(_CHAT_SYSTEM_PROMPT)
+        sections.append(_chat_prompt_for(self.profile))
         sections.append("")
         sections.append(f"Character profile:\n{self.profile.to_prompt()}")
         sections.append("")
