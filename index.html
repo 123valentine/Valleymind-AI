@@ -706,20 +706,23 @@
     .gallery-card-actions{opacity:1}
    }
 
-@keyframes logoBloom {
+/* Splash logo: rotates in, comes a bit forward, then settles back.
+   No glow — the blue drop-shadow halo was removed deliberately. */
+@keyframes logoIntro {
   0% {
-    transform: scale(0.85);
-    filter: brightness(1.2) saturate(1.4) drop-shadow(0 0 10px rgba(0,212,255,0.2)) blur(2px);
+    transform: rotate(-15deg) scale(0.82);
     opacity: 0;
   }
-  50% {
-    transform: scale(1.05);
-    filter: brightness(1.8) saturate(2.2) drop-shadow(0 0 30px #00d4ff) drop-shadow(0 0 60px #00d4ff) drop-shadow(0 0 100px rgba(0,212,255,0.6));
+  40% {
+    transform: rotate(200deg) scale(1.14);   /* spins round and comes forward */
+    opacity: 1;
+  }
+  75% {
+    transform: rotate(360deg) scale(0.96);   /* eases back */
     opacity: 1;
   }
   100% {
-    transform: scale(1);
-    filter: brightness(1.8) saturate(2.2) drop-shadow(0 0 30px #00d4ff) drop-shadow(0 0 60px #00d4ff) drop-shadow(0 0 100px rgba(0,212,255,0.6));
+    transform: rotate(360deg) scale(1);
     opacity: 1;
   }
 }
@@ -756,8 +759,7 @@
 <body class="text-on-background font-body-md overflow-hidden">
 
 <div id="brandSplashScreen" style="position:fixed; top:0; left:0; width:100vw; height:100vh; background:#020617; z-index:999999; display:none; flex-direction:column; align-items:center; justify-content:center; transition: opacity 0.5s ease-out;">
-  <img src="/static/valleymind-logo.png" alt="Valleymind-AI Logo" style="width:120px;height:120px;object-fit:cover;object-position:top;clip-path:inset(0% 0% 32% 0%); animation: logoBloom 4.2s ease-in-out forwards;">
-  <h1 style="color: #00d4ff; font-family: 'Space Grotesk', 'Inter', sans-serif; font-size: 32px; font-weight: 800; letter-spacing: 0.15em; text-transform: uppercase; margin-top: 12px; text-shadow: 0 0 15px #00d4ff, 0 0 35px rgba(0,212,255,0.6); text-align: center;">VALLEYMIND-AI</h1>
+  <img src="/static/valleymind-logo.png" alt="Valleymind-AI Logo" style="width:200px;height:200px;object-fit:cover;object-position:top;clip-path:inset(0% 0% 32% 0%); animation: logoIntro 2s cubic-bezier(0.34,1.2,0.4,1) forwards;">
 </div>
 
 <!-- Context Menu -->
@@ -3855,10 +3857,11 @@ async function checkSession() {
             }
 
             if (splash) {
+                // Brief show: matches the 2s logo intro, then fades out
                 setTimeout(function () {
                     splash.style.opacity = "0";
                     setTimeout(function () { splash.style.display = "none"; }, 500);
-                }, 5000);
+                }, 2300);
             }
 
             return true;
