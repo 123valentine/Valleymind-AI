@@ -8,6 +8,7 @@ Officially supported endpoints (Alibaba Cloud DashScope API):
 
 from __future__ import annotations
 
+import os
 import time
 import uuid
 from datetime import datetime
@@ -23,12 +24,18 @@ from core.provider_manager import (
 )
 
 
-ALIBABA_BASE = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-ALIBABA_IMAGE_URL = "https://dashscope.aliyuncs.com/api/v1/services/aigc/text2image/image-synthesis"
-ALIBABA_TASK_URL = "https://dashscope.aliyuncs.com/api/v1/tasks"
+# Singapore / International account — same base as the video providers.
+_DASHSCOPE_BASE = os.getenv("DASHSCOPE_BASE", "https://dashscope-intl.aliyuncs.com").rstrip("/")
+ALIBABA_BASE = f"{_DASHSCOPE_BASE}/compatible-mode/v1"
+ALIBABA_IMAGE_URL = f"{_DASHSCOPE_BASE}/api/v1/services/aigc/text2image/image-synthesis"
+ALIBABA_TASK_URL = f"{_DASHSCOPE_BASE}/api/v1/tasks"
+# Verified working models on this account: qwen-image, qwen-image-plus.
+# ("qwen-image-2.0" is rejected by the image-synthesis endpoint.)
+QWEN_IMAGE_MODEL = os.getenv("QWEN_IMAGE_MODEL", "qwen-image").strip()
 GENERATED_DIR = PROJECT_ROOT / "static" / "generated"
 POLL_INTERVAL = 2.0
 MAX_POLL_SECONDS = 60.0
+QWEN_MAX_POLL_SECONDS = float(os.getenv("QWEN_IMAGE_MAX_POLL", "180"))
 
 
 def _api_key() -> str:
@@ -266,6 +273,84 @@ class AlibabaStudioEmbeddingsProvider(BaseProvider):
 
 # ── Auto-discovery ──────────────────────────────────────────────
 
+class QwenImageProvider(BaseProvider):
+    """Higher-quality image generation via Qwen-Image on DashScope.
+
+    Async submit -> poll -> returns the provider's OSS image URL. That URL is
+    also what the Studio hands to image-to-video as the first frame, so the
+    same still becomes the opening frame of its clip.
+
+    Pollinations remains registered as the free-tier provider; which tier gets
+    which is controlled by IMAGE_PROVIDER_FREE / IMAGE_PROVIDER_PAID.
+    """
+
+    name = "QwenImage"
+    capability = Capability.IMAGE
+    priority = 15          # between Pollinations (10) and Gemini stub (20)
+    health = "healthy"
+
+    def execute(self, **kwargs: Any) -> ProviderResult:
+        start = time.perf_counter()
+        try:
+            key = _api_key()
+            if not key:
+                raise RuntimeError("ALIBABA_MODEL_STUDIO_API_KEY not configured")
+            prompt = str(kwargs.get("prompt", "")).strip()
+            if not prompt:
+                raise RuntimeError("No prompt provided for image generation")
+
+            model = kwargs.get("model") or QWEN_IMAGE_MODEL
+            size = kwargs.get("size") or "1024*1024"
+
+            resp = requests.post(
+                ALIBABA_IMAGE_URL,
+                headers={**_headers(), "X-DashScope-Async": "enable"},
+                json={
+                    "model": model,
+                    "input": {"prompt": prompt[:1200]},
+                    "parameters": {"size": size, "n": 1},
+                },
+                timeout=60,
+            )
+            if resp.status_code != 200:
+                raise RuntimeError(f"Qwen image submit HTTP {resp.status_code}: {resp.text[:220]}")
+            task_id = (resp.json().get("output") or {}).get("task_id", "")
+            if not task_id:
+                raise RuntimeError(f"Qwen image returned no task_id: {str(resp.json())[:200]}")
+
+            deadline = time.time() + QWEN_MAX_POLL_SECONDS
+            image_url = ""
+            while time.time() < deadline:
+                time.sleep(3.0)
+                pr = requests.get(f"{ALIBABA_TASK_URL}/{task_id}", headers=_headers(), timeout=30)
+                out = pr.json().get("output") or {}
+                status = str(out.get("task_status", "")).upper()
+                if status == "SUCCEEDED":
+                    results = out.get("results") or []
+                    if results and isinstance(results[0], dict):
+                        image_url = results[0].get("url", "")
+                    break
+                if status in ("FAILED", "CANCELED", "UNKNOWN"):
+                    raise RuntimeError(f"Qwen image task {status}: {str(out.get('message',''))[:180]}")
+
+            if not image_url:
+                raise RuntimeError("Qwen image timed out before returning a URL")
+
+            latency = (time.perf_counter() - start) * 1000
+            print(f"[IMAGE] Qwen image ready in {latency:.0f}ms ({model})")
+            return ProviderResult(
+                success=True,
+                data={"image_url": image_url, "revised_prompt": prompt, "text": "",
+                      "source_url": image_url},
+                provider_name=self.name,
+                latency_ms=latency,
+            )
+        except Exception as exc:
+            latency = (time.perf_counter() - start) * 1000
+            print(f"[IMAGE] Qwen image failed: {exc}")
+            return ProviderResult(success=False, error=str(exc), provider_name=self.name, latency_ms=latency)
+
+
 def discover() -> list[BaseProvider]:
     if not _available():
         return []
@@ -273,4 +358,5 @@ def discover() -> list[BaseProvider]:
         AlibabaStudioTextProvider(),
         AlibabaStudioImageProvider(),
         AlibabaStudioEmbeddingsProvider(),
+        QwenImageProvider(),
     ]

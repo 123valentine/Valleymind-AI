@@ -16,6 +16,7 @@ VIDEO_GENERATION_ENABLED kill switch stays authoritative and untouched.
 from __future__ import annotations
 
 import json
+import os
 import re
 from typing import Any, Iterator
 
@@ -180,6 +181,35 @@ def storyboard_prompt(scene: dict, sheet_text: str, look: str = "", notes: list[
         if n:
             parts.append(n)
     return " ".join(p for p in parts if p)[:1200]
+
+
+def max_clips() -> int:
+    """How many scenes get animated into clips.
+
+    Each image-to-video call runs for minutes, so the default is deliberately
+    small to keep a Studio run inside the request window. Raise
+    STUDIO_MAX_CLIPS once runs move to a background queue.
+    """
+    try:
+        return max(0, int(os.getenv("STUDIO_MAX_CLIPS", "2")))
+    except (TypeError, ValueError):
+        return 2
+
+
+def clip_prompt(scene: dict, notes: list[str] | None = None) -> str:
+    """Motion direction for image-to-video. The still already carries the look,
+    so this describes MOVEMENT only — restating the scene invites the model to
+    redraw the characters and break continuity."""
+    parts = []
+    cam = str(scene.get("camera", "")).strip()
+    if cam:
+        parts.append(cam)
+    parts.append("subtle natural motion, cinematic, keep the subject's appearance unchanged")
+    for n in (notes or []):
+        n = str(n).strip()
+        if n:
+            parts.append(n)
+    return " ".join(parts)[:800]
 
 
 def normalize_scenes(parsed: Any) -> list[dict]:

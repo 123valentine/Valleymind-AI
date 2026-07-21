@@ -21,7 +21,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 from core.brain import MarcusBrain, _call_llm_cluster, _CHAT_SYSTEM_PROMPT
 from core.config import PROJECT_ROOT, get_config
-from core.db import auth_tokens_collection, app_config_collection, chats_collection, get_db, users_collection
+from core.db import auth_tokens_collection, app_config_collection, chats_collection, get_db, studio_runs_collection, users_collection
 from core.media_manager import get_media_manager
 from core.router import RouteDecision, get_router
 from core.tts import speak_marcus
@@ -2544,6 +2544,41 @@ def _studio_take_notes(run_id: str) -> list:
         return notes
 
 
+def _studio_save_run(user_id: str, run: dict):
+    """Persist the latest Studio run so it survives a page reload."""
+    coll = studio_runs_collection()
+    if coll is None:
+        return
+    try:
+        coll.replace_one(
+            {"_id": user_id},
+            {"_id": user_id, "updated_at": datetime.now(timezone.utc), **run},
+            upsert=True,
+        )
+    except Exception as exc:
+        print(f"[STUDIO] could not persist run: {exc}")
+
+
+@app.route("/api/studio/last", methods=["GET"])
+def api_studio_last():
+    """The user's most recent Studio run, for restoring the surface on reload."""
+    user_id, error = _require_login()
+    if error:
+        return error
+    coll = studio_runs_collection()
+    if coll is None:
+        return jsonify({"status": "success", "run": None})
+    try:
+        doc = coll.find_one({"_id": user_id}) or None
+        if doc:
+            doc.pop("_id", None)
+            doc.pop("updated_at", None)
+        return jsonify({"status": "success", "run": doc})
+    except Exception as exc:
+        print(f"[STUDIO] could not load last run: {exc}")
+        return jsonify({"status": "success", "run": None})
+
+
 @app.route("/api/studio/note", methods=["POST"])
 def api_studio_note():
     """Add a mid-run note, or answer a question the crew asked."""
@@ -2586,6 +2621,8 @@ def api_studio_run():
 
     def generate():
         notes_applied = []
+        # Mirrors what the Studio shows, persisted so a reload restores it
+        saved = {"idea": idea, "script": "", "sheet_text": "", "scenes": [], "frames": [], "clips": []}
 
         def fold_notes():
             """Pick up any late direction the user typed while this run is live."""
@@ -2622,6 +2659,8 @@ def api_studio_run():
             except Exception as exc:
                 print(f"[STUDIO] character sheet failed (continuing without): {exc}")
 
+            saved["script"] = script
+            saved["sheet_text"] = sheet_text
             yield f"data: {json.dumps({'stage': 'writing', 'status': 'done', 'character_sheet': sheet, 'sheet_text': sheet_text})}\n\n"
 
             # ── Ambiguity check: the crew may ask one question back ─────
@@ -2662,6 +2701,7 @@ def api_studio_run():
                 yield f"data: {json.dumps({'done': True})}\n\n"
                 return
 
+            saved["scenes"] = scenes
             for scene in scenes:
                 yield f"data: {json.dumps({'stage': 'directing', 'scene': scene})}\n\n"
             yield f"data: {json.dumps({'stage': 'directing', 'status': 'done', 'scene_count': len(scenes)})}\n\n"
@@ -2670,29 +2710,74 @@ def api_studio_run():
             yield f"data: {json.dumps({'stage': 'storyboard', 'status': 'working', 'total': len(scenes)})}\n\n"
             config = get_config()
             media = get_media_manager(user_id)
+            # Keep the provider's own URL per scene: image-to-video needs a
+            # source Alibaba can load, and its OSS URL is ideal.
+            frame_sources = {}
             for scene in scenes:
                 # Late direction can land between frames — pick it up per frame
                 prompt = studio.storyboard_prompt(scene, sheet_text, look, notes=fold_notes())
                 try:
                     result = pm.get_manager().execute(
                         pm.Capability.IMAGE, prompt=prompt,
+                        prefer=pm.studio_image_provider(),
                         api_key=config.gemini_api_key or None, enhance=False,
                     )
                     if not result.success:
                         raise RuntimeError(result.error or "image provider failed")
+                    source_url = result.data.get("image_url", "")
                     record = media.save_image(
-                        result.data.get("image_url", ""), prompt=prompt,
+                        source_url, prompt=prompt,
                         provider=result.provider_name, chat_id=f"studio_{user_id}",
                     )
-                    stored = _safe_persist_url(record, result.data.get("image_url", ""))
+                    stored = _safe_persist_url(record, source_url)
                     if not stored:
                         raise RuntimeError("could not store storyboard frame")
-                    yield f"data: {json.dumps({'stage': 'storyboard', 'frame': {'number': scene['number'], 'title': scene['title'], 'image_url': stored}})}\n\n"
+                    # Prefer the provider's remote URL for i2v; fall back to our
+                    # stored copy (inlined as base64) for local-only providers.
+                    frame_sources[scene["number"]] = source_url if source_url.startswith("http") else stored
+                    frame_evt = {"number": scene["number"], "title": scene["title"], "image_url": stored}
+                    saved["frames"].append(frame_evt)
+                    _studio_save_run(user_id, saved)
+                    yield f"data: {json.dumps({'stage': 'storyboard', 'frame': frame_evt})}\n\n"
                 except Exception as exc:
                     print(f"[STUDIO] storyboard frame {scene.get('number')} failed: {exc}")
                     yield f"data: {json.dumps({'stage': 'storyboard', 'frame_failed': scene.get('number')})}\n\n"
 
             yield f"data: {json.dumps({'stage': 'storyboard', 'status': 'done'})}\n\n"
+
+            # ── Stage 4: animate each still into a clip (image-to-video) ─
+            # Gated by the same global kill switch as all video generation.
+            import core.video_i2v as i2v
+            clip_scenes = [s for s in scenes if s["number"] in frame_sources][:studio.max_clips()]
+            if not _video_generation_enabled():
+                yield f"data: {json.dumps({'stage': 'clips', 'status': 'disabled', 'message': VIDEO_DISABLED_MESSAGE})}\n\n"
+            elif not i2v.available() or not clip_scenes:
+                yield f"data: {json.dumps({'stage': 'clips', 'status': 'skipped'})}\n\n"
+            else:
+                yield f"data: {json.dumps({'stage': 'clips', 'status': 'working', 'total': len(clip_scenes)})}\n\n"
+                for scene in clip_scenes:
+                    n = scene["number"]
+                    motion = studio.clip_prompt(scene, notes=fold_notes())
+                    out = i2v.generate_clip(motion, frame_sources[n])
+                    if out.get("error"):
+                        print(f"[STUDIO] clip for scene {n} failed: {out['error']}")
+                        yield f"data: {json.dumps({'stage': 'clips', 'clip_failed': n})}\n\n"
+                        continue
+                    rec = media.save_video(
+                        out["video_url"], prompt=f"Scene {n}: {scene['title']}",
+                        provider="AlibabaI2V", chat_id=f"studio_{user_id}",
+                    )
+                    stored_clip = rec["local_path"] if rec else ""
+                    if not stored_clip:
+                        yield f"data: {json.dumps({'stage': 'clips', 'clip_failed': n})}\n\n"
+                        continue
+                    # Permanent GridFS URL only — never the provider's expiring link
+                    clip_evt = {"number": n, "title": scene["title"], "video_url": stored_clip}
+                    saved["clips"].append(clip_evt)
+                    _studio_save_run(user_id, saved)
+                    yield f"data: {json.dumps({'stage': 'clips', 'clip': clip_evt})}\n\n"
+                yield f"data: {json.dumps({'stage': 'clips', 'status': 'done'})}\n\n"
+
             yield f"data: {json.dumps({'done': True})}\n\n"
 
         except Exception as exc:

@@ -6,6 +6,7 @@ failover logic, and quota information must NEVER appear in the user-facing UI.
 
 from __future__ import annotations
 
+import os
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -198,14 +199,25 @@ class ProviderManager:
 
     # ── public API used by app.py ─────────────────────────────
 
-    def execute(self, capability: Capability, **kwargs: Any) -> ProviderResult:
+    def execute(self, capability: Capability, prefer: str | None = None, **kwargs: Any) -> ProviderResult:
         """Try every registered provider for *capability* in priority order until
         one succeeds.  Returns the first successful result; if all fail, returns
-        the last failure."""
+        the last failure.
+
+        ``prefer`` names a provider to try FIRST (e.g. "QwenImage" for paid-tier
+        or Studio storyboards). The rest still act as fallbacks, so a preferred
+        provider being down degrades instead of failing.
+        """
         providers = sorted(
             self._providers.get(capability, []),
             key=lambda p: (p.priority, p.avg_latency_ms),
         )
+        if prefer:
+            want = str(prefer).strip().lower()
+            providers = (
+                [p for p in providers if p.name.lower() == want]
+                + [p for p in providers if p.name.lower() != want]
+            )
 
         if not providers:
             return ProviderResult(
@@ -312,6 +324,22 @@ class ProviderManager:
         self.routing_log.append(entry)
         if len(self.routing_log) > self._max_log_entries:
             self.routing_log = self.routing_log[-self._max_log_entries:]
+
+
+# ── Tier -> image provider mapping (env-controlled) ───────────────
+# Pollinations stays the free-tier provider; Qwen is the higher-quality one.
+# Override either without touching code.
+
+def image_provider_for_tier(tier: str = "free") -> str:
+    paid = str(tier or "").strip().lower() in ("paid", "pro", "premium")
+    if paid:
+        return os.getenv("IMAGE_PROVIDER_PAID", "QwenImage").strip()
+    return os.getenv("IMAGE_PROVIDER_FREE", "Pollinations").strip()
+
+
+# Storyboards are the showcase surface, so they default to the good model.
+def studio_image_provider() -> str:
+    return os.getenv("STUDIO_IMAGE_PROVIDER", "QwenImage").strip()
 
 
 # Module-level singleton

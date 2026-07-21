@@ -114,3 +114,9 @@ def app_config_collection():
 def user_memory_collection():
     db = get_db()
     return db.user_memory if db is not None else None
+
+
+def studio_runs_collection():
+    """Last Studio run per user, so the surface survives a page reload."""
+    db = get_db()
+    return db.studio_runs if db is not None else None

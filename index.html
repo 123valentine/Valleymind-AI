@@ -3194,6 +3194,9 @@ var studioExpectedFrames = 0;
 var studioRunId = "";
 var studioNotes = [];        // late direction the user sent mid-run
 var studioQuestion = "";     // a question the crew asked back
+var studioClips = {};        // scene number -> {video_url, title}
+var studioExpectedClips = 0;
+var studioClipsDisabled = "";
 
 function clearStudioTimers() {
     studioTimers.forEach(function (t) { clearTimeout(t); });
@@ -3212,6 +3215,8 @@ function openStudio() {
     var overlay = document.getElementById("studioOverlay");
     if (!overlay) return;
     if (!studioState.length) resetStudio();
+    // Restore the last run so a page reload doesn't lose the work
+    if (!studioRunning && !studioFrames.length && !studioScript) restoreLastStudioRun();
     overlay.style.display = "flex";
     // rAF drives the slide-in; the timeout is a fallback so the overlay still
     // opens if rAF is throttled (background/non-rendering contexts).
@@ -3251,6 +3256,9 @@ function resetStudio() {
     studioRunId = "";
     studioNotes = [];
     studioQuestion = "";
+    studioClips = {};
+    studioExpectedClips = 0;
+    studioClipsDisabled = "";
     var btn = document.getElementById("studioGoBtn");
     if (btn) { btn.disabled = false; btn.textContent = "Start Production"; }
     var label = document.getElementById("studioStatusLabel");
@@ -3258,6 +3266,36 @@ function resetStudio() {
     var p = document.getElementById("studioPrompt");
     if (p) p.placeholder = "Describe your movie idea — a logline, a scene, a feeling...";
     renderStudioStages();
+}
+
+async function restoreLastStudioRun() {
+    try {
+        var res = await apiFetch("/api/studio/last", {
+            credentials: "include", headers: authHeaders(), timeoutMs: 20000
+        });
+        var data = await res.json();
+        var run = data && data.run;
+        if (!run) return;
+        studioScript = run.script || "";
+        studioSheetText = run.sheet_text || "";
+        studioScenes = run.scenes || [];
+        studioFrames = run.frames || [];
+        studioExpectedFrames = studioFrames.length;
+        studioClips = {};
+        (run.clips || []).forEach(function (c) { studioClips[c.number] = c; });
+        studioExpectedClips = (run.clips || []).length;
+        // Mark completed stages so the restored run reads as finished
+        studioState = STUDIO_STAGES.map(function (s) {
+            if (s.key === "writing") return studioScript ? "done" : "waiting";
+            if (s.key === "directing") return studioScenes.length ? "done" : "waiting";
+            return studioFrames.length ? "done" : "waiting";
+        });
+        var label = document.getElementById("studioStatusLabel");
+        if (label && studioFrames.length) label.textContent = "Last production restored";
+        renderStudioStages();
+    } catch (err) {
+        console.warn("[Studio] could not restore last run:", err);
+    }
 }
 
 // The bottom box is dual-purpose: it starts a run, and while a run is live it
@@ -3371,14 +3409,27 @@ function renderStudioStages() {
                 studioFrames.forEach(function (f) {
                     var fr = document.createElement("div");
                     fr.className = "studio-frame";
-                    var im = document.createElement("img");
-                    im.src = f.image_url;
-                    im.loading = "lazy";
-                    im.onclick = function () { openImageViewer(f.image_url); };
+                    var clip = studioClips[f.number];
+                    if (clip) {
+                        // Clip is ready — it replaces the still for this scene
+                        var vd = document.createElement("video");
+                        vd.src = clip.video_url;
+                        vd.controls = true;
+                        vd.muted = true;
+                        vd.loop = true;
+                        vd.playsInline = true;
+                        vd.preload = "metadata";
+                        fr.appendChild(vd);
+                    } else {
+                        var im = document.createElement("img");
+                        im.src = f.image_url;
+                        im.loading = "lazy";
+                        im.onclick = function () { openImageViewer(f.image_url); };
+                        fr.appendChild(im);
+                    }
                     var lb = document.createElement("div");
                     lb.className = "frame-label";
-                    lb.textContent = "Sc " + f.number + " — " + f.title;
-                    fr.appendChild(im);
+                    lb.textContent = (clip ? "▶ Sc " : "Sc ") + f.number + " — " + f.title;
                     fr.appendChild(lb);
                     strip.appendChild(fr);
                 });
@@ -3389,6 +3440,21 @@ function renderStudioStages() {
                     strip.appendChild(ph);
                 }
                 card.appendChild(strip);
+                var clipCount = Object.keys(studioClips).length;
+                if (studioExpectedClips || clipCount) {
+                    var cn = document.createElement("div");
+                    cn.className = "studio-scene-cam";
+                    cn.textContent = "Clips " + clipCount + " / " + (studioExpectedClips || clipCount) +
+                        (clipCount < studioExpectedClips ? " — animating stills..." : " — ready");
+                    card.appendChild(cn);
+                }
+                if (studioClipsDisabled) {
+                    var dn = document.createElement("div");
+                    dn.className = "studio-scene-body";
+                    dn.style.marginTop = "8px";
+                    dn.textContent = studioClipsDisabled;
+                    card.appendChild(dn);
+                }
             } else if (status === "working") {
                 card.appendChild(studioSkeleton());
             }
@@ -3533,6 +3599,25 @@ async function runStudioPipeline() {
                     continue;
                 }
 
+                // Clip generation belongs to Elena's stage (assembly)
+                if (evt.stage === "clips") {
+                    var eIdx = studioStageIndex("storyboard");
+                    if (evt.status === "working") {
+                        studioExpectedClips = evt.total || 0;
+                        studioState[eIdx] = "working";
+                        if (label) label.textContent = "Elena is cutting clips (" + studioExpectedClips + ")...";
+                    } else if (evt.status === "done") {
+                        studioState[eIdx] = "done";
+                    } else if (evt.status === "disabled") {
+                        studioClipsDisabled = evt.message || "Video generation is off.";
+                        studioState[eIdx] = "done";
+                    } else if (evt.status === "skipped") {
+                        studioState[eIdx] = "done";
+                    }
+                    scheduleRender();
+                    continue;
+                }
+
                 var idx = studioStageIndex(evt.stage);
                 if (idx === -1) continue;
 
@@ -3552,6 +3637,11 @@ async function runStudioPipeline() {
                 if (evt.frame) { studioFrames.push(evt.frame); scheduleRender(); }
                 if (evt.frame_failed) {
                     studioExpectedFrames = Math.max(0, studioExpectedFrames - 1);
+                    scheduleRender();
+                }
+                if (evt.clip) { studioClips[evt.clip.number] = evt.clip; scheduleRender(); }
+                if (evt.clip_failed) {
+                    studioExpectedClips = Math.max(0, studioExpectedClips - 1);
                     scheduleRender();
                 }
             }
