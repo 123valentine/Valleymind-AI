@@ -655,6 +655,16 @@
   #composer.focused{ border-color:rgba(0,212,255,0.45); box-shadow:0 0 0 1px rgba(0,212,255,0.15); }
   #composerRow{ display:flex; align-items:flex-end; gap:4px; }
   #chatInput:focus{ outline:none !important; box-shadow:none !important; }
+  /* Mobile: lift the persona switcher onto its own compact line above the
+     input so the textarea keeps its full width (as it was before the switcher
+     existed) and the placeholder isn't truncated. */
+  @media(max-width:768px){
+    #composerRow{ flex-wrap:wrap; }
+    #personaSwitcher{ order:-1; flex-basis:100%; margin-bottom:2px; }
+    #personaBtn{ height:30px; padding:0 12px; font-size:13px; }
+    #personaBtn #personaBtnLabel{ font-weight:800; }
+    #personaMenu{ left:0; right:auto; min-width:180px; }
+  }
   #composerChips{
     display:none; flex-wrap:wrap; gap:6px;
     padding:8px 6px 2px;
@@ -1055,7 +1065,7 @@
           </div>
 
           <!-- Persona switcher -->
-          <div style="position:relative;">
+          <div id="personaSwitcher" style="position:relative;">
             <button id="personaBtn" onclick="togglePersonaMenu()" title="Who you're talking to"
               style="height:36px;padding:0 10px;border-radius:18px;background:rgba(0,212,255,0.1);border:1px solid rgba(0,212,255,0.25);cursor:pointer;display:flex;align-items:center;gap:6px;color:#00d4ff;font-size:12px;font-weight:700;font-family:'Space Grotesk',sans-serif;transition:all 0.2s;white-space:nowrap;">
               <span id="personaBtnLabel">Marcus</span>
