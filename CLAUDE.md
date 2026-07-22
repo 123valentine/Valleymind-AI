@@ -13,12 +13,8 @@ backend/frontend split (renamed from `valleymind-backend/`/`valleymind-frontend/
 history — not deleted). They are **not imported by root code and not deployed**. Do not edit them
 unless the user explicitly asks you to dig through history there.
 
-**Deployment TODO (not yet done):** Render's start command was previously
-`gunicorn --chdir valleymind-backend app:app`, i.e. it served the now-archived directory. Root's
-own `render.yaml`/`Procfile` say `gunicorn app:app`, but the actual configured start command lives
-in the Render dashboard and must be updated by the user to point at root (e.g. `gunicorn app:app`
-with no `--chdir`) or the live deploy will break. This is a dashboard change outside the repo —
-flag it, don't attempt to fix it via file edits.
+Render's dashboard start command is `gunicorn app:app` (serving root) and has been deploying
+cleanly — the old `--chdir valleymind-backend` command is gone. No action needed here.
 
 The repo root also has many stray log files (`*.log`), an `archive/` folder, and two Python venv
 directories (`env/`, `env311/`) left over from local dev — ignore these when exploring.
