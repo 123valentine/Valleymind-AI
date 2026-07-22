@@ -48,6 +48,22 @@
   }
 </script>
 <style>
+  /* ── Light theme ─────────────────────────────────────────────
+     The UI is a single file with ~200 hardcoded dark colours, many
+     inline (style="color:#..."), which a normal class override cannot
+     beat. A whole-document filter flips the palette to light in one
+     move — including inline styles — and media is re-inverted so photos
+     and videos still look right. */
+  html.theme-light { filter: invert(0.93) hue-rotate(180deg); background:#ffffff; }
+  html.theme-light img,
+  html.theme-light video,
+  html.theme-light canvas,
+  html.theme-light [data-no-invert],
+  html.theme-light [style*="background-image"] { filter: invert(1) hue-rotate(180deg); }
+  /* App font-size scale (Settings › Appearance) */
+  html.font-small  { font-size: 14px; }
+  html.font-medium { font-size: 16px; }
+  html.font-large  { font-size: 18px; }
   body { background: radial-gradient(circle at top right, #001f27 0%, #0e1417 100%); min-height:100vh; }
   #sidebar, #topHeader, #mainArea { display:none; }
   .glass-panel { }
@@ -1953,6 +1969,36 @@ document.addEventListener("click", function (e) {
     }
 });
 
+// Appearance — apply the saved theme + font size across the whole app.
+// Called on load and live from Settings when the user changes either one.
+window.applyAppearance = function (theme, fontSize) {
+    try {
+        var el = document.documentElement;
+        if (typeof theme === "string" && theme) localStorage.setItem("vm_theme", theme);
+        if (typeof fontSize === "string" && fontSize) localStorage.setItem("vm_font", fontSize);
+        var t = (localStorage.getItem("vm_theme") || "Dark").toLowerCase();
+        var f = (localStorage.getItem("vm_font") || "Medium").toLowerCase();
+        // "Light (coming soon)" and any light variant -> light
+        el.classList.toggle("theme-light", t.indexOf("light") === 0);
+        el.classList.remove("font-small", "font-medium", "font-large");
+        el.classList.add("font-" + (f === "small" || f === "large" ? f : "medium"));
+    } catch (e) { /* non-fatal */ }
+};
+// Apply immediately from whatever was last saved locally (no flash of wrong theme).
+window.applyAppearance();
+
+// Browser notifications — only fire when the user turned Push on (Settings >
+// Notifications) AND the browser granted permission. Respects the setting.
+window.vmNotify = function (title, body) {
+    try {
+        if (localStorage.getItem("vm_push") !== "1") return;
+        if (!("Notification" in window) || Notification.permission !== "granted") return;
+        // Don't nag while the tab is focused — the user already sees the result
+        if (document.visibilityState === "visible") return;
+        new Notification(title, { body: body || "", icon: "/static/valleymind-logo.png" });
+    } catch (e) { /* non-fatal */ }
+};
+
 function applyVideoGenAvailability() {
     // Video generation is chat-triggered — there is no dedicated button to grey
     // out. When the global kill switch is off the backend returns an instant
@@ -3695,6 +3741,7 @@ async function runStudioPipeline(ideaArg) {
         studioPhase = "done";  // next send starts a fresh conversation
         if (btn) { btn.disabled = false; btn.textContent = "New Production"; }
         if (label) label.textContent = msg || "Production complete";
+        window.vmNotify("Your production is ready", studioFinalVideo ? "The trailer is done — tap to watch." : "Your storyboard is ready in the Studio.");
         if (promptEl) promptEl.placeholder = "Start a new production — say hi or pitch another idea...";
         renderStudioStages();
     }
@@ -4485,6 +4532,7 @@ window.send = async function () {
                         statusIndicator = null;
                     }
                     renderImageResultCard(evt.image_url, lastSentMessage || "", evt.revised_prompt || "");
+                    window.vmNotify("Your image is ready", "Tap to see what ValleyMind made.");
                     var galOvl = document.getElementById("galleryOverlay");
                     if (galOvl && galOvl.classList.contains("open")) loadGalleryImages(true);
                     continue;
@@ -4504,6 +4552,7 @@ window.send = async function () {
                     vidBubble.className = "bubble";
                     vidBubble.style.cssText = "padding:12px 16px;width:100%;";
 
+                    window.vmNotify("Your video is ready", "Tap to watch what ValleyMind made.");
                     var video = document.createElement("video");
                     video.src = evt.video_url;
                     video.controls = true;

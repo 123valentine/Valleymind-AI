@@ -119,14 +119,15 @@ var _SH = {
     var txtColor = color ? "#fff" : "#00d4ff";
     return '<button onclick="' + onclick + '" style="border:none;border-radius:8px;background:' + bg + ';color:' + txtColor + ';font-weight:600;padding:9px 16px;cursor:pointer;font-size:12px;font-family:\'Inter\',sans-serif;transition:all 0.2s;' + extra + '" onmouseover="this.style.opacity=\'0.85\'" onmouseout="this.style.opacity=\'1\'">' + text + '</button>';
   },
-  select: function (options, id, selected) {
+  select: function (options, id, selected, onchange) {
     var opts = options.map(function (o) {
       var val = typeof o === "object" ? o.value : o;
       var label = typeof o === "object" ? o.label : o;
       var sel = val === selected ? " selected" : "";
       return '<option value="' + val + '"' + sel + '>' + label + '</option>';
     }).join("");
-    return '<select id="' + id + '" style="width:100%;background:rgba(15,23,42,0.85);border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:10px 12px;color:#e2e8f0;font-size:13px;outline:none;font-family:\'Inter\',sans-serif;cursor:pointer;">' + opts + '</select>';
+    var oc = onchange ? ' onchange="' + onchange.replace(/"/g, "&quot;") + '"' : "";
+    return '<select id="' + id + '"' + oc + ' style="width:100%;background:rgba(15,23,42,0.85);border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:10px 12px;color:#e2e8f0;font-size:13px;outline:none;font-family:\'Inter\',sans-serif;cursor:pointer;">' + opts + '</select>';
   },
   toggle: function (id, checked, onChange) {
     var cb = onChange ? ' onchange="' + onChange + '"' : ' onchange="this.parentNode.querySelector(\'.slider\').style.background=this.checked?\'rgba(0,212,255,0.7)\':\'rgba(255,255,255,0.1)\'"';
@@ -443,8 +444,10 @@ function renderAppearanceSection(container) {
   container.innerHTML = _SH.sectionHeader("Appearance", "Customize the look and feel of ValleyMind");
   settingsApiGet("appearance").then(function (d) {
     var data = d.data || {};
+    // Sync the saved appearance into the live app on open.
+    if (window.applyAppearance) window.applyAppearance(data.theme, data.font_size);
     container.innerHTML = _SH.sectionHeader("Appearance", "Customize the look and feel of ValleyMind") +
-      _SH.card("Theme & Colors", '<div style="display:flex;gap:10px;"><div style="flex:1;"><p style="color:#94a3b8;font-size:10px;margin:0 0 4px;">Theme</p>' + _SH.select(["Dark", "Light (coming soon)"], "appTheme", data.theme) + '</div><div style="flex:1;"><p style="color:#94a3b8;font-size:10px;margin:0 0 4px;">Font Size</p>' + _SH.select(["Small", "Medium", "Large"], "appFontSize", data.font_size) + '</div></div>' +
+      _SH.card("Theme & Colors", '<div style="display:flex;gap:10px;"><div style="flex:1;"><p style="color:#94a3b8;font-size:10px;margin:0 0 4px;">Theme</p>' + _SH.select(["Dark", "Light"], "appTheme", data.theme, "if(window.applyAppearance)window.applyAppearance(this.value)") + '</div><div style="flex:1;"><p style="color:#94a3b8;font-size:10px;margin:0 0 4px;">Font Size</p>' + _SH.select(["Small", "Medium", "Large"], "appFontSize", data.font_size, "if(window.applyAppearance)window.applyAppearance(undefined,this.value)") + '</div></div>' +
         '<div style="margin-top:12px;"><p style="color:#94a3b8;font-size:10px;margin:0 0 8px;">Accent Color</p><div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">' +
         ["#00d4ff", "#22c55e", "#eab308", "#ef4444", "#a855f7", "#ec4899"].map(function (c) {
           var sel = (data.accent_color || "#00d4ff") === c;
@@ -465,6 +468,7 @@ function saveAppearance() {
     sidebar_style: _getVal("appSidebar"), chat_style: _getVal("appChatStyle"),
     animations: _getChecked("appAnimations"), reduced_motion: _getChecked("appReducedMotion"), high_contrast: _getChecked("appHighContrast"),
   };
+  if (window.applyAppearance) window.applyAppearance(data.theme, data.font_size);
   _saveSettingsAndShow("appearance", data, "appearStatus");
 }
 
@@ -499,12 +503,29 @@ function renderNotificationsSection(container) {
 }
 
 function saveNotifications() {
+  var push = _getChecked("notifPush");
   _saveSettingsAndShow("notifications", {
     daily_summary: _getChecked("notifDaily"), deadlines: _getChecked("notifDeadlines"),
     ai_suggestions: _getChecked("notifSuggestions"), project_updates: _getChecked("notifProjects"),
     memory_reminders: _getChecked("notifMemory"), email_notifications: _getChecked("notifEmail"),
-    push_notifications: _getChecked("notifPush"),
+    push_notifications: push,
   }, "notifStatus");
+  // Make browser push actually work: remember the choice and, when enabling,
+  // ask for permission and fire a confirmation so the user sees it working.
+  try {
+    localStorage.setItem("vm_push", push ? "1" : "0");
+    if (push && "Notification" in window) {
+      if (Notification.permission === "granted") {
+        if (window.vmNotify) window.vmNotify("Notifications on", "ValleyMind will let you know when things are ready.");
+      } else if (Notification.permission !== "denied") {
+        Notification.requestPermission().then(function (p) {
+          if (p === "granted" && window.vmNotify) {
+            window.vmNotify("Notifications on", "ValleyMind will let you know when things are ready.");
+          }
+        });
+      }
+    }
+  } catch (e) { /* non-fatal */ }
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -516,12 +537,18 @@ function renderKnowledgeSection(container) {
   apiFetch("/api/settings/knowledge", { credentials: "include", headers: authHeaders() })
     .then(function (r) { return r.json(); }).then(function (d) {
       var items = d.items || [];
+      var icons = { pdf: "PDF", doc: "DOC", txt: "TXT", website: "WEB", image: "IMG", note: "NOTE" };
       var listHtml = items.length > 0 ? items.map(function (item) {
-        var icons = { pdf: "PDF", doc: "DOC", website: "WEB", image: "IMG", note: "NOTE" };
-        return '<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:rgba(15,23,42,0.5);border-radius:8px;margin-bottom:4px;"><div style="flex:1;"><span style="color:#e2e8f0;font-size:12px;">' + item.title + '</span></div><button onclick="deleteKnowledgeItem(\'' + item.id + '\')" style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:14px;">&times;</button></div>';
+        var badge = icons[item.type] || "NOTE";
+        var chars = (item.content ? item.content.length : 0);
+        var meta = chars > 0 ? (chars > 999 ? (Math.round(chars / 100) / 10) + "k chars" : chars + " chars") : "";
+        return '<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:rgba(15,23,42,0.5);border-radius:8px;margin-bottom:4px;"><span style="font-size:9px;font-weight:700;color:#00d4ff;background:rgba(0,212,255,0.1);padding:2px 6px;border-radius:4px;">' + badge + '</span><div style="flex:1;min-width:0;"><span style="color:#e2e8f0;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block;">' + item.title + '</span>' + (meta ? '<span style="color:#64748b;font-size:10px;">' + meta + '</span>' : '') + '</div><button onclick="deleteKnowledgeItem(\'' + item.id + '\')" style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:14px;">&times;</button></div>';
       }).join("") : '<p style="color:#475569;font-size:12px;">No items yet.</p>';
-      container.innerHTML = _SH.sectionHeader("Knowledge Base", "Upload documents, PDFs, and notes — ValleyMind uses this for context") +
-        _SH.card("Add to Knowledge Base", '<div style="display:flex;gap:8px;flex-wrap:wrap;">' + _SH.btn("Add Note", "showAddKnowledgeNote()") + _SH.btn("Upload PDF", "showComingSoon('PDF Upload')") + _SH.btn("Upload Document", "showComingSoon('Document Upload')") + _SH.btn("Add Website", "showComingSoon('Website Import')") + '</div><div id="knowledgeAddForm" style="margin-top:10px;"></div>') +
+      container.innerHTML = _SH.sectionHeader("Knowledge Base", "Upload PDFs, text files and notes — ValleyMind reads them when you chat") +
+        _SH.card("Add to Knowledge Base", '<div style="display:flex;gap:8px;flex-wrap:wrap;">' + _SH.btn("Add Note", "showAddKnowledgeNote()") + _SH.btn("Upload PDF", "document.getElementById('knowPdfInput').click()") + _SH.btn("Upload Text File", "document.getElementById('knowTxtInput').click()") + '</div>' +
+          '<input type="file" id="knowPdfInput" accept="application/pdf,.pdf" style="display:none;" onchange="uploadKnowledgePdf(this)">' +
+          '<input type="file" id="knowTxtInput" accept=".txt,.md,text/plain,text/markdown" style="display:none;" onchange="uploadKnowledgeTxt(this)">' +
+          '<div id="knowledgeAddForm" style="margin-top:10px;"></div><div id="knowUploadStatus" style="margin-top:8px;font-size:11px;color:#94a3b8;"></div>') +
         _SH.card("Your Knowledge Items", listHtml);
     }).catch(function () { container.innerHTML = _SH.sectionHeader("Knowledge Base") + '<p style="color:#64748b;">Could not load knowledge base.</p>'; });
 }
@@ -539,6 +566,72 @@ function saveKnowledgeNote() {
   apiFetch("/api/settings/knowledge", { method: "POST", credentials: "include", headers: authHeaders({ "Content-Type": "application/json" }), body: JSON.stringify({ type: "note", title: title, content: content }) })
     .then(function (r) { return r.json(); }).then(function () { _showSaved(); renderSettingsContent("knowledge"); })
     .catch(function () { alert("Failed to save."); });
+}
+
+function _knowStatus(msg, color) {
+  var el = document.getElementById("knowUploadStatus");
+  if (el) { el.textContent = msg || ""; el.style.color = color || "#94a3b8"; }
+}
+
+function _postKnowledgeDoc(type, title, content) {
+  content = (content || "").replace(/\s+\n/g, "\n").trim();
+  if (!content) { _knowStatus("Couldn't read any text from that file.", "#ef4444"); return; }
+  _knowStatus("Saving “" + title + "”…");
+  apiFetch("/api/settings/knowledge", { method: "POST", credentials: "include", headers: authHeaders({ "Content-Type": "application/json" }), body: JSON.stringify({ type: type, title: title, content: content }) })
+    .then(function (r) { return r.json(); })
+    .then(function () { renderSettingsContent("knowledge"); })
+    .catch(function () { _knowStatus("Failed to save the document.", "#ef4444"); });
+}
+
+// Extract PDF text in the browser with the pdf.js already loaded by index.html.
+function uploadKnowledgePdf(input) {
+  var file = input.files && input.files[0];
+  input.value = "";
+  if (!file) return;
+  if (!window.pdfjsLib) { _knowStatus("PDF reader not available.", "#ef4444"); return; }
+  // pdf.js needs its worker; index.html loads v3.11.174 from cdnjs.
+  try {
+    if (window.pdfjsLib.GlobalWorkerOptions && !window.pdfjsLib.GlobalWorkerOptions.workerSrc) {
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+    }
+  } catch (e) { /* non-fatal */ }
+  var title = file.name.replace(/\.pdf$/i, "");
+  _knowStatus("Reading “" + file.name + "”…");
+  var reader = new FileReader();
+  reader.onload = function () {
+    var task = window.pdfjsLib.getDocument({ data: new Uint8Array(reader.result) });
+    task.promise.then(function (pdf) {
+      var pages = [];
+      var seq = Promise.resolve();
+      for (var i = 1; i <= pdf.numPages; i++) {
+        (function (n) {
+          seq = seq.then(function () {
+            _knowStatus("Extracting page " + n + " of " + pdf.numPages + "…");
+            return pdf.getPage(n).then(function (page) {
+              return page.getTextContent().then(function (tc) {
+                pages.push(tc.items.map(function (it) { return it.str; }).join(" "));
+              });
+            });
+          });
+        })(i);
+      }
+      seq.then(function () { _postKnowledgeDoc("pdf", title, pages.join("\n\n")); })
+        .catch(function () { _knowStatus("Couldn't extract text from that PDF.", "#ef4444"); });
+    }).catch(function () { _knowStatus("That PDF couldn't be opened.", "#ef4444"); });
+  };
+  reader.onerror = function () { _knowStatus("Couldn't read that file.", "#ef4444"); };
+  reader.readAsArrayBuffer(file);
+}
+
+function uploadKnowledgeTxt(input) {
+  var file = input.files && input.files[0];
+  input.value = "";
+  if (!file) return;
+  var title = file.name.replace(/\.(txt|md)$/i, "");
+  var reader = new FileReader();
+  reader.onload = function () { _postKnowledgeDoc(/\.md$/i.test(file.name) ? "doc" : "txt", title, String(reader.result || "")); };
+  reader.onerror = function () { _knowStatus("Couldn't read that file.", "#ef4444"); };
+  reader.readAsText(file);
 }
 
 function deleteKnowledgeItem(id) {
@@ -565,6 +658,27 @@ function renderMediaSection(container) {
         _SH.card("Images", imageHtml ? '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;">' + imageHtml + '</div>' : '<p style="color:#475569;font-size:12px;">No images yet. Generated images will appear here automatically.</p>') +
         _SH.card("Videos", '<p style="color:#475569;font-size:12px;">No videos yet. Generated videos will appear here automatically.</p>');
     }).catch(function () { container.innerHTML = _SH.sectionHeader("Media Library") + '<p style="color:#64748b;">Could not load media library.</p>'; });
+}
+
+function clearGeneratedImages() {
+  if (!confirm("Delete ALL your generated images? This cannot be undone.")) return;
+  var st = document.getElementById("clearImgStatus");
+  if (st) st.textContent = "Loading images…";
+  apiFetch("/api/settings/media", { credentials: "include", headers: authHeaders() })
+    .then(function (r) { return r.json(); }).then(function (d) {
+      var images = d.images || [];
+      if (!images.length) { if (st) st.textContent = "No images to clear."; return; }
+      var i = 0;
+      function next() {
+        if (i >= images.length) { if (st) st.textContent = "Cleared " + images.length + " image(s)."; renderSettingsContent("storage"); return; }
+        if (st) st.textContent = "Deleting " + (i + 1) + " of " + images.length + "…";
+        apiFetch("/api/settings/media", { method: "DELETE", credentials: "include", headers: authHeaders({ "Content-Type": "application/json" }), body: JSON.stringify({ url: images[i].url }) })
+          .then(function () { i++; next(); })
+          .catch(function () { i++; next(); });
+      }
+      next();
+    })
+    .catch(function () { if (st) st.textContent = "Could not load images."; });
 }
 
 function deleteMedia(url) {
@@ -603,7 +717,7 @@ function renderStorageSection(container) {
           '<div style="display:flex;justify-content:space-between;margin-top:4px;"><span style="color:#64748b;font-size:11px;">Available</span><span style="color:#64748b;font-size:11px;">' + (u.available_mb || 500) + ' MB</span></div>' +
           '<div style="margin-top:10px;width:100%;height:8px;background:rgba(255,255,255,0.06);border-radius:4px;overflow:hidden;"><div style="width:' + Math.min(totalPct, 100) + '%;height:100%;background:linear-gradient(90deg,#00d4ff,#0ea5e9);border-radius:4px;transition:width 0.6s;"></div></div>' +
           '<p style="color:#475569;font-size:10px;margin-top:4px;">' + totalPct + '% of 500 MB used</p></div>') +
-        _SH.card("Manage Storage", '<div style="display:flex;gap:8px;flex-wrap:wrap;">' + _SH.btn("Clear Cache", "clearLocalCache()") + _SH.btn("Clear Generated Images", "showComingSoon('Clear Images')") + '</div>');
+        _SH.card("Manage Storage", '<div style="display:flex;gap:8px;flex-wrap:wrap;">' + _SH.btn("Clear Cache", "clearLocalCache()") + _SH.btn("Clear Generated Images", "clearGeneratedImages()") + '</div><span id="clearImgStatus" style="font-size:11px;color:#94a3b8;display:block;margin-top:8px;"></span>');
     }).catch(function () { container.innerHTML = _SH.sectionHeader("Storage") + '<p style="color:#64748b;">Could not load storage info.</p>'; });
 }
 

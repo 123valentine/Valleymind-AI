@@ -939,6 +939,54 @@ class MarcusBrain:
         except Exception as exc:
             print(f"[ERROR] Failed to save knowledge file: {exc}")
 
+    def _user_documents_context(self, query: str, budget: int = 6000) -> str:
+        """Return the most relevant slice of the user's uploaded knowledge base.
+
+        Documents live in ``memory.long_term['documents']`` as
+        ``{id, title, type, content}``. For a personal knowledge base (a handful
+        of notes/PDFs) direct injection beats a vector index and sidesteps the
+        384-vs-768-dim mismatch of the retired ``valleymind-knowledge`` index.
+        When the material exceeds the budget we keep the documents whose text
+        best overlaps the query, so the prompt stays bounded as the KB grows.
+        """
+        try:
+            docs = self.memory.long_term.get("documents") or []
+        except Exception:
+            docs = []
+        if not isinstance(docs, list) or not docs:
+            return ""
+
+        def _fmt(d):
+            title = str(d.get("title") or "Untitled").strip()
+            content = str(d.get("content") or "").strip()
+            return title, content
+
+        # Cheap keyword relevance so the most on-topic docs win the budget.
+        q_terms = {t for t in re.findall(r"[a-z0-9]{3,}", (query or "").lower())}
+
+        def _score(d):
+            _, content = _fmt(d)
+            if not q_terms:
+                return 0
+            text = content.lower()
+            return sum(text.count(term) for term in q_terms)
+
+        ordered = sorted(docs, key=_score, reverse=True) if q_terms else list(docs)
+
+        blocks, used = [], 0
+        for d in ordered:
+            title, content = _fmt(d)
+            if not content:
+                continue
+            remaining = budget - used
+            if remaining <= 200:
+                break
+            snippet = content[:remaining].rsplit(" ", 1)[0] if len(content) > remaining else content
+            block = f"[{title}]\n{snippet}"
+            blocks.append(block)
+            used += len(block)
+        return "\n\n".join(blocks)
+
     def _groq_messages(self, chat_id: str, user_message: str, image_data: str = "", live_context: str = "", expanded_query: str = "", mongo_history: list = None, global_memories: str = "", knowledge_data: str = "") -> list:
         try:
             self.memory.reload()
@@ -1010,6 +1058,23 @@ class MarcusBrain:
         if knowledge_data:
             sections.append("=== Knowledge Base Data (Web Crawler Context) ===")
             sections.append(knowledge_data)
+            sections.append("")
+
+        # User's own uploaded knowledge base (Settings > Knowledge Base): notes
+        # and extracted PDF text. Injected directly so the assistant can answer
+        # from the user's documents. Kept bounded and query-relevant.
+        try:
+            doc_context = self._user_documents_context(user_message)
+        except Exception as exc:
+            print(f"[KNOWLEDGE] user documents context failed: {exc}")
+            doc_context = ""
+        if doc_context:
+            sections.append("=== User's Knowledge Base (their uploaded documents & notes) ===")
+            sections.append(
+                "Use this to answer questions grounded in the user's own material. "
+                "If they ask about something covered here, prefer it over general knowledge."
+            )
+            sections.append(doc_context)
             sections.append("")
 
         sections.append("=== Core Persona ===")

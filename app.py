@@ -2407,6 +2407,31 @@ def _get_usage_counts(user_id: str) -> tuple:
 
 # ── Knowledge items ────────────────────────────────────────────
 
+def _sync_knowledge_to_memory(user_id: str, items: list) -> None:
+    """Mirror the user's knowledge items into their brain memory so the chat
+    engine can ground answers in them (see MarcusBrain._user_documents_context).
+    Best-effort — never blocks the settings write on failure."""
+    try:
+        marcus = load_marcus(user_id)
+        if not marcus:
+            return
+        docs = []
+        for it in items or []:
+            content = str(it.get("content") or "").strip()
+            if not content:
+                continue
+            docs.append({
+                "id": it.get("id"),
+                "title": it.get("title") or "Untitled",
+                "type": it.get("type") or "note",
+                "content": content,
+            })
+        marcus.memory.long_term["documents"] = docs
+        marcus.memory.save_memory()
+    except Exception as exc:
+        print(f"[KNOWLEDGE] Failed to sync knowledge to memory: {exc}")
+
+
 @app.route("/api/settings/knowledge", methods=["GET", "POST", "DELETE"])
 def api_settings_knowledge():
     user_id, error = _require_login()
@@ -2422,16 +2447,22 @@ def api_settings_knowledge():
 
     if request.method == "POST":
         body = request.get_json(silent=True) or {}
+        # PDFs carry extracted text (client-side, via pdf.js) and can be long;
+        # notes stay short. Cap generously so real documents survive.
+        is_doc = str(body.get("type", "note")) in ("pdf", "doc", "txt")
+        max_len = 40000 if is_doc else 5000
         item = {
             "id": f"know_{secrets.token_hex(6)}",
             "type": str(body.get("type", "note"))[:50],
             "title": str(body.get("title", "Untitled"))[:200],
-            "content": str(body.get("content", ""))[:5000],
+            "content": str(body.get("content", ""))[:max_len],
             "created_at": datetime.now().isoformat(),
         }
         items.append(item)
         settings["knowledge_items"] = items
         _save_settings(user_id, settings)
+        # Mirror into the user's brain memory so it's retrievable in chat.
+        _sync_knowledge_to_memory(user_id, items)
         return jsonify({"status": "success", "item": item})
 
     if request.method == "DELETE":
@@ -2440,6 +2471,7 @@ def api_settings_knowledge():
         items = [i for i in items if i.get("id") != item_id]
         settings["knowledge_items"] = items
         _save_settings(user_id, settings)
+        _sync_knowledge_to_memory(user_id, items)
         return jsonify({"status": "success", "message": "Deleted"})
 
     return jsonify({"status": "error", "message": "Method not allowed"}), 405
