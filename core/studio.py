@@ -23,7 +23,16 @@ from typing import Any, Iterator
 from core.character import load_character_profile
 from core.config import PROJECT_ROOT
 
-MAX_SCENES = 6
+MAX_SCENES = 6  # legacy default; the real ceiling is max_scenes()
+
+
+def max_scenes() -> int:
+    """Upper bound on scenes (= storyboards = clips) per run. Raised well above
+    the old hard 6 so a 90s–5min trailer can be built; env-overridable."""
+    try:
+        return max(1, min(60, int(os.getenv("STUDIO_MAX_SCENES", "24"))))
+    except (TypeError, ValueError):
+        return 24
 
 
 def _persona_prompt(key: str) -> str:
@@ -207,12 +216,15 @@ def _notes_block(notes: list[str] | None) -> str:
     )
 
 
-def scene_messages(idea: str, script: str, sheet_text: str, notes: list[str] | None = None) -> list[dict]:
+def scene_messages(idea: str, script: str, sheet_text: str, notes: list[str] | None = None,
+                   target: int | None = None) -> list[dict]:
+    n = target or max_scenes()
     return [
         {"role": "system", "content": (
             _persona_prompt("marcus")
             + "\n\nYou are directing this for ValleyMind Studio. Break Angelina's screenplay into "
-              f"numbered scenes (at most {MAX_SCENES}). For each scene give the visual description, "
+              f"about {n} numbered scenes (aim for {n}, never more than {max_scenes()}). "
+              "For each scene give the visual description, "
               "the camera angle, and the framing. Reuse the character sheet's descriptions exactly — "
               "the same person must look the same in every scene.\n\n"
               "Respond with ONLY a JSON array:\n"
@@ -305,14 +317,15 @@ def clip_prompt(scene: dict, notes: list[str] | None = None) -> str:
     return " ".join(parts)[:800]
 
 
-def normalize_scenes(parsed: Any) -> list[dict]:
+def normalize_scenes(parsed: Any, target: int | None = None) -> list[dict]:
     """Coerce the model's scene output into a clean, capped list."""
     if isinstance(parsed, dict):
         parsed = parsed.get("scenes") or parsed.get("Scenes") or []
     if not isinstance(parsed, list):
         return []
+    cap = target or max_scenes()
     scenes: list[dict] = []
-    for i, raw in enumerate(parsed[:MAX_SCENES], start=1):
+    for i, raw in enumerate(parsed[:cap], start=1):
         if not isinstance(raw, dict):
             continue
         scenes.append({

@@ -1268,6 +1268,15 @@
       <div class="studio-prompt-wrap">
         <textarea id="studioPrompt" rows="2" placeholder="Describe your movie idea — a logline, a scene, a feeling..."></textarea>
         <div class="studio-prompt-actions">
+          <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:#94a3b8;cursor:pointer;" title="Run the full pipeline with free placeholder clips — no video spend.">
+            <input type="checkbox" id="studioTestModeToggle" onchange="onStudioControlsChange()" style="cursor:pointer;">Test mode
+          </label>
+          <select id="studioLengthSelect" onchange="onStudioControlsChange()" title="Trailer length" style="background:rgba(15,23,42,0.85);border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:5px 8px;color:#e2e8f0;font-size:11px;cursor:pointer;">
+            <option value="0">Short ~90s (default)</option>
+            <option value="30">Medium ~2.5min</option>
+            <option value="60">Long ~5min</option>
+          </select>
+          <span id="studioCostHint" style="font-size:11px;color:#64748b;"></span>
           <button class="studio-reset-btn" onclick="resetStudio()">Reset</button>
           <button class="studio-go-btn" id="studioGoBtn" onclick="studioSubmit()">Start Production</button>
         </div>
@@ -3255,6 +3264,16 @@ var studioExpectedClips = 0;
 var studioClipsDisabled = "";
 var studioFinalVideo = "";   // Elena's joined trailer
 var studioAssembling = false;
+// Async video job (background render, survives reload)
+var studioJobId = "";
+var studioJobTimer = null;
+var studioJobPolling = false;
+var studioJobCost = null;     // {spend_usd, est_cost_usd, remaining_budget_usd, budget_usd}
+var studioMissingScenes = [];
+var studioClipsMessage = "";  // denied / budget / info message shown in the strip
+// Per-run controls
+var studioTargetClips = 0;    // 0 = server default (~18 / 90s)
+var studioTestMode = false;
 // Phase 0 — conversational intake before anything generates
 var studioPhase = "intake";  // "intake" | "producing"
 var studioIntake = [];        // {who, text, quick_replies?}
@@ -3322,6 +3341,11 @@ function resetStudio() {
     studioClips = {};
     studioExpectedClips = 0;
     studioClipsDisabled = "";
+    studioClipsMessage = "";
+    studioMissingScenes = [];
+    studioJobId = "";
+    studioJobPolling = false;
+    if (studioJobTimer) { clearTimeout(studioJobTimer); studioJobTimer = null; }
     studioFinalVideo = "";
     studioAssembling = false;
     studioPhase = "intake";
@@ -3354,6 +3378,7 @@ async function restoreLastStudioRun() {
         (run.clips || []).forEach(function (c) { studioClips[c.number] = c; });
         studioExpectedClips = (run.clips || []).length;
         studioFinalVideo = run.final_video || "";
+        studioMissingScenes = run.missing_scenes || [];
         // Mark completed stages so the restored run reads as finished
         studioState = STUDIO_STAGES.map(function (s) {
             if (s.key === "writing") return studioScript ? "done" : "waiting";
@@ -3363,6 +3388,17 @@ async function restoreLastStudioRun() {
         var label = document.getElementById("studioStatusLabel");
         if (label && studioFrames.length) label.textContent = "Last production restored";
         renderStudioStages();
+        // If a video job was still running when we left, reconnect and keep
+        // filling the filmstrip — the server never stopped rendering.
+        var jstatus = run.job_status || "";
+        if (run.job_id && jstatus && jstatus !== "done" && jstatus !== "failed" &&
+            jstatus !== "budget_capped" && jstatus !== "aborted") {
+            studioRunning = true;
+            studioJobId = run.job_id;
+            studioState[STUDIO_STAGES.length - 1] = "working";
+            if (label) label.textContent = "Reconnecting to your render...";
+            startStudioJobPolling(run.job_id);
+        }
     } catch (err) {
         console.warn("[Studio] could not restore last run:", err);
     }
@@ -3424,7 +3460,41 @@ async function studioIntakeSend(forcedText) {
     }
 }
 
-function startStudioProduction(brief) {
+// Read the Test-mode + Length controls and refresh the cost hint.
+function onStudioControlsChange() {
+    var t = document.getElementById("studioTestModeToggle");
+    var sel = document.getElementById("studioLengthSelect");
+    studioTestMode = !!(t && t.checked);
+    studioTargetClips = sel ? parseInt(sel.value, 10) || 0 : 0;
+    var hint = document.getElementById("studioCostHint");
+    if (!hint) return;
+    if (studioTestMode) { hint.textContent = "free"; hint.style.color = "#34d399"; return; }
+    hint.textContent = "…";
+    fetch(apiUrl("/api/studio/estimate?clips=" + (studioTargetClips || "")), { credentials: "include", headers: authHeaders() })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+            if (!d || d.status !== "success") { hint.textContent = ""; return; }
+            if (!d.video_enabled) { hint.textContent = "video off"; hint.style.color = "#64748b"; return; }
+            if (!d.video_access) { hint.textContent = d.access_reason || "not on your plan"; hint.style.color = "#fbbf24"; return; }
+            hint.textContent = "~$" + (d.est_cost_usd || 0).toFixed(2) + " · $" + (d.remaining_budget_usd || 0).toFixed(2) + " left";
+            hint.style.color = (d.est_cost_usd > d.remaining_budget_usd) ? "#f87171" : "#64748b";
+        })
+        .catch(function () { hint.textContent = ""; });
+}
+
+async function startStudioProduction(brief) {
+    // Confirm real spend before a paid run so the coupon can't be drained by a tap.
+    if (!studioTestMode && studioTargetClips !== 0) {
+        try {
+            var r = await fetch(apiUrl("/api/studio/estimate?clips=" + studioTargetClips), { credentials: "include", headers: authHeaders() });
+            var d = await r.json();
+            if (d && d.status === "success" && d.video_enabled && d.video_access && d.est_cost_usd > 0) {
+                var ok = confirm("This trailer is about " + studioTargetClips + " clips (~$" + d.est_cost_usd.toFixed(2) +
+                    "). Budget left: $" + d.remaining_budget_usd.toFixed(2) + ".\n\nStart the render?");
+                if (!ok) return;
+            }
+        } catch (e) { /* fall through — server still enforces the cap */ }
+    }
     studioPhase = "producing";
     var p = document.getElementById("studioPrompt");
     if (p) { p.value = ""; p.placeholder = "Change your mind? e.g. \"rename the lead\", \"scene 3 at night\""; }
@@ -3632,6 +3702,35 @@ function renderStudioStages() {
                     dn.textContent = studioClipsDisabled;
                     card.appendChild(dn);
                 }
+                // Denied (tier) / budget messages
+                if (studioClipsMessage) {
+                    var cm = document.createElement("div");
+                    cm.className = "studio-scene-body";
+                    cm.style.cssText = "margin-top:8px;color:#fbbf24;background:rgba(251,191,36,0.08);border:1px solid rgba(251,191,36,0.25);border-radius:8px;padding:8px 10px;";
+                    cm.textContent = studioClipsMessage;
+                    card.appendChild(cm);
+                }
+                // Cost meter — spend so far, estimate, remaining budget
+                if (studioJobCost) {
+                    var meter = document.createElement("div");
+                    meter.className = "studio-scene-cam";
+                    meter.style.marginTop = "6px";
+                    var spend = (studioJobCost.spend_usd || 0).toFixed(2);
+                    var est = (studioJobCost.est_cost_usd || 0).toFixed(2);
+                    var rem = (studioJobCost.remaining_budget_usd || 0).toFixed(2);
+                    meter.textContent = studioTestMode
+                        ? "Test mode — no spend · budget left $" + rem
+                        : "Spent $" + spend + " of ~$" + est + " est · budget left $" + rem;
+                    card.appendChild(meter);
+                }
+                // Which scenes didn't make it
+                if (studioMissingScenes && studioMissingScenes.length) {
+                    var miss = document.createElement("div");
+                    miss.className = "studio-scene-cam";
+                    miss.style.color = "#f87171";
+                    miss.textContent = "Missing scenes (failed): " + studioMissingScenes.join(", ");
+                    card.appendChild(miss);
+                }
                 if (studioAssembling) {
                     var asm = document.createElement("div");
                     asm.className = "studio-scene-cam";
@@ -3702,6 +3801,70 @@ function studioSkeleton() {
     return skel;
 }
 
+// Reusable production-finished handler (used by both the SSE path and the
+// background-job poller). Re-fetches elements by id so it works outside the
+// runStudioPipeline closure.
+function studioFinish(msg) {
+    studioRunning = false;
+    studioQuestion = "";
+    studioPhase = "done";
+    studioJobPolling = false;
+    if (studioJobTimer) { clearTimeout(studioJobTimer); studioJobTimer = null; }
+    var btn = document.getElementById("studioGoBtn");
+    var label = document.getElementById("studioStatusLabel");
+    var promptEl = document.getElementById("studioPrompt");
+    if (btn) { btn.disabled = false; btn.textContent = "New Production"; }
+    if (label) label.textContent = msg || "Production complete";
+    window.vmNotify("Your production is ready", studioFinalVideo ? "The trailer is done — tap to watch." : "Your storyboard is ready in the Studio.");
+    if (promptEl) promptEl.placeholder = "Start a new production — say hi or pitch another idea...";
+    renderStudioStages();
+}
+
+// Poll a background video job until it finishes. This is what makes a run
+// survive the browser closing: on return, reconnecting to the job id resumes
+// exactly here, and the server keeps rendering regardless.
+function startStudioJobPolling(jobId) {
+    studioJobPolling = true;
+    if (studioJobTimer) { clearTimeout(studioJobTimer); studioJobTimer = null; }
+    var poll = function () {
+        fetch(apiUrl("/api/studio/job/" + encodeURIComponent(jobId)), { credentials: "include", headers: authHeaders() })
+            .then(function (r) { return r.json(); })
+            .then(function (d) {
+                if (!d || d.status !== "success" || !d.job) { studioJobTimer = setTimeout(poll, 6000); return; }
+                var job = d.job;
+                (job.clips || []).forEach(function (c) {
+                    if (c.status === "done" && c.video_url) {
+                        studioClips[c.number] = { number: c.number, title: c.title, video_url: c.video_url };
+                    }
+                });
+                studioJobCost = job.cost || studioJobCost;
+                studioMissingScenes = job.missing_scenes || [];
+                var label = document.getElementById("studioStatusLabel");
+                var doneN = job.done || 0, total = job.total || studioExpectedClips;
+                if (label && job.status === "running") {
+                    label.textContent = "Rendering clips (" + doneN + "/" + total + ")...";
+                }
+                renderStudioStages();
+                var terminal = (job.status === "done" || job.status === "budget_capped" ||
+                                job.status === "failed" || job.status === "aborted");
+                if (terminal) {
+                    studioFinalVideo = job.final_video || studioFinalVideo || "";
+                    studioJobId = "";
+                    var msg = "Production complete";
+                    if (job.status === "budget_capped") msg = "Budget cap reached — assembled what was ready";
+                    else if (job.status === "failed") msg = "Render failed" + (job.error ? ": " + job.error : "");
+                    else if (job.status === "aborted") msg = "Run stopped";
+                    if (studioMissingScenes.length) msg += " · missing scenes: " + studioMissingScenes.join(", ");
+                    studioFinish(msg);
+                } else {
+                    studioJobTimer = setTimeout(poll, 6000);
+                }
+            })
+            .catch(function () { studioJobTimer = setTimeout(poll, 8000); });
+    };
+    poll();
+}
+
 async function runStudioPipeline(ideaArg) {
     if (studioRunning) return;
     var promptEl = document.getElementById("studioPrompt");
@@ -3720,6 +3883,14 @@ async function runStudioPipeline(ideaArg) {
     studioExpectedFrames = 0;
     studioNotes = [];
     studioQuestion = "";
+    // Fresh video state for this production
+    studioClips = {};
+    studioFinalVideo = "";
+    studioMissingScenes = [];
+    studioClipsMessage = "";
+    studioJobId = "";
+    studioJobPolling = false;
+    if (studioJobTimer) { clearTimeout(studioJobTimer); studioJobTimer = null; }
     studioRunId = "run_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8);
     studioState = STUDIO_STAGES.map(function () { return "waiting"; });
     var btn = document.getElementById("studioGoBtn");
@@ -3735,23 +3906,14 @@ async function runStudioPipeline(ideaArg) {
     var body = document.querySelector(".studio-body");
     var stickBottom = function () { if (body) body.scrollTop = body.scrollHeight; };
 
-    function finish(msg) {
-        studioRunning = false;
-        studioQuestion = "";
-        studioPhase = "done";  // next send starts a fresh conversation
-        if (btn) { btn.disabled = false; btn.textContent = "New Production"; }
-        if (label) label.textContent = msg || "Production complete";
-        window.vmNotify("Your production is ready", studioFinalVideo ? "The trailer is done — tap to watch." : "Your storyboard is ready in the Studio.");
-        if (promptEl) promptEl.placeholder = "Start a new production — say hi or pitch another idea...";
-        renderStudioStages();
-    }
+    function finish(msg) { studioFinish(msg); }
 
     try {
         var res = await fetch(apiUrl("/api/studio/run"), {
             method: "POST",
             credentials: "include",
             headers: authHeaders({ "Content-Type": "application/json" }),
-            body: JSON.stringify({ idea: idea, run_id: studioRunId })
+            body: JSON.stringify({ idea: idea, run_id: studioRunId, clips: studioTargetClips, test_mode: studioTestMode })
         });
         if (!res.ok || !res.body) { finish("Studio run failed"); return; }
 
@@ -3783,7 +3945,12 @@ async function runStudioPipeline(ideaArg) {
                 try { evt = JSON.parse(line.slice(6)); } catch (e) { continue; }
 
                 if (evt.error) { finish(evt.error); return; }
-                if (evt.done) { finish(); return; }
+                if (evt.done) {
+                    // A background video job owns completion — don't finish yet.
+                    if (studioJobPolling) { return; }
+                    finish();
+                    return;
+                }
 
                 // Crew asking the user something back
                 if (evt.question) {
@@ -3821,7 +3988,16 @@ async function runStudioPipeline(ideaArg) {
                 // Clip generation belongs to Elena's stage (assembly)
                 if (evt.stage === "clips") {
                     var eIdx = studioStageIndex("storyboard");
-                    if (evt.status === "working") {
+                    if (evt.status === "queued") {
+                        // Async job accepted — hand off to the poller.
+                        studioJobId = evt.job_id || "";
+                        studioExpectedClips = evt.total || 0;
+                        studioJobCost = evt.cost || null;
+                        studioTestMode = !!evt.test_mode;
+                        studioState[eIdx] = "working";
+                        if (label) label.textContent = "Rendering clips (0/" + studioExpectedClips + ")...";
+                        if (studioJobId) startStudioJobPolling(studioJobId);
+                    } else if (evt.status === "working") {
                         studioExpectedClips = evt.total || 0;
                         studioState[eIdx] = "working";
                         if (label) label.textContent = "Elena is cutting clips (" + studioExpectedClips + ")...";
@@ -3829,6 +4005,12 @@ async function runStudioPipeline(ideaArg) {
                         studioState[eIdx] = "done";
                     } else if (evt.status === "disabled") {
                         studioClipsDisabled = evt.message || "Video generation is off.";
+                        studioState[eIdx] = "done";
+                    } else if (evt.status === "denied") {
+                        studioClipsMessage = evt.message || "Video generation isn't available on your plan.";
+                        studioState[eIdx] = "done";
+                    } else if (evt.status === "budget") {
+                        studioClipsMessage = evt.message || "Not enough video budget for this run.";
                         studioState[eIdx] = "done";
                     } else if (evt.status === "skipped") {
                         studioState[eIdx] = "done";

@@ -126,3 +126,16 @@ def usage_collection():
     """Per-user generation counters (images, videos)."""
     db = get_db()
     return db.usage if db is not None else None
+
+
+def studio_jobs_collection():
+    """Async video jobs — per-clip state so a trailer survives a browser close
+    and can be resumed by the poll endpoint."""
+    db = get_db()
+    return db.studio_jobs if db is not None else None
+
+
+def video_spend_collection():
+    """Cumulative video spend for the hard budget cap (single 'global' doc)."""
+    db = get_db()
+    return db.video_spend if db is not None else None

@@ -2712,6 +2712,99 @@ def _studio_save_run(user_id: str, run: dict):
         print(f"[STUDIO] could not persist run: {exc}")
 
 
+def _studio_async_enabled() -> bool:
+    """Async video job path (default on). Turn off to use the synchronous
+    fallback: STUDIO_ASYNC_VIDEO=0."""
+    return os.getenv("STUDIO_ASYNC_VIDEO", "1").strip().lower() not in ("0", "false", "no", "off")
+
+
+def _studio_clips_sync(user_id, clip_scenes, frame_sources, scenes, saved, media, studio, fold_notes):
+    """Original blocking clip path, kept as a fallback. Yields SSE strings."""
+    import core.video_i2v as i2v
+    yield f"data: {json.dumps({'stage': 'clips', 'status': 'working', 'total': len(clip_scenes)})}\n\n"
+    for scene in clip_scenes:
+        n = scene["number"]
+        motion = studio.clip_prompt(scene, notes=fold_notes())
+        out = i2v.generate_clip(motion, frame_sources[n], tag=str(n))
+        if out.get("error"):
+            print(f"[STUDIO] clip for scene {n} failed: {out['error']}")
+            yield f"data: {json.dumps({'stage': 'clips', 'clip_failed': n})}\n\n"
+            continue
+        rec = media.save_video(out["video_url"], prompt=f"Scene {n}: {scene['title']}",
+                               provider="AlibabaI2V", chat_id=f"studio_{user_id}")
+        stored_clip = rec["local_path"] if rec else ""
+        if not stored_clip:
+            yield f"data: {json.dumps({'stage': 'clips', 'clip_failed': n})}\n\n"
+            continue
+        clip_evt = {"number": n, "title": scene["title"], "video_url": stored_clip}
+        saved["clips"].append(clip_evt)
+        _studio_save_run(user_id, saved)
+        yield f"data: {json.dumps({'stage': 'clips', 'clip': clip_evt})}\n\n"
+    yield f"data: {json.dumps({'stage': 'clips', 'status': 'done'})}\n\n"
+    if len(saved["clips"]) >= 2:
+        yield f"data: {json.dumps({'stage': 'assembly', 'status': 'working'})}\n\n"
+        final = _studio_assemble(user_id, saved["clips"], media)
+        if final.get("video_url"):
+            saved["final_video"] = final["video_url"]
+            saved["assembly_mode"] = final.get("mode", "hard_cut")
+            _studio_save_run(user_id, saved)
+            yield f"data: {json.dumps({'stage': 'assembly', 'status': 'done', 'final_video': final['video_url'], 'mode': final.get('mode')})}\n\n"
+        else:
+            yield f"data: {json.dumps({'stage': 'assembly', 'status': 'failed', 'message': final.get('error', 'assembly failed')})}\n\n"
+
+
+@app.route("/api/studio/job/<job_id>", methods=["GET"])
+def api_studio_job(job_id):
+    """Poll a background video job. Also nudges a stalled job back to life so a
+    run survives the browser (and even the server process) going away."""
+    user_id, error = _require_login()
+    if error:
+        return error
+    import core.studio_jobs as sj
+    job = sj.get_job(job_id)
+    if not job or job.get("user_id") != user_id:
+        return jsonify({"status": "error", "message": "job not found"}), 404
+    sj.maybe_resume(job_id)
+    return jsonify({"status": "success", "job": sj.public_view(job)})
+
+
+@app.route("/api/studio/estimate", methods=["GET"])
+def api_studio_estimate():
+    """Cost meter data for the Studio: estimated cost, remaining budget, and
+    whether this user is even allowed to generate video."""
+    user_id, error = _require_login()
+    if error:
+        return error
+    import core.studio_jobs as sj
+    try:
+        clips = int(request.args.get("clips") or sj.default_clips())
+    except (TypeError, ValueError):
+        clips = sj.default_clips()
+    clips = max(1, min(sj.max_clips_cap(), clips))
+    tier = _get_user_tier(user_id)
+    _, videos_used = _get_usage_counts(user_id)
+    video_limit = _tier_limits().get(tier, {}).get("videos")
+    access_ok, access_reason = sj.video_access(tier, videos_used, video_limit)
+    est = sj.estimate_cost(clips)
+    return jsonify({
+        "status": "success",
+        "clips": clips,
+        "default_clips": sj.default_clips(),
+        "test_clips": sj.test_clips(),
+        "max_clips": sj.max_clips_cap(),
+        "cost_per_clip_usd": sj.cost_per_clip(),
+        "est_cost_usd": est,
+        "remaining_budget_usd": sj.remaining_budget(),
+        "budget_usd": sj.budget_usd(),
+        "video_enabled": _video_generation_enabled(),
+        "tier": tier,
+        "video_access": access_ok,
+        "access_reason": access_reason,
+        "videos_used": videos_used,
+        "video_limit": video_limit,
+    })
+
+
 @app.route("/api/studio/intake", methods=["POST"])
 def api_studio_intake():
     """Conversational intake — greetings, clarifying questions, and a readiness
@@ -2811,6 +2904,20 @@ def api_studio_run():
 
     from core.brain import _call_llm_cluster, _call_llm_cluster_stream
     import core.studio as studio
+    import core.studio_jobs as sj
+
+    # Per-run length + test mode. Default is a short ~90s trailer, not 5 minutes.
+    test_mode = bool(data.get("test_mode"))
+    try:
+        requested = int(data.get("clips") or 0)
+    except (TypeError, ValueError):
+        requested = 0
+    if test_mode:
+        target_clips = sj.test_clips()
+    elif requested > 0:
+        target_clips = max(1, min(sj.max_clips_cap(), requested))
+    else:
+        target_clips = sj.default_clips()
 
     if run_id:
         with _studio_runs_lock:
@@ -2887,9 +2994,10 @@ def api_studio_run():
             scenes = []
             try:
                 raw, _ = _call_llm_cluster(
-                    studio.scene_messages(idea, script, sheet_text, notes=fold_notes()), timeout=60,
+                    studio.scene_messages(idea, script, sheet_text, notes=fold_notes(),
+                                          target=target_clips), timeout=90,
                 )
-                scenes = studio.normalize_scenes(studio._parse_json_block(raw))
+                scenes = studio.normalize_scenes(studio._parse_json_block(raw), target=target_clips)
             except Exception as exc:
                 print(f"[STUDIO] scene breakdown failed: {exc}")
 
@@ -2942,50 +3050,48 @@ def api_studio_run():
 
             yield f"data: {json.dumps({'stage': 'storyboard', 'status': 'done'})}\n\n"
 
-            # ── Stage 4: animate each still into a clip (image-to-video) ─
-            # Gated by the same global kill switch as all video generation.
+            # ── Stage 4: animate the stills into clips ──────────────────
+            # The expensive video work runs as a background job (parallel submit,
+            # budget-capped, resumable) so this request returns fast and the run
+            # survives the browser closing. Gated by the global kill switch, then
+            # server-side tier + budget checks.
             import core.video_i2v as i2v
-            clip_scenes = [s for s in scenes if s["number"] in frame_sources][:studio.max_clips()]
+            clip_scenes = [s for s in scenes if s["number"] in frame_sources][:target_clips]
             if not _video_generation_enabled():
                 yield f"data: {json.dumps({'stage': 'clips', 'status': 'disabled', 'message': VIDEO_DISABLED_MESSAGE})}\n\n"
             elif not i2v.available() or not clip_scenes:
                 yield f"data: {json.dumps({'stage': 'clips', 'status': 'skipped'})}\n\n"
             else:
-                yield f"data: {json.dumps({'stage': 'clips', 'status': 'working', 'total': len(clip_scenes)})}\n\n"
-                for scene in clip_scenes:
-                    n = scene["number"]
-                    motion = studio.clip_prompt(scene, notes=fold_notes())
-                    out = i2v.generate_clip(motion, frame_sources[n])
-                    if out.get("error"):
-                        print(f"[STUDIO] clip for scene {n} failed: {out['error']}")
-                        yield f"data: {json.dumps({'stage': 'clips', 'clip_failed': n})}\n\n"
-                        continue
-                    rec = media.save_video(
-                        out["video_url"], prompt=f"Scene {n}: {scene['title']}",
-                        provider="AlibabaI2V", chat_id=f"studio_{user_id}",
-                    )
-                    stored_clip = rec["local_path"] if rec else ""
-                    if not stored_clip:
-                        yield f"data: {json.dumps({'stage': 'clips', 'clip_failed': n})}\n\n"
-                        continue
-                    # Permanent GridFS URL only — never the provider's expiring link
-                    clip_evt = {"number": n, "title": scene["title"], "video_url": stored_clip}
-                    saved["clips"].append(clip_evt)
-                    _studio_save_run(user_id, saved)
-                    yield f"data: {json.dumps({'stage': 'clips', 'clip': clip_evt})}\n\n"
-                yield f"data: {json.dumps({'stage': 'clips', 'status': 'done'})}\n\n"
-
-                # ── Elena assembles the clips into one trailer ──────────
-                if len(saved["clips"]) >= 2:
-                    yield f"data: {json.dumps({'stage': 'assembly', 'status': 'working'})}\n\n"
-                    final = _studio_assemble(user_id, saved["clips"], media)
-                    if final.get("video_url"):
-                        saved["final_video"] = final["video_url"]
-                        saved["assembly_mode"] = final.get("mode", "hard_cut")
-                        _studio_save_run(user_id, saved)
-                        yield f"data: {json.dumps({'stage': 'assembly', 'status': 'done', 'final_video': final['video_url'], 'mode': final.get('mode')})}\n\n"
+                # Tier gate (server-side): free tier gets no video; paid tier is
+                # capped per period. Test mode spends nothing so it's exempt.
+                gate_ok, gate_reason = True, ""
+                if not test_mode:
+                    tier = _get_user_tier(user_id)
+                    _, videos_used = _get_usage_counts(user_id)
+                    video_limit = _tier_limits().get(tier, {}).get("videos")
+                    gate_ok, gate_reason = sj.video_access(tier, videos_used, video_limit)
+                if not gate_ok:
+                    yield f"data: {json.dumps({'stage': 'clips', 'status': 'denied', 'message': gate_reason})}\n\n"
+                else:
+                    # Budget gate: refuse a run whose estimate exceeds the coupon.
+                    n = len(clip_scenes)
+                    afford, est, remaining = (True, 0.0, sj.remaining_budget()) if test_mode else sj.can_afford(n)
+                    if not afford:
+                        msg = (f"This run needs about ${est:.2f} but only ${remaining:.2f} of the "
+                               f"video budget is left. Try Test Mode or a shorter trailer.")
+                        yield f"data: {json.dumps({'stage': 'clips', 'status': 'budget', 'message': msg, 'est_cost_usd': est, 'remaining_budget_usd': remaining})}\n\n"
+                    elif not _studio_async_enabled():
+                        # Fallback: original synchronous path (nothing lost if the
+                        # async path is disabled).
+                        yield from _studio_clips_sync(user_id, clip_scenes, frame_sources,
+                                                      scenes, saved, media, studio, fold_notes)
                     else:
-                        yield f"data: {json.dumps({'stage': 'assembly', 'status': 'failed', 'message': final.get('error', 'assembly failed')})}\n\n"
+                        job = sj.new_job(user_id, scenes, frame_sources,
+                                         target_clips=target_clips, test_mode=test_mode,
+                                         notes=fold_notes())
+                        sj.launch(job["_id"])
+                        cost = sj.public_view(job).get("cost", {})
+                        yield f"data: {json.dumps({'stage': 'clips', 'status': 'queued', 'job_id': job['_id'], 'total': len(job['clips']), 'test_mode': test_mode, 'cost': cost})}\n\n"
 
             yield f"data: {json.dumps({'done': True})}\n\n"
 
