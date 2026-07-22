@@ -1017,6 +1017,26 @@ class MarcusBrain:
         sections.append("")
         sections.append(f"Character profile:\n{self.profile.to_prompt()}")
         sections.append("")
+
+        # Reply language — set from Settings > Language. Every reply must be in
+        # it; fall back to English only if you genuinely cannot hold the language.
+        try:
+            reply_language = str(self.memory.long_term.get("reply_language") or "").strip()
+        except Exception:
+            reply_language = ""
+        if reply_language and reply_language.lower() not in ("english", "en", ""):
+            extra = ""
+            if reply_language.lower() in ("nigerian pidgin", "pidgin", "naija"):
+                extra = " Use natural, everyday Nigerian Pidgin, not literal word-for-word translation."
+            elif reply_language.lower() == "igbo":
+                extra = " Write in natural, fluent Igbo."
+            sections.append(
+                f"LANGUAGE: Reply ENTIRELY in {reply_language}, no matter what language the "
+                f"user writes in.{extra} If you truly cannot produce {reply_language}, reply in "
+                f"English instead — never mix the two mid-reply or apologise about language."
+            )
+            sections.append("")
+
         sections.append("Known user context, if useful:")
         sections.append(f"User name: {user_name}")
         sections.append(f"Identity: {identity_str}")

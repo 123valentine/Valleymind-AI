@@ -2121,6 +2121,16 @@ def api_settings(section):
     if not isinstance(body, dict):
         return jsonify({"status": "error", "message": "Body must be a JSON object"}), 400
     _put_section_settings(user_id, section, body)
+    # Language must actually change replies, so persist it where the brain reads.
+    if section == "language":
+        lang = str(body.get("language") or "").strip()
+        marcus = load_marcus(user_id)
+        if marcus:
+            try:
+                marcus.memory.long_term["reply_language"] = lang
+                marcus.memory.save_memory()
+            except Exception as exc:
+                print(f"[SETTINGS] could not persist reply language: {exc}")
     return jsonify({"status": "success", "section": section, "message": "Saved"})
 
 
@@ -2184,12 +2194,19 @@ def api_settings_memory_fields():
     existing = _get_section_settings(user_id, "memory")
     existing.update(body)
     _put_section_settings(user_id, "memory", existing)
-    # Also update Marcus long-term memory
+    # Feed it into the memory the brain actually reads: store as a high-
+    # confidence FACT so it appears in active_facts and shapes replies (a bare
+    # preference dict is no longer injected once facts migration has run).
     marcus = load_marcus(user_id)
     if marcus:
         for key, val in body.items():
-            if val:
-                marcus.memory.remember_preference(key, str(val)[:2000])
+            val = str(val or "").strip()
+            if not val:
+                continue
+            marcus.memory.remember_preference(key, val[:2000])
+            label = key.replace("_", " ").strip()
+            summary = val if key.lower() in ("about", "note", "remember", "bio") else f"User's {label}: {val}"
+            marcus.memory.remember_fact("fact", summary[:400], val[:2000], confidence=0.95)
     return jsonify({"status": "success", "message": "Memory updated"})
 
 
