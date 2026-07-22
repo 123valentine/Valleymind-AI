@@ -752,16 +752,35 @@ function renderExtensionsSection(container) {
 // USAGE
 // ══════════════════════════════════════════════════════════════
 
+function _usageMeter(label, used, limit) {
+  var pct = limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0;
+  var over = limit > 0 && used >= limit;
+  var barColor = over ? "#f43f5e" : (pct >= 80 ? "#f59e0b" : "#00d4ff");
+  return '<div style="background:rgba(15,23,42,0.5);border-radius:10px;padding:14px;flex:1;min-width:150px;">' +
+    '<p style="color:#94a3b8;font-size:10px;text-transform:uppercase;letter-spacing:0.08em;">' + label + '</p>' +
+    '<p style="color:#e2e8f0;font-size:22px;font-weight:700;margin:2px 0 8px;">' + used +
+      ' <span style="color:#475569;font-size:13px;font-weight:500;">/ ' + limit + '</span></p>' +
+    '<div style="height:6px;border-radius:99px;background:rgba(255,255,255,0.07);overflow:hidden;">' +
+      '<div style="height:100%;width:' + pct + '%;background:' + barColor + ';transition:width 0.3s;"></div></div>' +
+    '</div>';
+}
+
 function renderUsageSection(container) {
   container.innerHTML = _SH.sectionHeader("Usage", "Your ValleyMind activity overview");
   apiFetch("/api/settings/usage", { credentials: "include", headers: authHeaders() })
     .then(function (r) { return r.json(); }).then(function (d) {
       var u = d.usage || {};
+      var tier = (u.tier || "free");
+      var tierBadge = '<span style="display:inline-block;padding:3px 10px;border-radius:999px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;margin-left:8px;' +
+        (tier === "paid" ? 'background:rgba(0,212,255,0.15);color:#00d4ff;border:1px solid rgba(0,212,255,0.3);' : 'background:rgba(148,163,184,0.12);color:#94a3b8;border:1px solid rgba(148,163,184,0.2);') + '">' + tier + ' tier</span>';
       container.innerHTML = _SH.sectionHeader("Usage", "Your ValleyMind activity overview") +
+        _SH.card("Generation Limits" + tierBadge, '<div style="display:flex;gap:12px;flex-wrap:wrap;">' +
+          _usageMeter("Images", u.images_generated || 0, u.images_limit || 0) +
+          _usageMeter("Videos", u.videos_generated || 0, u.videos_limit || 0) +
+          '</div>') +
         _SH.card("Activity Overview", '<div style="display:flex;gap:12px;flex-wrap:wrap;">' +
           '<div style="background:rgba(15,23,42,0.5);border-radius:10px;padding:14px;flex:1;min-width:120px;"><p style="color:#94a3b8;font-size:10px;text-transform:uppercase;">Chat Sessions</p><p style="color:#e2e8f0;font-size:22px;font-weight:700;">' + (u.chat_sessions || 0) + '</p></div>' +
           '<div style="background:rgba(15,23,42,0.5);border-radius:10px;padding:14px;flex:1;min-width:120px;"><p style="color:#94a3b8;font-size:10px;text-transform:uppercase;">Messages</p><p style="color:#e2e8f0;font-size:22px;font-weight:700;">' + (u.chat_messages || 0) + '</p></div>' +
-          '<div style="background:rgba(15,23,42,0.5);border-radius:10px;padding:14px;flex:1;min-width:120px;"><p style="color:#94a3b8;font-size:10px;text-transform:uppercase;">Images</p><p style="color:#e2e8f0;font-size:22px;font-weight:700;">' + (u.images_generated || 0) + '</p></div>' +
           '<div style="background:rgba(15,23,42,0.5);border-radius:10px;padding:14px;flex:1;min-width:120px;"><p style="color:#94a3b8;font-size:10px;text-transform:uppercase;">Memory</p><p style="color:#e2e8f0;font-size:22px;font-weight:700;">' + (u.memory_entries || 0) + '</p></div>' +
           '<div style="background:rgba(15,23,42,0.5);border-radius:10px;padding:14px;flex:1;min-width:120px;"><p style="color:#94a3b8;font-size:10px;text-transform:uppercase;">Storage</p><p style="color:#e2e8f0;font-size:22px;font-weight:700;">' + (u.storage_mb || 0) + ' MB</p></div></div>') +
         _SH.card("Recent Sessions", '<div style="max-height:300px;overflow-y:auto;">' +

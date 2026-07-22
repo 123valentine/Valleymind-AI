@@ -120,3 +120,9 @@ def studio_runs_collection():
     """Last Studio run per user, so the surface survives a page reload."""
     db = get_db()
     return db.studio_runs if db is not None else None
+
+
+def usage_collection():
+    """Per-user generation counters (images, videos)."""
+    db = get_db()
+    return db.usage if db is not None else None

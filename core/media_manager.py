@@ -114,9 +114,14 @@ class MediaManager:
                 data = resp.content
                 content_type = resp.headers.get("content-type", "").split(";")[0].strip()
             else:
-                # Absolute path (e.g. an ffmpeg temp file) used as-is; a
-                # "/static/..." app path is resolved under PROJECT_ROOT.
-                local_source = Path(source) if os.path.isabs(source) else (PROJECT_ROOT / source.lstrip("/"))
+                # App-served paths ("/static/...") resolve under PROJECT_ROOT; a
+                # genuine absolute path (e.g. an ffmpeg temp file) is used as-is.
+                if source.startswith("/static/") or source.startswith("static/"):
+                    local_source = PROJECT_ROOT / source.lstrip("/")
+                elif os.path.isabs(source):
+                    local_source = Path(source)
+                else:
+                    local_source = PROJECT_ROOT / source.lstrip("/")
                 data = local_source.read_bytes()
                 content_type = mimetypes.guess_type(str(local_source))[0] or ""
 
@@ -152,10 +157,26 @@ class MediaManager:
             return None
 
     def save_image(self, url: str, **kwargs: Any) -> dict[str, Any] | None:
-        return self.save_media(url, media_type="image", **kwargs)
+        rec = self.save_media(url, media_type="image", **kwargs)
+        if rec:
+            self._bump_usage("images")
+        return rec
 
     def save_video(self, url: str, **kwargs: Any) -> dict[str, Any] | None:
-        return self.save_media(url, media_type="video", **kwargs)
+        rec = self.save_media(url, media_type="video", **kwargs)
+        if rec:
+            self._bump_usage("videos")
+        return rec
+
+    def _bump_usage(self, kind: str) -> None:
+        """Increment the user's live generation counter the moment media lands."""
+        try:
+            from core.db import usage_collection
+            coll = usage_collection()
+            if coll is not None:
+                coll.update_one({"_id": self.user_id}, {"$inc": {kind: 1}}, upsert=True)
+        except Exception as exc:
+            print(f"[MEDIA] usage counter bump failed: {exc}")
 
     def _save_to_mongo(self, record: dict, filename: str, data: bytes, content_type: str) -> bool:
         coll = self._media_collection()

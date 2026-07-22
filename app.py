@@ -21,7 +21,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 from core.brain import MarcusBrain, _call_llm_cluster, _CHAT_SYSTEM_PROMPT
 from core.config import PROJECT_ROOT, get_config
-from core.db import auth_tokens_collection, app_config_collection, chats_collection, get_db, studio_runs_collection, users_collection
+from core.db import auth_tokens_collection, app_config_collection, chats_collection, get_db, studio_runs_collection, usage_collection, users_collection
 from core.media_manager import get_media_manager
 from core.router import RouteDecision, get_router
 from core.tts import speak_marcus
@@ -2350,16 +2350,59 @@ def api_settings_usage():
     marcus = load_marcus(user_id)
     sessions = _load_sessions_index(user_id)
     total_messages = sum(int(s.get("message_count", 0)) for s in sessions)
+
+    images_done, videos_done = _get_usage_counts(user_id)
+    tier = _get_user_tier(user_id)
+    limits = _tier_limits()
+
     usage = {
         "chat_sessions": len(sessions),
         "chat_messages": total_messages,
-        "images_generated": len(list((PROJECT_ROOT / "static" / "generated").glob("*.png"))) if (PROJECT_ROOT / "static" / "generated").exists() else 0,
+        "tier": tier,
+        "images_generated": images_done,
+        "videos_generated": videos_done,
+        "images_limit": limits[tier]["images"],
+        "videos_limit": limits[tier]["videos"],
+        "limits": limits,
         "memory_entries": len(marcus.memory.get_full_memory().get("preferences", {})) + len(marcus.memory.get_full_memory().get("identity", {})) if marcus else 0,
-        "knowledge_items": 0,
+        "knowledge_items": len(_load_settings(user_id).get("knowledge_items", []) or []),
         "storage_mb": _get_storage_usage(user_id).get("total_mb", 0),
         "sessions": sessions[:50],
     }
     return jsonify({"status": "success", "usage": usage})
+
+
+def _tier_limits() -> dict:
+    """Per-tier caps (env-overridable). Display-only for now — not enforced."""
+    def _i(name, default):
+        try:
+            return int(os.getenv(name, str(default)))
+        except (TypeError, ValueError):
+            return default
+    return {
+        "free": {"images": _i("FREE_IMAGE_LIMIT", 30), "videos": _i("FREE_VIDEO_LIMIT", 5)},
+        "paid": {"images": _i("PAID_IMAGE_LIMIT", 1000), "videos": _i("PAID_VIDEO_LIMIT", 200)},
+    }
+
+
+def _get_user_tier(user_id: str) -> str:
+    users = _load_users()
+    for u in users.values():
+        if _safe_user_id(u.get("email", "")) == user_id:
+            t = str(u.get("tier", "free")).strip().lower()
+            return t if t in ("free", "paid") else "free"
+    return "free"
+
+
+def _get_usage_counts(user_id: str) -> tuple:
+    coll = usage_collection()
+    if coll is not None:
+        try:
+            doc = coll.find_one({"_id": user_id}) or {}
+            return int(doc.get("images", 0)), int(doc.get("videos", 0))
+        except Exception as exc:
+            print(f"[USAGE] read failed: {exc}")
+    return 0, 0
 
 
 # ── Knowledge items ────────────────────────────────────────────
