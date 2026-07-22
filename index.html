@@ -3197,6 +3197,8 @@ var studioQuestion = "";     // a question the crew asked back
 var studioClips = {};        // scene number -> {video_url, title}
 var studioExpectedClips = 0;
 var studioClipsDisabled = "";
+var studioFinalVideo = "";   // Elena's joined trailer
+var studioAssembling = false;
 
 function clearStudioTimers() {
     studioTimers.forEach(function (t) { clearTimeout(t); });
@@ -3259,6 +3261,8 @@ function resetStudio() {
     studioClips = {};
     studioExpectedClips = 0;
     studioClipsDisabled = "";
+    studioFinalVideo = "";
+    studioAssembling = false;
     var btn = document.getElementById("studioGoBtn");
     if (btn) { btn.disabled = false; btn.textContent = "Start Production"; }
     var label = document.getElementById("studioStatusLabel");
@@ -3284,6 +3288,7 @@ async function restoreLastStudioRun() {
         studioClips = {};
         (run.clips || []).forEach(function (c) { studioClips[c.number] = c; });
         studioExpectedClips = (run.clips || []).length;
+        studioFinalVideo = run.final_video || "";
         // Mark completed stages so the restored run reads as finished
         studioState = STUDIO_STAGES.map(function (s) {
             if (s.key === "writing") return studioScript ? "done" : "waiting";
@@ -3455,6 +3460,26 @@ function renderStudioStages() {
                     dn.textContent = studioClipsDisabled;
                     card.appendChild(dn);
                 }
+                if (studioAssembling) {
+                    var asm = document.createElement("div");
+                    asm.className = "studio-scene-cam";
+                    asm.textContent = "Joining clips into the trailer...";
+                    card.appendChild(asm);
+                }
+                if (studioFinalVideo) {
+                    var flabel = document.createElement("div");
+                    flabel.className = "studio-sheet-label";
+                    flabel.style.marginTop = "12px";
+                    flabel.textContent = "Final trailer";
+                    card.appendChild(flabel);
+                    var fv = document.createElement("video");
+                    fv.src = studioFinalVideo;
+                    fv.controls = true;
+                    fv.playsInline = true;
+                    fv.preload = "metadata";
+                    fv.style.cssText = "width:100%;max-height:360px;border-radius:12px;margin-top:6px;background:#0f172a;display:block;";
+                    card.appendChild(fv);
+                }
             } else if (status === "working") {
                 card.appendChild(studioSkeleton());
             }
@@ -3595,6 +3620,26 @@ async function runStudioPipeline() {
                 }
                 if (evt.question_resolved) {
                     studioQuestion = "";
+                    scheduleRender();
+                    continue;
+                }
+
+                // Final assembly (Elena joins the clips into one trailer)
+                if (evt.stage === "assembly") {
+                    var aIdx = studioStageIndex("storyboard");
+                    if (evt.status === "working") {
+                        studioAssembling = true;
+                        studioState[aIdx] = "working";
+                        if (label) label.textContent = "Elena is assembling the trailer...";
+                    } else if (evt.status === "done") {
+                        studioAssembling = false;
+                        studioFinalVideo = evt.final_video || "";
+                        studioState[aIdx] = "done";
+                        if (label) label.textContent = "Trailer ready";
+                    } else if (evt.status === "failed") {
+                        studioAssembling = false;
+                        studioState[aIdx] = "done";
+                    }
                     scheduleRender();
                     continue;
                 }

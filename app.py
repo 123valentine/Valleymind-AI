@@ -2544,6 +2544,67 @@ def _studio_take_notes(run_id: str) -> list:
         return notes
 
 
+def _studio_assemble(user_id: str, clips: list, media) -> dict:
+    """Join the studio clips into one trailer with ffmpeg (Elena's stage).
+
+    Default is a hard-cut concat (streaming copy, ~16MB peak) which is safe on a
+    512MB instance. Crossfade transitions re-encode the whole timeline and peak
+    well above 512MB, so they are opt-in via STUDIO_ASSEMBLY_MODE=crossfade.
+    Pulls each clip out of GridFS to a temp file, assembles, stores the result.
+    """
+    import tempfile, shutil
+    import core.video_assembly as va
+
+    if not va.available():
+        return {"error": "ffmpeg not available"}
+
+    mode = os.getenv("STUDIO_ASSEMBLY_MODE", "hard_cut").strip().lower()
+    workdir = tempfile.mkdtemp(prefix="studio_assembly_")
+    local_paths = []
+    try:
+        db = get_db()
+        import gridfs
+        bucket = gridfs.GridFSBucket(db) if db is not None else None
+        for i, clip in enumerate(sorted(clips, key=lambda c: c.get("number", 0))):
+            fname = clip["video_url"].rsplit("/", 1)[-1]
+            dest = os.path.join(workdir, f"clip_{i:02d}.mp4")
+            data = None
+            if bucket is not None:
+                try:
+                    data = bucket.open_download_stream_by_name(fname).read()
+                except Exception:
+                    data = None
+            if data is None:  # local-disk fallback copy
+                disk = PROJECT_ROOT / clip["video_url"].lstrip("/")
+                if disk.exists():
+                    data = disk.read_bytes()
+            if not data:
+                continue
+            with open(dest, "wb") as f:
+                f.write(data)
+            local_paths.append(dest)
+
+        if len(local_paths) < 2:
+            return {"error": "not enough clips available to assemble"}
+
+        out_path = os.path.join(workdir, "trailer.mp4")
+        ok, err = va.assemble(local_paths, out_path, mode=mode)
+        if not ok or not os.path.exists(out_path):
+            return {"error": err or "assembly failed"}
+
+        # Persist the trailer to GridFS + gallery via the same media manager
+        rec = media.save_media(out_path, media_type="video", prompt="Studio trailer",
+                               provider="StudioAssembly", chat_id=f"studio_{user_id}")
+        if not rec:
+            return {"error": "could not store trailer"}
+        return {"video_url": rec["local_path"], "mode": mode}
+    except Exception as exc:
+        print(f"[STUDIO] assembly crashed: {exc}")
+        return {"error": str(exc)}
+    finally:
+        shutil.rmtree(workdir, ignore_errors=True)
+
+
 def _studio_save_run(user_id: str, run: dict):
     """Persist the latest Studio run so it survives a page reload."""
     coll = studio_runs_collection()
@@ -2777,6 +2838,18 @@ def api_studio_run():
                     _studio_save_run(user_id, saved)
                     yield f"data: {json.dumps({'stage': 'clips', 'clip': clip_evt})}\n\n"
                 yield f"data: {json.dumps({'stage': 'clips', 'status': 'done'})}\n\n"
+
+                # ── Elena assembles the clips into one trailer ──────────
+                if len(saved["clips"]) >= 2:
+                    yield f"data: {json.dumps({'stage': 'assembly', 'status': 'working'})}\n\n"
+                    final = _studio_assemble(user_id, saved["clips"], media)
+                    if final.get("video_url"):
+                        saved["final_video"] = final["video_url"]
+                        saved["assembly_mode"] = final.get("mode", "hard_cut")
+                        _studio_save_run(user_id, saved)
+                        yield f"data: {json.dumps({'stage': 'assembly', 'status': 'done', 'final_video': final['video_url'], 'mode': final.get('mode')})}\n\n"
+                    else:
+                        yield f"data: {json.dumps({'stage': 'assembly', 'status': 'failed', 'message': final.get('error', 'assembly failed')})}\n\n"
 
             yield f"data: {json.dumps({'done': True})}\n\n"
 

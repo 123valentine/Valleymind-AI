@@ -114,7 +114,9 @@ class MediaManager:
                 data = resp.content
                 content_type = resp.headers.get("content-type", "").split(";")[0].strip()
             else:
-                local_source = PROJECT_ROOT / source.lstrip("/")
+                # Absolute path (e.g. an ffmpeg temp file) used as-is; a
+                # "/static/..." app path is resolved under PROJECT_ROOT.
+                local_source = Path(source) if os.path.isabs(source) else (PROJECT_ROOT / source.lstrip("/"))
                 data = local_source.read_bytes()
                 content_type = mimetypes.guess_type(str(local_source))[0] or ""
 
