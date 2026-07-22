@@ -69,6 +69,99 @@ def _sheet_to_text(sheet: dict) -> str:
     return "\n".join(lines)
 
 
+# ── Phase 0: conversational intake (before anything is generated) ────────────
+
+_GO_RE = re.compile(
+    r"\b(go|start|begin|make it|just make|let'?s go|do it|roll it|action|"
+    r"produce it|shoot it|that'?s enough|good to go|ready)\b",
+    re.IGNORECASE,
+)
+
+
+def user_said_go(text: str) -> bool:
+    return bool(_GO_RE.search(str(text or "")))
+
+
+def _intake_system() -> str:
+    return (
+        "You run the intake desk for ValleyMind Studio, a three-person film crew:\n"
+        "- Angelina, the writer — owns story, characters, their names, dialogue, tone.\n"
+        "- Marcus, the director and senior of the three — owns the visual look, camera "
+        "style, mood, and length.\n"
+        "- Elena, the editor — pacing and assembly.\n\n"
+        "You are talking to a user BEFORE any script or image is made. Nothing is "
+        "generated during intake. Decide what to do with their latest message:\n\n"
+        "1. If they are just greeting or chatting and have NOT given a film idea, reply "
+        "warmly in a crew member's voice and invite them to share an idea. mode='greeting'. "
+        "Do NOT start making anything.\n"
+        "2. If they gave an idea but important things are still unclear, ask exactly ONE "
+        "natural question, in the voice of the RIGHT crew member — Angelina for "
+        "story/characters/names/tone, Marcus for look/camera-style/length. Offer 2-4 short "
+        "tap-able answer options. mode='gathering'.\n"
+        "3. If there is enough to begin (an idea plus at least a rough sense of the "
+        "characters and the tone), OR the user clearly says to go, reply briefly in "
+        "Marcus's voice that the crew is ready, and write a consolidated creative brief. "
+        "mode='ready'.\n\n"
+        "Speak in-character and human, never like a form. Never write the actual script or "
+        "scene list here.\n\n"
+        "Respond with ONLY this JSON:\n"
+        '{"mode":"greeting|gathering|ready","persona":"Angelina|Marcus|Elena",'
+        '"reply":"<what the crew member says>","quick_replies":["...","..."],'
+        '"brief":"<the accumulated creative brief; required when mode=ready>"}'
+    )
+
+
+def intake_messages(history: list[dict], latest: str) -> list[dict]:
+    lines = []
+    for h in (history or []):
+        who = h.get("persona") or ("User" if h.get("role") == "user" else "Crew")
+        lines.append(f"{who}: {h.get('text','')}")
+    convo = "\n".join(lines) if lines else "(no messages yet)"
+    return [
+        {"role": "system", "content": _intake_system()},
+        {"role": "user", "content": f"Conversation so far:\n{convo}\n\nUser's latest message: {latest}\n\nReturn the JSON decision."},
+    ]
+
+
+_DEFAULT_QUESTION = {
+    "Angelina": "Tell me about the story — who's in it, and what happens to them?",
+    "Marcus": "What look are you after — the mood, the pace, and roughly how long?",
+    "Elena": "What feeling should it leave the viewer with?",
+}
+_DEFAULT_CHIPS = ["Give it more detail", "Just surprise me", "Keep it short", "Go now"]
+
+
+def parse_intake(raw: str, force_ready: bool = False) -> dict:
+    parsed = _parse_json_block(raw)
+    if not isinstance(parsed, dict):
+        parsed = {}
+    mode = str(parsed.get("mode", "")).strip().lower()
+    if mode not in ("greeting", "gathering", "ready"):
+        mode = "gathering"
+    persona = str(parsed.get("persona", "") or "Marcus").strip().title()
+    if persona not in ("Angelina", "Marcus", "Elena"):
+        persona = "Marcus"
+    reply = str(parsed.get("reply", "") or "").strip()
+    quick = [str(q).strip() for q in (parsed.get("quick_replies") or []) if str(q).strip()][:4]
+    brief = str(parsed.get("brief", "") or "").strip()
+
+    if force_ready:
+        mode = "ready"
+        persona = "Marcus"
+        reply = reply or "Alright — we've got enough to start. Rolling now."
+    # Never surface a blank turn to the user.
+    if not reply:
+        if mode == "greeting":
+            reply = "Hey — welcome to the Studio. What film do you want to make?"
+        elif mode == "ready":
+            reply = "We've got enough to start. Rolling now."
+        else:
+            reply = _DEFAULT_QUESTION.get(persona, _DEFAULT_QUESTION["Marcus"])
+    if mode == "gathering" and not quick:
+        quick = _DEFAULT_CHIPS
+    return {"mode": mode, "persona": persona, "reply": reply, "quick_replies": quick, "brief": brief}
+
+
 # ── Stage 1: Angelina writes ────────────────────────────────────────────────
 
 def script_messages(idea: str) -> list[dict]:

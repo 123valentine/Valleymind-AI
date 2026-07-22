@@ -3209,6 +3209,11 @@ var studioExpectedClips = 0;
 var studioClipsDisabled = "";
 var studioFinalVideo = "";   // Elena's joined trailer
 var studioAssembling = false;
+// Phase 0 — conversational intake before anything generates
+var studioPhase = "intake";  // "intake" | "producing"
+var studioIntake = [];        // {who, text, quick_replies?}
+var studioBrief = "";
+var studioIntakeBusy = false;
 
 function clearStudioTimers() {
     studioTimers.forEach(function (t) { clearTimeout(t); });
@@ -3273,12 +3278,16 @@ function resetStudio() {
     studioClipsDisabled = "";
     studioFinalVideo = "";
     studioAssembling = false;
+    studioPhase = "intake";
+    studioIntake = [];
+    studioBrief = "";
+    studioIntakeBusy = false;
     var btn = document.getElementById("studioGoBtn");
-    if (btn) { btn.disabled = false; btn.textContent = "Start Production"; }
+    if (btn) { btn.disabled = false; btn.textContent = "Send"; }
     var label = document.getElementById("studioStatusLabel");
     if (label) label.textContent = "";
     var p = document.getElementById("studioPrompt");
-    if (p) p.placeholder = "Describe your movie idea — a logline, a scene, a feeling...";
+    if (p) p.placeholder = "Say hi, or tell the crew your movie idea...";
     renderStudioStages();
 }
 
@@ -3313,10 +3322,67 @@ async function restoreLastStudioRun() {
     }
 }
 
-// The bottom box is dual-purpose: it starts a run, and while a run is live it
-// sends notes/answers to the crew that the pipeline picks up mid-flight.
+// The bottom box drives every phase: intake conversation before production,
+// then mid-run notes once the crew is working.
 function studioSubmit() {
-    if (studioRunning) { sendStudioNote(); } else { runStudioPipeline(); }
+    if (studioRunning) { sendStudioNote(); return; }
+    if (studioPhase === "producing") { return; }
+    if (studioPhase === "done") { resetStudio(); studioIntakeSend(); return; }
+    studioIntakeSend();
+}
+
+async function studioIntakeSend(forcedText) {
+    if (studioIntakeBusy) return;
+    var el = document.getElementById("studioPrompt");
+    var text = (forcedText !== undefined ? forcedText : (el && el.value || "")).trim();
+    if (!text) { if (el) el.focus(); return; }
+    if (el && forcedText === undefined) el.value = "";
+
+    studioIntake.push({ who: "You", text: text });
+    // Drop stale quick-replies once the user has answered
+    studioIntake.forEach(function (m) { if (m.who !== "You") m.quick_replies = null; });
+    studioIntakeBusy = true;
+    var btn = document.getElementById("studioGoBtn");
+    if (btn) { btn.disabled = true; btn.textContent = "..."; }
+    renderStudioStages();
+
+    var history = studioIntake.map(function (m) {
+        return { role: m.who === "You" ? "user" : "crew", text: m.text, persona: m.who === "You" ? null : m.who };
+    }).slice(0, -1); // exclude the just-pushed latest (sent separately)
+
+    try {
+        var res = await apiFetch("/api/studio/intake", {
+            method: "POST", credentials: "include",
+            headers: authHeaders({ "Content-Type": "application/json" }),
+            body: JSON.stringify({ message: text, history: history })
+        });
+        var d = await res.json();
+        studioIntake.push({ who: d.persona || "Marcus", text: d.reply || "", quick_replies: d.quick_replies || [] });
+        studioIntakeBusy = false;
+        if (btn) { btn.disabled = false; btn.textContent = "Send"; }
+
+        if (d.mode === "ready") {
+            studioBrief = d.brief || text;
+            renderStudioStages();
+            // Enough to work with (or the user said go): begin production
+            setTimeout(function () { startStudioProduction(studioBrief); }, 500);
+        } else {
+            renderStudioStages();
+        }
+    } catch (err) {
+        console.warn("[Studio] intake failed:", err);
+        studioIntakeBusy = false;
+        if (btn) { btn.disabled = false; btn.textContent = "Send"; }
+        studioIntake.push({ who: "Marcus", text: "Sorry — say that again?" });
+        renderStudioStages();
+    }
+}
+
+function startStudioProduction(brief) {
+    studioPhase = "producing";
+    var p = document.getElementById("studioPrompt");
+    if (p) { p.value = ""; p.placeholder = "Change your mind? e.g. \"rename the lead\", \"scene 3 at night\""; }
+    runStudioPipeline(brief);
 }
 
 async function sendStudioNote() {
@@ -3339,10 +3405,60 @@ async function sendStudioNote() {
     }
 }
 
+function renderStudioIntake(host) {
+    if (!studioIntake.length && studioPhase === "intake") {
+        var hint = document.createElement("div");
+        hint.className = "studio-stage";
+        hint.innerHTML = '<div class="studio-scene-body">The crew is ready when you are. ' +
+            'Say hi, or tell them the film you want to make — they\'ll ask a few questions before rolling.</div>';
+        host.appendChild(hint);
+        return;
+    }
+    if (!studioIntake.length) return;
+    var thread = document.createElement("div");
+    thread.className = "studio-stage";
+    studioIntake.forEach(function (m) {
+        var isUser = m.who === "You";
+        var row = document.createElement("div");
+        row.className = "studio-scene";
+        row.style.borderColor = isUser ? "rgba(255,255,255,0.07)" : "rgba(0,212,255,0.18)";
+        var who = document.createElement("div");
+        who.className = "studio-scene-title";
+        who.style.color = isUser ? "#94a3b8" : "#00d4ff";
+        who.textContent = m.who;
+        var body = document.createElement("div");
+        body.className = "studio-scene-body";
+        body.textContent = m.text;
+        row.appendChild(who); row.appendChild(body);
+        if (m.quick_replies && m.quick_replies.length) {
+            var chips = document.createElement("div");
+            chips.style.cssText = "display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;";
+            m.quick_replies.forEach(function (q) {
+                var chip = document.createElement("button");
+                chip.textContent = q;
+                chip.style.cssText = "padding:6px 12px;border-radius:999px;border:1px solid rgba(0,212,255,0.3);" +
+                    "background:rgba(0,212,255,0.08);color:#00d4ff;font-size:12px;cursor:pointer;font-family:'Inter',sans-serif;";
+                chip.onclick = function () { studioIntakeSend(q); };
+                chips.appendChild(chip);
+            });
+            row.appendChild(chips);
+        }
+        thread.appendChild(row);
+    });
+    if (studioIntakeBusy) {
+        var typing = document.createElement("div");
+        typing.className = "studio-scene-cam";
+        typing.textContent = "the crew is thinking...";
+        thread.appendChild(typing);
+    }
+    host.appendChild(thread);
+}
+
 function renderStudioStages() {
     var host = document.getElementById("studioStages");
     if (!host) return;
     host.innerHTML = "";
+    renderStudioIntake(host);
     STUDIO_STAGES.forEach(function (stage, i) {
         var status = studioState[i] || "waiting";
         var card = document.createElement("div");
@@ -3540,10 +3656,10 @@ function studioSkeleton() {
     return skel;
 }
 
-async function runStudioPipeline() {
+async function runStudioPipeline(ideaArg) {
     if (studioRunning) return;
     var promptEl = document.getElementById("studioPrompt");
-    var idea = (promptEl && promptEl.value || "").trim();
+    var idea = (ideaArg !== undefined ? ideaArg : (promptEl && promptEl.value || "")).trim();
     if (!idea) {
         if (promptEl) promptEl.focus();
         return;
@@ -3576,9 +3692,10 @@ async function runStudioPipeline() {
     function finish(msg) {
         studioRunning = false;
         studioQuestion = "";
-        if (btn) { btn.disabled = false; btn.textContent = "Run Again"; }
+        studioPhase = "done";  // next send starts a fresh conversation
+        if (btn) { btn.disabled = false; btn.textContent = "New Production"; }
         if (label) label.textContent = msg || "Production complete";
-        if (promptEl) promptEl.placeholder = "Describe your movie idea — a logline, a scene, a feeling...";
+        if (promptEl) promptEl.placeholder = "Start a new production — say hi or pitch another idea...";
         renderStudioStages();
     }
 

@@ -2620,6 +2620,50 @@ def _studio_save_run(user_id: str, run: dict):
         print(f"[STUDIO] could not persist run: {exc}")
 
 
+@app.route("/api/studio/intake", methods=["POST"])
+def api_studio_intake():
+    """Conversational intake — greetings, clarifying questions, and a readiness
+    signal. NOTHING is generated here; the crew just talks until there's enough
+    to work with (or the user says go)."""
+    user_id, error = _require_login()
+    if error:
+        return error
+    data = request.get_json(silent=True) or {}
+    latest = str(data.get("message") or "").strip()
+    history = data.get("history") or []
+    if not latest:
+        return jsonify({"status": "error", "message": "message is required"}), 400
+
+    import core.studio as studio
+    from core.brain import _call_llm_cluster
+
+    force = studio.user_said_go(latest) and _studio_has_idea(history, latest)
+    try:
+        raw, _ = _call_llm_cluster(studio.intake_messages(history, latest), timeout=30)
+        decision = studio.parse_intake(raw, force_ready=force)
+        # The model occasionally returns an empty turn — one retry for a real
+        # contextual reply before falling back to a generic prompt.
+        if not force and not str((studio._parse_json_block(raw) or {}).get("reply", "")).strip():
+            raw2, _ = _call_llm_cluster(studio.intake_messages(history, latest), timeout=30)
+            retry = studio.parse_intake(raw2, force_ready=force)
+            if str((studio._parse_json_block(raw2) or {}).get("reply", "")).strip():
+                decision = retry
+    except Exception as exc:
+        print(f"[STUDIO] intake failed: {exc}")
+        decision = {
+            "mode": "gathering", "persona": "Marcus",
+            "reply": "Tell me a bit about what you're picturing — the story, the mood, who's in it.",
+            "quick_replies": [], "brief": "",
+        }
+    return jsonify({"status": "success", **decision})
+
+
+def _studio_has_idea(history: list, latest: str) -> bool:
+    """A bare 'go' with no prior idea shouldn't force a start."""
+    total = sum(len(str(h.get("text", ""))) for h in (history or []) if h.get("role") == "user")
+    return (total + len(latest)) > 12
+
+
 @app.route("/api/studio/last", methods=["GET"])
 def api_studio_last():
     """The user's most recent Studio run, for restoring the surface on reload."""
