@@ -3274,6 +3274,9 @@ var studioJobPolling = false;
 var studioJobCost = null;     // {spend_usd, est_cost_usd, remaining_budget_usd, budget_usd}
 var studioMissingScenes = [];
 var studioClipsMessage = "";  // denied / budget / info message shown in the strip
+var studioClipReviews = {};   // scene number -> Marcus's review of that clip
+var studioCutReview = null;   // Elena's review of the finished cut
+var studioJobIdForRetry = ""; // last job id, so a flagged shot can be re-shot
 // Per-run controls. Runtime drives scene count (~1 scene per 5s).
 var studioTargetDuration = 30;  // seconds
 var studioTestMode = false;
@@ -3744,6 +3747,50 @@ function renderStudioStages() {
                     asm.textContent = "Joining clips into the trailer...";
                     card.appendChild(asm);
                 }
+                // Marcus's per-clip reviews — the crew watching its own work
+                var reviewNums = Object.keys(studioClipReviews);
+                if (reviewNums.length) {
+                    var rl = document.createElement("div");
+                    rl.className = "studio-sheet-label";
+                    rl.style.marginTop = "12px";
+                    rl.textContent = "Marcus reviews the shots";
+                    card.appendChild(rl);
+                    reviewNums.sort(function (a, b) { return a - b; }).forEach(function (n) {
+                        var rv = studioClipReviews[n];
+                        var bad = rv.match === "no";
+                        var row = document.createElement("div");
+                        row.style.cssText = "margin-top:6px;padding:8px 10px;border-radius:8px;font-size:12px;line-height:1.5;" +
+                            "background:rgba(15,23,42,0.55);border-left:3px solid " + (bad ? "#f87171" : "#34d399") + ";";
+                        var head = document.createElement("div");
+                        head.style.cssText = "color:#94a3b8;font-size:10.5px;margin-bottom:3px;";
+                        head.textContent = "Scene " + n + (bad ? " — doesn't match" : " — matches");
+                        row.appendChild(head);
+                        var body = document.createElement("div");
+                        body.style.color = "#cbd5e1";
+                        body.textContent = rv.text || "";
+                        row.appendChild(body);
+                        if (bad && studioJobIdForRetry) {
+                            var btn = document.createElement("button");
+                            btn.textContent = "Re-shoot this scene";
+                            btn.style.cssText = "margin-top:6px;background:rgba(248,113,113,0.15);border:1px solid rgba(248,113,113,0.4);color:#fca5a5;border-radius:7px;padding:4px 10px;font-size:11px;cursor:pointer;";
+                            btn.onclick = function () { regenerateStudioScene(n, btn); };
+                            row.appendChild(btn);
+                        }
+                        card.appendChild(row);
+                    });
+                }
+                // Elena's review of the finished cut
+                if (studioCutReview && studioCutReview.text) {
+                    var el = document.createElement("div");
+                    el.className = "studio-sheet-label";
+                    el.style.marginTop = "12px";
+                    el.textContent = "Elena watches the cut";
+                    card.appendChild(el);
+                    var eb = document.createElement("div");
+                    eb.style.cssText = "margin-top:6px;padding:10px 12px;border-radius:8px;font-size:12.5px;line-height:1.6;color:#e2e8f0;background:rgba(0,212,255,0.06);border-left:3px solid rgba(0,212,255,0.55);";
+                    eb.textContent = studioCutReview.text;
+                    card.appendChild(eb);
+                }
                 if (studioFinalVideo) {
                     var flabel = document.createElement("div");
                     flabel.className = "studio-sheet-label";
@@ -3830,8 +3877,37 @@ function studioFinish(msg) {
 // Poll a background video job until it finishes. This is what makes a run
 // survive the browser closing: on return, reconnecting to the job id resumes
 // exactly here, and the server keeps rendering regardless.
+// Re-shoot a single scene Marcus flagged as not matching.
+function regenerateStudioScene(sceneNumber, btn) {
+    if (!studioJobIdForRetry) return;
+    if (btn) { btn.disabled = true; btn.textContent = "Re-shooting..."; }
+    fetch(apiUrl("/api/studio/job/" + encodeURIComponent(studioJobIdForRetry) +
+                 "/regenerate/" + sceneNumber), {
+        method: "POST", credentials: "include", headers: authHeaders()
+    })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+            if (!d || d.status !== "success") {
+                if (btn) { btn.disabled = false; btn.textContent = "Re-shoot this scene"; }
+                alert((d && d.message) || "Could not re-shoot that scene.");
+                return;
+            }
+            delete studioClipReviews[sceneNumber];
+            delete studioClips[sceneNumber];
+            studioCutReview = null;
+            studioFinalVideo = "";
+            studioRunning = true;
+            startStudioJobPolling(studioJobIdForRetry);
+            renderStudioStages();
+        })
+        .catch(function () {
+            if (btn) { btn.disabled = false; btn.textContent = "Re-shoot this scene"; }
+        });
+}
+
 function startStudioJobPolling(jobId) {
     studioJobPolling = true;
+    studioJobIdForRetry = jobId;
     if (studioJobTimer) { clearTimeout(studioJobTimer); studioJobTimer = null; }
     var poll = function () {
         fetch(apiUrl("/api/studio/job/" + encodeURIComponent(jobId)), { credentials: "include", headers: authHeaders() })
@@ -3844,6 +3920,10 @@ function startStudioJobPolling(jobId) {
                         studioClips[c.number] = { number: c.number, title: c.title, video_url: c.video_url };
                     }
                 });
+                (job.clips || []).forEach(function (c) {
+                    if (c.review) studioClipReviews[c.number] = c.review;
+                });
+                studioCutReview = job.cut_review || studioCutReview;
                 studioJobCost = job.cost || studioJobCost;
                 studioMissingScenes = job.missing_scenes || [];
                 var label = document.getElementById("studioStatusLabel");

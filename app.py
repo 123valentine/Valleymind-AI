@@ -2768,6 +2768,44 @@ def api_studio_job(job_id):
     return jsonify({"status": "success", "job": sj.public_view(job)})
 
 
+@app.route("/api/studio/job/<job_id>/regenerate/<int:scene_number>", methods=["POST"])
+def api_studio_regenerate_clip(job_id, scene_number):
+    """Re-shoot ONE scene — used when Marcus flags a clip as not matching."""
+    user_id, error = _require_login()
+    if error:
+        return error
+    import core.studio_jobs as sj
+    job = sj.get_job(job_id)
+    if not job or job.get("user_id") != user_id:
+        return jsonify({"status": "error", "message": "job not found"}), 404
+
+    if not job.get("test_mode"):
+        tier = _get_user_tier(user_id)
+        _, videos_used = _get_usage_counts(user_id)
+        ok, reason = sj.video_access(tier, videos_used, _tier_limits().get(tier, {}).get("videos"))
+        if not ok:
+            return jsonify({"status": "error", "message": reason}), 403
+        afford, est, remaining = sj.can_afford(1)
+        if not afford:
+            return jsonify({"status": "error",
+                            "message": f"Not enough budget (${remaining:.2f} left)."}), 402
+
+    target = next((c for c in job["clips"] if c["number"] == scene_number), None)
+    if not target:
+        return jsonify({"status": "error", "message": "scene not in this job"}), 404
+
+    # Reset just this clip and let the driver pick it up again.
+    target.update({"status": sj.PENDING, "task_id": "", "video_url": "",
+                   "error": "", "review": None})
+    job["status"] = "running"
+    job["final_video"] = ""      # the cut must be rebuilt around the new shot
+    job["cut_review"] = None
+    job["submission_capped"] = False
+    sj.save_job(job)
+    sj.launch(job_id)
+    return jsonify({"status": "success", "job": sj.public_view(sj.get_job(job_id))})
+
+
 @app.route("/api/studio/estimate", methods=["GET"])
 def api_studio_estimate():
     """Cost meter data for the Studio: estimated cost, remaining budget, and
@@ -3156,7 +3194,9 @@ def api_studio_run():
                                          sheet_text=sheet_text, look=look,
                                          # Beat N's card punctuates scene N.
                                          cards={b.get("number"): b.get("card", "")
-                                                for b in saved.get("beats", [])})
+                                                for b in saved.get("beats", [])},
+                                         logline=saved.get("logline", ""),
+                                         beats=saved.get("beats", []))
                         sj.launch(job["_id"])
                         cost = sj.public_view(job).get("cost", {})
                         yield f"data: {json.dumps({'stage': 'clips', 'status': 'queued', 'job_id': job['_id'], 'total': len(job['clips']), 'test_mode': test_mode, 'video_mode': video_mode, 'cost': cost})}\n\n"

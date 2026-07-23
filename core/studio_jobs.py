@@ -218,7 +218,7 @@ def _now_iso() -> str:
 def new_job(user_id: str, scenes: list, frame_sources: dict, *, target_clips: int,
             test_mode: bool = False, notes: list | None = None,
             mode: str = "t2v", sheet_text: str = "", look: str = "",
-            cards: dict | None = None) -> dict:
+            cards: dict | None = None, logline: str = "", beats: list | None = None) -> dict:
     """Build a job over the scenes.
 
     ``mode`` picks the video path per run:
@@ -259,6 +259,10 @@ def new_job(user_id: str, scenes: list, frame_sources: dict, *, target_clips: in
         # {scene_number: card text} from Angelina's beats, cut in as their own
         # short clips at assembly (never burned over the footage).
         "cards": {str(k): str(v) for k, v in (cards or {}).items() if str(v).strip()},
+        "logline": logline,
+        "beats": beats or [],
+        "cut_review": None,
+        "vl_spend_usd": 0.0,
         "final_video": "",
         "assembly_mode": "hard_cut",
         "spend_usd": 0.0,
@@ -320,9 +324,14 @@ def public_view(job: dict) -> dict:
         "total": len(clips),
         "clips": [
             {"number": c["number"], "title": c["title"], "status": c["status"],
-             "video_url": c.get("video_url", "")}
+             "video_url": c.get("video_url", ""), "mode": c.get("mode", "t2v"),
+             "review": c.get("review"),
+             "mismatch": (c.get("review") or {}).get("match") == "no"}
             for c in clips
         ],
+        "cut_review": job.get("cut_review"),
+        "mismatches": [c["number"] for c in clips
+                       if (c.get("review") or {}).get("match") == "no"],
         "done": len(done),
         "failed": sum(1 for c in clips if c.get("status") in (FAILED, ABORTED)),
         "missing_scenes": job.get("missing_scenes", []),
@@ -459,6 +468,79 @@ def _run(job_id: str) -> None:
     _finalize(job_id, media, capped)
 
 
+def vl_cost_per_1k() -> float:
+    """Estimated $ per 1k Qwen3-VL tokens. Measured token counts are small
+    (~1.8k for a 3s 720p clip, and the analysis proxy cuts that further), so
+    review cost is a rounding error next to generation — but it is still
+    charged against the same cap."""
+    return _f("VL_COST_PER_1K_TOKENS", 0.002)
+
+
+def _charge_vl(job: dict, tokens: int) -> None:
+    if not tokens or job.get("test_mode") or _fake():
+        return
+    cost = round((tokens / 1000.0) * vl_cost_per_1k(), 6)
+    if cost <= 0:
+        return
+    add_spend(cost)
+    job["spend_usd"] = round(job.get("spend_usd", 0.0) + cost, 6)
+    job["vl_spend_usd"] = round(job.get("vl_spend_usd", 0.0) + cost, 6)
+
+
+def _local_copy_of_clip(clip: dict) -> str:
+    """Pull a stored clip out of GridFS to a temp file so it can be watched."""
+    import gridfs
+    import tempfile as _tf
+    from core.config import PROJECT_ROOT
+    from core.db import get_db
+    url = clip.get("video_url") or ""
+    if not url:
+        return ""
+    fname = url.rsplit("/", 1)[-1]
+    data = None
+    try:
+        db = get_db()
+        if db is not None:
+            data = gridfs.GridFSBucket(db).open_download_stream_by_name(fname).read()
+    except Exception:
+        data = None
+    if data is None:
+        disk = PROJECT_ROOT / url.lstrip("/")
+        if disk.exists():
+            data = disk.read_bytes()
+    if not data:
+        return ""
+    path = os.path.join(_tf.gettempdir(), f"review_{fname}")
+    with open(path, "wb") as f:
+        f.write(data)
+    return path
+
+
+def _review_clip(job: dict, clip: dict) -> None:
+    """Marcus watches the clip he just got back and says whether it matches."""
+    import core.video_vision as vv
+    if not vv.available() or job.get("test_mode") or _fake():
+        return
+    path = _local_copy_of_clip(clip)
+    if not path:
+        return
+    try:
+        scene = {"action": clip.get("prompt", "") or clip.get("motion", ""),
+                 "description": clip.get("title", "")}
+        out = vv.marcus_clip_review(path, scene)
+        if out.get("error"):
+            print(f"[JOB] clip {clip['number']} review failed: {out['error']}")
+            return
+        clip["review"] = {"persona": "Marcus", "text": out.get("text", ""),
+                          "match": out.get("match", "unknown")}
+        _charge_vl(job, out.get("tokens", 0))
+    finally:
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+
+
 def _store_clip(media, job: dict, clip: dict, url: str) -> None:
     """Pull a finished clip into permanent GridFS storage + the user's gallery."""
     try:
@@ -471,6 +553,10 @@ def _store_clip(media, job: dict, clip: dict, url: str) -> None:
     if stored:
         clip["status"] = DONE
         clip["video_url"] = stored
+        try:
+            _review_clip(job, clip)   # Marcus watches it
+        except Exception as exc:
+            print(f"[JOB] review crashed (non-fatal): {exc}")
     else:
         clip["status"] = FAILED
         clip["error"] = "could not store clip"
@@ -493,6 +579,13 @@ def _finalize(job_id: str, media, capped: bool = False) -> None:
             job["error"] = final.get("error", "assembly failed")
     elif len(done) == 1:
         job["final_video"] = done[0]["video_url"]  # a single clip is the trailer
+
+    # Elena watches the finished cut start to finish.
+    if job.get("final_video"):
+        try:
+            _review_cut(job)
+        except Exception as exc:
+            print(f"[JOB] cut review crashed (non-fatal): {exc}")
 
     if job["status"] == "running":
         job["status"] = "budget_capped" if capped else "done"
@@ -542,6 +635,29 @@ def _build_sequence(local_paths: list, ordered_clips: list, cards: dict, workdir
     if last_card:
         sequence.append(last_card)
     return sequence
+
+
+def _review_cut(job: dict) -> None:
+    """Elena watches the assembled trailer and reports what she sees."""
+    import core.video_vision as vv
+    if not vv.available() or job.get("test_mode") or _fake():
+        return
+    path = _local_copy_of_clip({"video_url": job.get("final_video", "")})
+    if not path:
+        return
+    try:
+        out = vv.elena_cut_review(path, logline=job.get("logline", ""),
+                                  beats=job.get("beats") or [])
+        if out.get("error"):
+            print(f"[JOB] cut review failed: {out['error']}")
+            return
+        job["cut_review"] = {"persona": "Elena", "text": out.get("text", "")}
+        _charge_vl(job, out.get("tokens", 0))
+    finally:
+        try:
+            os.remove(path)
+        except OSError:
+            pass
 
 
 def _assemble(user_id: str, done_clips: list, media, cards: dict | None = None) -> dict:
