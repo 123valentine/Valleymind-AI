@@ -1047,6 +1047,7 @@
 
         <!-- HIDDEN FILE INPUTS -->
         <input type="file" id="chatImageInput" accept="image/*" style="display:none;">
+        <input type="file" id="chatVideoInput" accept="video/*" style="display:none;">
         <input type="file" id="chatFileInput" style="display:none;">
 
         <!-- UNIFIED COMPOSER (chips row on top, input row below) -->
@@ -1067,6 +1068,9 @@
             <div id="plusMenu" style="display:none;position:absolute;bottom:calc(100% + 8px);left:0;background:#0f172a;border:1px solid rgba(0,212,255,0.2);border-radius:12px;padding:6px;min-width:170px;box-shadow:0 12px 40px rgba(0,0,0,0.7);z-index:100;">
               <div class="plus-menu-item" onclick="document.getElementById('chatImageInput').click();closePlusMenu();" style="display:flex;align-items:center;gap:10px;padding:9px 14px;border-radius:8px;font-size:13px;color:#bbc9cf;cursor:pointer;transition:all 0.12s;" onmouseover="this.style.background='rgba(0,212,255,0.08)';this.style.color='#00d4ff'" onmouseout="this.style.background='transparent';this.style.color='#bbc9cf'">
                 <i data-lucide="camera" style="width:18px;height:18px;"></i> Camera
+              </div>
+              <div class="plus-menu-item" onclick="document.getElementById('chatVideoInput').click();closePlusMenu();" style="display:flex;align-items:center;gap:10px;padding:9px 14px;border-radius:8px;font-size:13px;color:#bbc9cf;cursor:pointer;transition:all 0.12s;" onmouseover="this.style.background='rgba(0,212,255,0.08)';this.style.color='#00d4ff'" onmouseout="this.style.background='transparent';this.style.color='#bbc9cf'">
+                <i data-lucide="video" style="width:18px;height:18px;"></i> Video to analyse
               </div>
               <div class="plus-menu-item" onclick="document.getElementById('chatFileInput').click();closePlusMenu();" style="display:flex;align-items:center;gap:10px;padding:9px 14px;border-radius:8px;font-size:13px;color:#bbc9cf;cursor:pointer;transition:all 0.12s;" onmouseover="this.style.background='rgba(0,212,255,0.08)';this.style.color='#00d4ff'" onmouseout="this.style.background='transparent';this.style.color='#bbc9cf'">
                 <i data-lucide="file-text" style="width:18px;height:18px;"></i> Local File
@@ -1319,6 +1323,9 @@
             <option value="90">90s</option>
             <option value="150">2.5 min</option>
           </select>
+          <input type="file" id="studioVideoInput" accept="video/*" style="display:none;">
+          <button onclick="document.getElementById('studioVideoInput').click()" title="Upload footage for the crew to work from"
+                  style="background:rgba(15,23,42,0.85);border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:5px 9px;color:#94a3b8;font-size:11px;cursor:pointer;">🎬 Upload footage</button>
           <span id="studioCostHint" style="font-size:11px;color:#64748b;"></span>
           <button class="studio-reset-btn" onclick="resetStudio()">Reset</button>
           <button class="studio-go-btn" id="studioGoBtn" onclick="studioSubmit()">Start Production</button>
@@ -1724,11 +1731,81 @@ document.getElementById('chatImageInput').addEventListener('change', function (e
     reader.readAsDataURL(file);
 });
 
+/* ── Video upload + analysis (Qwen3-VL) ───────────────────────────────── */
+var pendingVideoFile = null;
+
+document.getElementById('chatVideoInput').addEventListener('change', function (event) {
+    var file = event.target.files[0];
+    if (!file) return;
+    var maxMb = 100;
+    if (file.size > maxMb * 1024 * 1024) {
+        alert("That video is " + (file.size / 1024 / 1024).toFixed(0) + "MB. The limit is " + maxMb + "MB.");
+        this.value = "";
+        return;
+    }
+    pendingVideoFile = file;
+    renderComposerChips();
+});
+
+function clearVideoUpload() {
+    pendingVideoFile = null;
+    var el = document.getElementById("chatVideoInput");
+    if (el) el.value = "";
+    renderComposerChips();
+}
+
+/* Send the attached video for analysis and render the reply in the chat. */
+async function sendVideoForAnalysis(question) {
+    var file = pendingVideoFile;
+    if (!file) return;
+    clearVideoUpload();
+    addMessage(question ? question + "\n\n🎬 " + file.name : "🎬 " + file.name, "user");
+    var thinking = addThinkingIndicator ? addThinkingIndicator() : null;
+    try {
+        var fd = new FormData();
+        fd.append("video", file);
+        fd.append("question", question || "");
+        fd.append("context", "chat");
+        var res = await fetch(apiUrl("/api/video/analyze"), {
+            method: "POST", credentials: "include", headers: authHeaders(), body: fd
+        });
+        var d = await res.json();
+        if (thinking && removeThinkingIndicator) removeThinkingIndicator(thinking);
+        if (!d || d.status !== "success") {
+            addMessage((d && d.message) || "I couldn't watch that video.", "ai");
+            return;
+        }
+        addMessage(d.description || "I couldn't make anything out in that video.", "ai", null,
+                   null, d.video_url || null);
+        window.vmNotify("Your video analysis is ready", (file.name || "").slice(0, 110),
+                        d.video_url ? { url: d.video_url, type: "video" } : null);
+    } catch (err) {
+        if (thinking && removeThinkingIndicator) removeThinkingIndicator(thinking);
+        addMessage("I couldn't watch that video — the upload failed.", "ai");
+    }
+}
+
 /* Render attached-image chips INSIDE the composer, above the text line. */
 function renderComposerChips() {
     var chips = document.getElementById("composerChips");
     if (!chips) return;
     chips.innerHTML = "";
+    if (pendingVideoFile) {
+        var vchip = document.createElement("div");
+        vchip.className = "composer-chip";
+        vchip.style.cssText = "display:flex;align-items:center;gap:7px;padding:5px 9px;background:rgba(0,212,255,0.1);border:1px solid rgba(0,212,255,0.3);border-radius:8px;color:#7dd3fc;font-size:12px;";
+        var name = pendingVideoFile.name.length > 26
+            ? pendingVideoFile.name.slice(0, 23) + "..." : pendingVideoFile.name;
+        vchip.appendChild(document.createTextNode("🎬 " + name));
+        var vx = document.createElement("button");
+        vx.className = "chip-x";
+        vx.type = "button";
+        vx.title = "Remove video";
+        vx.textContent = "✕";
+        vx.onclick = function (ev) { ev.stopPropagation(); clearVideoUpload(); };
+        vchip.appendChild(vx);
+        chips.appendChild(vchip);
+    }
     if (pendingImageData) {
         var chip = document.createElement("div");
         chip.className = "composer-chip";
@@ -1745,7 +1822,7 @@ function renderComposerChips() {
         chip.appendChild(x);
         chips.appendChild(chip);
     }
-    chips.classList.toggle("has-items", !!pendingImageData);
+    chips.classList.toggle("has-items", !!(pendingImageData || pendingVideoFile));
 }
 
 function clearImageUpload() {
@@ -3418,6 +3495,7 @@ var studioTestMode = false;
 var studioPhase = "intake";  // "intake" | "producing"
 var studioIntake = [];        // {who, text, quick_replies?}
 var studioBrief = "";
+var studioSourceFootage = "";  // description of footage the user uploaded
 var studioIntakeBusy = false;
 
 function clearStudioTimers() {
@@ -3602,8 +3680,58 @@ async function studioIntakeSend(forcedText) {
     }
 }
 
+/* Studio: upload footage the crew works from. Qwen3-VL describes it, and the
+   description is fed into the intake so Angelina writes from what's actually
+   in the shot rather than from a blank page. */
+function initStudioVideoUpload() {
+    var el = document.getElementById("studioVideoInput");
+    if (!el || el._wired) return;
+    el._wired = true;
+    el.addEventListener("change", async function () {
+        var file = this.files[0];
+        if (!file) return;
+        this.value = "";
+        if (file.size > 100 * 1024 * 1024) {
+            alert("That video is " + (file.size / 1024 / 1024).toFixed(0) + "MB. The limit is 100MB.");
+            return;
+        }
+        studioIntake.push({ who: "You", text: "🎬 Uploaded footage: " + file.name });
+        studioIntake.push({ who: "Marcus", text: "Let me watch that..." });
+        renderStudioIntake();
+        try {
+            var fd = new FormData();
+            fd.append("video", file);
+            fd.append("context", "studio");
+            var res = await fetch(apiUrl("/api/video/analyze"), {
+                method: "POST", credentials: "include", headers: authHeaders(), body: fd
+            });
+            var d = await res.json();
+            studioIntake.pop();  // drop the "let me watch" placeholder
+            if (!d || d.status !== "success") {
+                studioIntake.push({ who: "Marcus", text: (d && d.message) || "I couldn't watch that one." });
+            } else {
+                studioIntake.push({
+                    who: "Marcus",
+                    text: "Here's what I see in your footage:\n\n" + d.description +
+                          "\n\nTell me what you want to build from it.",
+                    quick_replies: ["Continue this story", "Make a trailer from it", "Change the style"]
+                });
+                studioSourceFootage = d.description || "";
+                studioBrief = (studioBrief ? studioBrief + "\n\n" : "") +
+                              "SOURCE FOOTAGE THE USER UPLOADED: " + (d.description || "");
+            }
+            renderStudioIntake();
+        } catch (e) {
+            studioIntake.pop();
+            studioIntake.push({ who: "Marcus", text: "That upload failed — try a smaller file?" });
+            renderStudioIntake();
+        }
+    });
+}
+
 // Read the Test-mode + Length controls and refresh the cost hint.
 function onStudioControlsChange() {
+    initStudioVideoUpload();
     var t = document.getElementById("studioTestModeToggle");
     var sel = document.getElementById("studioLengthSelect");
     studioTestMode = !!(t && t.checked);
@@ -4804,6 +4932,19 @@ window.send = async function () {
     if (!authCheckComplete || isThinking) return;
     const input = document.getElementById("chatInput");
     const text = input.value.trim();
+
+    // An attached video goes to the vision model, not the chat router.
+    if (pendingVideoFile) {
+        input.value = "";
+        autoGrowInput();
+        setThinkingState(true);
+        try {
+            await sendVideoForAnalysis(text);
+        } finally {
+            setThinkingState(false);
+        }
+        return;
+    }
 
     if (!text && !pendingImageData) return;
 

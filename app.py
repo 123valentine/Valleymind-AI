@@ -49,6 +49,13 @@ print(f"[TRACE BOOT] app.root_path = {app.root_path}")
 print(f"[TRACE BOOT] app.static_folder = {app.static_folder}")
 print(f"[TRACE BOOT] PROJECT_ROOT = {PROJECT_ROOT}")
 app.permanent_session_lifetime = timedelta(days=30)
+# Hard ceiling on request bodies. Video uploads are the only large payload and a
+# phone can easily produce 200MB+, which a 512MB instance cannot absorb.
+try:
+    _max_upload_mb = float(os.getenv("VIDEO_UPLOAD_MAX_MB", "100"))
+except (TypeError, ValueError):
+    _max_upload_mb = 100.0
+app.config["MAX_CONTENT_LENGTH"] = int(_max_upload_mb * 1024 * 1024) + (2 * 1024 * 1024)
 
 # ── CORS (commented out — frontend is now served from the same origin) ──────
 # from flask_cors import CORS
@@ -2751,6 +2758,129 @@ def _studio_clips_sync(user_id, clip_scenes, frame_sources, scenes, saved, media
             yield f"data: {json.dumps({'stage': 'assembly', 'status': 'done', 'final_video': final['video_url'], 'mode': final.get('mode')})}\n\n"
         else:
             yield f"data: {json.dumps({'stage': 'assembly', 'status': 'failed', 'message': final.get('error', 'assembly failed')})}\n\n"
+
+
+def _analysis_limit(tier: str) -> int:
+    """Per-user video-analysis allowance. Analysis is far cheaper than
+    generation, so free users get a taste rather than a hard block — but it is
+    never unlimited, and the global budget cap still applies on top."""
+    try:
+        return int(os.getenv("PAID_ANALYSIS_LIMIT", "200") if tier == "paid"
+                   else os.getenv("FREE_ANALYSIS_LIMIT", "5"))
+    except (TypeError, ValueError):
+        return 200 if tier == "paid" else 5
+
+
+def _get_analysis_count(user_id: str) -> int:
+    coll = usage_collection()
+    if coll is None:
+        return 0
+    try:
+        return int((coll.find_one({"_id": user_id}) or {}).get("analyses", 0))
+    except Exception:
+        return 0
+
+
+@app.route("/api/video/analyze", methods=["POST"])
+def api_video_analyze():
+    """Watch an uploaded video with Qwen3-VL and describe it.
+
+    Used by both the chat composer and the Studio (where the description seeds
+    a production). Respects the same global video budget cap as generation.
+    """
+    user_id, error = _require_login()
+    if error:
+        return error
+
+    import core.studio_jobs as sj
+    import core.video_vision as vv
+
+    if not vv.available():
+        return jsonify({"status": "error",
+                        "message": "Video analysis isn't available right now."}), 503
+
+    upload = request.files.get("video")
+    if not upload or not upload.filename:
+        return jsonify({"status": "error", "message": "No video uploaded."}), 400
+
+    # Per-user allowance + the shared hard budget cap.
+    tier = _get_user_tier(user_id)
+    used = _get_analysis_count(user_id)
+    limit = _analysis_limit(tier)
+    if used >= limit:
+        return jsonify({"status": "error",
+                        "message": f"You've used all {limit} video analyses on your plan."}), 403
+    if sj.remaining_budget() <= 0:
+        return jsonify({"status": "error",
+                        "message": "The video budget is exhausted."}), 402
+
+    question = (request.form.get("question") or "").strip()
+    context = (request.form.get("context") or "chat").strip()
+
+    import tempfile
+    suffix = os.path.splitext(upload.filename)[1][:8] or ".mp4"
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+    tmp_path = tmp.name
+    tmp.close()
+    try:
+        upload.save(tmp_path)
+        size_mb = os.path.getsize(tmp_path) / 1024 / 1024
+        if size_mb > _max_upload_mb:
+            return jsonify({"status": "error",
+                            "message": f"That video is {size_mb:.0f}MB — the limit is {_max_upload_mb:.0f}MB."}), 413
+
+        if context == "studio":
+            prompt = (question or
+                      "Describe this footage for a film crew about to build a piece from it: "
+                      "who or what is in it, what happens, the setting, and the visual style. "
+                      "Be concrete and specific.")
+            system = ("You are a film crew's assistant describing source footage the director "
+                      "will work from. Be concrete and visual. Under 150 words.")
+        else:
+            prompt = question or "Watch this video and tell me what you see."
+            system = ("You describe videos clearly and specifically for the person who uploaded "
+                      "them. Say what actually happens. Under 180 words.")
+
+        result = vv.analyze_video(tmp_path, prompt, system=system)
+        if result.get("error"):
+            return jsonify({"status": "error", "message": result["error"]}), 502
+
+        # Charge the VL tokens against the same cap that governs generation.
+        tokens = int(result.get("tokens", 0) or 0)
+        if tokens:
+            sj.add_spend(round((tokens / 1000.0) * sj.vl_cost_per_1k(), 6))
+        coll = usage_collection()
+        if coll is not None:
+            try:
+                coll.update_one({"_id": user_id}, {"$inc": {"analyses": 1}}, upsert=True)
+            except Exception as exc:
+                print(f"[ANALYZE] usage bump failed: {exc}")
+
+        # Keep the upload in the user's library so it can be replayed/reused.
+        stored = ""
+        if str(request.form.get("save", "1")).lower() not in ("0", "false", "no"):
+            try:
+                rec = get_media_manager(user_id).save_video(
+                    tmp_path, prompt=(question or upload.filename)[:200],
+                    provider="Upload", chat_id=f"upload_{user_id}")
+                stored = rec["local_path"] if rec else ""
+            except Exception as exc:
+                print(f"[ANALYZE] could not store upload: {exc}")
+
+        return jsonify({
+            "status": "success",
+            "description": result.get("text", ""),
+            "video_url": stored,
+            "tokens": tokens,
+            "analyses_used": used + 1,
+            "analyses_limit": limit,
+            "remaining_budget_usd": sj.remaining_budget(),
+        })
+    finally:
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
 
 
 @app.route("/api/studio/job/<job_id>", methods=["GET"])
