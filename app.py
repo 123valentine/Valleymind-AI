@@ -2776,10 +2776,17 @@ def api_studio_estimate():
     if error:
         return error
     import core.studio_jobs as sj
+    # Either an explicit clip count, or a target runtime that derives one.
     try:
-        clips = int(request.args.get("clips") or sj.default_clips())
+        duration = int(request.args.get("duration_seconds") or 0)
     except (TypeError, ValueError):
-        clips = sj.default_clips()
+        duration = 0
+    try:
+        clips = int(request.args.get("clips") or 0)
+    except (TypeError, ValueError):
+        clips = 0
+    if not clips:
+        clips = sj.scenes_for_duration(duration or sj.default_duration())
     clips = max(1, min(sj.max_clips_cap(), clips))
     tier = _get_user_tier(user_id)
     _, videos_used = _get_usage_counts(user_id)
@@ -2795,6 +2802,9 @@ def api_studio_estimate():
         # What this run would cost on each path, so the saving is visible.
         "est_cost_t2v_usd": round(clips * paths["t2v_per_clip_usd"], 2),
         "est_cost_i2v_usd": round(clips * paths["i2v_per_clip_usd"], 2),
+        "duration_seconds": duration or sj.default_duration(),
+        "default_duration": sj.default_duration(),
+        "seconds_per_scene": sj.seconds_per_scene(),
         "default_clips": sj.default_clips(),
         "test_clips": sj.test_clips(),
         "max_clips": sj.max_clips_cap(),
@@ -2931,12 +2941,20 @@ def api_studio_run():
         requested = int(data.get("clips") or 0)
     except (TypeError, ValueError):
         requested = 0
+    # Scene count derives from target runtime (~1 scene per 5s of finished
+    # video), so a 30s piece gets ~6 scenes rather than a slideshow.
+    try:
+        target_duration = int(data.get("duration_seconds") or 0)
+    except (TypeError, ValueError):
+        target_duration = 0
+    if not target_duration:
+        target_duration = sj.default_duration()
     if test_mode:
         target_clips = sj.test_clips()
     elif requested > 0:
         target_clips = max(1, min(sj.max_clips_cap(), requested))
     else:
-        target_clips = sj.default_clips()
+        target_clips = sj.scenes_for_duration(target_duration)
 
     if run_id:
         with _studio_runs_lock:
@@ -3014,7 +3032,7 @@ def api_studio_run():
             try:
                 raw, _ = _call_llm_cluster(
                     studio.scene_messages(idea, script, sheet_text, notes=fold_notes(),
-                                          target=target_clips), timeout=90,
+                                          target=target_clips, duration=target_duration), timeout=90,
                 )
                 scenes = studio.normalize_scenes(
                     studio._parse_json_block(raw), target=target_clips,

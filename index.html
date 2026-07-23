@@ -1271,10 +1271,11 @@
           <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:#94a3b8;cursor:pointer;" title="Run the full pipeline with free placeholder clips — no video spend.">
             <input type="checkbox" id="studioTestModeToggle" onchange="onStudioControlsChange()" style="cursor:pointer;">Test mode
           </label>
-          <select id="studioLengthSelect" onchange="onStudioControlsChange()" title="Trailer length" style="background:rgba(15,23,42,0.85);border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:5px 8px;color:#e2e8f0;font-size:11px;cursor:pointer;">
-            <option value="0">Short ~90s (default)</option>
-            <option value="30">Medium ~2.5min</option>
-            <option value="60">Long ~5min</option>
+          <select id="studioLengthSelect" onchange="onStudioControlsChange()" title="Target runtime — scene count follows (about one scene per 5s)" style="background:rgba(15,23,42,0.85);border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:5px 8px;color:#e2e8f0;font-size:11px;cursor:pointer;">
+            <option value="30">30s (default)</option>
+            <option value="60">60s</option>
+            <option value="90">90s</option>
+            <option value="150">2.5 min</option>
           </select>
           <span id="studioCostHint" style="font-size:11px;color:#64748b;"></span>
           <button class="studio-reset-btn" onclick="resetStudio()">Reset</button>
@@ -3271,8 +3272,8 @@ var studioJobPolling = false;
 var studioJobCost = null;     // {spend_usd, est_cost_usd, remaining_budget_usd, budget_usd}
 var studioMissingScenes = [];
 var studioClipsMessage = "";  // denied / budget / info message shown in the strip
-// Per-run controls
-var studioTargetClips = 0;    // 0 = server default (~18 / 90s)
+// Per-run controls. Runtime drives scene count (~1 scene per 5s).
+var studioTargetDuration = 30;  // seconds
 var studioTestMode = false;
 // Phase 0 — conversational intake before anything generates
 var studioPhase = "intake";  // "intake" | "producing"
@@ -3465,18 +3466,19 @@ function onStudioControlsChange() {
     var t = document.getElementById("studioTestModeToggle");
     var sel = document.getElementById("studioLengthSelect");
     studioTestMode = !!(t && t.checked);
-    studioTargetClips = sel ? parseInt(sel.value, 10) || 0 : 0;
+    studioTargetDuration = sel ? parseInt(sel.value, 10) || 30 : 30;
     var hint = document.getElementById("studioCostHint");
     if (!hint) return;
     if (studioTestMode) { hint.textContent = "free"; hint.style.color = "#34d399"; return; }
     hint.textContent = "…";
-    fetch(apiUrl("/api/studio/estimate?clips=" + (studioTargetClips || "")), { credentials: "include", headers: authHeaders() })
+    fetch(apiUrl("/api/studio/estimate?duration_seconds=" + studioTargetDuration), { credentials: "include", headers: authHeaders() })
         .then(function (r) { return r.json(); })
         .then(function (d) {
             if (!d || d.status !== "success") { hint.textContent = ""; return; }
             if (!d.video_enabled) { hint.textContent = "video off"; hint.style.color = "#64748b"; return; }
             if (!d.video_access) { hint.textContent = d.access_reason || "not on your plan"; hint.style.color = "#fbbf24"; return; }
-            hint.textContent = "~$" + (d.est_cost_usd || 0).toFixed(2) + " · $" + (d.remaining_budget_usd || 0).toFixed(2) + " left";
+            hint.textContent = d.clips + " scenes · ~$" + (d.est_cost_usd || 0).toFixed(2) +
+                " · $" + (d.remaining_budget_usd || 0).toFixed(2) + " left";
             hint.style.color = (d.est_cost_usd > d.remaining_budget_usd) ? "#f87171" : "#64748b";
         })
         .catch(function () { hint.textContent = ""; });
@@ -3484,13 +3486,14 @@ function onStudioControlsChange() {
 
 async function startStudioProduction(brief) {
     // Confirm real spend before a paid run so the coupon can't be drained by a tap.
-    if (!studioTestMode && studioTargetClips !== 0) {
+    if (!studioTestMode) {
         try {
-            var r = await fetch(apiUrl("/api/studio/estimate?clips=" + studioTargetClips), { credentials: "include", headers: authHeaders() });
+            var r = await fetch(apiUrl("/api/studio/estimate?duration_seconds=" + studioTargetDuration), { credentials: "include", headers: authHeaders() });
             var d = await r.json();
             if (d && d.status === "success" && d.video_enabled && d.video_access && d.est_cost_usd > 0) {
-                var ok = confirm("This trailer is about " + studioTargetClips + " clips (~$" + d.est_cost_usd.toFixed(2) +
-                    "). Budget left: $" + d.remaining_budget_usd.toFixed(2) + ".\n\nStart the render?");
+                var ok = confirm("About " + studioTargetDuration + "s — " + d.clips + " scenes (~$" +
+                    d.est_cost_usd.toFixed(2) + "). Budget left: $" + d.remaining_budget_usd.toFixed(2) +
+                    ".\n\nStart the render?");
                 if (!ok) return;
             }
         } catch (e) { /* fall through — server still enforces the cap */ }
@@ -3913,7 +3916,7 @@ async function runStudioPipeline(ideaArg) {
             method: "POST",
             credentials: "include",
             headers: authHeaders({ "Content-Type": "application/json" }),
-            body: JSON.stringify({ idea: idea, run_id: studioRunId, clips: studioTargetClips, test_mode: studioTestMode })
+            body: JSON.stringify({ idea: idea, run_id: studioRunId, duration_seconds: studioTargetDuration, test_mode: studioTestMode })
         });
         if (!res.ok || !res.body) { finish("Studio run failed"); return; }
 

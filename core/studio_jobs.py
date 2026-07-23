@@ -95,9 +95,31 @@ def path_costs() -> dict:
     }
 
 
+def default_duration() -> int:
+    """Target runtime in seconds for a Studio piece. Short on purpose."""
+    return max(5, _i("STUDIO_DEFAULT_DURATION", 30))
+
+
+def seconds_per_scene() -> int:
+    """How much finished runtime one scene is expected to carry. A shot plus its
+    title card lands around 5s; packing scenes tighter turns the cut into a
+    slideshow."""
+    return max(2, _i("STUDIO_SECONDS_PER_SCENE", 5))
+
+
+def scenes_for_duration(seconds: int) -> int:
+    """Scene count derived from target runtime — ~1 scene per 5s, so a 30s
+    piece gets about 6 scenes, not 18."""
+    try:
+        secs = max(5, int(seconds))
+    except (TypeError, ValueError):
+        secs = default_duration()
+    return max(2, min(max_clips_cap(), round(secs / seconds_per_scene())))
+
+
 def default_clips() -> int:
-    """Default trailer length ~90s at 5s/clip. Short on purpose."""
-    return _i("STUDIO_DEFAULT_CLIPS", 18)
+    """Scene count for the default runtime (kept for callers that want a count)."""
+    return scenes_for_duration(default_duration())
 
 
 def test_clips() -> int:

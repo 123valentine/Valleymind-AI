@@ -269,13 +269,19 @@ def _notes_block(notes: list[str] | None) -> str:
 
 
 def scene_messages(idea: str, script: str, sheet_text: str, notes: list[str] | None = None,
-                   target: int | None = None) -> list[dict]:
+                   target: int | None = None, duration: int | None = None) -> list[dict]:
     n = target or max_scenes()
+    runtime = f" for a piece running about {duration} seconds" if duration else ""
     return [
         {"role": "system", "content": (
             _persona_prompt("marcus")
-            + "\n\nYou are directing this for ValleyMind Studio. Break Angelina's screenplay into "
-              f"about {n} numbered scenes (aim for {n}, never more than {max_scenes()}). "
+            + f"\n\nYou are directing this for ValleyMind Studio{runtime}. Choose EXACTLY {n} "
+              f"scenes — never more than {max_scenes()}.\n"
+              "This is a TRAILER, not full coverage. Do NOT try to retell the whole plot in "
+              f"{n} shots. Pick the {n} STRONGEST moments — the images with the most tension, "
+              "motion or emotion — and let the gaps between them do the work. A trailer implies; "
+              "it does not summarise. Skip connective tissue, establishing filler and anything "
+              "that exists only to explain.\n"
               "For each scene give the visual description, "
               "the camera angle, and the framing. Reuse the character sheet's descriptions exactly — "
               "the same person must look the same in every scene.\n\n"
