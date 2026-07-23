@@ -1189,6 +1189,48 @@
   </div>
 </div>
 
+<!-- SINGLE-VIDEO VIEWER (notification deep-links land here) -->
+<div id="videoViewerOverlay" onclick="if(event.target===this)closeVideoViewer()"
+     style="display:none;position:fixed;inset:0;z-index:100000;background:rgba(2,6,23,0.95);
+            backdrop-filter:blur(10px);align-items:center;justify-content:center;flex-direction:column;padding:24px;">
+  <video id="viewerVideo" controls playsinline
+         style="max-width:min(960px,94vw);max-height:78vh;border-radius:14px;background:#000;"></video>
+  <div style="margin-top:14px;display:flex;gap:10px;align-items:center;">
+    <a id="viewerVideoDownload" href="" download
+       style="background:rgba(0,212,255,0.15);border:1px solid rgba(0,212,255,0.45);color:#7dd3fc;
+              border-radius:9px;padding:7px 16px;font-size:13px;text-decoration:none;">Download</a>
+    <button onclick="closeVideoViewer()"
+            style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);
+                   color:#e2e8f0;border-radius:9px;padding:7px 16px;font-size:13px;cursor:pointer;">Close</button>
+  </div>
+</div>
+
+<!-- OUR OWN notification opt-in prompt. Shown before the browser's native
+     dialog, because a reflexive native "Block" is permanent. -->
+<div id="pushPromptOverlay"
+     style="display:none;position:fixed;inset:0;z-index:100001;background:rgba(2,6,23,0.75);
+            backdrop-filter:blur(6px);align-items:center;justify-content:center;padding:22px;">
+  <div style="max-width:390px;width:100%;background:#0f172a;border:1px solid rgba(0,212,255,0.25);
+              border-radius:16px;padding:22px;box-shadow:0 20px 60px rgba(0,0,0,0.55);">
+    <div style="font-size:30px;line-height:1;margin-bottom:10px;">🔔</div>
+    <div style="color:#e2e8f0;font-size:16px;font-weight:600;margin-bottom:8px;">
+      Want a heads-up when it's done?
+    </div>
+    <div id="pushPromptBody" style="color:#94a3b8;font-size:13.5px;line-height:1.6;margin-bottom:18px;">
+      This takes a few minutes. We can notify you the moment your video is ready,
+      so you don't have to keep this tab open.
+    </div>
+    <div style="display:flex;gap:9px;">
+      <button onclick="vmPushPromptAnswer(true)"
+              style="flex:1;background:rgba(0,212,255,0.85);border:none;color:#04222b;font-weight:600;
+                     border-radius:10px;padding:10px;font-size:13.5px;cursor:pointer;">Yes, notify me</button>
+      <button onclick="vmPushPromptAnswer(false)"
+              style="flex:1;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);
+                     color:#cbd5e1;border-radius:10px;padding:10px;font-size:13.5px;cursor:pointer;">Not now</button>
+    </div>
+  </div>
+</div>
+
 <!-- FULL-SCREEN IMAGE GALLERY -->
 <div id="galleryOverlay">
   <div class="gallery-header">
@@ -1997,17 +2039,109 @@ window.applyAppearance = function (theme, fontSize) {
 // Apply immediately from whatever was last saved locally (no flash of wrong theme).
 window.applyAppearance();
 
-// Browser notifications — only fire when the user turned Push on (Settings >
-// Notifications) AND the browser granted permission. Respects the setting.
-window.vmNotify = function (title, body) {
+// ── Notifications ───────────────────────────────────────────────────────
+// Fire only when the user turned Push on AND the browser granted permission.
+// `target` deep-links the click: {url, type:'image'|'video'}.
+window.vmNotify = function (title, body, target) {
     try {
         if (localStorage.getItem("vm_push") !== "1") return;
         if (!("Notification" in window) || Notification.permission !== "granted") return;
         // Don't nag while the tab is focused — the user already sees the result
         if (document.visibilityState === "visible") return;
-        new Notification(title, { body: body || "", icon: "/static/valleymind-logo.png" });
+        var n = new Notification(title, { body: body || "", icon: "/static/valleymind-logo.png" });
+        n.onclick = function () {
+            try {
+                window.focus();
+                n.close();
+                if (target && target.url) vmOpenTarget(target);
+            } catch (e) { /* ignore */ }
+        };
     } catch (e) { /* non-fatal */ }
 };
+
+// Land the user on the actual item the notification was about.
+function vmOpenTarget(target) {
+    if (!target || !target.url) return;
+    if (target.type === "video") openVideoViewer(target.url);
+    else if (target.type === "image") openImageViewer(target.url);
+    else if (target.type === "studio") { if (typeof navTo === "function") navTo("studio"); }
+}
+
+function openVideoViewer(src) {
+    var ov = document.getElementById("videoViewerOverlay");
+    var v = document.getElementById("viewerVideo");
+    var dl = document.getElementById("viewerVideoDownload");
+    if (!ov || !v) return;
+    v.src = src;
+    if (dl) { dl.href = src; dl.download = "valleymind_video.mp4"; }
+    ov.style.display = "flex";
+    document.body.style.overflow = "hidden";
+    try { v.play(); } catch (e) { /* autoplay may be blocked; controls remain */ }
+}
+
+function closeVideoViewer() {
+    var ov = document.getElementById("videoViewerOverlay");
+    var v = document.getElementById("viewerVideo");
+    if (v) { try { v.pause(); } catch (e) {} v.src = ""; }
+    if (ov) ov.style.display = "none";
+    document.body.style.overflow = "";
+}
+
+// ── Permission onboarding ───────────────────────────────────────────────
+// Asking on page load gets a reflexive "Block", which is PERMANENT and cannot
+// be re-requested. So we show our own prompt at the moment it's obviously
+// useful — the first time a generation starts — and only touch the native API
+// if they say yes. Declined twice, we never ask again.
+var VM_PUSH_MAX_ASKS = 2;
+var _vmPushResolve = null;
+
+function vmPushAskCount() {
+    return parseInt(localStorage.getItem("vm_push_asks") || "0", 10) || 0;
+}
+
+function vmShouldAskPush() {
+    if (!("Notification" in window)) return false;
+    if (localStorage.getItem("vm_push") === "1") return false;   // already on
+    if (Notification.permission !== "default") return false;      // already decided natively
+    return vmPushAskCount() < VM_PUSH_MAX_ASKS;
+}
+
+/* Show OUR prompt. Resolves true if the browser ended up granting. Never
+   blocks the generation — callers may ignore the result. */
+function vmMaybeAskPush(message) {
+    return new Promise(function (resolve) {
+        if (!vmShouldAskPush()) { resolve(false); return; }
+        var ov = document.getElementById("pushPromptOverlay");
+        var body = document.getElementById("pushPromptBody");
+        if (!ov) { resolve(false); return; }
+        if (body && message) body.textContent = message;
+        // Count the ask when it is actually shown, so "not now" x2 stops it.
+        localStorage.setItem("vm_push_asks", String(vmPushAskCount() + 1));
+        _vmPushResolve = resolve;
+        ov.style.display = "flex";
+    });
+}
+
+function vmPushPromptAnswer(yes) {
+    var ov = document.getElementById("pushPromptOverlay");
+    if (ov) ov.style.display = "none";
+    var done = _vmPushResolve; _vmPushResolve = null;
+    if (!yes) {
+        localStorage.setItem("vm_push", "0");   // declined ours — no native prompt at all
+        if (done) done(false);
+        return;
+    }
+    // Only NOW do we touch the native API.
+    try {
+        Notification.requestPermission().then(function (p) {
+            var granted = (p === "granted");
+            localStorage.setItem("vm_push", granted ? "1" : "0");
+            if (done) done(granted);
+        });
+    } catch (e) {
+        if (done) done(false);
+    }
+}
 
 function applyVideoGenAvailability() {
     // Video generation is chat-triggered — there is no dedicated button to grey
@@ -3505,6 +3639,12 @@ async function startStudioProduction(brief) {
             }
         } catch (e) { /* fall through — server still enforces the cap */ }
     }
+    // Right moment to ask: a production takes minutes, so a notification is
+    // obviously useful here. Our own prompt first; native only on yes.
+    try {
+        await vmMaybeAskPush("Your film takes a few minutes to render. We can notify you " +
+                             "the moment it's ready, so you don't have to keep this tab open.");
+    } catch (e) { /* never block the production */ }
     studioPhase = "producing";
     var p = document.getElementById("studioPrompt");
     if (p) { p.value = ""; p.placeholder = "Change your mind? e.g. \"rename the lead\", \"scene 3 at night\""; }
@@ -3869,7 +4009,16 @@ function studioFinish(msg) {
     var promptEl = document.getElementById("studioPrompt");
     if (btn) { btn.disabled = false; btn.textContent = "New Production"; }
     if (label) label.textContent = msg || "Production complete";
-    window.vmNotify("Your production is ready", studioFinalVideo ? "The trailer is done — tap to watch." : "Your storyboard is ready in the Studio.");
+    // Specific: name the film if we know it, and land on the actual video.
+    var filmName = (studioLogline || studioBrief || "").trim();
+    if (filmName.length > 110) filmName = filmName.slice(0, 107) + "...";
+    if (studioFinalVideo) {
+        window.vmNotify("Your video is ready", filmName || "Your trailer is finished — tap to watch.",
+                        { url: studioFinalVideo, type: "video" });
+    } else {
+        window.vmNotify("Your storyboard is ready", filmName || "Open the Studio to see it.",
+                        { type: "studio" });
+    }
     if (promptEl) promptEl.placeholder = "Start a new production — say hi or pitch another idea...";
     renderStudioStages();
 }
@@ -4802,7 +4951,8 @@ window.send = async function () {
                         statusIndicator = null;
                     }
                     renderImageResultCard(evt.image_url, lastSentMessage || "", evt.revised_prompt || "");
-                    window.vmNotify("Your image is ready", "Tap to see what ValleyMind made.");
+                    window.vmNotify("Your image is ready", (lastSentMessage || "").slice(0, 110),
+                                    { url: evt.image_url, type: "image" });
                     var galOvl = document.getElementById("galleryOverlay");
                     if (galOvl && galOvl.classList.contains("open")) loadGalleryImages(true);
                     continue;
@@ -4822,7 +4972,8 @@ window.send = async function () {
                     vidBubble.className = "bubble";
                     vidBubble.style.cssText = "padding:12px 16px;width:100%;";
 
-                    window.vmNotify("Your video is ready", "Tap to watch what ValleyMind made.");
+                    window.vmNotify("Your video is ready", (lastSentMessage || "").slice(0, 110),
+                                    { url: evt.video_url, type: "video" });
                     var video = document.createElement("video");
                     video.src = evt.video_url;
                     video.controls = true;
