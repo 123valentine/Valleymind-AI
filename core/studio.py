@@ -354,6 +354,43 @@ def max_clips() -> int:
         return 2
 
 
+def t2v_prompt(scene: dict, sheet_text: str = "", look: str = "",
+               notes: list[str] | None = None) -> str:
+    """Full prompt for TEXT-to-video (the default path).
+
+    Unlike the i2v motion prompt, nothing upstream carries the look here, so the
+    whole shot must be described: the ACTION first (what physically happens),
+    then who is in it, then style and camera. Action leads because a camera-only
+    prompt renders a static plate.
+    """
+    parts = []
+    action = str(scene.get("action", "")).strip()
+    desc = str(scene.get("description", "")).strip()
+    if action:
+        parts.append(action)
+    if desc and desc != action:
+        parts.append(desc)
+    background = str(scene.get("background", "")).strip()
+    if background:
+        parts.append(background)
+    if sheet_text:
+        parts.append(f"Characters (keep consistent): {sheet_text}")
+    if look:
+        parts.append(f"Visual style: {look}")
+    fr = str(scene.get("framing", "")).strip()
+    if fr:
+        parts.append(f"Framing: {fr}")
+    cam = str(scene.get("camera", "")).strip()
+    if cam:
+        parts.append(f"Camera: {cam}")
+    parts.append("live action, cinematic, natural motion")
+    for n in (notes or []):
+        n = str(n).strip()
+        if n:
+            parts.append(n)
+    return ". ".join(p.rstrip(". ") for p in parts if p)[:1600]
+
+
 def clip_prompt(scene: dict, notes: list[str] | None = None) -> str:
     """Motion direction for image-to-video. The still already carries the look,
     so this describes MOVEMENT only — restating the scene invites the model to

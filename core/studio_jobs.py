@@ -75,6 +75,26 @@ def cost_per_clip() -> float:
     return _f("VIDEO_COST_PER_CLIP_USD", 0.5)
 
 
+def image_cost() -> float:
+    """Estimated $ per storyboard image. The i2v path needs one paid image per
+    clip (STUDIO_IMAGE_PROVIDER defaults to QwenImage); t2v needs none, which is
+    the whole cost advantage of the default path."""
+    return _f("STUDIO_IMAGE_COST_USD", 0.05)
+
+
+def path_costs() -> dict:
+    """Per-clip cost of each video path, for the Studio's cost meter."""
+    v, i = cost_per_clip(), image_cost()
+    return {
+        "t2v_per_clip_usd": round(v, 4),
+        "i2v_per_clip_usd": round(v + i, 4),
+        "video_call_usd": round(v, 4),
+        "storyboard_image_usd": round(i, 4),
+        "i2v_premium_usd": round(i, 4),
+        "i2v_premium_pct": round((i / v * 100.0), 1) if v else 0.0,
+    }
+
+
 def default_clips() -> int:
     """Default trailer length ~90s at 5s/clip. Short on purpose."""
     return _i("STUDIO_DEFAULT_CLIPS", 18)
@@ -174,20 +194,32 @@ def _now_iso() -> str:
 
 
 def new_job(user_id: str, scenes: list, frame_sources: dict, *, target_clips: int,
-            test_mode: bool = False, notes: list | None = None) -> dict:
-    """Build a job over the scenes that have a storyboard frame. Motion prompts
-    are computed here so the driver needs nothing else."""
+            test_mode: bool = False, notes: list | None = None,
+            mode: str = "t2v", sheet_text: str = "", look: str = "") -> dict:
+    """Build a job over the scenes.
+
+    ``mode`` picks the video path per run:
+      * "t2v" (default) — text-to-video straight from the scene. Better prompt
+        following, and no paid storyboard image is needed as the video source.
+      * "i2v" — animate a reference image (user upload / reference mode). Falls
+        back to t2v for any scene that has no image.
+    """
     import core.studio as studio
 
-    animatable = [s for s in scenes if s.get("number") in frame_sources][: max(0, target_clips)]
+    wanted = [s for s in scenes if s.get("number") is not None][: max(0, target_clips)]
     clips = []
-    for s in animatable:
+    for s in wanted:
         n = s["number"]
+        image_ref = frame_sources.get(n, "")
+        # i2v only where an image actually exists; otherwise this scene goes t2v.
+        use_i2v = (mode == "i2v") and bool(image_ref)
         clips.append({
             "number": n,
             "title": s.get("title", f"Scene {n}"),
+            "mode": "i2v" if use_i2v else "t2v",
             "motion": studio.clip_prompt(s, notes=notes),
-            "image_ref": frame_sources[n],
+            "prompt": studio.t2v_prompt(s, sheet_text=sheet_text, look=look, notes=notes),
+            "image_ref": image_ref,
             "status": PENDING,
             "task_id": "",
             "video_url": "",
@@ -360,9 +392,14 @@ def _run(job_id: str) -> None:
                     print(f"[JOB] budget cap hit; aborting {len(pending)} unsubmitted clip(s)")
                     break
             c = pending.pop(0)
-            sub = i2v.submit_clip(c["motion"], c["image_ref"],
-                                  duration=job.get("duration"), tag=str(c["number"]),
-                                  fake=bool(job.get("test_mode")))
+            if c.get("mode", "t2v") == "i2v" and c.get("image_ref"):
+                sub = i2v.submit_clip(c["motion"], c["image_ref"],
+                                      duration=job.get("duration"), tag=str(c["number"]),
+                                      fake=bool(job.get("test_mode")))
+            else:
+                sub = i2v.submit_clip_t2v(c.get("prompt") or c.get("motion", ""),
+                                          duration=job.get("duration"), tag=str(c["number"]),
+                                          fake=bool(job.get("test_mode")))
             if sub.get("status_code") == 429:
                 # Record the in-flight count at which Alibaba pushed back.
                 job["observed_concurrency"] = running

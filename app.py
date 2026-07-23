@@ -2786,9 +2786,15 @@ def api_studio_estimate():
     video_limit = _tier_limits().get(tier, {}).get("videos")
     access_ok, access_reason = sj.video_access(tier, videos_used, video_limit)
     est = sj.estimate_cost(clips)
+    paths = sj.path_costs()
     return jsonify({
         "status": "success",
         "clips": clips,
+        "video_mode_default": "t2v",
+        "path_costs": paths,
+        # What this run would cost on each path, so the saving is visible.
+        "est_cost_t2v_usd": round(clips * paths["t2v_per_clip_usd"], 2),
+        "est_cost_i2v_usd": round(clips * paths["i2v_per_clip_usd"], 2),
         "default_clips": sj.default_clips(),
         "test_clips": sj.test_clips(),
         "max_clips": sj.max_clips_cap(),
@@ -2908,6 +2914,19 @@ def api_studio_run():
 
     # Per-run length + test mode. Default is a short ~90s trailer, not 5 minutes.
     test_mode = bool(data.get("test_mode"))
+    # Video path: text-to-video is the default (better prompt following, and no
+    # paid storyboard image per clip). i2v is opt-in via reference mode.
+    video_mode = str(data.get("video_mode") or "t2v").strip().lower()
+    if video_mode not in ("t2v", "i2v"):
+        video_mode = "t2v"
+    reference_image = str(data.get("reference_image") or "").strip()
+    if reference_image:
+        video_mode = "i2v"  # an explicit reference always means animate that image
+    # Storyboards remain a visual preview; they are no longer the video source.
+    want_storyboards = data.get("storyboards")
+    if want_storyboards is None:
+        want_storyboards = os.getenv("STUDIO_STORYBOARDS", "1").strip().lower() not in ("0", "false", "no", "off")
+    want_storyboards = bool(want_storyboards) or video_mode == "i2v"
     try:
         requested = int(data.get("clips") or 0)
     except (TypeError, ValueError):
@@ -3014,44 +3033,55 @@ def api_studio_run():
                 yield f"data: {json.dumps({'stage': 'directing', 'scene': scene})}\n\n"
             yield f"data: {json.dumps({'stage': 'directing', 'status': 'done', 'scene_count': len(scenes)})}\n\n"
 
-            # ── Stage 3: one storyboard frame per scene ─────────────────
-            yield f"data: {json.dumps({'stage': 'storyboard', 'status': 'working', 'total': len(scenes)})}\n\n"
+            # ── Stage 3: storyboard frames (visual preview only) ────────
+            # These are NOT the video source any more — text-to-video renders
+            # straight from the scene. They stay as a preview, and become the
+            # animation source only in i2v/reference mode.
             config = get_config()
             media = get_media_manager(user_id)
             # Keep the provider's own URL per scene: image-to-video needs a
             # source Alibaba can load, and its OSS URL is ideal.
             frame_sources = {}
-            for scene in scenes:
-                # Late direction can land between frames — pick it up per frame
-                prompt = studio.storyboard_prompt(scene, sheet_text, look, notes=fold_notes())
-                try:
-                    result = pm.get_manager().execute(
-                        pm.Capability.IMAGE, prompt=prompt,
-                        prefer=pm.studio_image_provider(),
-                        api_key=config.gemini_api_key or None, enhance=False,
-                    )
-                    if not result.success:
-                        raise RuntimeError(result.error or "image provider failed")
-                    source_url = result.data.get("image_url", "")
-                    record = media.save_image(
-                        source_url, prompt=prompt,
-                        provider=result.provider_name, chat_id=f"studio_{user_id}",
-                    )
-                    stored = _safe_persist_url(record, source_url)
-                    if not stored:
-                        raise RuntimeError("could not store storyboard frame")
-                    # Prefer the provider's remote URL for i2v; fall back to our
-                    # stored copy (inlined as base64) for local-only providers.
-                    frame_sources[scene["number"]] = source_url if source_url.startswith("http") else stored
-                    frame_evt = {"number": scene["number"], "title": scene["title"], "image_url": stored}
-                    saved["frames"].append(frame_evt)
-                    _studio_save_run(user_id, saved)
-                    yield f"data: {json.dumps({'stage': 'storyboard', 'frame': frame_evt})}\n\n"
-                except Exception as exc:
-                    print(f"[STUDIO] storyboard frame {scene.get('number')} failed: {exc}")
-                    yield f"data: {json.dumps({'stage': 'storyboard', 'frame_failed': scene.get('number')})}\n\n"
+            if not want_storyboards:
+                yield f"data: {json.dumps({'stage': 'storyboard', 'status': 'skipped'})}\n\n"
+            else:
+                yield f"data: {json.dumps({'stage': 'storyboard', 'status': 'working', 'total': len(scenes)})}\n\n"
+                for scene in scenes:
+                    # Late direction can land between frames — pick it up per frame
+                    prompt = studio.storyboard_prompt(scene, sheet_text, look, notes=fold_notes())
+                    try:
+                        result = pm.get_manager().execute(
+                            pm.Capability.IMAGE, prompt=prompt,
+                            prefer=pm.studio_image_provider(),
+                            api_key=config.gemini_api_key or None, enhance=False,
+                        )
+                        if not result.success:
+                            raise RuntimeError(result.error or "image provider failed")
+                        source_url = result.data.get("image_url", "")
+                        record = media.save_image(
+                            source_url, prompt=prompt,
+                            provider=result.provider_name, chat_id=f"studio_{user_id}",
+                        )
+                        stored = _safe_persist_url(record, source_url)
+                        if not stored:
+                            raise RuntimeError("could not store storyboard frame")
+                        # Prefer the provider's remote URL for i2v; fall back to our
+                        # stored copy (inlined as base64) for local-only providers.
+                        frame_sources[scene["number"]] = source_url if source_url.startswith("http") else stored
+                        frame_evt = {"number": scene["number"], "title": scene["title"], "image_url": stored}
+                        saved["frames"].append(frame_evt)
+                        _studio_save_run(user_id, saved)
+                        yield f"data: {json.dumps({'stage': 'storyboard', 'frame': frame_evt})}\n\n"
+                    except Exception as exc:
+                        print(f"[STUDIO] storyboard frame {scene.get('number')} failed: {exc}")
+                        yield f"data: {json.dumps({'stage': 'storyboard', 'frame_failed': scene.get('number')})}\n\n"
 
-            yield f"data: {json.dumps({'stage': 'storyboard', 'status': 'done'})}\n\n"
+                yield f"data: {json.dumps({'stage': 'storyboard', 'status': 'done'})}\n\n"
+
+            # An explicit reference image animates every scene in i2v mode.
+            if reference_image and video_mode == "i2v":
+                for scene in scenes:
+                    frame_sources.setdefault(scene["number"], reference_image)
 
             # ── Stage 4: animate the stills into clips ──────────────────
             # The expensive video work runs as a background job (parallel submit,
@@ -3059,7 +3089,12 @@ def api_studio_run():
             # survives the browser closing. Gated by the global kill switch, then
             # server-side tier + budget checks.
             import core.video_i2v as i2v
-            clip_scenes = [s for s in scenes if s["number"] in frame_sources][:target_clips]
+            # t2v renders straight from the scene, so a storyboard frame is only
+            # required in i2v/reference mode.
+            if video_mode == "i2v":
+                clip_scenes = [s for s in scenes if s["number"] in frame_sources][:target_clips]
+            else:
+                clip_scenes = scenes[:target_clips]
             if not _video_generation_enabled():
                 yield f"data: {json.dumps({'stage': 'clips', 'status': 'disabled', 'message': VIDEO_DISABLED_MESSAGE})}\n\n"
             elif not i2v.available() or not clip_scenes:
@@ -3091,10 +3126,11 @@ def api_studio_run():
                     else:
                         job = sj.new_job(user_id, scenes, frame_sources,
                                          target_clips=target_clips, test_mode=test_mode,
-                                         notes=fold_notes())
+                                         notes=fold_notes(), mode=video_mode,
+                                         sheet_text=sheet_text, look=look)
                         sj.launch(job["_id"])
                         cost = sj.public_view(job).get("cost", {})
-                        yield f"data: {json.dumps({'stage': 'clips', 'status': 'queued', 'job_id': job['_id'], 'total': len(job['clips']), 'test_mode': test_mode, 'cost': cost})}\n\n"
+                        yield f"data: {json.dumps({'stage': 'clips', 'status': 'queued', 'job_id': job['_id'], 'total': len(job['clips']), 'test_mode': test_mode, 'video_mode': video_mode, 'cost': cost})}\n\n"
 
             yield f"data: {json.dumps({'done': True})}\n\n"
 

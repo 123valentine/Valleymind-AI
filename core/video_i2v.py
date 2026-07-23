@@ -165,6 +165,40 @@ def submit_clip(prompt: str, image_ref: str, duration=None, tag: str = "", fake:
     return {"task_id": task_id}
 
 
+T2V_MODEL = os.getenv("ALIBABA_VIDEO_MODEL", "wan2.7-t2v-2026-06-12").strip()
+
+
+def submit_clip_t2v(prompt: str, duration=None, tag: str = "", fake: bool = False) -> dict:
+    """Submit a TEXT-to-video job — the Studio default. No storyboard image is
+    needed, which removes one paid image call per clip and (in testing) follows
+    the prompt better than the i2v chain. Same async task API as i2v, so
+    poll_clip() handles both."""
+    if fake or _fake_mode():
+        return {"task_id": f"fake:{tag or abs(hash(prompt)) % 100000}"}
+    if not available():
+        return {"error": "video generation is not configured", "status_code": 0}
+    try:
+        resp = requests.post(
+            I2V_URL, headers=_headers(async_mode=True),
+            json={
+                "model": T2V_MODEL,
+                "input": {"prompt": (prompt or "cinematic shot")[:1600]},
+                "parameters": _clip_parameters(duration),
+            },
+            timeout=180,
+        )
+    except Exception as exc:
+        return {"error": f"t2v submit failed: {exc}", "status_code": 0}
+    if resp.status_code == 429:
+        return {"error": "rate limited (429)", "status_code": 429}
+    if resp.status_code != 200:
+        return {"error": f"t2v submit HTTP {resp.status_code}: {resp.text[:200]}", "status_code": resp.status_code}
+    task_id = (resp.json().get("output") or {}).get("task_id", "")
+    if not task_id:
+        return {"error": f"t2v returned no task_id: {str(resp.json())[:180]}", "status_code": 200}
+    return {"task_id": task_id}
+
+
 def poll_clip(task_id: str) -> dict:
     """One non-blocking status check for a submitted task. Returns
     {"status": "RUNNING"|"SUCCEEDED"|"FAILED", "video_url"?: str, "error"?: str}.
