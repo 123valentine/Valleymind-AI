@@ -81,9 +81,18 @@ def idea_is_about_filmmaking(idea: str) -> bool:
 
 
 def scene_breaks_crew_rule(scene: dict) -> bool:
-    """Does this scene put the crew or a production setting on screen?"""
-    blob = " ".join(str(scene.get(k, "")) for k in ("title", "description", "action", "setting"))
-    return bool(_PRODUCTION_PAT.search(blob) or _CREW_NAME_PAT.search(blob))
+    """Does this scene put a production setting on screen?
+
+    A production SETTING is always disqualifying. A crew NAME on its own is not:
+    Elena and Marcus are ordinary human names, and dropping every scene that
+    happens to use one wiped whole scene lists in testing. A name only counts
+    against a scene when it appears alongside a production setting.
+    """
+    blob = " ".join(
+        str(scene.get(k, ""))
+        for k in ("title", "description", "action", "background", "setting")
+    )
+    return bool(_PRODUCTION_PAT.search(blob))
 
 
 def _persona_prompt(key: str) -> str:
@@ -355,11 +364,32 @@ def scene_messages(idea: str, script: str, sheet_text: str, notes: list[str] | N
               "motion or emotion — and let the gaps between them do the work. A trailer implies; "
               "it does not summarise. Skip connective tissue, establishing filler and anything "
               "that exists only to explain.\n"
-              "For each scene give the visual description, "
-              "the camera angle, and the framing. Reuse the character sheet's descriptions exactly — "
-              "the same person must look the same in every scene.\n\n"
+              "ACTION LEADS. Every scene must contain something physically HAPPENING — a named "
+              "subject performing a clear verb. Someone lunges, grabs, slams, sprints, falls, "
+              "spins, hurls, recoils, reaches, drags. A shot that is only a camera move on a "
+              "static subject renders as a dead plate and is unusable.\n"
+              "- 'action' MUST be a full PRESENT-TENSE sentence: subject + finite verb + object.\n"
+              "- NEVER write an -ing phrase. It is the most common failure and it is wrong:\n"
+              "    BAD:  'Driver flooring it in a sleek car'\n"
+              "    GOOD: 'The driver floors the pedal and the car lurches forward'\n"
+              "    BAD:  'Woman pulling out a gun'\n"
+              "    GOOD: 'The woman yanks a gun from her waistband and levels it at him'\n"
+              "    BAD:  'Driver looking at a ticking clock'   (nothing moves — unusable)\n"
+              "    GOOD: 'The driver slams his palm against the dashboard clock'\n"
+              "- Never a camera note, never a mood, never a noun phrase on its own. If the moment "
+              "is someone thinking or noticing, convert it into a physical act you can SEE.\n"
+              "- Where two or more characters share a shot, they must physically INTERACT — "
+              "grab, shove, block, pull, collide, pass something. Not two people standing.\n"
+              "- 'background' is the life around them: crowds surging, traffic, market stalls "
+              "spilling, rain, dust, smoke, animals, onlookers scattering. Empty backgrounds "
+              "look cheap; fill them unless the scene is deliberately isolated.\n"
+              "Reuse the character sheet's descriptions exactly — the same person must look the "
+              "same in every scene.\n\n"
               "Respond with ONLY a JSON array:\n"
-              '[{"number":1,"title":"short scene title","description":"what we see, visually concrete",'
+              '[{"number":1,"title":"short scene title",'
+              '"action":"subject + verb + object — what physically happens",'
+              '"description":"what we see, visually concrete",'
+              '"background":"crowds/traffic/weather/background life in the shot",'
               '"camera":"lens/movement, e.g. 50mm slow push","framing":"e.g. medium close-up, low angle"}]\n'
               "No markdown, no commentary."
             + _CREW_GUARD
@@ -402,7 +432,10 @@ def storyboard_prompt(scene: dict, sheet_text: str, look: str = "", notes: list[
     """Build one image prompt from the scene + the shared character sheet."""
     parts = [
         "Cinematic film storyboard frame.",
+        # Action first — a frame built from description alone reads as a static plate.
+        str(scene.get("action", "")).strip(),
         str(scene.get("description", "")).strip(),
+        str(scene.get("background", "")).strip(),
     ]
     cam = str(scene.get("camera", "")).strip()
     fr = str(scene.get("framing", "")).strip()
@@ -507,7 +540,12 @@ def normalize_scenes(parsed: Any, target: int | None = None,
                 print(f"[STUDIO] dropped crew/production scene: {str(raw.get('title',''))[:60]}")
                 continue
             kept.append(raw)
-        parsed = kept
+        # Never let the safety net empty the run — a slightly off scene beats a
+        # dead pipeline. The prompt guard is the real defence.
+        if kept:
+            parsed = kept
+        elif parsed:
+            print("[STUDIO] crew filter matched every scene — keeping originals")
     scenes: list[dict] = []
     for i, raw in enumerate(parsed[:cap], start=1):
         if not isinstance(raw, dict):
@@ -515,7 +553,9 @@ def normalize_scenes(parsed: Any, target: int | None = None,
         scenes.append({
             "number": int(raw.get("number") or i),
             "title": str(raw.get("title", "") or f"Scene {i}").strip(),
+            "action": str(raw.get("action", "") or "").strip(),
             "description": str(raw.get("description", "") or "").strip(),
+            "background": str(raw.get("background", "") or "").strip(),
             "camera": str(raw.get("camera", "") or "").strip(),
             "framing": str(raw.get("framing", "") or "").strip(),
         })
