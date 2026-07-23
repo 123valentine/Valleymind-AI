@@ -311,11 +311,27 @@ def save_job(job: dict) -> None:
         print(f"[JOB] save failed: {exc}")
 
 
+def heartbeat_age(job: dict) -> float:
+    """Seconds since the driver last reported progress (inf if never)."""
+    hb = job.get("heartbeat")
+    if not hb:
+        return float("inf")
+    try:
+        return (datetime.now(timezone.utc) - datetime.fromisoformat(hb)).total_seconds()
+    except Exception:
+        return float("inf")
+
+
 def public_view(job: dict) -> dict:
     """Trimmed state for the frontend + cost meter."""
     if not job:
         return {}
     clips = job.get("clips", [])
+    age = heartbeat_age(job)
+    # A non-terminal job whose driver has gone quiet is stalled, not working.
+    # The instance sleeping on a free plan is the usual cause; surfacing it
+    # beats spinning a progress label forever.
+    stalled = job.get("status") not in JOB_TERMINAL and age > driver_stale_secs()
     done = [c for c in clips if c.get("status") == DONE]
     return {
         "job_id": job.get("_id"),
@@ -345,6 +361,13 @@ def public_view(job: dict) -> dict:
         },
         "observed_concurrency": job.get("observed_concurrency", 0),
         "error": job.get("error", ""),
+        "stalled": bool(stalled),
+        "heartbeat_age_s": None if age == float("inf") else round(age, 1),
+        "can_retry_assembly": bool(
+            job.get("status") in JOB_TERMINAL
+            and not job.get("final_video")
+            and sum(1 for c in clips if c.get("status") == DONE) >= 2
+        ),
     }
 
 
@@ -450,6 +473,7 @@ def _run(job_id: str) -> None:
                 continue
             c["task_id"] = sub["task_id"]
             c["status"] = RUNNING
+            c["submitted_at"] = _now_iso()   # so run timing is diagnosable later
             running += 1
             if not job["test_mode"] and not _fake():
                 add_spend(cost_per_clip())
@@ -541,10 +565,39 @@ def _review_clip(job: dict, clip: dict) -> None:
             pass
 
 
+def cache_dir(job_id: str) -> str:
+    """Per-job local scratch holding the clip files for assembly."""
+    import tempfile
+    path = os.path.join(tempfile.gettempdir(), f"studio_cache_{job_id}")
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
 def _store_clip(media, job: dict, clip: dict, url: str) -> None:
-    """Pull a finished clip into permanent GridFS storage + the user's gallery."""
+    """Pull a finished clip into permanent GridFS storage + the user's gallery.
+
+    The bytes are cached locally on the way through. Assembly then reads the
+    cache instead of re-downloading tens of MB back out of Atlas GridFS — the
+    round trip that made the final join slow and fragile enough to be killed
+    mid-way on a free instance.
+    """
+    local = ""
     try:
-        rec = media.save_video(url, prompt=f"Scene {clip['number']}: {clip['title']}",
+        if url.startswith("http://") or url.startswith("https://"):
+            import requests as _rq
+            resp = _rq.get(url, timeout=180)
+            resp.raise_for_status()
+            local = os.path.join(cache_dir(job["_id"]), f"clip_{clip['number']:03d}.mp4")
+            with open(local, "wb") as f:
+                f.write(resp.content)
+        elif os.path.exists(url):
+            local = url
+    except Exception as exc:
+        print(f"[JOB] clip {clip['number']} local cache failed (will use provider URL): {exc}")
+        local = ""
+
+    try:
+        rec = media.save_video(local or url, prompt=f"Scene {clip['number']}: {clip['title']}",
                                provider="AlibabaI2V", chat_id=f"studio_{job['user_id']}")
     except Exception as exc:
         rec = None
@@ -553,6 +606,9 @@ def _store_clip(media, job: dict, clip: dict, url: str) -> None:
     if stored:
         clip["status"] = DONE
         clip["video_url"] = stored
+        clip["completed_at"] = _now_iso()
+        if local:
+            clip["cache_path"] = local
         try:
             _review_clip(job, clip)   # Marcus watches it
         except Exception as exc:
@@ -587,8 +643,17 @@ def _finalize(job_id: str, media, capped: bool = False) -> None:
         except Exception as exc:
             print(f"[JOB] cut review crashed (non-fatal): {exc}")
 
+    job["finalize_attempts"] = int(job.get("finalize_attempts", 0)) + 1
     if job["status"] == "running":
-        job["status"] = "budget_capped" if capped else "done"
+        if job.get("final_video"):
+            job["status"] = "budget_capped" if capped else "done"
+        else:
+            # Clips exist but no trailer came out — that is a FAILURE, and the
+            # Studio must say so instead of quietly leaving loose clips.
+            job["status"] = "failed"
+            if not job.get("error"):
+                job["error"] = ("Could not join the clips into a trailer."
+                                if done else "No clips were produced.")
     job["heartbeat"] = _now_iso()
     save_job(job)
     _mirror_to_studio_run(job)
@@ -682,6 +747,12 @@ def _assemble(user_id: str, done_clips: list, media, cards: dict | None = None) 
         bucket = gridfs.GridFSBucket(db) if db is not None else None
         from core.config import PROJECT_ROOT
         for idx, clip in enumerate(ordered):
+            # 1. Local cache written when the clip was stored — no network at all.
+            cached = clip.get("cache_path") or ""
+            if cached and os.path.exists(cached):
+                local_paths.append(cached)
+                continue
+            # 2. Otherwise fall back to pulling it back out of GridFS.
             fname = clip["video_url"].rsplit("/", 1)[-1]
             data = None
             if bucket is not None:

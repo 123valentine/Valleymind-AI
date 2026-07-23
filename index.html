@@ -2125,7 +2125,13 @@ window.vmNotify = function (title, body, target) {
         if (!("Notification" in window) || Notification.permission !== "granted") return;
         // Don't nag while the tab is focused — the user already sees the result
         if (document.visibilityState === "visible") return;
-        var n = new Notification(title, { body: body || "", icon: "/static/valleymind-logo.png" });
+        var n = new Notification(title, {
+            body: body || "",
+            icon: "/static/notification-icon.png",    // 192px ValleyMind mark
+            badge: "/static/notification-badge.png",  // Android status-bar mark
+            tag: (target && target.url) || "valleymind",
+            renotify: true
+        });
         n.onclick = function () {
             try {
                 window.focus();
@@ -2284,6 +2290,19 @@ function addMessage(text, type = "ai", imageData, mediaUrl, videoUrl) {
     if (mediaUrl) msgObj.media_url = mediaUrl;
     if (videoUrl) msgObj.video_url = videoUrl;
     messageStore.push(msgObj);
+
+    // Every assistant reply notifies when you're not looking at the app — so a
+    // question asked before switching to WhatsApp still reaches you. vmNotify
+    // itself no-ops while the tab is visible and when push is off.
+    if (type !== "user" && displayText) {
+        var preview = String(displayText).replace(/\s+/g, " ").trim();
+        if (preview.length > 140) preview = preview.slice(0, 137) + "...";
+        var who = (typeof crewMember === "function" && typeof currentPersona !== "undefined")
+            ? (crewMember(currentPersona).name || "ValleyMind") : "ValleyMind";
+        var tgt = videoUrl ? { url: videoUrl, type: "video" }
+                : (mediaUrl ? { url: mediaUrl, type: "image" } : null);
+        window.vmNotify(who + " replied", preview, tgt);
+    }
 
     const wrapper = document.createElement("div");
     wrapper.className = type === "user" ? "user-message" : "assistant-message";
@@ -3488,6 +3507,7 @@ var studioClipsMessage = "";  // denied / budget / info message shown in the str
 var studioClipReviews = {};   // scene number -> Marcus's review of that clip
 var studioCutReview = null;   // Elena's review of the finished cut
 var studioJobIdForRetry = ""; // last job id, so a flagged shot can be re-shot
+var studioCanRetryAssembly = false; // clips finished but never joined
 // Per-run controls. Runtime drives scene count (~1 scene per 5s).
 var studioTargetDuration = 30;  // seconds
 var studioTestMode = false;
@@ -3988,6 +4008,14 @@ function renderStudioStages() {
                     cm.textContent = studioClipsMessage;
                     card.appendChild(cm);
                 }
+                // Clips finished but never joined — offer the free re-join.
+                if (studioCanRetryAssembly && !studioFinalVideo) {
+                    var rbtn = document.createElement("button");
+                    rbtn.textContent = "Join the clips into a trailer";
+                    rbtn.style.cssText = "margin-top:8px;background:rgba(0,212,255,0.16);border:1px solid rgba(0,212,255,0.45);color:#7dd3fc;border-radius:8px;padding:7px 14px;font-size:12px;cursor:pointer;";
+                    rbtn.onclick = function () { retryStudioAssembly(rbtn); };
+                    card.appendChild(rbtn);
+                }
                 // Cost meter — spend so far, estimate, remaining budget
                 if (studioJobCost) {
                     var meter = document.createElement("div");
@@ -4154,6 +4182,31 @@ function studioFinish(msg) {
 // Poll a background video job until it finishes. This is what makes a run
 // survive the browser closing: on return, reconnecting to the job id resumes
 // exactly here, and the server keeps rendering regardless.
+// Re-join clips that finished but never got assembled. Free — no regeneration.
+function retryStudioAssembly(btn) {
+    var jid = studioJobIdForRetry;
+    if (!jid) return;
+    if (btn) { btn.disabled = true; btn.textContent = "Joining..."; }
+    fetch(apiUrl("/api/studio/job/" + encodeURIComponent(jid) + "/assemble"), {
+        method: "POST", credentials: "include", headers: authHeaders()
+    })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+            if (!d || d.status !== "success") {
+                if (btn) { btn.disabled = false; btn.textContent = "Join the clips into a trailer"; }
+                alert((d && d.message) || "Could not join the clips.");
+                return;
+            }
+            studioClipsMessage = "";
+            studioRunning = true;
+            startStudioJobPolling(jid);
+            renderStudioStages();
+        })
+        .catch(function () {
+            if (btn) { btn.disabled = false; btn.textContent = "Join the clips into a trailer"; }
+        });
+}
+
 // Re-shoot a single scene Marcus flagged as not matching.
 function regenerateStudioScene(sceneNumber, btn) {
     if (!studioJobIdForRetry) return;
@@ -4203,10 +4256,13 @@ function startStudioJobPolling(jobId) {
                 studioCutReview = job.cut_review || studioCutReview;
                 studioJobCost = job.cost || studioJobCost;
                 studioMissingScenes = job.missing_scenes || [];
+                studioCanRetryAssembly = !!job.can_retry_assembly;
                 var label = document.getElementById("studioStatusLabel");
                 var doneN = job.done || 0, total = job.total || studioExpectedClips;
                 if (label && job.status === "running") {
-                    label.textContent = "Rendering clips (" + doneN + "/" + total + ")...";
+                    label.textContent = job.stalled
+                        ? "Render paused — reconnecting (" + doneN + "/" + total + ")..."
+                        : "Rendering clips (" + doneN + "/" + total + ")...";
                 }
                 renderStudioStages();
                 var terminal = (job.status === "done" || job.status === "budget_capped" ||
@@ -4214,10 +4270,14 @@ function startStudioJobPolling(jobId) {
                 if (terminal) {
                     studioFinalVideo = job.final_video || studioFinalVideo || "";
                     studioJobId = "";
+                    // An assembly that produced no trailer is a failure — say so
+                    // rather than leaving loose clips looking like success.
+                    studioClipsMessage = job.error || "";
                     var msg = "Production complete";
                     if (job.status === "budget_capped") msg = "Budget cap reached — assembled what was ready";
                     else if (job.status === "failed") msg = "Render failed" + (job.error ? ": " + job.error : "");
                     else if (job.status === "aborted") msg = "Run stopped";
+                    else if (!job.final_video) msg = "Clips ready, but they were not joined";
                     if (studioMissingScenes.length) msg += " · missing scenes: " + studioMissingScenes.join(", ");
                     studioFinish(msg);
                 } else {

@@ -2936,6 +2936,31 @@ def api_studio_regenerate_clip(job_id, scene_number):
     return jsonify({"status": "success", "job": sj.public_view(sj.get_job(job_id))})
 
 
+@app.route("/api/studio/job/<job_id>/assemble", methods=["POST"])
+def api_studio_retry_assembly(job_id):
+    """Re-run just the join. Clips already exist and cost nothing to reuse, so
+    this is free — it exists because assembly is the one step that can die
+    after all the expensive work succeeded."""
+    user_id, error = _require_login()
+    if error:
+        return error
+    import core.studio_jobs as sj
+    job = sj.get_job(job_id)
+    if not job or job.get("user_id") != user_id:
+        return jsonify({"status": "error", "message": "job not found"}), 404
+    done = [c for c in job.get("clips", []) if c.get("status") == sj.DONE and c.get("video_url")]
+    if len(done) < 2:
+        return jsonify({"status": "error",
+                        "message": "Not enough finished clips to join."}), 400
+    # Re-open the job so the driver finalises it again.
+    job["status"] = "running"
+    job["error"] = ""
+    job["heartbeat"] = "1970-01-01T00:00:00+00:00"   # force resume
+    sj.save_job(job)
+    sj.launch(job_id)
+    return jsonify({"status": "success", "job": sj.public_view(sj.get_job(job_id))})
+
+
 @app.route("/api/studio/estimate", methods=["GET"])
 def api_studio_estimate():
     """Cost meter data for the Studio: estimated cost, remaining budget, and
