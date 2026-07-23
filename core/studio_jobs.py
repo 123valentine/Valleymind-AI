@@ -217,7 +217,8 @@ def _now_iso() -> str:
 
 def new_job(user_id: str, scenes: list, frame_sources: dict, *, target_clips: int,
             test_mode: bool = False, notes: list | None = None,
-            mode: str = "t2v", sheet_text: str = "", look: str = "") -> dict:
+            mode: str = "t2v", sheet_text: str = "", look: str = "",
+            cards: dict | None = None) -> dict:
     """Build a job over the scenes.
 
     ``mode`` picks the video path per run:
@@ -255,6 +256,9 @@ def new_job(user_id: str, scenes: list, frame_sources: dict, *, target_clips: in
         "test_mode": bool(test_mode),
         "duration": clip_duration(),
         "clips": clips,
+        # {scene_number: card text} from Angelina's beats, cut in as their own
+        # short clips at assembly (never burned over the footage).
+        "cards": {str(k): str(v) for k, v in (cards or {}).items() if str(v).strip()},
         "final_video": "",
         "assembly_mode": "hard_cut",
         "spend_usd": 0.0,
@@ -481,7 +485,7 @@ def _finalize(job_id: str, media, capped: bool = False) -> None:
     job["missing_scenes"] = sorted(c["number"] for c in clips if c["status"] in (FAILED, ABORTED))
 
     if len(done) >= 2:
-        final = _assemble(job["user_id"], done, media)
+        final = _assemble(job["user_id"], done, media, cards=job.get("cards") or {})
         if final.get("video_url"):
             job["final_video"] = final["video_url"]
             job["assembly_mode"] = final.get("mode", "hard_cut")
@@ -497,7 +501,50 @@ def _finalize(job_id: str, media, capped: bool = False) -> None:
     _mirror_to_studio_run(job)
 
 
-def _assemble(user_id: str, done_clips: list, media) -> dict:
+def card_seconds() -> float:
+    return _f("STUDIO_CARD_SECONDS", 1.5)
+
+
+def cards_enabled() -> bool:
+    return os.getenv("STUDIO_TITLE_CARDS", "1").strip().lower() not in ("0", "false", "no", "off")
+
+
+def _build_sequence(local_paths: list, ordered_clips: list, cards: dict, workdir: str) -> list:
+    """Interleave title cards with the shots.
+
+    Each card is rendered as its OWN short clip matching the footage's codec
+    params, so the final join stays a `-c copy` stream copy. Burning text over
+    the video would force a full re-encode (the crossfade path peaked at 737MB).
+    A card precedes the shot it introduces; the last card closes the piece.
+    """
+    import core.video_assembly as va
+
+    if not cards or not cards_enabled() or not local_paths:
+        return local_paths
+
+    params = va.probe_params(local_paths[0])
+    sequence, last_card = [], None
+    for idx, (path, clip) in enumerate(zip(local_paths, ordered_clips)):
+        text = cards.get(str(clip.get("number"))) or ""
+        if text:
+            card_path = os.path.join(workdir, f"card_{idx:03d}.mp4")
+            ok, err = va.make_title_card(
+                text, card_path, width=params["width"], height=params["height"],
+                fps=params["fps"], seconds=card_seconds(), has_audio=params["has_audio"],
+            )
+            if ok:
+                sequence.append(card_path)
+                last_card = card_path
+            else:
+                print(f"[JOB] title card '{text[:30]}' failed: {err}")
+        sequence.append(path)
+    # Close on the title beat.
+    if last_card:
+        sequence.append(last_card)
+    return sequence
+
+
+def _assemble(user_id: str, done_clips: list, media, cards: dict | None = None) -> dict:
     """Hard-cut concat of the finished clips (crossfade stays opt-in via
     STUDIO_ASSEMBLY_MODE). Pulls each clip out of GridFS, joins, stores."""
     import gridfs
@@ -513,11 +560,12 @@ def _assemble(user_id: str, done_clips: list, media) -> dict:
     mode = os.getenv("STUDIO_ASSEMBLY_MODE", "hard_cut").strip().lower()
     workdir = tempfile.mkdtemp(prefix="studio_job_asm_")
     local_paths = []
+    ordered = sorted(done_clips, key=lambda c: c.get("number", 0))
     try:
         db = get_db()
         bucket = gridfs.GridFSBucket(db) if db is not None else None
         from core.config import PROJECT_ROOT
-        for idx, clip in enumerate(sorted(done_clips, key=lambda c: c.get("number", 0))):
+        for idx, clip in enumerate(ordered):
             fname = clip["video_url"].rsplit("/", 1)[-1]
             data = None
             if bucket is not None:
@@ -538,8 +586,9 @@ def _assemble(user_id: str, done_clips: list, media) -> dict:
 
         if len(local_paths) < 2:
             return {"error": "not enough clips to assemble"}
+        sequence = _build_sequence(local_paths, ordered, cards or {}, workdir)
         out_path = os.path.join(workdir, "trailer.mp4")
-        ok, err = va.assemble(local_paths, out_path, mode=mode)
+        ok, err = va.assemble(sequence, out_path, mode=mode)
         if not ok or not os.path.exists(out_path):
             return {"error": err or "assembly failed"}
         rec = media.save_media(out_path, media_type="video", prompt="Studio trailer",

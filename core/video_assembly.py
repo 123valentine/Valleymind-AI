@@ -49,6 +49,132 @@ def _run(cmd: list[str], timeout: int) -> tuple[bool, str]:
         return False, str(exc)
 
 
+_FONT_CANDIDATES = (
+    "C:/Windows/Fonts/arialbd.ttf",
+    "C:/Windows/Fonts/arial.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+    "/System/Library/Fonts/Helvetica.ttc",
+)
+
+
+def _find_font(size: int):
+    """A bold sans face on Windows (dev) or Linux (Render); PIL's bitmap default
+    as a last resort so a missing font never fails the render."""
+    from PIL import ImageFont
+    for path in _FONT_CANDIDATES:
+        if os.path.exists(path):
+            try:
+                return ImageFont.truetype(path, size)
+            except Exception:
+                continue
+    return ImageFont.load_default()
+
+
+def probe_params(path: str) -> dict:
+    """Read a clip's codec params by parsing `ffmpeg -i` (imageio-ffmpeg ships
+    ffmpeg but not ffprobe). Title cards must match these exactly or the
+    ``-c copy`` concat produces a broken file."""
+    import re
+    exe = ffmpeg_exe()
+    out = {"width": 1280, "height": 720, "fps": 24.0, "has_audio": False}
+    if not exe:
+        return out
+    try:
+        p = subprocess.run([exe, "-i", path], capture_output=True, text=True, timeout=60)
+        err = p.stderr or ""
+    except Exception:
+        return out
+    m = re.search(r"Video:.*?,\s*(\d{2,5})x(\d{2,5})", err)
+    if m:
+        out["width"], out["height"] = int(m.group(1)), int(m.group(2))
+    m = re.search(r"(\d+(?:\.\d+)?)\s*fps", err)
+    if m:
+        try:
+            out["fps"] = float(m.group(1)) or 24.0
+        except ValueError:
+            pass
+    out["has_audio"] = "Audio:" in err
+    return out
+
+
+def make_title_card(text: str, out_path: str, *, width: int = 1280, height: int = 720,
+                    fps: float = 24.0, seconds: float = 1.5, has_audio: bool = False,
+                    timeout: int = 120) -> tuple[bool, str]:
+    """Render a trailer title card as its OWN short clip.
+
+    Deliberately NOT burned over the footage: overlaying text would force a
+    re-encode of the whole timeline (the crossfade path peaked at 737MB). A
+    standalone card is encoded once, tiny and alone, then hard-cut into the
+    sequence like any other shot — so the join stays a stream copy.
+    """
+    exe = ffmpeg_exe()
+    if not exe:
+        return False, "ffmpeg not available"
+    label = " ".join(str(text or "").split()).upper()
+    if not label:
+        return False, "empty card text"
+
+    # 1. Draw the card with Pillow (full control, no filter-string escaping).
+    try:
+        from PIL import Image, ImageDraw
+        img = Image.new("RGB", (width, height), (8, 10, 14))
+        draw = ImageDraw.Draw(img)
+        size = max(18, int(height * 0.11))
+        font = _find_font(size)
+        # Shrink until it fits with margins, then wrap to two lines if needed.
+        words, lines = label.split(), []
+        max_w = int(width * 0.82)
+        while size > 14:
+            font = _find_font(size)
+            lines, cur = [], ""
+            for w in words:
+                trial = (cur + " " + w).strip()
+                if draw.textlength(trial, font=font) <= max_w or not cur:
+                    cur = trial
+                else:
+                    lines.append(cur)
+                    cur = w
+            if cur:
+                lines.append(cur)
+            if len(lines) <= 2 and all(draw.textlength(l, font=font) <= max_w for l in lines):
+                break
+            size = int(size * 0.85)
+        line_h = int(size * 1.25)
+        total_h = line_h * len(lines)
+        y = (height - total_h) // 2
+        for line in lines:
+            x = (width - draw.textlength(line, font=font)) // 2
+            draw.text((x, y), line, font=font, fill=(240, 240, 235))
+            y += line_h
+        png = out_path + ".png"
+        img.save(png)
+    except Exception as exc:
+        return False, f"card render failed: {exc}"
+
+    # 2. Encode to a clip matching the footage's params so -c copy concat works.
+    cmd = [exe, "-y", "-loop", "1", "-i", png]
+    if has_audio:
+        cmd += ["-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100"]
+    cmd += [
+        "-t", str(seconds),
+        "-vf", f"scale={width}:{height},format=yuv420p",
+        "-r", str(int(round(fps))),
+        "-c:v", "libx264", "-profile:v", "high", "-pix_fmt", "yuv420p",
+        "-video_track_timescale", "90000",
+    ]
+    if has_audio:
+        cmd += ["-c:a", "aac", "-ar", "44100", "-ac", "2", "-shortest"]
+    cmd += [out_path]
+    ok, err = _run(cmd, timeout)
+    try:
+        os.remove(png)
+    except OSError:
+        pass
+    return (ok and os.path.exists(out_path)), err
+
+
 def hard_cut(clip_paths: list[str], out_path: str, timeout: int = 300) -> tuple[bool, str]:
     """Concatenate clips end to end with NO re-encoding (streaming copy)."""
     exe = ffmpeg_exe()

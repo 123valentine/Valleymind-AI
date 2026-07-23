@@ -3153,7 +3153,10 @@ def api_studio_run():
                         job = sj.new_job(user_id, scenes, frame_sources,
                                          target_clips=target_clips, test_mode=test_mode,
                                          notes=fold_notes(), mode=video_mode,
-                                         sheet_text=sheet_text, look=look)
+                                         sheet_text=sheet_text, look=look,
+                                         # Beat N's card punctuates scene N.
+                                         cards={b.get("number"): b.get("card", "")
+                                                for b in saved.get("beats", [])})
                         sj.launch(job["_id"])
                         cost = sj.public_view(job).get("cost", {})
                         yield f"data: {json.dumps({'stage': 'clips', 'status': 'queued', 'job_id': job['_id'], 'total': len(job['clips']), 'test_mode': test_mode, 'video_mode': video_mode, 'cost': cost})}\n\n"
