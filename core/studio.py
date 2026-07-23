@@ -224,33 +224,106 @@ def parse_intake(raw: str, force_ready: bool = False) -> dict:
 
 # ── Stage 1: Angelina writes ────────────────────────────────────────────────
 
-def script_messages(idea: str) -> list[dict]:
+def script_messages(idea: str, target: int | None = None, duration: int | None = None) -> list[dict]:
+    """Angelina writes a TRAILER BEAT SHEET — not a screenplay.
+
+    A trailer is a sequence of visual moments, not dialogue pages. Each beat is
+    one shot with a concrete physical action, plus a few words of on-screen card
+    text. The fixed format is parsed by parse_beats() and drives both Marcus's
+    scene list and the title cards.
+    """
+    n = target or 6
+    runtime = f" The finished piece runs about {duration} seconds." if duration else ""
     return [
         {"role": "system", "content": (
             _persona_prompt("angelina")
-            + "\n\nYou are writing for ValleyMind Studio. Write a short screenplay for the "
-              "user's idea: a logline, then the scenes in order with action lines and dialogue. "
-              "Keep it tight and shootable — this will be broken into a handful of scenes and "
-              "storyboarded. Give every character a specific, memorable look you can keep "
-              "consistent. Write in prose/screenplay form only — no JSON, no preamble, no "
-              "meta-commentary about the task."
+            + f"\n\nYou are writing for ValleyMind Studio. Write a TRAILER BEAT SHEET for the "
+              f"user's idea — NOT a screenplay.{runtime}\n\n"
+              f"Write exactly {n} beats, shaped like a real trailer:\n"
+              "1. HOOK — the very first beat must arrest attention on its own.\n"
+              "2. ESCALATION — each following beat raises stakes or tightens pressure.\n"
+              "3. TURN — one beat delivers a reveal or reversal that recontextualises things.\n"
+              "4. CLOSING TITLE BEAT — the last beat is the title//tagline moment.\n\n"
+              "RULES:\n"
+              "- Each beat is ONE visual moment we can actually shoot: a subject doing something "
+              "physical. Someone lunges, grabs, runs, falls, turns, slams, reacts.\n"
+              "- NO dialogue pages, no scene headings, no camera directions, no voice-over blocks.\n"
+              "- CARD text is trailer text: 2-5 words, no full sentences, no punctuation beyond "
+              "a question mark. Think 'ONE NIGHT.' / 'EVERY DEBT COMES DUE'.\n"
+              "- Give characters a specific, memorable look you can keep consistent.\n\n"
+              "Use EXACTLY this format and nothing else:\n\n"
+              "LOGLINE: <one sentence>\n\n"
+              "BEAT 1 - <short beat title>\n"
+              "ACTION: <one visual moment, subject + verb, concrete>\n"
+              "CARD: <2-5 words of on-screen text>\n\n"
+              "BEAT 2 - <short beat title>\n"
+              "ACTION: ...\n"
+              "CARD: ...\n\n"
+              "(continue to BEAT " + str(n) + ")"
             + _CREW_GUARD
         )},
         {"role": "user", "content": idea},
     ]
 
 
+_BEAT_RE = re.compile(r"^BEAT\s+(\d+)\s*[-–—:]?\s*(.*)$", re.IGNORECASE)
+_ACTION_RE = re.compile(r"^ACTION:\s*(.+)$", re.IGNORECASE)
+_CARD_RE = re.compile(r"^CARD:\s*(.+)$", re.IGNORECASE)
+_LOGLINE_RE = re.compile(r"^LOGLINE:\s*(.+)$", re.IGNORECASE)
+
+
+def parse_beats(text: str) -> dict:
+    """Pull {logline, beats:[{number,title,action,card}]} out of the beat sheet.
+
+    Tolerant of stray blank lines and markdown bullets — the model is asked for
+    a fixed shape but shouldn't break the run when it decorates it.
+    """
+    logline = ""
+    beats: list[dict] = []
+    current: dict | None = None
+    for raw_line in str(text or "").splitlines():
+        line = raw_line.strip().lstrip("*#-• ").strip()
+        if not line:
+            continue
+        m = _LOGLINE_RE.match(line)
+        if m and not logline:
+            logline = m.group(1).strip()
+            continue
+        m = _BEAT_RE.match(line)
+        if m:
+            if current:
+                beats.append(current)
+            current = {"number": int(m.group(1)), "title": m.group(2).strip(),
+                       "action": "", "card": ""}
+            continue
+        m = _ACTION_RE.match(line)
+        if m and current is not None:
+            current["action"] = m.group(1).strip()
+            continue
+        m = _CARD_RE.match(line)
+        if m and current is not None:
+            current["card"] = m.group(1).strip().strip('"')
+            continue
+    if current:
+        beats.append(current)
+    for i, b in enumerate(beats, start=1):
+        b["number"] = i
+        if not b["title"]:
+            b["title"] = f"Beat {i}"
+    return {"logline": logline, "beats": beats}
+
+
 def character_sheet_messages(idea: str, script: str) -> list[dict]:
     return [
         {"role": "system", "content": (
-            "Extract a character sheet from this screenplay. Respond with ONLY a JSON object:\n"
+            "Extract a character sheet from this trailer beat sheet. Respond with ONLY a JSON object:\n"
             '{"characters":[{"name":"...","appearance":"age, build, hair, face — concrete visual details",'
             '"wardrobe":"what they wear, specific"}],"look":"one line on the overall visual style/palette"}\n'
             "Be concrete and visual — these descriptions are reused verbatim in every image prompt, "
             "so they must be specific enough that the same person is recognisable across scenes. "
             "No markdown, no explanation."
         )},
-        {"role": "user", "content": f"IDEA: {idea}\n\nSCREENPLAY:\n{script[:6000]}"},
+        {"role": "user", "content": f"IDEA: {idea}\n\nTRAILER BEAT SHEET:\n{script[:6000]}"},
     ]
 
 
@@ -293,7 +366,8 @@ def scene_messages(idea: str, script: str, sheet_text: str, notes: list[str] | N
             + _notes_block(notes)
         )},
         {"role": "user", "content": (
-            f"IDEA: {idea}\n\nCHARACTER SHEET:\n{sheet_text}\n\nANGELINA'S SCREENPLAY:\n{script[:6000]}"
+            f"IDEA: {idea}\n\nCHARACTER SHEET:\n{sheet_text}\n\n"
+            f"ANGELINA'S TRAILER BEAT SHEET (one scene per beat, in order):\n{script[:6000]}"
         )},
     ]
 

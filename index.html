@@ -3253,6 +3253,8 @@ var studioRunning = false;
 var studioTimers = [];
 // Live pipeline data
 var studioScript = "";
+var studioBeats = [];        // Angelina's parsed trailer beats {number,title,action,card}
+var studioLogline = "";
 var studioSheetText = "";
 var studioScenes = [];
 var studioFrames = [];       // {number, title, image_url}
@@ -3371,6 +3373,8 @@ async function restoreLastStudioRun() {
         var run = data && data.run;
         if (!run) return;
         studioScript = run.script || "";
+        studioBeats = run.beats || [];
+        studioLogline = run.logline || "";
         studioSheetText = run.sheet_text || "";
         studioScenes = run.scenes || [];
         studioFrames = run.frames || [];
@@ -4036,6 +4040,7 @@ async function runStudioPipeline(ideaArg) {
                     scheduleRender();
                 }
 
+                if (evt.beats) { studioBeats = evt.beats; studioLogline = evt.logline || ""; scheduleRender(); }
                 if (evt.token) { studioScript += evt.token; scheduleRender(); }
                 if (evt.scene) { studioScenes.push(evt.scene); scheduleRender(); }
                 if (evt.frame) { studioFrames.push(evt.frame); scheduleRender(); }

@@ -2963,7 +2963,8 @@ def api_studio_run():
     def generate():
         notes_applied = []
         # Mirrors what the Studio shows, persisted so a reload restores it
-        saved = {"idea": idea, "script": "", "sheet_text": "", "scenes": [], "frames": [], "clips": []}
+        saved = {"idea": idea, "script": "", "sheet_text": "", "scenes": [], "frames": [],
+                 "clips": [], "beats": [], "logline": ""}
 
         def fold_notes():
             """Pick up any late direction the user typed while this run is live."""
@@ -2977,16 +2978,23 @@ def api_studio_run():
             yield f"data: {json.dumps({'stage': 'writing', 'status': 'working'})}\n\n"
             script = ""
             try:
-                for token in _call_llm_cluster_stream(studio.script_messages(idea)):
+                for token in _call_llm_cluster_stream(
+                        studio.script_messages(idea, target=target_clips, duration=target_duration)):
                     if not token:
                         continue
                     script += token
                     yield f"data: {json.dumps({'stage': 'writing', 'token': token})}\n\n"
             except Exception as exc:
                 print(f"[STUDIO] script generation failed: {exc}")
-                yield f"data: {json.dumps({'error': 'Angelina could not finish the script. Please try again.'})}\n\n"
+                yield f"data: {json.dumps({'error': 'Angelina could not finish the beat sheet. Please try again.'})}\n\n"
                 yield f"data: {json.dumps({'done': True})}\n\n"
                 return
+
+            # Parse Angelina's beats — these drive the title cards later.
+            beat_data = studio.parse_beats(script)
+            saved["logline"] = beat_data.get("logline", "")
+            saved["beats"] = beat_data.get("beats", [])
+            yield f"data: {json.dumps({'stage': 'writing', 'beats': saved['beats'], 'logline': saved['logline']})}\n\n"
 
             # Character sheet — threaded through every later stage for continuity
             sheet, sheet_text, look = {}, "", ""
