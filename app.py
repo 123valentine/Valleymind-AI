@@ -2997,7 +2997,10 @@ def api_studio_run():
                     studio.scene_messages(idea, script, sheet_text, notes=fold_notes(),
                                           target=target_clips), timeout=90,
                 )
-                scenes = studio.normalize_scenes(studio._parse_json_block(raw), target=target_clips)
+                scenes = studio.normalize_scenes(
+                    studio._parse_json_block(raw), target=target_clips,
+                    allow_filmmaking=studio.idea_is_about_filmmaking(idea),
+                )
             except Exception as exc:
                 print(f"[STUDIO] scene breakdown failed: {exc}")
 

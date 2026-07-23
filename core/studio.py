@@ -35,6 +35,57 @@ def max_scenes() -> int:
         return 24
 
 
+# ── The crew are the filmmakers, never the cast ─────────────────────────────
+# Each stage injects the persona's own behaviour prompt ("you are Angelina, the
+# writer... Elena is the editor"), which invited the model to treat the crew as
+# available characters — real runs produced "INT. ELENA'S EDITING BAY" and
+# "INT. MARCUS'S DIRECTOR'S CHAIR" as actual scenes. This guard is injected into
+# every writing/directing stage to shut that down.
+_CREW_GUARD = (
+    "\n\nHARD RULE — YOU ARE THE FILMMAKER, NOT A CHARACTER IN THE FILM.\n"
+    "Angelina, Marcus and Elena are the real production crew making this piece. They are "
+    "NEVER characters, never on screen, and never referenced in the story. The film is "
+    "about the USER'S subject and nothing else.\n"
+    "- Never write a scene set in an editing bay, edit suite, director's chair, control room, "
+    "monitor bank, film set, sound stage, production office, screening room or any other "
+    "filmmaking space.\n"
+    "- Never name a character Angelina, Marcus or Elena.\n"
+    "- Never depict anyone filming, editing, reviewing footage, or watching this film. No "
+    "behind-the-scenes framing, no 'meanwhile in the edit' cutaways, no screens showing the "
+    "film itself.\n"
+    "ONLY EXCEPTION: the user explicitly asked for a film ABOUT filmmaking. If they did not "
+    "say so, treat every filmmaking setting as forbidden."
+)
+
+# Safety net for when the model ignores the guard anyway.
+_PRODUCTION_PAT = re.compile(
+    r"\b(editing bay|edit bay|edit suite|editing suite|director'?s chair|cutting room|"
+    r"control room|monitor bank|sound stage|soundstage|film set|movie set|production office|"
+    r"screening room|projection room|behind[- ]the[- ]scenes|video village|"
+    r"(?:bank|wall|row)s? of (?:monitors|screens))\b",
+    re.IGNORECASE,
+)
+_CREW_NAME_PAT = re.compile(r"\b(angelina|marcus|elena)\b", re.IGNORECASE)
+# Only honour a filmmaking setting when the user actually asked for one.
+_FILMMAKING_IDEA_PAT = re.compile(
+    r"\b(filmmak\w*|film crew|movie about (?:a )?(?:film|movie)|documentary about (?:a )?film|"
+    r"behind[- ]the[- ]scenes|editor|film school|director|cinematographer|on set|movie studio)\b",
+    re.IGNORECASE,
+)
+
+
+def idea_is_about_filmmaking(idea: str) -> bool:
+    """True when the user genuinely asked for a film about filmmaking, which is
+    the one case where production settings are legitimate."""
+    return bool(_FILMMAKING_IDEA_PAT.search(str(idea or "")))
+
+
+def scene_breaks_crew_rule(scene: dict) -> bool:
+    """Does this scene put the crew or a production setting on screen?"""
+    blob = " ".join(str(scene.get(k, "")) for k in ("title", "description", "action", "setting"))
+    return bool(_PRODUCTION_PAT.search(blob) or _CREW_NAME_PAT.search(blob))
+
+
 def _persona_prompt(key: str) -> str:
     """Load a persona's own system prompt so personality survives the pipeline."""
     try:
@@ -183,6 +234,7 @@ def script_messages(idea: str) -> list[dict]:
               "storyboarded. Give every character a specific, memorable look you can keep "
               "consistent. Write in prose/screenplay form only — no JSON, no preamble, no "
               "meta-commentary about the task."
+            + _CREW_GUARD
         )},
         {"role": "user", "content": idea},
     ]
@@ -231,6 +283,7 @@ def scene_messages(idea: str, script: str, sheet_text: str, notes: list[str] | N
               '[{"number":1,"title":"short scene title","description":"what we see, visually concrete",'
               '"camera":"lens/movement, e.g. 50mm slow push","framing":"e.g. medium close-up, low angle"}]\n'
               "No markdown, no commentary."
+            + _CREW_GUARD
             + _notes_block(notes)
         )},
         {"role": "user", "content": (
@@ -317,13 +370,27 @@ def clip_prompt(scene: dict, notes: list[str] | None = None) -> str:
     return " ".join(parts)[:800]
 
 
-def normalize_scenes(parsed: Any, target: int | None = None) -> list[dict]:
-    """Coerce the model's scene output into a clean, capped list."""
+def normalize_scenes(parsed: Any, target: int | None = None,
+                     allow_filmmaking: bool = False) -> list[dict]:
+    """Coerce the model's scene output into a clean, capped list.
+
+    Scenes that put the crew or a production setting on screen are dropped
+    unless the user actually asked for a film about filmmaking — the prompt
+    guard is the primary defence, this is the safety net.
+    """
     if isinstance(parsed, dict):
         parsed = parsed.get("scenes") or parsed.get("Scenes") or []
     if not isinstance(parsed, list):
         return []
     cap = target or max_scenes()
+    if not allow_filmmaking:
+        kept = []
+        for raw in parsed:
+            if isinstance(raw, dict) and scene_breaks_crew_rule(raw):
+                print(f"[STUDIO] dropped crew/production scene: {str(raw.get('title',''))[:60]}")
+                continue
+            kept.append(raw)
+        parsed = kept
     scenes: list[dict] = []
     for i, raw in enumerate(parsed[:cap], start=1):
         if not isinstance(raw, dict):
