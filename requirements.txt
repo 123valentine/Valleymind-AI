@@ -16,3 +16,4 @@ pymongo
 certifi
 imageio-ffmpeg
 Pillow
+boto3

@@ -102,6 +102,23 @@ services:
       - key: FAL_KEY                       # fallback video provider (needs balance)
         sync: false
 
+      # ── Media storage (Cloudflare R2) ─────────────────────────────
+      # Media bytes (images, clips, trailers) live in R2, NOT GridFS. The app
+      # HARD-FAILS a save if R2 is configured but unreachable — there is no
+      # silent local-disk fallback (that fallback hid the last outage). All
+      # five must be set for r2_storage.available() to be true; paste raw
+      # values with NO surrounding quotes.
+      - key: R2_ACCOUNT_ID
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: R2_ENDPOINT                   # https://<account>.r2.cloudflarestorage.com
+        sync: false
+      - key: R2_BUCKET
+        value: valleymind-media
+
       # ── Auth ──────────────────────────────────────────────────────
       - key: GOOGLE_CLIENT_ID              # Google Sign-In
         sync: false

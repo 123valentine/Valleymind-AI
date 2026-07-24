@@ -16,7 +16,7 @@ from pathlib import Path
 from threading import Lock, Thread
 from urllib.parse import quote
 
-from flask import Flask, Response, jsonify, request, send_from_directory, session, stream_with_context
+from flask import Flask, Response, jsonify, redirect, request, send_from_directory, session, stream_with_context
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from core.brain import MarcusBrain, _call_llm_cluster, _CHAT_SYSTEM_PROMPT
@@ -2661,24 +2661,12 @@ def _studio_assemble(user_id: str, clips: list, media) -> dict:
     workdir = tempfile.mkdtemp(prefix="studio_assembly_")
     local_paths = []
     try:
-        db = get_db()
-        import gridfs
-        bucket = gridfs.GridFSBucket(db) if db is not None else None
+        from core.media_manager import fetch_media_bytes
         for i, clip in enumerate(sorted(clips, key=lambda c: c.get("number", 0))):
-            fname = clip["video_url"].rsplit("/", 1)[-1]
-            dest = os.path.join(workdir, f"clip_{i:02d}.mp4")
-            data = None
-            if bucket is not None:
-                try:
-                    data = bucket.open_download_stream_by_name(fname).read()
-                except Exception:
-                    data = None
-            if data is None:  # local-disk fallback copy
-                disk = PROJECT_ROOT / clip["video_url"].lstrip("/")
-                if disk.exists():
-                    data = disk.read_bytes()
+            data = fetch_media_bytes(clip["video_url"])  # R2 → GridFS → disk
             if not data:
                 continue
+            dest = os.path.join(workdir, f"clip_{i:02d}.mp4")
             with open(dest, "wb") as f:
                 f.write(data)
             local_paths.append(dest)
@@ -3436,8 +3424,28 @@ def api_media_delete(media_id):
 
 @app.route("/static/media/users/<user_id>/<path:subpath>")
 def serve_user_media(user_id, subpath):
-    """Serve user media files from Mongo/GridFS, falling back to local disk."""
+    """Serve user media.
+
+    Primary path: 302-redirect the browser to a short-lived R2 presigned URL, so
+    the bytes stream straight from Cloudflare and Flask never loads the file into
+    memory (loading whole GridFS videos into RAM here is what crashed Render).
+    The bucket stays private; only the signed, expiring link is handed out.
+
+    GridFS remains a fallback for any file not yet migrated to R2 (emptied once
+    the batch migration completes); local disk is the last resort for dev.
+    """
+    from core import r2_storage
+
     filename = subpath.rsplit("/", 1)[-1]
+
+    if r2_storage.available():
+        key = r2_storage.key_for_subpath(user_id, subpath)
+        try:
+            if r2_storage.object_exists(key):
+                return redirect(r2_storage.presigned_url(key, expires=3600), code=302)
+        except Exception as exc:
+            print(f"[MEDIA] R2 presign failed for {key}, falling back: {exc}")
+
     db = get_db()
     if db is not None:
         try:

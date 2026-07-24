@@ -29,6 +29,7 @@ import requests
 
 from core.config import PROJECT_ROOT
 from core.db import get_db
+from core import r2_storage
 
 _SUBDIR = {"image": "images", "video": "videos"}
 
@@ -129,7 +130,8 @@ class MediaManager:
             if not content_type:
                 content_type = self._content_type_from_ext(ext, media_type)
             filename = f"{media_id}.{ext}"
-            local_path = f"/static/media/users/{self.user_id}/{_SUBDIR[media_type]}/{filename}"
+            subdir = _SUBDIR[media_type]
+            local_path = f"/static/media/users/{self.user_id}/{subdir}/{filename}"
             file_size = len(data)
 
             record = {
@@ -144,12 +146,23 @@ class MediaManager:
                 "file_size": file_size,
             }
 
-            if self._save_to_mongo(record, filename, data, content_type):
-                print(f"[MEDIA] {media_type} saved to Mongo GridFS: {media_id} ({file_size} bytes)")
+            # Primary backend: Cloudflare R2 for the bytes, Mongo `media` doc for
+            # the metadata. HARD-FAIL — if R2 is configured but the upload fails,
+            # upload_bytes raises and the failure surfaces (caller reports it)
+            # instead of silently writing to ephemeral local disk. That silent
+            # fallback is exactly what hid the last outage. Local disk is used
+            # ONLY when R2 is entirely unconfigured (local dev).
+            if r2_storage.available():
+                r2_key = r2_storage.key_for(self.user_id, subdir, filename)
+                r2_storage.upload_bytes(r2_key, data, content_type)  # raises on failure
+                record["r2_key"] = r2_key
+                record["storage"] = "r2"
+                self._save_metadata(record)
+                print(f"[MEDIA] {media_type} uploaded to R2: {r2_key} ({file_size} bytes)")
                 return record
 
             self._save_to_disk(record, filename, data, media_type)
-            print(f"[MEDIA] {media_type} saved to local disk (Mongo unavailable): {media_id} ({file_size} bytes)")
+            print(f"[MEDIA] R2 not configured; {media_type} saved to local disk (dev only): {media_id} ({file_size} bytes)")
             return record
 
         except Exception as exc:
@@ -178,25 +191,23 @@ class MediaManager:
         except Exception as exc:
             print(f"[MEDIA] usage counter bump failed: {exc}")
 
-    def _save_to_mongo(self, record: dict, filename: str, data: bytes, content_type: str) -> bool:
+    def _save_metadata(self, record: dict) -> None:
+        """Persist the media metadata doc (the small record the gallery lists
+        from). The bytes already live safely in R2, so a Mongo hiccup here must
+        not lose the media: fall back to the local JSON index."""
         coll = self._media_collection()
-        bucket = self._gridfs_bucket()
-        if coll is None or bucket is None:
-            return False
-        try:
-            gridfs_id = bucket.upload_from_stream(
-                filename, data, metadata={"content_type": content_type, "user_id": self.user_id}
-            )
-            doc = dict(record)
-            doc["_id"] = record["media_id"]
-            doc["user_id"] = self.user_id
-            doc["gridfs_id"] = gridfs_id
-            doc["gridfs_filename"] = filename
-            coll.insert_one(doc)
-            return True
-        except Exception as exc:
-            print(f"[MEDIA] Mongo/GridFS save failed, falling back to local disk: {exc}")
-            return False
+        if coll is not None:
+            try:
+                doc = dict(record)
+                doc["_id"] = record["media_id"]
+                doc["user_id"] = self.user_id
+                coll.insert_one(doc)
+                return
+            except Exception as exc:
+                print(f"[MEDIA] media metadata insert failed (bytes ARE safe in R2): {exc}")
+        with self._lock:
+            self._index.append(record)
+            self._save_index()
 
     def _save_to_disk(self, record: dict, filename: str, data: bytes, media_type: str) -> None:
         local_path = self.base_dir / _SUBDIR[media_type] / filename
@@ -314,19 +325,24 @@ class MediaManager:
 
     def delete_media(self, media_id: str) -> bool:
         coll = self._media_collection()
-        bucket = self._gridfs_bucket()
-        if coll is not None and bucket is not None:
+        if coll is not None:
             try:
                 doc = coll.find_one({"_id": media_id, "user_id": self.user_id})
                 if doc is not None:
-                    gridfs_id = doc.get("gridfs_id")
-                    if gridfs_id is not None:
+                    if doc.get("r2_key"):
                         try:
-                            bucket.delete(gridfs_id)
+                            r2_storage.delete_object(doc["r2_key"])
                         except Exception as exc:
-                            print(f"[MEDIA] GridFS delete warning for {media_id}: {exc}")
+                            print(f"[MEDIA] R2 delete warning for {media_id}: {exc}")
+                    elif doc.get("gridfs_id") is not None:
+                        bucket = self._gridfs_bucket()
+                        if bucket is not None:
+                            try:
+                                bucket.delete(doc["gridfs_id"])
+                            except Exception as exc:
+                                print(f"[MEDIA] GridFS delete warning for {media_id}: {exc}")
                     coll.delete_one({"_id": media_id, "user_id": self.user_id})
-                    print(f"[MEDIA] Deleted {media_id} from Mongo/GridFS")
+                    print(f"[MEDIA] Deleted {media_id} ({'R2' if doc.get('r2_key') else 'GridFS'})")
                     return True
             except Exception as exc:
                 print(f"[MEDIA] Mongo delete failed, falling back to local index: {exc}")
@@ -363,6 +379,8 @@ class MediaManager:
         doc.pop("user_id", None)
         doc.pop("gridfs_id", None)
         doc.pop("gridfs_filename", None)
+        doc.pop("r2_key", None)
+        doc.pop("storage", None)
         return doc
 
     @staticmethod
@@ -390,6 +408,47 @@ class MediaManager:
         if guessed:
             return guessed
         return "image/png" if media_type == "image" else "video/mp4"
+
+
+def fetch_media_bytes(path_or_url: str) -> bytes | None:
+    """Return the bytes of a stored media file, trying R2 → GridFS → local disk.
+
+    Studio assembly/review and the migration call this so they keep working
+    whether a clip lives in R2 (new/migrated) or still in legacy GridFS. Expects
+    the stored ``/static/media/users/<uid>/<subdir>/<file>`` path (from which the
+    R2 key is derived); a bare filename can still be found in GridFS/on disk.
+    """
+    if not path_or_url:
+        return None
+    p = str(path_or_url)
+    filename = p.rsplit("/", 1)[-1]
+
+    # 1. R2 — only when the path carries the user/subdir structure the key needs.
+    if r2_storage.available() and ("/media/" in p or p.startswith(("/static/", "static/", "media/"))):
+        try:
+            key = r2_storage.key_from_local_path(p)
+            if r2_storage.object_exists(key):
+                return r2_storage.download_bytes(key)
+        except Exception as exc:
+            print(f"[MEDIA] R2 fetch failed for {p}: {exc}")
+
+    # 2. Legacy GridFS by filename.
+    try:
+        db = get_db()
+        if db is not None:
+            import gridfs
+            return gridfs.GridFSBucket(db).open_download_stream_by_name(filename).read()
+    except Exception:
+        pass
+
+    # 3. Local disk (dev / fallback).
+    try:
+        disk = PROJECT_ROOT / p.lstrip("/")
+        if disk.exists():
+            return disk.read_bytes()
+    except OSError:
+        pass
+    return None
 
 
 # -- Module-level cache ------------------------------------------------------

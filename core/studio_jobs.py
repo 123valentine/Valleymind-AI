@@ -517,28 +517,16 @@ def _charge_vl(job: dict, tokens: int) -> None:
 
 
 def _local_copy_of_clip(clip: dict) -> str:
-    """Pull a stored clip out of GridFS to a temp file so it can be watched."""
-    import gridfs
+    """Pull a stored clip (R2 → GridFS → disk) to a temp file so it can be watched."""
     import tempfile as _tf
-    from core.config import PROJECT_ROOT
-    from core.db import get_db
+    from core.media_manager import fetch_media_bytes
     url = clip.get("video_url") or ""
     if not url:
         return ""
-    fname = url.rsplit("/", 1)[-1]
-    data = None
-    try:
-        db = get_db()
-        if db is not None:
-            data = gridfs.GridFSBucket(db).open_download_stream_by_name(fname).read()
-    except Exception:
-        data = None
-    if data is None:
-        disk = PROJECT_ROOT / url.lstrip("/")
-        if disk.exists():
-            data = disk.read_bytes()
+    data = fetch_media_bytes(url)
     if not data:
         return ""
+    fname = url.rsplit("/", 1)[-1]
     path = os.path.join(_tf.gettempdir(), f"review_{fname}")
     with open(path, "wb") as f:
         f.write(data)
@@ -732,13 +720,12 @@ def _review_cut(job: dict) -> None:
 
 def _assemble(user_id: str, done_clips: list, media, cards: dict | None = None) -> dict:
     """Hard-cut concat of the finished clips (crossfade stays opt-in via
-    STUDIO_ASSEMBLY_MODE). Pulls each clip out of GridFS, joins, stores."""
-    import gridfs
+    STUDIO_ASSEMBLY_MODE). Pulls each clip from R2/GridFS, joins, stores."""
     import shutil
     import tempfile
 
     import core.video_assembly as va
-    from core.db import get_db
+    from core.media_manager import fetch_media_bytes
 
     if not va.available():
         return {"error": "ffmpeg not available"}
@@ -748,27 +735,14 @@ def _assemble(user_id: str, done_clips: list, media, cards: dict | None = None) 
     local_paths = []
     ordered = sorted(done_clips, key=lambda c: c.get("number", 0))
     try:
-        db = get_db()
-        bucket = gridfs.GridFSBucket(db) if db is not None else None
-        from core.config import PROJECT_ROOT
         for idx, clip in enumerate(ordered):
             # 1. Local cache written when the clip was stored — no network at all.
             cached = clip.get("cache_path") or ""
             if cached and os.path.exists(cached):
                 local_paths.append(cached)
                 continue
-            # 2. Otherwise fall back to pulling it back out of GridFS.
-            fname = clip["video_url"].rsplit("/", 1)[-1]
-            data = None
-            if bucket is not None:
-                try:
-                    data = bucket.open_download_stream_by_name(fname).read()
-                except Exception:
-                    data = None
-            if data is None:
-                disk = PROJECT_ROOT / clip["video_url"].lstrip("/")
-                if disk.exists():
-                    data = disk.read_bytes()
+            # 2. Otherwise pull it back out of storage (R2 → GridFS → disk).
+            data = fetch_media_bytes(clip["video_url"])
             if not data:
                 continue
             dest = os.path.join(workdir, f"clip_{idx:03d}.mp4")
