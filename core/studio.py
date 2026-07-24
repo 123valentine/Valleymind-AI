@@ -256,6 +256,10 @@ def script_messages(idea: str, target: int | None = None, duration: int | None =
               "RULES:\n"
               "- Each beat is ONE visual moment we can actually shoot: a subject doing something "
               "physical. Someone lunges, grabs, runs, falls, turns, slams, reacts.\n"
+              "- The beats must SPAN THE STORY, not circle one moment. Move through the arc: "
+              f"across {n} beats show at least {_min_locations(n)} DIFFERENT places and stages of "
+              "the story — a beginning, a middle, and an end, in different settings. Do not set "
+              "most beats in the same location. Each beat should advance somewhere new.\n"
               "- NO dialogue pages, no scene headings, no camera directions, no voice-over blocks.\n"
               "- CARD text is trailer text: 2-5 words, no full sentences, no punctuation beyond "
               "a question mark. Think 'ONE NIGHT.' / 'EVERY DEBT COMES DUE'.\n"
@@ -350,6 +354,31 @@ def _notes_block(notes: list[str] | None) -> str:
     )
 
 
+def _min_locations(n: int) -> int:
+    """A trailer should move. Roughly one distinct setting per ~1.7 scenes, so 6
+    scenes -> at least 3-4 locations, capped at the scene count."""
+    return max(2, min(n, round(n / 1.7)))
+
+
+_SHOT_CYCLE = ("wide", "close", "medium")
+
+
+def _dedupe_shot_scales(scenes: list[dict]) -> None:
+    """Safety net: if the model repeated a shot scale back-to-back, rotate the
+    later one so we never cut same-to-same. Mutates in place."""
+    valid = {"wide", "medium", "close"}
+    for i, s in enumerate(scenes):
+        sc = str(s.get("shot_scale", "")).strip().lower()
+        if sc not in valid:
+            sc = _SHOT_CYCLE[i % 3]
+        if i > 0 and sc == scenes[i - 1]["shot_scale"]:
+            # pick any scale different from both neighbours
+            prev = scenes[i - 1]["shot_scale"]
+            nxt = str(scenes[i + 1].get("shot_scale", "")).strip().lower() if i + 1 < len(scenes) else ""
+            sc = next((c for c in _SHOT_CYCLE if c != prev and c != nxt), _SHOT_CYCLE[i % 3])
+        s["shot_scale"] = sc
+
+
 def scene_messages(idea: str, script: str, sheet_text: str, notes: list[str] | None = None,
                    target: int | None = None, duration: int | None = None) -> list[dict]:
     n = target or max_scenes()
@@ -385,10 +414,25 @@ def scene_messages(idea: str, script: str, sheet_text: str, notes: list[str] | N
               "look cheap; fill them unless the scene is deliberately isolated.\n"
               "Reuse the character sheet's descriptions exactly — the same person must look the "
               "same in every scene.\n\n"
+              "VARIETY IS MANDATORY — a trailer moves; it does not circle one moment:\n"
+              f"- LOCATION: these {n} scenes must span AT LEAST {_min_locations(n)} DISTINCT "
+              "settings drawn from across the beat sheet. Do not shoot most of it in one place. "
+              "If two beats share a location, change what we see within it (inside vs outside, "
+              "street vs rooftop, front vs back).\n"
+              "- SHOT SCALE: give every scene a 'shot_scale' of exactly one of "
+              "'wide' | 'medium' | 'close'. NEVER use the same scale on two consecutive scenes — "
+              "cut wide→close→medium, never medium→medium. Open on a wide that sets the world; "
+              "land the last beat on a close.\n"
+              "- TIME/LIGHT: vary time of day or lighting across the scenes wherever the story "
+              "allows (day/night, dawn/dusk, interior tungsten/exterior sun, neon/shadow). Put "
+              "it in 'lighting'.\n\n"
               "Respond with ONLY a JSON array:\n"
               '[{"number":1,"title":"short scene title",'
               '"action":"subject + verb + object — what physically happens",'
               '"description":"what we see, visually concrete",'
+              '"setting":"where this scene takes place — be specific",'
+              '"shot_scale":"wide|medium|close",'
+              '"lighting":"time of day / light quality",'
               '"background":"crowds/traffic/weather/background life in the shot",'
               '"camera":"lens/movement, e.g. 50mm slow push","framing":"e.g. medium close-up, low angle"}]\n'
               "No markdown, no commentary."
@@ -476,16 +520,31 @@ def t2v_prompt(scene: dict, sheet_text: str = "", look: str = "",
     then who is in it, then style and camera. Action leads because a camera-only
     prompt renders a static plate.
     """
+    _SCALE_CUE = {
+        "wide": "wide establishing shot, full body, lots of environment",
+        "medium": "medium shot, waist up",
+        "close": "close-up, face and hands fill the frame",
+    }
     parts = []
+    # Shot scale leads the framing so each clip is visibly a different size.
+    scale = str(scene.get("shot_scale", "")).strip().lower()
+    if scale in _SCALE_CUE:
+        parts.append(_SCALE_CUE[scale])
     action = str(scene.get("action", "")).strip()
     desc = str(scene.get("description", "")).strip()
     if action:
         parts.append(action)
     if desc and desc != action:
         parts.append(desc)
+    setting = str(scene.get("setting", "")).strip()
+    if setting:
+        parts.append(f"Location: {setting}")
     background = str(scene.get("background", "")).strip()
     if background:
         parts.append(background)
+    lighting = str(scene.get("lighting", "")).strip()
+    if lighting:
+        parts.append(lighting)
     if sheet_text:
         parts.append(f"Characters (keep consistent): {sheet_text}")
     if look:
@@ -555,8 +614,12 @@ def normalize_scenes(parsed: Any, target: int | None = None,
             "title": str(raw.get("title", "") or f"Scene {i}").strip(),
             "action": str(raw.get("action", "") or "").strip(),
             "description": str(raw.get("description", "") or "").strip(),
+            "setting": str(raw.get("setting", "") or "").strip(),
+            "shot_scale": str(raw.get("shot_scale", "") or "").strip().lower(),
+            "lighting": str(raw.get("lighting", "") or "").strip(),
             "background": str(raw.get("background", "") or "").strip(),
             "camera": str(raw.get("camera", "") or "").strip(),
             "framing": str(raw.get("framing", "") or "").strip(),
         })
+    _dedupe_shot_scales(scenes)
     return scenes
