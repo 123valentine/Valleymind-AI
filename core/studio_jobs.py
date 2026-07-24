@@ -132,9 +132,14 @@ def max_clips_cap() -> int:
 
 
 def submit_batch() -> int:
-    """How many clips may be in flight at once (throttle to stay under
-    Alibaba's concurrency limit). Backs off automatically on 429s."""
-    return max(1, _i("STUDIO_SUBMIT_BATCH", 5))
+    """How many clips may be in flight at once.
+
+    Measured, not guessed: a true simultaneous burst of 8 submissions returned
+    6x 200 and 2x 429, so Alibaba's concurrent-submission ceiling is ~6 (which
+    is why batch 5 saw zero 429s). Default to 6 — a full default trailer
+    submits at once, and larger runs keep 6 in flight and drain, avoiding 429
+    storms entirely. The auto-backoff still catches anything above this."""
+    return max(1, _i("STUDIO_SUBMIT_BATCH", 6))
 
 
 def poll_interval() -> float:
