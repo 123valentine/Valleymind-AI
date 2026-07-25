@@ -321,6 +321,8 @@
      transparent PNG renders cleanly on both themes with no opaque box behind it. */
   .studio-avatar-img { width:100%; height:100%; object-fit:cover; object-position:top center; display:block; }
   #personaBtnAvatar { width:24px; height:24px; border-radius:50%; object-fit:cover; object-position:top center; margin-left:-3px; flex-shrink:0; display:block; }
+  @keyframes micPulse { 0%,100%{ box-shadow:0 0 0 0 rgba(239,68,68,0.45); } 50%{ box-shadow:0 0 0 7px rgba(239,68,68,0); } }
+  #micBtn.mic-listening { animation: micPulse 1.2s ease-out infinite; color:#ef4444 !important; }
   .studio-stage-meta { flex:1; min-width:0; }
   .studio-persona { color:#f1f5f9; font-size:14px; font-weight:700; font-family:'Inter',sans-serif; }
   .studio-role { color:#64748b; font-size:11px; text-transform:uppercase; letter-spacing:0.12em; font-family:'Space Grotesk',sans-serif; margin-top:2px; }
@@ -2953,7 +2955,7 @@ async function playMarcusVoice(text, voice) {
 // synthesise — unconfigured, over the budget cap, or offline.
 var _personaAudio = null;
 async function speakPersona(text, persona) {
-    if (isVoiceMuted || !text) return;
+    if (!text) return;
     try {
         var res = await apiFetch("/api/tts", {
             method: "POST",
@@ -3158,7 +3160,87 @@ async function submitSuggestion() {
     }
 }
 
-function toggleVoice() {}
+// ── Part 1: voice input (speech-to-text) for normal chat ───────────────────
+// Opt-in mic button. Uses the Web Speech API (Chrome/Edge/Android Chrome; limited
+// on Safari, unsupported on Firefox). Recognition stays running and we decide
+// end-of-speech with a silence debounce, so a mid-sentence pause never submits
+// early. A turn spoken via the mic gets its reply read aloud in the persona's
+// voice; typed turns stay silent.
+var _recognition = null;
+var _listening = false;
+var _sttFinal = "";
+var _sttTimer = null;
+var _voiceTurn = false;
+var _sttEndMs = 1500;   // trailing silence that counts as "done speaking"
+
+function speechRecognitionSupported() {
+    return !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+}
+
+function setMicUI(active) {
+    var btn = document.getElementById("micBtn");
+    if (!btn) return;
+    // The .mic-listening class (see CSS) carries both the red colour and the pulse.
+    btn.classList.toggle("mic-listening", active);
+    btn.title = active ? "Listening… tap to stop" : "Speak your message";
+}
+
+function toggleVoice() {
+    if (!speechRecognitionSupported()) {
+        alert("Voice input isn't supported in this browser. Chrome, Edge, or Android Chrome work best.");
+        return;
+    }
+    if (_listening) { stopListening(); return; }
+    startListening();
+}
+
+function startListening() {
+    if (_listening || !speechRecognitionSupported()) return;
+    var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    try { _recognition = new SR(); } catch (e) { return; }
+    _recognition.lang = navigator.language || "en-US";
+    _recognition.interimResults = true;
+    _recognition.continuous = true;
+    _sttFinal = "";
+    var input = document.getElementById("chatInput");
+    _recognition.onresult = function (ev) {
+        var interim = "";
+        for (var i = ev.resultIndex; i < ev.results.length; i++) {
+            if (ev.results[i].isFinal) _sttFinal += ev.results[i][0].transcript;
+            else interim += ev.results[i][0].transcript;
+        }
+        if (input) { input.value = (_sttFinal + interim).trim(); if (typeof autoGrowInput === "function") autoGrowInput(); }
+        if (_sttTimer) clearTimeout(_sttTimer);
+        _sttTimer = setTimeout(endOfSpeech, _sttEndMs);   // wait for a real pause
+    };
+    _recognition.onerror = function (ev) {
+        if (ev.error === "not-allowed" || ev.error === "service-not-allowed") {
+            stopListening();
+            alert("Microphone access is blocked. Allow mic access in your browser to use voice.");
+        }
+    };
+    _recognition.onend = function () { if (_listening) { try { _recognition.start(); } catch (e) {} } };
+    try { _recognition.start(); } catch (e) {}
+    _listening = true;
+    setMicUI(true);
+    if (input) input.placeholder = "Listening…  (tap mic to stop)";
+}
+
+function endOfSpeech() {
+    var input = document.getElementById("chatInput");
+    var text = ((input && input.value) || "").trim();
+    stopListening();
+    if (text) { _voiceTurn = true; window.send(); }
+}
+
+function stopListening() {
+    _listening = false;
+    if (_sttTimer) { clearTimeout(_sttTimer); _sttTimer = null; }
+    if (_recognition) { try { _recognition.onend = null; _recognition.stop(); } catch (e) {} }
+    setMicUI(false);
+    var input = document.getElementById("chatInput");
+    if (input && typeof crewMember === "function") input.placeholder = "Reply to " + crewMember(currentPersona).name + "...";
+}
 function setTool() {}
 function setColor() {}
 function clearCanvas() {}
@@ -5032,6 +5114,8 @@ window.send = async function () {
     if (!authCheckComplete || isThinking) return;
     const input = document.getElementById("chatInput");
     const text = input.value.trim();
+    // Read this reply aloud only when the turn came from voice (opt-in, never default).
+    window._speakThisReply = _voiceTurn; _voiceTurn = false;
 
     // An attached video goes to the vision model, not the chat router.
     if (pendingVideoFile) {
@@ -5336,7 +5420,7 @@ window.send = async function () {
             });
         }
 
-        if (!isVoiceMuted && fullReply) {
+        if (window._speakThisReply && fullReply) {
             speakPersona(fullReply, currentPersona);
         }
     } catch (err) {
@@ -5382,7 +5466,7 @@ window.send = async function () {
                 });
             }
 
-            if (!isVoiceMuted && reply) {
+            if (window._speakThisReply && reply) {
                 speakPersona(reply, currentPersona);
             }
         } catch (fallbackErr) {
