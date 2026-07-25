@@ -310,12 +310,17 @@
   .studio-stage.done { border-color:rgba(34,197,94,0.28); }
   .studio-stage-head { display:flex; align-items:center; gap:12px; }
   .studio-avatar {
-    width:38px; height:38px; border-radius:50%; flex-shrink:0;
+    width:38px; height:38px; border-radius:50%; flex-shrink:0; overflow:hidden;
     display:flex; align-items:center; justify-content:center;
     font-family:'Space Grotesk',sans-serif; font-weight:800; font-size:15px;
     background:rgba(0,212,255,0.1); color:#00d4ff; border:1px solid rgba(0,212,255,0.25);
   }
   .studio-stage.done .studio-avatar { background:rgba(34,197,94,0.1); color:#22c55e; border-color:rgba(34,197,94,0.3); }
+  /* Persona cut-out avatars. Using <img> means the light-theme invert filter
+     re-inverts them back to true colors (see html.theme-light img), so a
+     transparent PNG renders cleanly on both themes with no opaque box behind it. */
+  .studio-avatar-img { width:100%; height:100%; object-fit:cover; object-position:top center; display:block; }
+  #personaBtnAvatar { width:24px; height:24px; border-radius:50%; object-fit:cover; object-position:top center; margin-left:-3px; flex-shrink:0; display:block; }
   .studio-stage-meta { flex:1; min-width:0; }
   .studio-persona { color:#f1f5f9; font-size:14px; font-weight:700; font-family:'Inter',sans-serif; }
   .studio-role { color:#64748b; font-size:11px; text-transform:uppercase; letter-spacing:0.12em; font-family:'Space Grotesk',sans-serif; margin-top:2px; }
@@ -1088,6 +1093,7 @@
           <div id="personaSwitcher" style="position:relative;">
             <button id="personaBtn" onclick="togglePersonaMenu()" title="Who you're talking to"
               style="height:36px;padding:0 10px;border-radius:18px;background:rgba(0,212,255,0.1);border:1px solid rgba(0,212,255,0.25);cursor:pointer;display:flex;align-items:center;gap:6px;color:#00d4ff;font-size:12px;font-weight:700;font-family:'Space Grotesk',sans-serif;transition:all 0.2s;white-space:nowrap;">
+              <img id="personaBtnAvatar" src="/static/avatars/marcus.png" alt="">
               <span id="personaBtnLabel">Marcus</span>
               <i data-lucide="chevron-up" style="width:13px;height:13px;"></i>
             </button>
@@ -3439,10 +3445,11 @@ function togglePersonaMenu() {
     CREW.forEach(function (m) {
         var item = document.createElement("div");
         var active = m.key === currentPersona;
-        item.style.cssText = "padding:9px 12px;border-radius:8px;cursor:pointer;transition:all 0.12s;" +
+        item.style.cssText = "padding:9px 10px;border-radius:8px;cursor:pointer;transition:all 0.12s;display:flex;align-items:center;gap:10px;" +
             (active ? "background:rgba(0,212,255,0.1);" : "");
-        item.innerHTML = '<div style="color:' + (active ? "#00d4ff" : "#e2e8f0") + ';font-size:13px;font-weight:700;">' + m.name + '</div>' +
-            '<div style="color:#64748b;font-size:10.5px;margin-top:2px;">' + m.role + '</div>';
+        item.innerHTML = '<img src="/static/avatars/' + m.key + '.png" alt="" style="width:30px;height:30px;border-radius:50%;object-fit:cover;object-position:top center;flex-shrink:0;">' +
+            '<div><div style="color:' + (active ? "#00d4ff" : "#e2e8f0") + ';font-size:13px;font-weight:700;">' + m.name + '</div>' +
+            '<div style="color:#64748b;font-size:10.5px;margin-top:2px;">' + m.role + '</div></div>';
         item.onmouseover = function () { if (!active) item.style.background = "rgba(255,255,255,0.05)"; };
         item.onmouseout = function () { if (!active) item.style.background = "transparent"; };
         item.onclick = function () { setPersona(m.key); menu.style.display = "none"; };
@@ -3456,6 +3463,8 @@ function setPersona(key) {
     var m = crewMember(currentPersona);
     var lbl = document.getElementById("personaBtnLabel");
     if (lbl) lbl.textContent = m.name;
+    var av = document.getElementById("personaBtnAvatar");
+    if (av) av.src = "/static/avatars/" + m.key + ".png";
     var input = document.getElementById("chatInput");
     if (input) input.placeholder = "Reply to " + m.name + "...";
     var sInput = document.getElementById("studioPrompt");
@@ -3883,7 +3892,12 @@ function renderStudioStages() {
 
         var avatar = document.createElement("div");
         avatar.className = "studio-avatar";
-        avatar.textContent = stage.initial;
+        var avImg = document.createElement("img");
+        avImg.className = "studio-avatar-img";
+        avImg.src = "/static/avatars/" + stage.persona.toLowerCase() + ".png";
+        avImg.alt = stage.persona;
+        avImg.onerror = function () { if (avImg.parentNode) avatar.removeChild(avImg); avatar.textContent = stage.initial; };
+        avatar.appendChild(avImg);
         head.appendChild(avatar);
 
         var meta = document.createElement("div");
