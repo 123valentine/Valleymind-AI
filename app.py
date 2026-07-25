@@ -845,7 +845,36 @@ def suggestions():
 
 @app.route("/tts/<path:filename>", methods=["GET"])
 def tts_file(filename):
-    return send_from_directory(_tts_folder, filename)
+    local = _tts_folder / filename
+    if local.exists():
+        return send_from_directory(_tts_folder, filename)
+    # Persona TTS audio is cached in R2 under assets/tts/<filename>; hand back a
+    # short-lived presigned link so the bytes stream straight from Cloudflare.
+    try:
+        from core import r2_storage
+        key = f"assets/tts/{filename}"
+        if r2_storage.available() and r2_storage.object_exists(key):
+            return redirect(r2_storage.presigned_url(key, expires=3600), code=302)
+    except Exception as exc:
+        print(f"[TTS] R2 serve miss for {filename}: {exc}")
+    return ("not found", 404)
+
+
+@app.route("/api/tts", methods=["POST"])
+def api_tts():
+    """Synthesise a persona's line server-side so it sounds identical on every
+    device. Cached in R2; metered against the studio budget cap."""
+    user_id, error = _require_login()
+    if error:
+        return error
+    data = request.get_json(silent=True) or {}
+    text = str(data.get("text") or "").strip()
+    persona = normalize_persona(str(data.get("persona") or "marcus"))
+    if not text:
+        return jsonify({"status": "error", "message": "no text"}), 400
+    from core.tts import synthesize_persona
+    result = synthesize_persona(text, persona)
+    return jsonify({"status": "success", **result})
 
 
 @app.route("/login", methods=["POST"])

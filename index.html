@@ -2948,6 +2948,32 @@ async function playMarcusVoice(text, voice) {
     browserSpeak(text);
 }
 
+// Play a persona's reply in their fixed, server-generated Qwen voice (identical
+// on every device). Falls back to browser speechSynthesis when the server can't
+// synthesise — unconfigured, over the budget cap, or offline.
+var _personaAudio = null;
+async function speakPersona(text, persona) {
+    if (isVoiceMuted || !text) return;
+    try {
+        var res = await apiFetch("/api/tts", {
+            method: "POST",
+            credentials: "include",
+            headers: authHeaders({ "Content-Type": "application/json" }),
+            body: JSON.stringify({ text: text, persona: persona || currentPersona }),
+            timeoutMs: 60000
+        });
+        var data = await res.json();
+        if (data && data.engine === "qwen_tts" && data.url) {
+            if (window.speechSynthesis) window.speechSynthesis.cancel();
+            if (_personaAudio) { try { _personaAudio.pause(); } catch (e) {} }
+            _personaAudio = new Audio(data.url);
+            _personaAudio.play().catch(function () { browserSpeak(text); });
+            return;
+        }
+    } catch (e) { /* fall through to browser speech */ }
+    browserSpeak(text);
+}
+
 function quickSend(button) {
     const input = document.getElementById("chatInput");
     if (!input || !button) return;
@@ -5311,7 +5337,7 @@ window.send = async function () {
         }
 
         if (!isVoiceMuted && fullReply) {
-            browserSpeak(fullReply);
+            speakPersona(fullReply, currentPersona);
         }
     } catch (err) {
         if (!streamError) streamError = err.message || "Connection error";
@@ -5357,7 +5383,7 @@ window.send = async function () {
             }
 
             if (!isVoiceMuted && reply) {
-                browserSpeak(reply);
+                speakPersona(reply, currentPersona);
             }
         } catch (fallbackErr) {
             removeThinkingIndicator(thinking);
