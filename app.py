@@ -877,6 +877,23 @@ def api_tts():
     return jsonify({"status": "success", **result})
 
 
+@app.route("/api/roundtable", methods=["POST"])
+def api_roundtable():
+    """The Round Table: one 'director' LLM call plans which crew members respond
+    to a message, in what order. TTS per turn is done client-side via /api/tts."""
+    user_id, error = _require_login()
+    if error:
+        return error
+    data = request.get_json(silent=True) or {}
+    message = str(data.get("message") or "").strip()
+    history = data.get("history")
+    if not message:
+        return jsonify({"status": "error", "message": "no message"}), 400
+    from core.roundtable import orchestrate
+    turns = orchestrate(message, history if isinstance(history, list) else [])
+    return jsonify({"status": "success", "turns": turns})
+
+
 @app.route("/login", methods=["POST"])
 @app.route("/auth/login", methods=["POST"])
 def login():
