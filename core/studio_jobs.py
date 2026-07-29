@@ -32,7 +32,7 @@ import os
 import threading
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import core.video_i2v as i2v
 from core.db import studio_jobs_collection, studio_runs_collection, video_spend_collection
@@ -45,6 +45,7 @@ JOB_TERMINAL = ("done", "failed", "budget_capped", "aborted")
 
 _locks: dict[str, threading.Lock] = {}
 _locks_guard = threading.Lock()
+_watchdog_started = False
 
 
 # ── Configuration (all env-overridable) ────────────────────────────────────
@@ -294,6 +295,67 @@ def new_job(user_id: str, scenes: list, frame_sources: dict, *, target_clips: in
     return job
 
 
+def new_upload_job(user_id: str, uploaded: list, *, cards: dict | None = None,
+                   logline: str = "") -> dict:
+    """Build a job to join footage the USER uploaded (not generated clips).
+
+    The clips are already finished and stored, so they enter as ``DONE`` and the
+    driver goes straight to the ONE assembly path — the exact same finalize,
+    resume, and terminal-state guarantees as a generated trailer. Nothing is
+    generated and nothing is charged here; assembly is free.
+
+    ``uploaded``: ordered ``[{"video_url", "title"}]`` for the stored uploads.
+    """
+    clips = []
+    for i, u in enumerate(uploaded, start=1):
+        clips.append({
+            "number": i,
+            "title": (u.get("title") or f"Clip {i}")[:80],
+            "mode": "upload",
+            "motion": "", "prompt": "", "image_ref": "",
+            "status": DONE,               # already shot — go straight to the join
+            "task_id": "",
+            "video_url": u.get("video_url", ""),
+            "error": "",
+        })
+    job = {
+        "_id": uuid.uuid4().hex,
+        "user_id": user_id,
+        "status": "running",
+        "source": "upload",              # gates review off; labels the run
+        "test_mode": False,
+        "duration": None,
+        "clips": clips,
+        "cards": {str(k): str(v) for k, v in (cards or {}).items() if str(v).strip()},
+        "logline": logline,
+        "beats": [],
+        "cut_review": None,
+        "vl_spend_usd": 0.0,
+        "final_video": "",
+        "assembly_mode": "hard_cut",
+        "spend_usd": 0.0,
+        "cost_per_clip": 0.0,
+        "est_cost_usd": 0.0,
+        "missing_scenes": [],
+        "observed_concurrency": 0,
+        "rate_limited_at": None,
+        "error": "",
+        "created_at": _now_iso(),
+        "updated_at": _now_iso(),
+        "heartbeat": _now_iso(),
+    }
+    save_job(job)
+    coll = studio_runs_collection()
+    if coll is not None:
+        try:
+            coll.update_one({"_id": user_id},
+                            {"$set": {"job_id": job["_id"], "job_status": "running"}},
+                            upsert=True)
+        except Exception as exc:
+            print(f"[JOB] could not tag studio_run (upload): {exc}")
+    return job
+
+
 def get_job(job_id: str) -> dict | None:
     coll = studio_jobs_collection()
     if coll is None:
@@ -342,6 +404,7 @@ def public_view(job: dict) -> dict:
         "job_id": job.get("_id"),
         "status": job.get("status"),
         "test_mode": job.get("test_mode", False),
+        "source": job.get("source", "generated"),
         "total": len(clips),
         "clips": [
             {"number": c["number"], "title": c["title"], "status": c["status"],
@@ -611,45 +674,132 @@ def _store_clip(media, job: dict, clip: dict, url: str) -> None:
         clip["error"] = "could not store clip"
 
 
-def _finalize(job_id: str, media, capped: bool = False) -> None:
-    job = get_job(job_id)
-    if not job:
+def _touch_heartbeat(job_id: str) -> None:
+    """Bump ONLY the heartbeat (and the assembly claim) with a targeted write, so
+    the long finalize/assembly stretch keeps signalling "a driver is alive on
+    this" without a full-document replace that could clobber a concurrent write.
+
+    A fresh heartbeat here is what stops the stall detector from crying wolf
+    mid-assembly AND stops a second worker (or the watchdog) from starting a
+    duplicate join."""
+    coll = studio_jobs_collection()
+    if coll is None:
         return
+    try:
+        now = _now_iso()
+        coll.update_one({"_id": job_id, "status": "running"},
+                        {"$set": {"heartbeat": now, "assembling_at": now}})
+    except Exception as exc:
+        print(f"[JOB] heartbeat touch failed: {exc}")
+
+
+def _claim_finalize(job_id: str) -> bool:
+    """Atomically claim the right to finalize/assemble this job so two workers
+    can never assemble the same clips at once. The claim is kept alive by the
+    finalize heartbeat; it is considered abandoned (and re-claimable) once it
+    goes stale, so a worker that dies mid-join never blocks recovery.
+
+    Returns True if the claim is ours (proceed), False if someone else holds a
+    live claim (skip — they are already on it)."""
+    coll = studio_jobs_collection()
+    if coll is None:
+        return True  # no DB (local dev) — single process, nothing to race with
+    ttl = max(180.0, driver_stale_secs() * 3)
+    now = datetime.now(timezone.utc)
+    stale = (now - timedelta(seconds=ttl)).isoformat()
+    owner = f"{os.getpid()}-{threading.get_ident()}"
+    try:
+        res = coll.find_one_and_update(
+            {"_id": job_id, "status": "running",
+             "$or": [{"assembling_at": {"$exists": False}},
+                     {"assembling_at": None},
+                     {"assembling_at": {"$lt": stale}}]},
+            {"$set": {"assembling_at": now.isoformat(), "assembling_owner": owner}},
+        )
+        return res is not None
+    except Exception as exc:
+        print(f"[JOB] finalize claim check failed (proceeding): {exc}")
+        return True
+
+
+def _finalize(job_id: str, media=None, capped: bool = False) -> None:
+    """Join the finished clips into one trailer, SAVE it, and drive the job to a
+    terminal state — reliably, even if the process running this dies partway.
+
+    The old finalize did everything (fetch → concat → upload → Elena's vision
+    review) in one unbroken, heartbeat-free stretch and only wrote the result at
+    the very end. A death anywhere in that window — a real risk when ffmpeg and a
+    full VL pass spike memory on a 512MB box — stranded a finished trailer and
+    left the job stuck on "running" forever. This version:
+      * heartbeats through the whole stretch (live driver never looks dead);
+      * persists the trailer + terminal status the INSTANT the join succeeds,
+        BEFORE any review, so a finished cut is never lost;
+      * always lands on done / failed / budget_capped — never "running".
+    """
+    job = get_job(job_id)
+    if not job or job.get("status") in JOB_TERMINAL:
+        return
+
+    # Claim the join so a second worker / the watchdog can't duplicate it.
+    if not _claim_finalize(job_id):
+        print(f"[JOB] {job_id[:8]} finalize already claimed elsewhere; skipping")
+        return
+    _touch_heartbeat(job_id)  # a driver is on it, starting now
+
     clips = job["clips"]
     done = [c for c in clips if c["status"] == DONE and c.get("video_url")]
-    job["missing_scenes"] = sorted(c["number"] for c in clips if c["status"] in (FAILED, ABORTED))
 
+    final_url, final_mode, asm_err = "", "hard_cut", ""
     if len(done) >= 2:
-        final = _assemble(job["user_id"], done, media, cards=job.get("cards") or {})
-        if final.get("video_url"):
-            job["final_video"] = final["video_url"]
-            job["assembly_mode"] = final.get("mode", "hard_cut")
-        else:
-            job["error"] = final.get("error", "assembly failed")
+        result = assemble_sources(
+            job["user_id"],
+            [{"number": c["number"], "title": c.get("title", ""),
+              "video_url": c.get("video_url", ""), "cache_path": c.get("cache_path", "")}
+             for c in done],
+            cards=job.get("cards") or {},
+            on_progress=lambda: _touch_heartbeat(job_id),
+        )
+        final_url = result.get("video_url", "")
+        final_mode = result.get("mode", "hard_cut")
+        asm_err = result.get("error", "")
     elif len(done) == 1:
-        job["final_video"] = done[0]["video_url"]  # a single clip is the trailer
+        final_url = done[0]["video_url"]  # a single clip is the trailer
 
-    # Elena watches the finished cut start to finish.
-    if job.get("final_video"):
-        try:
-            _review_cut(job)
-        except Exception as exc:
-            print(f"[JOB] cut review crashed (non-fatal): {exc}")
-
+    # PERSIST THE RESULT NOW — before Elena's review. Re-read first so we don't
+    # clobber a clip that finished while we were joining.
+    job = get_job(job_id) or job
+    if job.get("status") in JOB_TERMINAL:
+        return
+    job["missing_scenes"] = sorted(
+        c["number"] for c in job["clips"] if c["status"] in (FAILED, ABORTED))
     job["finalize_attempts"] = int(job.get("finalize_attempts", 0)) + 1
-    if job["status"] == "running":
-        if job.get("final_video"):
-            job["status"] = "budget_capped" if capped else "done"
-        else:
-            # Clips exist but no trailer came out — that is a FAILURE, and the
-            # Studio must say so instead of quietly leaving loose clips.
-            job["status"] = "failed"
-            if not job.get("error"):
-                job["error"] = ("Could not join the clips into a trailer."
-                                if done else "No clips were produced.")
+    job["assembling_at"] = None
+    job["assembling_owner"] = None
+    if final_url:
+        job["final_video"] = final_url
+        job["assembly_mode"] = final_mode
+        job["error"] = ""
+        job["status"] = "budget_capped" if capped else "done"
+    else:
+        # Clips exist but no trailer came out — that is a FAILURE, and the Studio
+        # must say so plainly instead of hanging or leaving loose clips.
+        job["status"] = "failed"
+        job["error"] = asm_err or ("Could not join the clips into a trailer."
+                                   if done else "No clips were produced.")
     job["heartbeat"] = _now_iso()
     save_job(job)
     _mirror_to_studio_run(job)
+
+    # Review is OFF the critical path now: the job is already done and the
+    # trailer is already saved and visible. Elena's take is a bonus.
+    if job.get("final_video") and not job.get("cut_review") \
+            and job.get("source") != "upload":
+        try:
+            _review_cut(job)          # fills job["cut_review"] in place
+            save_job(job)
+            _mirror_to_studio_run(job)
+        except Exception as exc:
+            print(f"[JOB] cut review crashed (non-fatal): {exc}")
 
 
 def card_seconds() -> float:
@@ -718,53 +868,86 @@ def _review_cut(job: dict) -> None:
             pass
 
 
-def _assemble(user_id: str, done_clips: list, media, cards: dict | None = None) -> dict:
-    """Hard-cut concat of the finished clips (crossfade stays opt-in via
-    STUDIO_ASSEMBLY_MODE). Pulls each clip from R2/GridFS, joins, stores."""
+def assemble_sources(user_id: str, sources: list, cards: dict | None = None,
+                     mode: str | None = None, on_progress=None) -> dict:
+    """THE one assembly path — join ordered video sources into a single video and
+    store it in R2, returning ``{"video_url", "mode"}`` or ``{"error"}``.
+
+    Shared by BOTH generated trailers (finalize) and user-UPLOADED footage, so
+    there is a single, tested join with a single set of guarantees.
+
+    ``sources``: ordered ``[{"number", "title", "video_url", optional
+    "cache_path"}]``. Each source is read from its local cache if present (no
+    network), else pulled from storage (R2 → GridFS → disk). A source that can't
+    be fetched is reported by number — never silently dropped into a short cut.
+
+    ``on_progress``: called between the heavy steps so the caller can keep a
+    heartbeat fresh through a join that can run for minutes.
+    """
     import shutil
     import tempfile
 
     import core.video_assembly as va
-    from core.media_manager import fetch_media_bytes
+    from core.media_manager import get_media_manager, fetch_media_bytes
 
     if not va.available():
-        return {"error": "ffmpeg not available"}
+        return {"error": "the video assembler (ffmpeg) isn't available"}
 
-    mode = os.getenv("STUDIO_ASSEMBLY_MODE", "hard_cut").strip().lower()
-    workdir = tempfile.mkdtemp(prefix="studio_job_asm_")
-    local_paths = []
-    ordered = sorted(done_clips, key=lambda c: c.get("number", 0))
+    def beat():
+        if on_progress:
+            try:
+                on_progress()
+            except Exception:
+                pass
+
+    mode = (mode or os.getenv("STUDIO_ASSEMBLY_MODE", "hard_cut")).strip().lower()
+    workdir = tempfile.mkdtemp(prefix="studio_asm_")
+    ordered = sorted(sources, key=lambda c: c.get("number", 0))
+    local_paths, fetch_failed = [], []
     try:
         for idx, clip in enumerate(ordered):
             # 1. Local cache written when the clip was stored — no network at all.
             cached = clip.get("cache_path") or ""
             if cached and os.path.exists(cached):
                 local_paths.append(cached)
+                beat()
                 continue
             # 2. Otherwise pull it back out of storage (R2 → GridFS → disk).
-            data = fetch_media_bytes(clip["video_url"])
+            url = clip.get("video_url") or ""
+            data = fetch_media_bytes(url) if url else None
             if not data:
+                fetch_failed.append(clip.get("number"))
+                beat()
                 continue
             dest = os.path.join(workdir, f"clip_{idx:03d}.mp4")
             with open(dest, "wb") as f:
                 f.write(data)
             local_paths.append(dest)
+            beat()
 
         if len(local_paths) < 2:
+            if fetch_failed:
+                return {"error": f"couldn't fetch clip(s) {fetch_failed} for assembly"}
             return {"error": "not enough clips to assemble"}
+
         sequence = _build_sequence(local_paths, ordered, cards or {}, workdir)
+        beat()
         out_path = os.path.join(workdir, "trailer.mp4")
         ok, err = va.assemble(sequence, out_path, mode=mode)
+        beat()
         if not ok or not os.path.exists(out_path):
             return {"error": err or "assembly failed"}
+
+        media = get_media_manager(user_id)
         rec = media.save_media(out_path, media_type="video", prompt="Studio trailer",
                                provider="StudioAssembly", chat_id=f"studio_{user_id}")
         if not rec:
-            return {"error": "could not store trailer"}
+            return {"error": "joined the clips but couldn't store the trailer"}
+        beat()
         return {"video_url": rec["local_path"], "mode": mode}
     except Exception as exc:
         print(f"[JOB] assembly crashed: {exc}")
-        return {"error": str(exc)}
+        return {"error": f"assembly error: {exc}"}
     finally:
         shutil.rmtree(workdir, ignore_errors=True)
 
@@ -814,3 +997,54 @@ def maybe_resume(job_id: str) -> None:
     if stale:
         print(f"[JOB] resuming stale job {job_id}")
         launch(job_id)
+
+
+def resume_stale_jobs(max_jobs: int = 25) -> int:
+    """Relaunch every non-terminal job whose driver has gone quiet.
+
+    This is the server-side safety net that makes a run finish even when the
+    user has CLOSED THE BROWSER — recovery no longer depends on someone polling.
+    Relaunching is safe: the per-process lock, the atomic finalize claim, and the
+    terminal-status guards make a duplicate launch a no-op."""
+    coll = studio_jobs_collection()
+    if coll is None:
+        return 0
+    cutoff = (datetime.now(timezone.utc) - timedelta(seconds=driver_stale_secs())).isoformat()
+    try:
+        stale = list(coll.find(
+            {"status": {"$nin": list(JOB_TERMINAL)},
+             "$or": [{"heartbeat": {"$exists": False}},
+                     {"heartbeat": None},
+                     {"heartbeat": {"$lt": cutoff}}]},
+            {"_id": 1}).limit(max_jobs))
+    except Exception as exc:
+        print(f"[JOB] watchdog scan failed: {exc}")
+        return 0
+    for d in stale:
+        launch(d["_id"])
+    if stale:
+        print(f"[JOB] watchdog relaunched {len(stale)} stale job(s)")
+    return len(stale)
+
+
+def start_watchdog(interval: float | None = None) -> None:
+    """Start the background sweeper once per process (idempotent)."""
+    global _watchdog_started
+    with _locks_guard:
+        if _watchdog_started:
+            return
+        _watchdog_started = True
+    iv = interval if interval is not None else _f("STUDIO_WATCHDOG_INTERVAL", 30.0)
+
+    def _loop():
+        # A short initial delay lets the app finish booting before the first scan.
+        time.sleep(min(iv, 15.0))
+        while True:
+            try:
+                resume_stale_jobs()
+            except Exception as exc:
+                print(f"[JOB] watchdog loop error: {exc}")
+            time.sleep(iv)
+
+    threading.Thread(target=_loop, daemon=True, name="studio-watchdog").start()
+    print(f"[JOB] studio assembly watchdog started (every {iv:.0f}s)")

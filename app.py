@@ -2689,53 +2689,13 @@ def _studio_take_notes(run_id: str) -> list:
         return notes
 
 
-def _studio_assemble(user_id: str, clips: list, media) -> dict:
-    """Join the studio clips into one trailer with ffmpeg (Elena's stage).
-
-    Default is a hard-cut concat (streaming copy, ~16MB peak) which is safe on a
-    512MB instance. Crossfade transitions re-encode the whole timeline and peak
-    well above 512MB, so they are opt-in via STUDIO_ASSEMBLY_MODE=crossfade.
-    Pulls each clip out of GridFS to a temp file, assembles, stores the result.
-    """
-    import tempfile, shutil
-    import core.video_assembly as va
-
-    if not va.available():
-        return {"error": "ffmpeg not available"}
-
-    mode = os.getenv("STUDIO_ASSEMBLY_MODE", "hard_cut").strip().lower()
-    workdir = tempfile.mkdtemp(prefix="studio_assembly_")
-    local_paths = []
-    try:
-        from core.media_manager import fetch_media_bytes
-        for i, clip in enumerate(sorted(clips, key=lambda c: c.get("number", 0))):
-            data = fetch_media_bytes(clip["video_url"])  # R2 → GridFS → disk
-            if not data:
-                continue
-            dest = os.path.join(workdir, f"clip_{i:02d}.mp4")
-            with open(dest, "wb") as f:
-                f.write(data)
-            local_paths.append(dest)
-
-        if len(local_paths) < 2:
-            return {"error": "not enough clips available to assemble"}
-
-        out_path = os.path.join(workdir, "trailer.mp4")
-        ok, err = va.assemble(local_paths, out_path, mode=mode)
-        if not ok or not os.path.exists(out_path):
-            return {"error": err or "assembly failed"}
-
-        # Persist the trailer to GridFS + gallery via the same media manager
-        rec = media.save_media(out_path, media_type="video", prompt="Studio trailer",
-                               provider="StudioAssembly", chat_id=f"studio_{user_id}")
-        if not rec:
-            return {"error": "could not store trailer"}
-        return {"video_url": rec["local_path"], "mode": mode}
-    except Exception as exc:
-        print(f"[STUDIO] assembly crashed: {exc}")
-        return {"error": str(exc)}
-    finally:
-        shutil.rmtree(workdir, ignore_errors=True)
+def _studio_assemble(user_id: str, clips: list, media=None) -> dict:
+    """Join studio clips into one trailer. Thin wrapper over the ONE assembly
+    path in ``core.studio_jobs`` so the synchronous fallback, the async job
+    finalize, and uploaded-footage all go through the exact same join (R2 fetch →
+    hard-cut concat → store), with the same guarantees and no divergent copy."""
+    import core.studio_jobs as sj
+    return sj.assemble_sources(user_id, clips, cards=None)
 
 
 def _studio_save_run(user_id: str, run: dict):
@@ -2989,10 +2949,72 @@ def api_studio_retry_assembly(job_id):
     # Re-open the job so the driver finalises it again.
     job["status"] = "running"
     job["error"] = ""
+    job["assembling_at"] = None                      # drop any stale finalize claim
+    job["assembling_owner"] = None
     job["heartbeat"] = "1970-01-01T00:00:00+00:00"   # force resume
     sj.save_job(job)
     sj.launch(job_id)
     return jsonify({"status": "success", "job": sj.public_view(sj.get_job(job_id))})
+
+
+@app.route("/api/studio/assemble-uploads", methods=["POST"])
+def api_studio_assemble_uploads():
+    """Join footage the USER uploaded into one finished video.
+
+    Same engine as a generated trailer: each upload is stored to R2, then a job
+    whose clips are already finished runs the ONE shared assembly path — so an
+    upload run gets the same resume/notify guarantees and lands in the Studio and
+    the Video Gallery. Assembly is free (nothing is generated)."""
+    user_id, error = _require_login()
+    if error:
+        return error
+    import core.studio_jobs as sj
+
+    files = [f for f in (request.files.getlist("clips")
+                         or request.files.getlist("videos"))
+             if f and f.filename]
+    if len(files) < 2:
+        return jsonify({"status": "error",
+                        "message": "Upload at least two video clips to join."}), 400
+    if len(files) > sj.max_clips_cap():
+        return jsonify({"status": "error",
+                        "message": f"Too many clips (max {sj.max_clips_cap()})."}), 400
+
+    import tempfile
+    media = get_media_manager(user_id)
+    stored = []
+    for idx, upload in enumerate(files, start=1):
+        suffix = os.path.splitext(upload.filename)[1][:8] or ".mp4"
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+        tmp_path = tmp.name
+        tmp.close()
+        try:
+            upload.save(tmp_path)
+            size_mb = os.path.getsize(tmp_path) / 1024 / 1024
+            if size_mb > _max_upload_mb:
+                return jsonify({"status": "error",
+                                "message": f"{upload.filename} is {size_mb:.0f}MB — "
+                                           f"the limit is {_max_upload_mb:.0f}MB."}), 413
+            rec = media.save_video(tmp_path, prompt=(upload.filename or f"Clip {idx}")[:200],
+                                   provider="Upload", chat_id=f"studio_upload_{user_id}")
+            if not rec:
+                return jsonify({"status": "error",
+                                "message": f"Couldn't store {upload.filename}."}), 502
+            stored.append({"video_url": rec["local_path"],
+                           "title": os.path.splitext(upload.filename)[0][:60]})
+        finally:
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+
+    if len(stored) < 2:
+        return jsonify({"status": "error",
+                        "message": "Need at least two valid clips to join."}), 400
+
+    job = sj.new_upload_job(user_id, stored)
+    sj.launch(job["_id"])
+    return jsonify({"status": "success", "job": sj.public_view(sj.get_job(job["_id"]))})
 
 
 @app.route("/api/studio/estimate", methods=["GET"])
@@ -3544,6 +3566,18 @@ def serve_frontend_assets(path):
 
     print(f"[TRACE STATIC] SPA fallback for: /{path}")
     return send_from_directory(str(PROJECT_ROOT), "index.html")
+
+
+# ── Background workers ──────────────────────────────────────────────────────
+# Studio assembly watchdog: relaunches any video job whose driver died mid-join
+# (a deploy, an OOM, the free instance sleeping) so the run reaches a terminal
+# state and the trailer gets saved even if the user closed the browser. Runs
+# once per process; safe under gunicorn (idempotent, duplicate launches no-op).
+try:
+    import core.studio_jobs as _sj_boot
+    _sj_boot.start_watchdog()
+except Exception as _exc:  # never let a watchdog hiccup stop the app from serving
+    print(f"[BOOT] could not start studio assembly watchdog: {_exc}")
 
 
 if __name__ == "__main__":
