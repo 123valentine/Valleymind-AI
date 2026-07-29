@@ -295,13 +295,43 @@
   .rt-bubble { background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.08); border-radius:14px; padding:9px 13px; color:#e2e8f0; font-size:14px; line-height:1.5; }
   .rt-msg.user .rt-who { color:#22d3ee; }
   .rt-msg.user .rt-bubble { background:rgba(0,212,255,0.12); border-color:rgba(0,212,255,0.25); }
-  .rt-inputbar { display:flex; align-items:flex-end; gap:8px; padding:12px 16px 18px; border-top:1px solid rgba(255,255,255,0.08); max-width:820px; width:100%; margin:0 auto; box-sizing:border-box; }
+  .rt-inputbar { display:flex; align-items:flex-end; gap:8px; }
   #rtInput { flex:1; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); border-radius:16px; color:white; font-size:15px; line-height:1.4; resize:none; padding:11px 14px; max-height:120px; outline:none; font-family:'Inter',sans-serif; }
   .rt-btn { width:44px; height:44px; border-radius:50%; border:none; cursor:pointer; display:flex; align-items:center; justify-content:center; flex-shrink:0; transition:all 0.2s; }
   #rtMicBtn { background:rgba(255,255,255,0.06); color:#94a3b8; }
   #rtMicBtn.listening { background:rgba(239,68,68,0.15); color:#ef4444 !important; animation:micPulse 1.2s ease-out infinite; }
   #rtSendBtn { background:#00d4ff; color:#003642; }
-  @media (max-width:640px){ .rt-stage{ gap:14px; padding-top:16px; } .rt-portrait{ width:56px; height:56px; } .rt-seat{ width:72px; } }
+  /* Per-persona mic indicator — animates only while that persona has the floor */
+  .rt-seat-mic { display:flex; align-items:center; justify-content:center; gap:4px; height:14px; color:#475569; opacity:0.3; transition:opacity 0.2s, color 0.2s; }
+  .rt-seat.speaking .rt-seat-mic { opacity:1; color:#00d4ff; }
+  .rt-eq { display:inline-flex; align-items:center; gap:2px; height:12px; }
+  .rt-eq i { width:2px; height:3px; background:currentColor; border-radius:1px; }
+  .rt-seat.speaking .rt-eq i { animation:rtEq 0.7s ease-in-out infinite; }
+  .rt-seat.speaking .rt-eq i:nth-child(2){ animation-delay:0.15s; }
+  .rt-seat.speaking .rt-eq i:nth-child(3){ animation-delay:0.3s; }
+  .rt-seat.speaking .rt-eq i:nth-child(4){ animation-delay:0.45s; }
+  @keyframes rtEq { 0%,100%{ height:3px; } 50%{ height:12px; } }
+  /* Control zone */
+  .rt-controls { max-width:820px; width:100%; margin:0 auto; box-sizing:border-box; padding:10px 16px 18px; border-top:1px solid rgba(255,255,255,0.08); }
+  .rt-entry-q { text-align:center; font-family:'Space Grotesk',sans-serif; font-weight:800; font-size:19px; color:#e2e8f0; margin:4px 0 12px; }
+  .rt-controls.voice-main .rt-inputbar { justify-content:center; align-items:center; }
+  .rt-controls.voice-main #rtMicBtn { width:62px; height:62px; order:2; }
+  .rt-controls.voice-main #rtInput { order:1; max-width:220px; }
+  .rt-controls.voice-main #rtSendBtn { order:3; }
+  /* User recording indicator */
+  .rt-recording { display:flex; align-items:center; justify-content:center; gap:12px; padding:12px 8px; flex-wrap:wrap; }
+  .rt-rec-dot { width:12px; height:12px; border-radius:50%; background:#ef4444; animation:micPulse 1.2s ease-out infinite; }
+  .rt-rec-label { color:#ef4444; font-weight:700; font-size:14px; }
+  .rt-rec-wave { display:inline-flex; align-items:center; gap:3px; height:22px; }
+  .rt-rec-wave i { width:3px; height:6px; background:#ef4444; border-radius:2px; animation:rtEq 0.8s ease-in-out infinite; }
+  .rt-rec-wave i:nth-child(2){animation-delay:.1s} .rt-rec-wave i:nth-child(3){animation-delay:.2s} .rt-rec-wave i:nth-child(4){animation-delay:.3s} .rt-rec-wave i:nth-child(5){animation-delay:.4s} .rt-rec-wave i:nth-child(6){animation-delay:.5s} .rt-rec-wave i:nth-child(7){animation-delay:.6s}
+  .rt-mini-btn { background:rgba(239,68,68,0.15); color:#ef4444; border:1px solid rgba(239,68,68,0.3); border-radius:20px; padding:6px 14px; font-size:12px; font-weight:700; cursor:pointer; }
+  /* Reply-mode chooser */
+  .rt-modes { display:flex; align-items:center; justify-content:center; gap:8px; margin-top:10px; }
+  .rt-modes-label { font-size:11px; color:#64748b; text-transform:uppercase; letter-spacing:0.06em; }
+  .rt-mode-btn { background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.12); color:#94a3b8; border-radius:20px; padding:5px 14px; font-size:12px; font-weight:700; cursor:pointer; transition:all 0.2s; }
+  .rt-mode-btn.active { background:rgba(0,212,255,0.15); border-color:rgba(0,212,255,0.4); color:#00d4ff; }
+  @media (max-width:640px){ .rt-stage{ gap:14px; padding-top:16px; } .rt-portrait{ width:56px; height:56px; } .rt-seat{ width:72px; } .rt-entry-q{ font-size:16px; } .rt-controls.voice-main #rtInput{ max-width:120px; } }
   .studio-body { flex:1; overflow-y:auto; padding:24px 32px; }
   .studio-inner { max-width:760px; margin:0 auto; }
   /* Pinned bottom input bar — mirrors the main chat composer */
@@ -1391,17 +1421,44 @@
     </button>
   </div>
   <div class="rt-stage" id="rtStage">
-    <div class="rt-seat" id="rtSeat-angelina"><div class="rt-portrait"><img src="/static/avatars/angelina.png" alt="Angelina"></div><div class="rt-name">Angelina</div><div class="rt-role">Writer</div></div>
-    <div class="rt-seat" id="rtSeat-marcus"><div class="rt-portrait"><img src="/static/avatars/marcus.png" alt="Marcus"></div><div class="rt-name">Marcus</div><div class="rt-role">Director</div></div>
-    <div class="rt-seat" id="rtSeat-elena"><div class="rt-portrait"><img src="/static/avatars/elena.png" alt="Elena"></div><div class="rt-name">Elena</div><div class="rt-role">Editor</div></div>
+    <div class="rt-seat" id="rtSeat-angelina">
+      <div class="rt-portrait"><img src="/static/avatars/angelina.png" alt="Angelina"></div>
+      <div class="rt-name">Angelina</div>
+      <div class="rt-seat-mic"><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/></svg><span class="rt-eq"><i></i><i></i><i></i><i></i></span></div>
+    </div>
+    <div class="rt-seat" id="rtSeat-marcus">
+      <div class="rt-portrait"><img src="/static/avatars/marcus.png" alt="Marcus"></div>
+      <div class="rt-name">Marcus</div>
+      <div class="rt-seat-mic"><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/></svg><span class="rt-eq"><i></i><i></i><i></i><i></i></span></div>
+    </div>
+    <div class="rt-seat" id="rtSeat-elena">
+      <div class="rt-portrait"><img src="/static/avatars/elena.png" alt="Elena"></div>
+      <div class="rt-name">Elena</div>
+      <div class="rt-seat-mic"><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/></svg><span class="rt-eq"><i></i><i></i><i></i><i></i></span></div>
+    </div>
   </div>
-  <div class="rt-status" id="rtStatus">Type or tap the mic to start the conversation.</div>
+  <div class="rt-status" id="rtStatus"></div>
   <div class="rt-transcript" id="rtTranscript"></div>
-  <div class="rt-inputbar">
-    <textarea id="rtInput" rows="1" placeholder="Say something to the room…" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();rtSendFromInput();}"></textarea>
-    <button class="rt-btn" id="rtMicBtn" onclick="rtToggleVoice()" title="Hands-free voice"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2M12 19v4"/></svg></button>
-    <button class="rt-btn" id="rtSendBtn" onclick="rtSendFromInput()" title="Send"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg></button>
+  <div class="rt-controls" id="rtControls">
+    <div class="rt-entry-q" id="rtEntryQ">What do you want to talk about?</div>
+    <div class="rt-recording" id="rtRecording" style="display:none;">
+      <span class="rt-rec-dot"></span>
+      <span class="rt-rec-label">Listening…</span>
+      <span class="rt-rec-wave"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
+      <button class="rt-mini-btn" onclick="rtStopVoice(); rtRender();">Stop</button>
+    </div>
+    <div class="rt-inputbar" id="rtInputbar">
+      <button class="rt-btn rt-mic" id="rtMicBtn" onclick="rtMicTap()" title="Speak"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2M12 19v4"/></svg></button>
+      <textarea id="rtInput" rows="1" placeholder="Speak or type…" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();rtSendFromInput();}"></textarea>
+      <button class="rt-btn rt-send" id="rtSendBtn" onclick="rtSendFromInput()" title="Send"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg></button>
+    </div>
+    <div class="rt-modes" id="rtModes">
+      <span class="rt-modes-label">Replies</span>
+      <button class="rt-mode-btn active" id="rtModeVoice" onclick="rtSetMode('voice')">Voice</button>
+      <button class="rt-mode-btn" id="rtModeText" onclick="rtSetMode('text')">Text</button>
+    </div>
   </div>
+  <audio id="rtPlayer" preload="auto" style="display:none;"></audio>
 </div>
 
 <!-- DEVELOPER MODE OVERLAY (hidden from normal users) -->
@@ -3744,18 +3801,21 @@ function closeStudio() {
     }, 400);
 }
 
-// ── The Round Table: three-way voice discussion ────────────────────────────
-// One "director" call (/api/roundtable) plans who speaks; each turn's TTS plays
-// sequentially (never overlapping) with a speaking indicator. Continuous voice
-// mode keeps the mic live so you can barge in — start talking and the current
-// speaker stops. End-of-speech uses a silence debounce, so a mid-sentence pause
-// never submits early.
+// ── The Round Table: three-way voice-first discussion room ─────────────────
+// One "director" call (/api/roundtable) reads the room and returns who speaks
+// (0-3, by relevance — not a fixed rotation). Each turn's Qwen voice plays
+// through ONE persistent, gesture-unlocked <audio> element, sequentially (never
+// overlapping). In voice mode the mic stays live for barge-in; end-of-speech
+// uses a silence debounce so a mid-sentence pause never submits early.
 var rtHistory = [];
-var rtVoiceMode = false;      // continuous hands-free (opt-in, never default)
+var rtState = "entry";        // "entry" (topic prompt) | "live"
+var rtMode = "voice";         // "voice" (spoken replies, mic-first) | "text"
 var rtRecognition = null;
 var rtListening = false;
 var rtSpeaking = false;
-var rtAudio = null;
+var rtVoiceOn = false;        // continuous listening engaged (opt-in, never default)
+var rtPlayer = null;          // persistent <audio>, unlocked on first user gesture
+var rtAudioUnlocked = false;
 var rtSttFinal = "";
 var rtSttTimer = null;
 var rtInterrupted = false;    // barge-in flag: stops the turn sequence
@@ -3767,6 +3827,11 @@ function openRoundTable() {
     if (typeof closeSidebar === "function") closeSidebar();
     var ov = document.getElementById("roundTableOverlay");
     if (!ov) return;
+    rtHistory = [];
+    rtState = "entry";
+    var tr = document.getElementById("rtTranscript"); if (tr) tr.innerHTML = "";
+    rtSetSpeaking(null);
+    rtRender();
     ov.style.display = "flex";
     requestAnimationFrame(function () { ov.classList.add("open"); });
     setTimeout(function () { ov.classList.add("open"); }, 60);
@@ -3789,6 +3854,47 @@ function closeRoundTable() {
     }, 400);
 }
 
+// Unlock audio: browsers block Audio.play() outside a user gesture, so we play a
+// silent clip through the persistent element on the first tap. After that,
+// programmatic turn playback is allowed — this is what makes the assigned Qwen
+// voices actually play instead of silently failing (the old bug).
+function rtUnlockAudio() {
+    if (!rtPlayer) rtPlayer = document.getElementById("rtPlayer");
+    if (!rtPlayer || rtAudioUnlocked) return;
+    try {
+        rtPlayer.src = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=";
+        var p = rtPlayer.play();
+        if (p && p.then) p.then(function () { rtAudioUnlocked = true; }).catch(function () {});
+    } catch (e) {}
+    rtAudioUnlocked = true;
+}
+
+function rtRender() {
+    var ctrls = document.getElementById("rtControls");
+    if (!ctrls) return;
+    var isEntry = rtState === "entry";
+    var recording = rtListening && !rtSpeaking && !rtBusy;   // user's mic actively capturing
+    ctrls.classList.toggle("entry", isEntry);
+    ctrls.classList.toggle("voice-main", rtMode === "voice" && !isEntry);
+    ctrls.classList.toggle("recording", recording);
+    var set = function (id, on) { var e = document.getElementById(id); if (e) e.style.display = on ? "" : "none"; };
+    set("rtEntryQ", isEntry);
+    set("rtRecording", recording);
+    set("rtInputbar", !recording);
+    set("rtModes", !recording);
+    var mv = document.getElementById("rtModeVoice"); if (mv) mv.classList.toggle("active", rtMode === "voice");
+    var mt = document.getElementById("rtModeText"); if (mt) mt.classList.toggle("active", rtMode === "text");
+    rtSetMicUI();
+}
+
+function rtSetMode(mode) {
+    rtUnlockAudio();
+    rtMode = (mode === "text") ? "text" : "voice";
+    if (rtMode === "text") rtStopVoice();
+    rtRender();
+    var i = document.getElementById("rtInput"); if (i && rtMode === "text") i.focus();
+}
+
 function rtSetStatus(t) { var s = document.getElementById("rtStatus"); if (s) s.textContent = t || ""; }
 
 function rtSetSpeaking(persona) {
@@ -3802,7 +3908,7 @@ function rtAddMsg(who, text) {
     var wrap = document.getElementById("rtTranscript"); if (!wrap) return;
     var isUser = who === "user";
     var el = document.createElement("div");
-    el.className = "rt-msg" + (isUser ? " user" : "");
+    el.className = "rt-msg" + (isUser ? " user" : " rt-" + who);
     el.innerHTML = '<div class="rt-who"></div><div class="rt-bubble"></div>';
     el.querySelector(".rt-who").textContent = isUser ? "You" : (who.charAt(0).toUpperCase() + who.slice(1));
     el.querySelector(".rt-bubble").textContent = text;
@@ -3810,7 +3916,20 @@ function rtAddMsg(who, text) {
     wrap.scrollTop = wrap.scrollHeight;
 }
 
+// Tapping the mic: unlock audio, engage voice mode, start (or stop) listening.
+function rtMicTap() {
+    rtUnlockAudio();
+    if (!speechRecognitionSupported()) {
+        alert("Voice input isn't supported in this browser. Chrome, Edge, or Android Chrome work best.");
+        return;
+    }
+    if (rtListening) { rtStopVoice(); rtRender(); return; }
+    rtMode = "voice";
+    rtStartListening();
+}
+
 function rtSendFromInput() {
+    rtUnlockAudio();
     var i = document.getElementById("rtInput");
     var t = (i && i.value || "").trim();
     if (!t) return;
@@ -3821,9 +3940,11 @@ function rtSendFromInput() {
 async function rtSubmit(text) {
     if (rtBusy) return;
     rtBusy = true; rtInterrupted = false;
+    if (rtState === "entry") rtState = "live";
     rtAddMsg("user", text);
     rtHistory.push({ persona: "user", text: text });
-    rtSetStatus("The room is thinking…");
+    rtSetStatus("The room is reading it…");
+    rtRender();
     var turns = [];
     try {
         var res = await apiFetch("/api/roundtable", {
@@ -3837,9 +3958,11 @@ async function rtSubmit(text) {
     } catch (e) {
         rtSetStatus("The room went quiet (connection issue).");
         rtBusy = false;
-        if (rtVoiceMode && !rtListening) rtStartListening();
+        if (rtMode === "voice" && rtVoiceOn && !rtListening) rtStartListening();
+        rtRender();
         return;
     }
+    if (!turns.length) rtSetStatus("(no one jumps in — try steering it)");
     for (var k = 0; k < turns.length; k++) {
         if (rtInterrupted) break;
         rtAddMsg(turns[k].persona, turns[k].text);
@@ -3851,8 +3974,9 @@ async function rtSubmit(text) {
     rtSttFinal = "";                                          // discard echo heard during playback
     if (rtSttTimer) { clearTimeout(rtSttTimer); rtSttTimer = null; }
     var inpEnd = document.getElementById("rtInput"); if (inpEnd) inpEnd.value = "";
-    rtSetStatus(rtVoiceMode ? "Listening…" : "");
-    if (rtVoiceMode && !rtListening) rtStartListening();
+    if (rtMode === "voice" && rtVoiceOn) { if (!rtListening) rtStartListening(); rtSetStatus("Listening…"); }
+    else rtSetStatus("");
+    rtRender();
 }
 
 function rtSpeakTurn(persona, text) {
@@ -3860,7 +3984,14 @@ function rtSpeakTurn(persona, text) {
         rtCurrentResolve = function () { rtCurrentResolve = null; resolve(); };
         rtSttFinal = "";                       // fresh slate for barge-in detection
         rtSetSpeaking(persona);
-        rtSetStatus(persona.charAt(0).toUpperCase() + persona.slice(1) + " is speaking…");
+        rtRender();
+        // Text mode: show the line, brief readable pause, no audio.
+        if (rtMode === "text") {
+            rtSetStatus("");
+            setTimeout(function () { if (rtCurrentResolve) rtCurrentResolve(); }, 350);
+            return;
+        }
+        rtSetStatus(persona.charAt(0).toUpperCase() + persona.slice(1) + " has the floor…");
         apiFetch("/api/tts", {
             method: "POST", credentials: "include",
             headers: authHeaders({ "Content-Type": "application/json" }),
@@ -3869,13 +4000,18 @@ function rtSpeakTurn(persona, text) {
         }).then(function (res) { return res.json(); }).then(function (data) {
             if (rtInterrupted) { if (rtCurrentResolve) rtCurrentResolve(); return; }
             if (data && data.engine === "qwen_tts" && data.url) {
+                if (!rtPlayer) rtPlayer = document.getElementById("rtPlayer");
                 rtStopSpeaking();
-                rtAudio = new Audio(data.url);
                 rtSpeaking = true;
-                rtAudio.onended = function () { rtSpeaking = false; if (rtCurrentResolve) rtCurrentResolve(); };
-                rtAudio.onerror = function () { rtSpeaking = false; if (rtCurrentResolve) rtCurrentResolve(); };
-                rtAudio.play().catch(function () { rtSpeaking = false; if (rtCurrentResolve) rtCurrentResolve(); });
+                rtPlayer.onended = function () { rtSpeaking = false; rtRender(); if (rtCurrentResolve) rtCurrentResolve(); };
+                rtPlayer.onerror = function () { rtSpeaking = false; rtRender(); if (rtCurrentResolve) rtCurrentResolve(); };
+                rtPlayer.src = data.url;
+                var pr = rtPlayer.play();
+                if (pr && pr.catch) pr.catch(function () { rtSpeaking = false; rtRender(); if (rtCurrentResolve) rtCurrentResolve(); });
+                rtRender();
             } else {
+                // Qwen unavailable — stay honest: show a note, don't fake a device voice.
+                rtSetStatus("(voice unavailable — showing text)");
                 setTimeout(function () { if (rtCurrentResolve) rtCurrentResolve(); }, 500);
             }
         }).catch(function () { setTimeout(function () { if (rtCurrentResolve) rtCurrentResolve(); }, 300); });
@@ -3883,34 +4019,26 @@ function rtSpeakTurn(persona, text) {
 }
 
 function rtStopSpeaking() {
-    if (rtAudio) { try { rtAudio.pause(); rtAudio.onended = null; rtAudio.onerror = null; } catch (e) {} rtAudio = null; }
+    if (rtPlayer) { try { rtPlayer.pause(); rtPlayer.onended = null; rtPlayer.onerror = null; } catch (e) {} }
     rtSpeaking = false;
 }
 
-function rtToggleVoice() {
-    if (!speechRecognitionSupported()) {
-        alert("Voice isn't supported in this browser. Chrome, Edge, or Android Chrome work best.");
-        return;
-    }
-    if (rtVoiceMode) rtStopVoice();
-    else { rtVoiceMode = true; rtStartListening(); }
-}
-
 function rtStopVoice() {
-    rtVoiceMode = false;
+    rtVoiceOn = false;
     rtStopListening();
     rtSetStatus("");
 }
 
 function rtSetMicUI() {
     var b = document.getElementById("rtMicBtn");
-    if (b) b.classList.toggle("listening", rtVoiceMode && rtListening);
+    if (b) b.classList.toggle("listening", rtListening);
 }
 
 function rtStartListening() {
-    if (!rtVoiceMode || rtListening || !speechRecognitionSupported()) return;
+    if (rtListening || !speechRecognitionSupported()) return;
     var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     try { rtRecognition = new SR(); } catch (e) { return; }
+    rtVoiceOn = true;
     rtRecognition.lang = navigator.language || "en-US";
     rtRecognition.interimResults = true;
     rtRecognition.continuous = true;
@@ -3934,15 +4062,15 @@ function rtStartListening() {
     };
     rtRecognition.onerror = function (ev) {
         if (ev.error === "not-allowed" || ev.error === "service-not-allowed") {
-            rtStopVoice();
+            rtStopVoice(); rtRender();
             alert("Microphone access is blocked. Allow mic access to use voice.");
         }
     };
-    rtRecognition.onend = function () { if (rtVoiceMode && rtListening) { try { rtRecognition.start(); } catch (e) {} } };
+    rtRecognition.onend = function () { if (rtVoiceOn && rtListening) { try { rtRecognition.start(); } catch (e) {} } };
     try { rtRecognition.start(); } catch (e) {}
     rtListening = true;
-    rtSetMicUI();
     if (!rtBusy && !rtSpeaking) rtSetStatus("Listening…");
+    rtRender();
 }
 
 function rtEndOfSpeech() {
@@ -3951,13 +4079,14 @@ function rtEndOfSpeech() {
     rtSttFinal = "";
     if (inp) inp.value = "";
     if (t.length >= 2) rtSubmit(t);
+    else if (rtVoiceOn && !rtListening) rtStartListening();
 }
 
 function rtStopListening() {
     rtListening = false;
     if (rtSttTimer) { clearTimeout(rtSttTimer); rtSttTimer = null; }
     if (rtRecognition) { try { rtRecognition.onend = null; rtRecognition.stop(); } catch (e) {} }
-    rtSetMicUI();
+    rtRender();
 }
 
 
