@@ -1028,7 +1028,12 @@ def resume_stale_jobs(max_jobs: int = 25) -> int:
 
 
 def start_watchdog(interval: float | None = None) -> None:
-    """Start the background sweeper once per process (idempotent)."""
+    """Start the background sweeper once per process (idempotent). Set
+    STUDIO_WATCHDOG=0 to disable it (e.g. a local dev run that should not touch
+    production jobs)."""
+    if os.getenv("STUDIO_WATCHDOG", "1").strip().lower() in ("0", "false", "no", "off"):
+        print("[JOB] studio assembly watchdog disabled (STUDIO_WATCHDOG=0)")
+        return
     global _watchdog_started
     with _locks_guard:
         if _watchdog_started:
