@@ -563,6 +563,48 @@ def t2v_prompt(scene: dict, sheet_text: str = "", look: str = "",
     return ". ".join(p.rstrip(". ") for p in parts if p)[:1600]
 
 
+def single_video_prompt(idea: str, script: str = "", scenes: list[dict] | None = None,
+                        sheet_text: str = "", look: str = "", notes: list[str] | None = None,
+                        duration: int | None = None) -> str:
+    """ONE text-to-video prompt for the ENTIRE piece as a single generation.
+
+    Generate-from-scratch asks Alibaba for one long video, not a stack of short
+    clips that get stapled together, so the whole arc has to live in one prompt:
+    a flowing beginning → middle → end with the characters and visual style
+    pinned for continuity. Deliberately NO shot list or cut language — that would
+    push the model toward a montage of separate takes, which is exactly what this
+    path is moving away from.
+    """
+    scenes = scenes or []
+    parts: list[str] = ["One continuous cinematic video."]
+    if duration:
+        parts.append(f"About {int(duration)} seconds long.")
+    idea = str(idea or "").strip()
+    if idea:
+        parts.append(idea)
+    # A flowing progression from the scene actions (start → end), phrased as one
+    # evolving sequence rather than discrete numbered shots.
+    beats: list[str] = []
+    for s in scenes:
+        if not isinstance(s, dict):
+            continue
+        act = str(s.get("action") or s.get("description") or "").strip().rstrip(".")
+        if act:
+            beats.append(act)
+    if beats:
+        parts.append("The video moves through: " + "; then ".join(beats[:8]) + ".")
+    if sheet_text:
+        parts.append(f"Characters (keep consistent throughout): {sheet_text}")
+    if look:
+        parts.append(f"Visual style: {look}")
+    parts.append("Live action, cinematic, natural motion, one cohesive continuous piece.")
+    for n in (notes or []):
+        n = str(n).strip()
+        if n:
+            parts.append(n)
+    return " ".join(p for p in parts if p)[:1600]
+
+
 def clip_prompt(scene: dict, notes: list[str] | None = None) -> str:
     """Motion direction for image-to-video. The still already carries the look,
     so this describes MOVEMENT only — restating the scene invites the model to

@@ -3183,12 +3183,11 @@ def api_studio_run():
     reference_image = str(data.get("reference_image") or "").strip()
     if reference_image:
         video_mode = "i2v"  # an explicit reference always means animate that image
-    # Text-to-video (the default) renders straight from the scene, so it needs NO
-    # storyboard image. Generating one per scene was pure wasted time and money on
-    # the default path. A storyboard is produced ONLY for image-to-video — where
-    # the still IS the animation source — or when the caller explicitly opts into
-    # a preview with storyboards=true. No env default turns it on any more.
-    want_storyboards = bool(data.get("storyboards")) or video_mode == "i2v"
+    # Generate-from-scratch makes ONE video (text-to-video from the scenes, or
+    # image-to-video from a single user-supplied reference). Neither uses per-scene
+    # storyboard images, so none are generated unless the caller explicitly asks
+    # for a storyboard preview with storyboards=true. No env default turns it on.
+    want_storyboards = bool(data.get("storyboards"))
     try:
         requested = int(data.get("clips") or 0)
     except (TypeError, ValueError):
@@ -3356,26 +3355,19 @@ def api_studio_run():
 
                 yield f"data: {json.dumps({'stage': 'storyboard', 'status': 'done'})}\n\n"
 
-            # An explicit reference image animates every scene in i2v mode.
-            if reference_image and video_mode == "i2v":
-                for scene in scenes:
-                    frame_sources.setdefault(scene["number"], reference_image)
-
-            # ── Stage 4: animate the stills into clips ──────────────────
-            # The expensive video work runs as a background job (parallel submit,
-            # budget-capped, resumable) so this request returns fast and the run
+            # ── Stage 4: generate ONE video (generate-from-scratch) ─────
+            # Generate-from-scratch asks Alibaba for a SINGLE video of the whole
+            # piece and displays it as-is when it lands — NO chunking into clips,
+            # NO title cards, and it never touches the assembly engine (that is
+            # the separate upload-and-join feature). It runs as a background job
+            # (budget-capped, resumable) so this request returns fast and the run
             # survives the browser closing. Gated by the global kill switch, then
             # server-side tier + budget checks.
             import core.video_i2v as i2v
-            # t2v renders straight from the scene, so a storyboard frame is only
-            # required in i2v/reference mode.
-            if video_mode == "i2v":
-                clip_scenes = [s for s in scenes if s["number"] in frame_sources][:target_clips]
-            else:
-                clip_scenes = scenes[:target_clips]
+            gen_mode = "i2v" if reference_image else "t2v"   # i2v only with a user image
             if not _video_generation_enabled():
                 yield f"data: {json.dumps({'stage': 'clips', 'status': 'disabled', 'message': VIDEO_DISABLED_MESSAGE})}\n\n"
-            elif not i2v.available() or not clip_scenes:
+            elif not i2v.available():
                 yield f"data: {json.dumps({'stage': 'clips', 'status': 'skipped'})}\n\n"
             else:
                 # Tier gate (server-side): free tier gets no video; paid tier is
@@ -3389,31 +3381,29 @@ def api_studio_run():
                 if not gate_ok:
                     yield f"data: {json.dumps({'stage': 'clips', 'status': 'denied', 'message': gate_reason})}\n\n"
                 else:
-                    # Budget gate: refuse a run whose estimate exceeds the coupon.
-                    n = len(clip_scenes)
-                    afford, est, remaining = (True, 0.0, sj.remaining_budget()) if test_mode else sj.can_afford(n)
+                    # One long video costs like several short clips; charge the
+                    # budget as duration clip-equivalents so the cap stays honest.
+                    clip_equiv = sj.scenes_for_duration(target_duration)
+                    afford, est, remaining = (True, 0.0, sj.remaining_budget()) if test_mode else sj.can_afford(clip_equiv)
                     if not afford:
-                        msg = (f"This run needs about ${est:.2f} but only ${remaining:.2f} of the "
-                               f"video budget is left. Try Test Mode or a shorter trailer.")
+                        msg = (f"This needs about ${est:.2f} but only ${remaining:.2f} of the "
+                               f"video budget is left. Try Test Mode or a shorter video.")
                         yield f"data: {json.dumps({'stage': 'clips', 'status': 'budget', 'message': msg, 'est_cost_usd': est, 'remaining_budget_usd': remaining})}\n\n"
-                    elif not _studio_async_enabled():
-                        # Fallback: original synchronous path (nothing lost if the
-                        # async path is disabled).
-                        yield from _studio_clips_sync(user_id, clip_scenes, frame_sources,
-                                                      scenes, saved, media, studio, fold_notes)
                     else:
-                        job = sj.new_job(user_id, scenes, frame_sources,
-                                         target_clips=target_clips, test_mode=test_mode,
-                                         notes=fold_notes(), mode=video_mode,
-                                         sheet_text=sheet_text, look=look,
-                                         # Beat N's card punctuates scene N.
-                                         cards={b.get("number"): b.get("card", "")
-                                                for b in saved.get("beats", [])},
-                                         logline=saved.get("logline", ""),
-                                         beats=saved.get("beats", []))
+                        # ONE prompt for the whole piece, ONE Alibaba generation at
+                        # the full target duration. Elena waits and displays it.
+                        one_prompt = studio.single_video_prompt(
+                            idea, script, scenes, sheet_text=sheet_text, look=look,
+                            notes=fold_notes(), duration=target_duration)
+                        job = sj.new_single_video_job(
+                            user_id, prompt=one_prompt, duration=target_duration,
+                            mode=gen_mode, image_ref=reference_image, test_mode=test_mode,
+                            logline=saved.get("logline", ""),
+                            title=(saved.get("logline") or "Your video"),
+                            charge_usd=(0.0 if test_mode else sj.estimate_cost(clip_equiv)))
                         sj.launch(job["_id"])
                         cost = sj.public_view(job).get("cost", {})
-                        yield f"data: {json.dumps({'stage': 'clips', 'status': 'queued', 'job_id': job['_id'], 'total': len(job['clips']), 'test_mode': test_mode, 'video_mode': video_mode, 'cost': cost})}\n\n"
+                        yield f"data: {json.dumps({'stage': 'clips', 'status': 'queued', 'job_id': job['_id'], 'total': 1, 'single_video': True, 'test_mode': test_mode, 'video_mode': gen_mode, 'duration': target_duration, 'cost': cost})}\n\n"
 
             yield f"data: {json.dumps({'done': True})}\n\n"
 

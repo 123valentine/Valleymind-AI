@@ -203,6 +203,17 @@ def can_afford(n_clips: int) -> tuple[bool, float, float]:
     return (est <= rem), est, rem
 
 
+def _clip_charge(job: dict) -> float:
+    """$ charged for one video submission. A single-video generate job carries
+    its own duration-scaled ``charge_usd`` (one long video ≈ several short clips
+    worth of compute); a per-scene clip uses the flat per-clip estimate."""
+    try:
+        c = float(job.get("charge_usd") or 0.0)
+    except (TypeError, ValueError):
+        c = 0.0
+    return c if c > 0 else cost_per_clip()
+
+
 # ── Tier gating (pure — caller supplies tier + usage) ──────────────────────
 
 def video_access(tier: str, videos_used: int, video_limit) -> tuple[bool, str]:
@@ -356,6 +367,76 @@ def new_upload_job(user_id: str, uploaded: list, *, cards: dict | None = None,
     return job
 
 
+def new_single_video_job(user_id: str, *, prompt: str, duration: int | None,
+                         mode: str = "t2v", image_ref: str = "", test_mode: bool = False,
+                         logline: str = "", title: str = "", charge_usd: float = 0.0) -> dict:
+    """GENERATE-FROM-SCRATCH: one Alibaba video for the WHOLE piece, displayed
+    as-is — no chunking, no assembly, no title cards between shots.
+
+    The entire piece is a SINGLE clip. The driver submits it once with the full
+    target ``duration``, waits, stores it, and _finalize surfaces it directly
+    (the single-clip finalize path never calls the assembly engine). Assembly is
+    reserved for the upload-and-join path, which is a different feature.
+
+    ``mode='i2v'`` with an ``image_ref`` animates one user-supplied image into the
+    whole video; otherwise it is text-to-video straight from ``prompt``.
+    """
+    use_i2v = (mode == "i2v") and bool(image_ref)
+    clip = {
+        "number": 1,
+        "title": (title or "Your video")[:80],
+        "mode": "i2v" if use_i2v else "t2v",
+        "motion": prompt,          # i2v path reads motion; t2v reads prompt
+        "prompt": prompt,
+        "image_ref": image_ref if use_i2v else "",
+        "status": PENDING,
+        "task_id": "",
+        "video_url": "",
+        "error": "",
+    }
+    charge = 0.0 if (test_mode or _fake()) else float(charge_usd or 0.0)
+    job = {
+        "_id": uuid.uuid4().hex,
+        "user_id": user_id,
+        "status": "running",
+        "source": "generate",
+        "single_video": True,          # one video, never assembled or carded
+        "test_mode": bool(test_mode),
+        # The FULL target runtime goes straight to Alibaba as one generation
+        # (not the short per-clip VIDEO_CLIP_DURATION used by the chunked path).
+        "duration": int(duration) if duration else None,
+        "clips": [clip],
+        "cards": {},                   # single video: no cards between shots
+        "logline": logline,
+        "beats": [],
+        "cut_review": None,
+        "vl_spend_usd": 0.0,
+        "final_video": "",
+        "assembly_mode": "single",
+        "spend_usd": 0.0,
+        "charge_usd": charge,          # what _run charges when the video submits
+        "cost_per_clip": charge or (0.0 if (test_mode or _fake()) else cost_per_clip()),
+        "est_cost_usd": charge,
+        "missing_scenes": [],
+        "observed_concurrency": 0,
+        "rate_limited_at": None,
+        "error": "",
+        "created_at": _now_iso(),
+        "updated_at": _now_iso(),
+        "heartbeat": _now_iso(),
+    }
+    save_job(job)
+    coll = studio_runs_collection()
+    if coll is not None:
+        try:
+            coll.update_one({"_id": user_id},
+                            {"$set": {"job_id": job["_id"], "job_status": "running"}},
+                            upsert=True)
+        except Exception as exc:
+            print(f"[JOB] could not tag studio_run (single video): {exc}")
+    return job
+
+
 def get_job(job_id: str) -> dict | None:
     coll = studio_jobs_collection()
     if coll is None:
@@ -423,6 +504,7 @@ def public_view(job: dict) -> dict:
         "status": job.get("status"),
         "test_mode": job.get("test_mode", False),
         "source": job.get("source", "generated"),
+        "single_video": bool(job.get("single_video")),
         "total": len(clips),
         "clips": [
             {"number": c["number"], "title": c["title"], "status": c["status"],
@@ -523,9 +605,10 @@ def _run(job_id: str) -> None:
         pending = [c for c in clips if c["status"] == PENDING]
 
         # 2. Submit new clips up to the batch limit, honouring the budget cap.
+        charge = _clip_charge(job)
         while pending and running < batch and not capped:
             if not job["test_mode"] and not _fake():
-                if global_spent() + cost_per_clip() > budget_usd():
+                if global_spent() + charge > budget_usd():
                     # Would cross the hard cap — stop submitting; the clips already
                     # running keep going and get assembled. Job is flagged capped.
                     capped = True
@@ -562,8 +645,8 @@ def _run(job_id: str) -> None:
             c["submitted_at"] = _now_iso()   # so run timing is diagnosable later
             running += 1
             if not job["test_mode"] and not _fake():
-                add_spend(cost_per_clip())
-                job["spend_usd"] = round(job.get("spend_usd", 0.0) + cost_per_clip(), 4)
+                add_spend(charge)
+                job["spend_usd"] = round(job.get("spend_usd", 0.0) + charge, 4)
             backoff = 1.0
 
         job["heartbeat"] = _now_iso()
@@ -617,7 +700,9 @@ def _local_copy_of_clip(clip: dict) -> str:
 def _review_clip(job: dict, clip: dict) -> None:
     """Marcus watches the clip he just got back and says whether it matches."""
     import core.video_vision as vv
-    if not vv.available() or job.get("test_mode") or _fake():
+    # Single-video generate jobs have exactly one clip that IS the whole video —
+    # Elena's cut review covers it, so skip the per-shot Marcus review here.
+    if not vv.available() or job.get("test_mode") or _fake() or job.get("single_video"):
         return
     path = _local_copy_of_clip(clip)
     if not path:
@@ -781,7 +866,9 @@ def _finalize(job_id: str, media=None, capped: bool = False) -> None:
         final_mode = result.get("mode", "hard_cut")
         asm_err = result.get("error", "")
     elif len(done) == 1:
-        final_url = done[0]["video_url"]  # a single clip is the trailer
+        final_url = done[0]["video_url"]  # a single clip IS the video
+        if job.get("single_video"):
+            final_mode = "single"        # generated as one video, never assembled
 
     # PERSIST THE RESULT NOW — before Elena's review. Re-read first so we don't
     # clobber a clip that finished while we were joining.
