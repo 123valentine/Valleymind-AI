@@ -367,15 +367,33 @@ def get_job(job_id: str) -> dict | None:
         return None
 
 
-def save_job(job: dict) -> None:
+def save_job(job: dict) -> bool:
     coll = studio_jobs_collection()
     if coll is None:
-        return
+        return False
     job["updated_at"] = _now_iso()
     try:
         coll.replace_one({"_id": job["_id"]}, job, upsert=True)
+        return True
     except Exception as exc:
         print(f"[JOB] save failed: {exc}")
+        return False
+
+
+def save_job_durable(job: dict, attempts: int = 5) -> bool:
+    """Persist a job, retrying a transient Mongo failure with backoff.
+
+    Used for the one write that must not be lost: the terminal "trailer is done"
+    write in _finalize. The trailer bytes are already safe in R2 by then, so a
+    dropped Mongo write here is exactly what strands a finished cut on "running"
+    with an empty final_video (the failure _studio_recover_trailer.py cleaned up
+    by hand). Retrying turns a brief Atlas write-block into a non-event."""
+    for i in range(max(1, attempts)):
+        if save_job(job):
+            return True
+        time.sleep(min(2.0 * (i + 1), 8.0))
+    print(f"[JOB] durable save FAILED after {attempts} attempts for {job.get('_id')}")
+    return False
 
 
 def heartbeat_age(job: dict) -> float:
@@ -787,7 +805,9 @@ def _finalize(job_id: str, media=None, capped: bool = False) -> None:
         job["error"] = asm_err or ("Could not join the clips into a trailer."
                                    if done else "No clips were produced.")
     job["heartbeat"] = _now_iso()
-    save_job(job)
+    # Durable: the trailer is already in R2; do not let a transient Mongo hiccup
+    # leave the job stuck on "running" with an empty final_video.
+    save_job_durable(job)
     _mirror_to_studio_run(job)
 
     # Review is OFF the critical path now: the job is already done and the
@@ -806,38 +826,86 @@ def card_seconds() -> float:
     return _f("STUDIO_CARD_SECONDS", 1.5)
 
 
+def card_fps() -> float:
+    """Encoded framerate for a title card. A card is a static frame, so a low fps
+    concatenates cleanly with the (higher-fps) clips — verified: -c copy keeps the
+    correct total duration — and roughly halves the per-card encode. Bounded so a
+    high clip fps can't make cards expensive again."""
+    return max(1.0, _f("STUDIO_CARD_FPS", 12.0))
+
+
+def card_build_budget() -> float:
+    """Hard ceiling on TOTAL time spent rendering title cards for one trailer.
+
+    Cards are an enhancement, not the trailer. On a throttled free instance six
+    1080p libx264 encodes can run for minutes — the un-bounded stretch that got
+    the finalize thread reaped before a trailer ever landed. Once this budget is
+    spent we stop making cards and join the remaining shots raw, so assembly
+    always completes with a real video out."""
+    return _f("STUDIO_CARD_BUDGET_SECS", 120.0)
+
+
 def cards_enabled() -> bool:
     return os.getenv("STUDIO_TITLE_CARDS", "1").strip().lower() not in ("0", "false", "no", "off")
 
 
-def _build_sequence(local_paths: list, ordered_clips: list, cards: dict, workdir: str) -> list:
+def _build_sequence(local_paths: list, ordered_clips: list, cards: dict, workdir: str,
+                    on_progress=None) -> list:
     """Interleave title cards with the shots.
 
     Each card is rendered as its OWN short clip matching the footage's codec
     params, so the final join stays a `-c copy` stream copy. Burning text over
     the video would force a full re-encode (the crossfade path peaked at 737MB).
     A card precedes the shot it introduces; the last card closes the piece.
+
+    ``on_progress`` is pulsed after EVERY card. Card encoding is the one CPU-heavy
+    stretch of assembly, and running it silently is what made the finalize thread
+    look dead (stale heartbeat) on a throttled free instance and get reaped before
+    a trailer ever landed. A pulse per card keeps the driver visibly alive.
+
+    A single card that fails to render is skipped, never fatal — a trailer with
+    one missing caption beats no trailer at all.
     """
     import core.video_assembly as va
 
     if not cards or not cards_enabled() or not local_paths:
         return local_paths
 
+    def beat():
+        if on_progress:
+            try:
+                on_progress()
+            except Exception:
+                pass
+
     params = va.probe_params(local_paths[0])
-    sequence, last_card = [], None
+    fps = min(float(params["fps"] or 24.0), card_fps())
+    budget = card_build_budget()
+    start = time.monotonic()
+    sequence, last_card, gave_up = [], None, False
     for idx, (path, clip) in enumerate(zip(local_paths, ordered_clips)):
         text = cards.get(str(clip.get("number"))) or ""
-        if text:
+        # Stop making cards once the budget is spent — the rest of the shots still
+        # get joined, so a slow box yields a trailer instead of a stuck job.
+        if text and not gave_up and (time.monotonic() - start) > budget:
+            gave_up = True
+            print(f"[JOB] title-card budget ({budget:.0f}s) spent after {idx} card(s); "
+                  "joining remaining shots without cards")
+        if text and not gave_up:
             card_path = os.path.join(workdir, f"card_{idx:03d}.mp4")
-            ok, err = va.make_title_card(
-                text, card_path, width=params["width"], height=params["height"],
-                fps=params["fps"], seconds=card_seconds(), has_audio=params["has_audio"],
-            )
+            try:
+                ok, err = va.make_title_card(
+                    text, card_path, width=params["width"], height=params["height"],
+                    fps=fps, seconds=card_seconds(), has_audio=params["has_audio"],
+                )
+            except Exception as exc:
+                ok, err = False, str(exc)
             if ok:
                 sequence.append(card_path)
                 last_card = card_path
             else:
-                print(f"[JOB] title card '{text[:30]}' failed: {err}")
+                print(f"[JOB] title card '{text[:30]}' failed (skipping): {err}")
+            beat()  # a card just finished (or failed) — driver is alive
         sequence.append(path)
     # Close on the title beat.
     if last_card:
@@ -930,7 +998,14 @@ def assemble_sources(user_id: str, sources: list, cards: dict | None = None,
                 return {"error": f"couldn't fetch clip(s) {fetch_failed} for assembly"}
             return {"error": "not enough clips to assemble"}
 
-        sequence = _build_sequence(local_paths, ordered, cards or {}, workdir)
+        # Cards are an enhancement, never a gate: if building them raises, fall
+        # back to joining the raw clips so a trailer always comes out.
+        try:
+            sequence = _build_sequence(local_paths, ordered, cards or {}, workdir,
+                                       on_progress=on_progress)
+        except Exception as exc:
+            print(f"[JOB] title-card build failed wholesale ({exc}); joining raw clips")
+            sequence = local_paths
         beat()
         out_path = os.path.join(workdir, "trailer.mp4")
         ok, err = va.assemble(sequence, out_path, mode=mode)

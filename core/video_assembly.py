@@ -161,7 +161,13 @@ def make_title_card(text: str, out_path: str, *, width: int = 1280, height: int 
         "-t", str(seconds),
         "-vf", f"scale={width}:{height},format=yuv420p",
         "-r", str(int(round(fps))),
-        "-c:v", "libx264", "-profile:v", "high", "-pix_fmt", "yuv420p",
+        # ultrafast + stillimage: a card is one static frame held for ~1.5s, so
+        # there is nothing for a slower preset to gain. This is the whole cost of
+        # assembly on a throttled 512MB free instance — six 1080p libx264 encodes
+        # at the default 'medium' preset was the un-heartbeated stretch that got
+        # the finalize thread OOM-killed/reaped before it ever produced a trailer.
+        "-c:v", "libx264", "-preset", "ultrafast", "-tune", "stillimage",
+        "-profile:v", "high", "-pix_fmt", "yuv420p",
         "-video_track_timescale", "90000",
     ]
     if has_audio:
