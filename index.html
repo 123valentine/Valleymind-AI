@@ -350,7 +350,41 @@
     min-height:56px; max-height:160px;
   }
   .studio-prompt-wrap textarea::placeholder { color:#475569; }
-  .studio-prompt-actions { display:flex; justify-content:space-between; align-items:center; gap:10px; margin-top:8px; }
+  .studio-prompt-actions { display:flex; justify-content:space-between; align-items:center; gap:10px; margin-top:8px; flex-wrap:wrap; }
+  .studio-actions-left { display:flex; align-items:center; gap:10px; min-width:0; }
+  .studio-actions-right { display:flex; align-items:center; gap:10px; margin-left:auto; }
+  .studio-testmode { display:flex; align-items:center; gap:5px; font-size:11px; color:#94a3b8; cursor:pointer; white-space:nowrap; }
+  /* Length + upload/join dropdown — keeps the bottom bar to one row on a phone */
+  .studio-opts { position:relative; }
+  .studio-opts-btn {
+    display:flex; align-items:center; gap:5px; white-space:nowrap;
+    background:rgba(15,23,42,0.85); border:1px solid rgba(255,255,255,0.08);
+    border-radius:8px; padding:6px 10px; color:#cbd5e1; font-size:11px; cursor:pointer;
+  }
+  .studio-opts-btn:hover { color:#e2e8f0; border-color:rgba(255,255,255,0.2); }
+  .studio-opts.open .studio-opts-btn { border-color:rgba(0,212,255,0.4); color:#e2e8f0; }
+  .studio-opts-menu {
+    display:none; position:absolute; bottom:calc(100% + 8px); left:0; z-index:60;
+    min-width:220px; padding:12px; border-radius:12px;
+    background:#0b1222; border:1px solid rgba(255,255,255,0.12);
+    box-shadow:0 12px 32px rgba(0,0,0,0.5);
+    flex-direction:column; gap:14px;
+  }
+  .studio-opts.open .studio-opts-menu { display:flex; }
+  .studio-opts-group { display:flex; flex-direction:column; gap:7px; }
+  .studio-opts-heading {
+    font-size:10px; text-transform:uppercase; letter-spacing:0.1em; color:#64748b;
+    font-family:'Space Grotesk',sans-serif;
+  }
+  .studio-opts-menu select {
+    width:100%; background:rgba(15,23,42,0.9); border:1px solid rgba(255,255,255,0.1);
+    border-radius:8px; padding:8px 10px; color:#e2e8f0; font-size:13px; cursor:pointer;
+  }
+  .studio-opts-item {
+    text-align:left; background:rgba(15,23,42,0.7); border:1px solid rgba(255,255,255,0.08);
+    border-radius:8px; padding:9px 11px; color:#cbd5e1; font-size:13px; cursor:pointer;
+  }
+  .studio-opts-item:hover { color:#e2e8f0; border-color:rgba(0,212,255,0.35); background:rgba(0,212,255,0.06); }
   .studio-go-btn {
     background:linear-gradient(135deg,#00d4ff,#0ea5e9); border:none; border-radius:10px;
     padding:9px 20px; color:#003642; font-size:13px; font-weight:800; cursor:pointer;
@@ -1391,24 +1425,44 @@
       <div class="studio-prompt-wrap">
         <textarea id="studioPrompt" rows="2" placeholder="Describe your movie idea — a logline, a scene, a feeling..."></textarea>
         <div class="studio-prompt-actions">
-          <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:#94a3b8;cursor:pointer;" title="Run the full pipeline with free placeholder clips — no video spend.">
-            <input type="checkbox" id="studioTestModeToggle" onchange="onStudioControlsChange()" style="cursor:pointer;">Test mode
-          </label>
-          <select id="studioLengthSelect" onchange="onStudioControlsChange()" title="Target runtime — scene count follows (about one scene per 5s)" style="background:rgba(15,23,42,0.85);border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:5px 8px;color:#e2e8f0;font-size:11px;cursor:pointer;">
-            <option value="30">30s (default)</option>
-            <option value="60">60s</option>
-            <option value="90">90s</option>
-            <option value="150">2.5 min</option>
-          </select>
-          <input type="file" id="studioVideoInput" accept="video/*" style="display:none;">
-          <button onclick="document.getElementById('studioVideoInput').click()" title="Upload footage for the crew to work from"
-                  style="background:rgba(15,23,42,0.85);border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:5px 9px;color:#94a3b8;font-size:11px;cursor:pointer;">🎬 Upload footage</button>
-          <input type="file" id="studioJoinInput" accept="video/*" multiple style="display:none;">
-          <button onclick="initStudioJoinUpload(); document.getElementById('studioJoinInput').click();" title="Upload two or more of your own clips and the crew joins them into one finished video"
-                  style="background:rgba(15,23,42,0.85);border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:5px 9px;color:#94a3b8;font-size:11px;cursor:pointer;">🎞️ Join clips</button>
-          <span id="studioCostHint" style="font-size:11px;color:#64748b;"></span>
-          <button class="studio-reset-btn" onclick="resetStudio()">Reset</button>
-          <button class="studio-go-btn" id="studioGoBtn" onclick="studioSubmit()">Start Production</button>
+          <div class="studio-actions-left">
+            <label class="studio-testmode" title="Run the full pipeline with free placeholder clips — no video spend.">
+              <input type="checkbox" id="studioTestModeToggle" onchange="onStudioControlsChange()" style="cursor:pointer;">Test mode
+            </label>
+            <!-- Length + upload/join live in one dropdown so the bar fits on a phone -->
+            <div class="studio-opts">
+              <button type="button" class="studio-opts-btn" id="studioOptsBtn" aria-haspopup="true" aria-expanded="false"
+                      onclick="toggleStudioOptions(event)" title="Length, and joining your own footage">
+                <span id="studioOptsLabel">30s</span>
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+              </button>
+              <input type="file" id="studioVideoInput" accept="video/*" style="display:none;">
+              <input type="file" id="studioJoinInput" accept="video/*" multiple style="display:none;">
+              <div class="studio-opts-menu" id="studioOptsMenu" role="menu">
+                <div class="studio-opts-group">
+                  <div class="studio-opts-heading">Length</div>
+                  <select id="studioLengthSelect" onchange="onStudioControlsChange()" title="Target runtime — scene count follows (about one scene per 5s)">
+                    <option value="30">30 seconds (default)</option>
+                    <option value="60">60 seconds</option>
+                    <option value="90">90 seconds</option>
+                    <option value="150">2.5 minutes</option>
+                  </select>
+                </div>
+                <div class="studio-opts-group">
+                  <div class="studio-opts-heading">Your own footage</div>
+                  <button type="button" class="studio-opts-item" title="Upload footage for the crew to work from"
+                          onclick="closeStudioOptions(); initStudioVideoUpload(); document.getElementById('studioVideoInput').click();">🎬 Upload footage</button>
+                  <button type="button" class="studio-opts-item" title="Upload two or more of your own clips and the crew joins them into one finished video"
+                          onclick="closeStudioOptions(); initStudioJoinUpload(); document.getElementById('studioJoinInput').click();">🎞️ Join clips into one video</button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="studio-actions-right">
+            <span id="studioCostHint" style="font-size:11px;color:#64748b;"></span>
+            <button class="studio-reset-btn" onclick="resetStudio()">Reset</button>
+            <button class="studio-go-btn" id="studioGoBtn" onclick="studioSubmit()">Start Production</button>
+          </div>
         </div>
       </div>
     </div>
@@ -3778,6 +3832,8 @@ function openStudio() {
     // Restore the last run so a page reload doesn't lose the work
     if (!studioRunning && !studioFrames.length && !studioScript) restoreLastStudioRun();
     overlay.style.display = "flex";
+    // Sync the Options-button label + wire the upload inputs on open.
+    if (typeof onStudioControlsChange === "function") onStudioControlsChange();
     // rAF drives the slide-in; the timeout is a fallback so the overlay still
     // opens if rAF is throttled (background/non-rendering contexts).
     requestAnimationFrame(function () { overlay.classList.add("open"); });
@@ -4358,6 +4414,10 @@ function onStudioControlsChange() {
     var sel = document.getElementById("studioLengthSelect");
     studioTestMode = !!(t && t.checked);
     studioTargetDuration = sel ? parseInt(sel.value, 10) || 30 : 30;
+    // Mirror the chosen length onto the Options button so it's visible unopened.
+    var optsLabel = document.getElementById("studioOptsLabel");
+    if (optsLabel) optsLabel.textContent = studioTargetDuration >= 120
+        ? (studioTargetDuration / 60) + "min" : studioTargetDuration + "s";
     var hint = document.getElementById("studioCostHint");
     if (!hint) return;
     if (studioTestMode) { hint.textContent = "free"; hint.style.color = "#34d399"; return; }
@@ -4374,6 +4434,33 @@ function onStudioControlsChange() {
         })
         .catch(function () { hint.textContent = ""; });
 }
+
+// The length + upload/join dropdown (keeps the bottom bar to one row on mobile).
+function toggleStudioOptions(ev) {
+    if (ev) ev.stopPropagation();
+    var wrap = document.getElementById("studioOptsBtn");
+    wrap = wrap && wrap.parentElement;   // .studio-opts
+    if (!wrap) return;
+    var open = wrap.classList.toggle("open");
+    var btn = document.getElementById("studioOptsBtn");
+    if (btn) btn.setAttribute("aria-expanded", open ? "true" : "false");
+    // Wire the file inputs the first time the menu is opened.
+    if (open) { initStudioVideoUpload(); initStudioJoinUpload(); }
+}
+
+function closeStudioOptions() {
+    var wrap = document.getElementById("studioOptsBtn");
+    wrap = wrap && wrap.parentElement;
+    if (wrap) wrap.classList.remove("open");
+    var btn = document.getElementById("studioOptsBtn");
+    if (btn) btn.setAttribute("aria-expanded", "false");
+}
+
+// Close the dropdown when clicking anywhere outside it.
+document.addEventListener("click", function (ev) {
+    var opts = document.querySelector(".studio-opts.open");
+    if (opts && !opts.contains(ev.target)) closeStudioOptions();
+});
 
 async function startStudioProduction(brief) {
     // Confirm real spend before a paid run so the coupon can't be drained by a tap.
