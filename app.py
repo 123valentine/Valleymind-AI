@@ -3155,8 +3155,10 @@ def api_studio_note():
 @app.route("/api/studio/run", methods=["POST"])
 def api_studio_run():
     """ValleyMind Studio pipeline (SSE): Angelina writes -> Marcus breaks it into
-    scenes -> one storyboard image per scene. Text + image only; video generation
-    is not part of this pipeline and its kill switch is untouched."""
+    scenes -> text-to-video clips -> assembled trailer. The default path is
+    text-to-video, which renders straight from each scene with NO storyboard
+    image; storyboards are generated only for image-to-video (reference mode).
+    Video generation stays gated by the global kill switch."""
     user_id, error = _require_login()
     if error:
         return error
@@ -3181,11 +3183,12 @@ def api_studio_run():
     reference_image = str(data.get("reference_image") or "").strip()
     if reference_image:
         video_mode = "i2v"  # an explicit reference always means animate that image
-    # Storyboards remain a visual preview; they are no longer the video source.
-    want_storyboards = data.get("storyboards")
-    if want_storyboards is None:
-        want_storyboards = os.getenv("STUDIO_STORYBOARDS", "1").strip().lower() not in ("0", "false", "no", "off")
-    want_storyboards = bool(want_storyboards) or video_mode == "i2v"
+    # Text-to-video (the default) renders straight from the scene, so it needs NO
+    # storyboard image. Generating one per scene was pure wasted time and money on
+    # the default path. A storyboard is produced ONLY for image-to-video — where
+    # the still IS the animation source — or when the caller explicitly opts into
+    # a preview with storyboards=true. No env default turns it on any more.
+    want_storyboards = bool(data.get("storyboards")) or video_mode == "i2v"
     try:
         requested = int(data.get("clips") or 0)
     except (TypeError, ValueError):
