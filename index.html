@@ -3789,7 +3789,8 @@ var studioQuestion = "";     // a question the crew asked back
 var studioClips = {};        // scene number -> {video_url, title}
 var studioExpectedClips = 0;
 var studioClipsDisabled = "";
-var studioFinalVideo = "";   // Elena's joined trailer
+var studioFinalVideo = "";   // the finished video (single generation, or a joined upload)
+var studioSingleVideo = false; // generate-from-scratch = ONE Alibaba video, shown as-is
 var studioAssembling = false;
 // Async video job (background render, survives reload)
 var studioJobId = "";
@@ -4170,6 +4171,7 @@ function resetStudio() {
     studioJobPolling = false;
     if (studioJobTimer) { clearTimeout(studioJobTimer); studioJobTimer = null; }
     studioFinalVideo = "";
+    studioSingleVideo = false;
     studioAssembling = false;
     studioPhase = "intake";
     studioIntake = [];
@@ -4203,6 +4205,9 @@ async function restoreLastStudioRun() {
         (run.clips || []).forEach(function (c) { studioClips[c.number] = c; });
         studioExpectedClips = (run.clips || []).length;
         studioFinalVideo = run.final_video || "";
+        // A single-video generation restores as one clip that IS the final video.
+        studioSingleVideo = !!run.single_video ||
+            (!!studioFinalVideo && (run.clips || []).length <= 1);
         studioMissingScenes = run.missing_scenes || [];
         // Mark completed stages so the restored run reads as finished
         studioState = STUDIO_STAGES.map(function (s) {
@@ -4357,6 +4362,7 @@ function joinUploadedClips(files) {
     studioRunning = true;
     studioPhase = "clips";
     studioFinalVideo = "";
+    studioSingleVideo = false;   // upload-and-join uses the assembly engine, not single-gen
     studioClipsMessage = "";
     studioClips = {};
     studioCutReview = null;
@@ -4642,7 +4648,15 @@ function renderStudioStages() {
             });
             if (status === "working" && !studioScenes.length) card.appendChild(studioSkeleton());
         } else if (stage.key === "storyboard") {
-            if (studioFrames.length || studioExpectedFrames) {
+            // Show the producing card whenever there's ANY render activity — not
+            // only when storyboard frames exist. Text-to-video and the single
+            // Alibaba video have NO frames, so gating on frames alone hid the
+            // finished video, cost meter and messages entirely.
+            var hasProducing = studioFrames.length || studioExpectedFrames ||
+                studioSingleVideo || studioExpectedClips || Object.keys(studioClips).length ||
+                studioFinalVideo || studioClipsMessage || studioClipsDisabled;
+            if (hasProducing) {
+                if (studioFrames.length || studioExpectedFrames) {
                 var strip = document.createElement("div");
                 strip.className = "studio-filmstrip";
                 studioFrames.forEach(function (f) {
@@ -4679,8 +4693,17 @@ function renderStudioStages() {
                     strip.appendChild(ph);
                 }
                 card.appendChild(strip);
+                }
                 var clipCount = Object.keys(studioClips).length;
-                if (studioExpectedClips || clipCount) {
+                if (studioSingleVideo) {
+                    // One Alibaba video for the whole piece — no clips, no stapling.
+                    if (!studioFinalVideo && !studioClipsMessage && !studioClipsDisabled) {
+                        var sv = document.createElement("div");
+                        sv.className = "studio-scene-cam";
+                        sv.textContent = "Elena is waiting for your video to finish rendering...";
+                        card.appendChild(sv);
+                    }
+                } else if (studioExpectedClips || clipCount) {
                     var cn = document.createElement("div");
                     cn.className = "studio-scene-cam";
                     cn.textContent = "Clips " + clipCount + " / " + (studioExpectedClips || clipCount) +
@@ -4785,7 +4808,7 @@ function renderStudioStages() {
                     var flabel = document.createElement("div");
                     flabel.className = "studio-sheet-label";
                     flabel.style.marginTop = "12px";
-                    flabel.textContent = "Final trailer";
+                    flabel.textContent = studioSingleVideo ? "Your video" : "Final trailer";
                     card.appendChild(flabel);
                     var fv = document.createElement("video");
                     fv.src = studioFinalVideo;
@@ -4951,12 +4974,15 @@ function startStudioJobPolling(jobId) {
                 studioJobCost = job.cost || studioJobCost;
                 studioMissingScenes = job.missing_scenes || [];
                 studioCanRetryAssembly = !!job.can_retry_assembly;
+                if (job.single_video) studioSingleVideo = true;
                 var label = document.getElementById("studioStatusLabel");
                 var doneN = job.done || 0, total = job.total || studioExpectedClips;
                 if (label && job.status === "running") {
-                    label.textContent = job.stalled
-                        ? "Render paused — reconnecting (" + doneN + "/" + total + ")..."
-                        : "Rendering clips (" + doneN + "/" + total + ")...";
+                    label.textContent = studioSingleVideo
+                        ? (job.stalled ? "Render paused — reconnecting..." : "Rendering your video...")
+                        : (job.stalled
+                            ? "Render paused — reconnecting (" + doneN + "/" + total + ")..."
+                            : "Rendering clips (" + doneN + "/" + total + ")...");
                 }
                 renderStudioStages();
                 var terminal = (job.status === "done" || job.status === "budget_capped" ||
@@ -4967,11 +4993,11 @@ function startStudioJobPolling(jobId) {
                     // An assembly that produced no trailer is a failure — say so
                     // rather than leaving loose clips looking like success.
                     studioClipsMessage = job.error || "";
-                    var msg = "Production complete";
+                    var msg = studioSingleVideo ? "Your video is ready" : "Production complete";
                     if (job.status === "budget_capped") msg = "Budget cap reached — assembled what was ready";
                     else if (job.status === "failed") msg = "Render failed" + (job.error ? ": " + job.error : "");
                     else if (job.status === "aborted") msg = "Run stopped";
-                    else if (!job.final_video) msg = "Clips ready, but they were not joined";
+                    else if (!job.final_video) msg = studioSingleVideo ? "The video didn't finish rendering" : "Clips ready, but they were not joined";
                     if (studioMissingScenes.length) msg += " · missing scenes: " + studioMissingScenes.join(", ");
                     studioFinish(msg);
                 } else {
@@ -5110,10 +5136,13 @@ async function runStudioPipeline(ideaArg) {
                         // Async job accepted — hand off to the poller.
                         studioJobId = evt.job_id || "";
                         studioExpectedClips = evt.total || 0;
+                        studioSingleVideo = !!evt.single_video;
                         studioJobCost = evt.cost || null;
                         studioTestMode = !!evt.test_mode;
                         studioState[eIdx] = "working";
-                        if (label) label.textContent = "Rendering clips (0/" + studioExpectedClips + ")...";
+                        if (label) label.textContent = studioSingleVideo
+                            ? "Rendering your video..."
+                            : "Rendering clips (0/" + studioExpectedClips + ")...";
                         if (studioJobId) startStudioJobPolling(studioJobId);
                     } else if (evt.status === "working") {
                         studioExpectedClips = evt.total || 0;

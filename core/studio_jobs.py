@@ -1131,6 +1131,7 @@ def _mirror_to_studio_run(job: dict) -> None:
                 "clips": clips,
                 "final_video": job.get("final_video", ""),
                 "assembly_mode": job.get("assembly_mode", "hard_cut"),
+                "single_video": bool(job.get("single_video")),
                 "missing_scenes": job.get("missing_scenes", []),
                 "job_id": job["_id"],
                 "job_status": job.get("status"),
