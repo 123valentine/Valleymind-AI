@@ -283,8 +283,25 @@
   .rt-seat.speaking { opacity:1; transform:translateY(-4px); }
   .rt-portrait { width:72px; height:72px; border-radius:50%; overflow:hidden; background:rgba(0,212,255,0.08); border:2px solid rgba(255,255,255,0.12); }
   .rt-portrait img { width:100%; height:100%; object-fit:cover; object-position:top center; display:block; }
-  .rt-seat.speaking .rt-portrait { border-color:#00d4ff; animation:rtSpeak 1s ease-in-out infinite; }
+  /* The speaking persona comes alive — glowing halo + a subtle vibrate. */
+  .rt-seat.speaking .rt-portrait { border-color:#00d4ff; animation:rtSpeak 1s ease-in-out infinite, rtVibe 0.3s ease-in-out infinite; }
   @keyframes rtSpeak { 0%,100%{ box-shadow:0 0 0 4px rgba(0,212,255,0.14), 0 0 18px rgba(0,212,255,0.3);} 50%{ box-shadow:0 0 0 7px rgba(0,212,255,0.05), 0 0 30px rgba(0,212,255,0.5);} }
+  @keyframes rtVibe { 0%,100%{ transform:translateY(0) scale(1);} 25%{ transform:translateY(-1.5px) scale(1.04);} 75%{ transform:translateY(1.5px) scale(1.04);} }
+  /* Voice visual — the glowing waveform ring (static/voice-wave.png) with live
+     bars: real amplitude for the user's mic, animated wave for a persona's note. */
+  .rt-ring { display:flex; flex-direction:column; align-items:center; gap:8px; padding:6px 0 2px; }
+  .rt-ring-core { position:relative; width:188px; height:188px; border-radius:50%; overflow:hidden;
+    box-shadow:0 0 26px rgba(0,212,255,0.22), 0 0 0 1px rgba(0,212,255,0.15); flex-shrink:0; }
+  .rt-ring.active .rt-ring-core { animation:rtRingPulse 1.6s ease-in-out infinite; }
+  @keyframes rtRingPulse { 0%,100%{ box-shadow:0 0 22px rgba(0,212,255,0.22),0 0 0 1px rgba(0,212,255,0.15);} 50%{ box-shadow:0 0 48px rgba(0,212,255,0.5),0 0 0 2px rgba(0,212,255,0.35);} }
+  .rt-ring-img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; opacity:0.9; }
+  .rt-ring-bars { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
+    display:flex; align-items:center; justify-content:center; gap:2px; height:60px; width:118px; }
+  .rt-ring-bars i { width:3px; height:54px; border-radius:2px; background:linear-gradient(180deg,#e0f2fe,#00d4ff);
+    transform:scaleY(0.12); transform-origin:center; box-shadow:0 0 6px rgba(0,212,255,0.85); transition:transform 0.07s linear; }
+  .rt-ring.speaking .rt-ring-bars i { animation:rtWave 0.85s ease-in-out infinite; }
+  @keyframes rtWave { 0%,100%{ transform:scaleY(0.15);} 50%{ transform:scaleY(1);} }
+  .rt-ring-label { font-size:12px; font-weight:700; letter-spacing:0.04em; color:#7dd3fc; }
   .rt-name { font-size:12px; font-weight:700; color:#cbd5e1; }
   .rt-role { font-size:10px; color:#64748b; margin-top:-3px; }
   .rt-status { text-align:center; font-size:12px; color:#94a3b8; min-height:18px; padding:2px 0; }
@@ -331,7 +348,7 @@
   .rt-modes-label { font-size:11px; color:#64748b; text-transform:uppercase; letter-spacing:0.06em; }
   .rt-mode-btn { background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.12); color:#94a3b8; border-radius:20px; padding:5px 14px; font-size:12px; font-weight:700; cursor:pointer; transition:all 0.2s; }
   .rt-mode-btn.active { background:rgba(0,212,255,0.15); border-color:rgba(0,212,255,0.4); color:#00d4ff; }
-  @media (max-width:640px){ .rt-stage{ gap:14px; padding-top:16px; } .rt-portrait{ width:56px; height:56px; } .rt-seat{ width:72px; } .rt-entry-q{ font-size:16px; } .rt-controls.voice-main #rtInput{ max-width:120px; } }
+  @media (max-width:640px){ .rt-stage{ gap:14px; padding-top:16px; } .rt-portrait{ width:56px; height:56px; } .rt-seat{ width:72px; } .rt-entry-q{ font-size:16px; } .rt-controls.voice-main #rtInput{ max-width:120px; } .rt-ring-core{ width:150px; height:150px; } .rt-ring-bars{ width:98px; height:52px; } .rt-ring-bars i{ height:46px; } }
   .studio-body { flex:1; overflow-y:auto; padding:24px 32px; }
   .studio-inner { max-width:760px; margin:0 auto; }
   /* Pinned bottom input bar — mirrors the main chat composer */
@@ -1499,6 +1516,7 @@
        while they speak, and to each persona's voice note while it plays. -->
   <div class="rt-ring" id="rtRing" style="display:none;">
     <div class="rt-ring-core">
+      <img class="rt-ring-img" src="/static/voice-wave.png" alt="">
       <span class="rt-ring-bars" id="rtRingBars"></span>
     </div>
     <div class="rt-ring-label" id="rtRingLabel"></div>
@@ -4072,36 +4090,42 @@ function rtSpeakTurn(persona, text) {
             setTimeout(function () { if (rtCurrentResolve) rtCurrentResolve(); }, 350);
             return;
         }
-        rtSetStatus(persona.charAt(0).toUpperCase() + persona.slice(1) + " has the floor…");
+        var who = persona.charAt(0).toUpperCase() + persona.slice(1);
+        rtSetStatus(who + " has the floor…");
+        // The waveform ring goes live on the speaking persona (mic viz off now).
+        rtMicVizStop();
+        rtRingShow("speaking", who + " is speaking");
         apiFetch("/api/tts", {
             method: "POST", credentials: "include",
             headers: authHeaders({ "Content-Type": "application/json" }),
             body: JSON.stringify({ text: text, persona: persona }),
             timeoutMs: 60000
         }).then(function (res) { return res.json(); }).then(function (data) {
-            if (rtInterrupted) { if (rtCurrentResolve) rtCurrentResolve(); return; }
+            if (rtInterrupted) { rtRingHide(); if (rtCurrentResolve) rtCurrentResolve(); return; }
             if (data && data.engine === "qwen_tts" && data.url) {
                 if (!rtPlayer) rtPlayer = document.getElementById("rtPlayer");
                 rtStopSpeaking();
                 rtSpeaking = true;
-                rtPlayer.onended = function () { rtSpeaking = false; rtRender(); if (rtCurrentResolve) rtCurrentResolve(); };
-                rtPlayer.onerror = function () { rtSpeaking = false; rtRender(); if (rtCurrentResolve) rtCurrentResolve(); };
+                rtPlayer.onended = function () { rtSpeaking = false; rtRingHide(); rtRender(); if (rtCurrentResolve) rtCurrentResolve(); };
+                rtPlayer.onerror = function () { rtSpeaking = false; rtRingHide(); rtRender(); if (rtCurrentResolve) rtCurrentResolve(); };
                 rtPlayer.src = data.url;
                 var pr = rtPlayer.play();
-                if (pr && pr.catch) pr.catch(function () { rtSpeaking = false; rtRender(); if (rtCurrentResolve) rtCurrentResolve(); });
+                if (pr && pr.catch) pr.catch(function () { rtSpeaking = false; rtRingHide(); rtRender(); if (rtCurrentResolve) rtCurrentResolve(); });
                 rtRender();
             } else {
                 // Qwen unavailable — stay honest: show a note, don't fake a device voice.
+                rtRingHide();
                 rtSetStatus("(voice unavailable — showing text)");
                 setTimeout(function () { if (rtCurrentResolve) rtCurrentResolve(); }, 500);
             }
-        }).catch(function () { setTimeout(function () { if (rtCurrentResolve) rtCurrentResolve(); }, 300); });
+        }).catch(function () { rtRingHide(); setTimeout(function () { if (rtCurrentResolve) rtCurrentResolve(); }, 300); });
     });
 }
 
 function rtStopSpeaking() {
     if (rtPlayer) { try { rtPlayer.pause(); rtPlayer.onended = null; rtPlayer.onerror = null; } catch (e) {} }
     rtSpeaking = false;
+    rtRingHide();
 }
 
 function rtStopVoice() {
@@ -4150,7 +4174,11 @@ function rtStartListening() {
     rtRecognition.onend = function () { if (rtVoiceOn && rtListening) { try { rtRecognition.start(); } catch (e) {} } };
     try { rtRecognition.start(); } catch (e) {}
     rtListening = true;
-    if (!rtBusy && !rtSpeaking) rtSetStatus("Listening…");
+    if (!rtBusy && !rtSpeaking) {
+        rtSetStatus("Listening…");
+        rtRingShow("listening", "Listening…");   // ring animates to the user's voice
+        rtMicVizStart();
+    }
     rtRender();
 }
 
@@ -4167,7 +4195,82 @@ function rtStopListening() {
     rtListening = false;
     if (rtSttTimer) { clearTimeout(rtSttTimer); rtSttTimer = null; }
     if (rtRecognition) { try { rtRecognition.onend = null; rtRecognition.stop(); } catch (e) {} }
+    rtMicVizStop();
+    if (!rtSpeaking) rtRingHide();
     rtRender();
+}
+
+// ── Voice waveform ring (static/voice-wave.png + live bars) ────────────────
+// Shown while the user speaks (bars driven by their real mic amplitude) and
+// while a persona's voice note plays (bars animate so it's clear who's talking).
+var rtAC = null, rtAnalyser = null, rtRingRAF = null, rtMicStream = null, rtMicSrc = null;
+
+function rtRingBuild() {
+    var bars = document.getElementById("rtRingBars");
+    if (!bars || bars.children.length) return;
+    for (var i = 0; i < 18; i++) {
+        var b = document.createElement("i");
+        b.style.animationDelay = (i * 0.06).toFixed(2) + "s";
+        bars.appendChild(b);
+    }
+}
+function rtRingBarsReset() {
+    document.querySelectorAll("#rtRingBars i").forEach(function (b) { b.style.transform = ""; });
+}
+function rtRingShow(kind, label) {   // kind: "speaking" | "listening"
+    rtRingBuild();
+    var r = document.getElementById("rtRing");
+    if (!r) return;
+    r.style.display = "flex";
+    r.classList.add("active");
+    r.classList.toggle("speaking", kind === "speaking");   // CSS wave animation
+    r.classList.toggle("listening", kind === "listening");
+    var l = document.getElementById("rtRingLabel");
+    if (l) l.textContent = label || "";
+}
+function rtRingHide() {
+    var r = document.getElementById("rtRing");
+    if (!r) return;
+    r.classList.remove("active", "speaking", "listening");
+    r.style.display = "none";
+    rtRingBarsReset();
+}
+
+// Real amplitude for the user's mic — a separate getUserMedia stream feeds an
+// analyser; the ring bars follow the voice. Falls back to the CSS wave if the
+// mic stream/AudioContext isn't available.
+function rtMicVizStart() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { rtRingShow("speaking", "Listening…"); return; }
+    navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
+        rtMicStream = stream;
+        var AC = window.AudioContext || window.webkitAudioContext;
+        if (!AC) { rtRingShow("speaking", "Listening…"); return; }
+        rtAC = rtAC || new AC();
+        if (rtAC.state === "suspended") { try { rtAC.resume(); } catch (e) {} }
+        rtMicSrc = rtAC.createMediaStreamSource(stream);
+        rtAnalyser = rtAC.createAnalyser();
+        rtAnalyser.fftSize = 64;
+        rtAnalyser.smoothingTimeConstant = 0.75;
+        rtMicSrc.connect(rtAnalyser);
+        var data = new Uint8Array(rtAnalyser.frequencyBinCount);
+        var bars = document.querySelectorAll("#rtRingBars i");
+        (function loop() {
+            if (!rtAnalyser) return;
+            rtAnalyser.getByteFrequencyData(data);
+            for (var i = 0; i < bars.length; i++) {
+                var v = data[Math.min(i, data.length - 1)] / 255;
+                bars[i].style.transform = "scaleY(" + (0.12 + v * 1.05).toFixed(3) + ")";
+            }
+            rtRingRAF = requestAnimationFrame(loop);
+        })();
+    }).catch(function () { rtRingShow("speaking", "Listening…"); });
+}
+function rtMicVizStop() {
+    if (rtRingRAF) { cancelAnimationFrame(rtRingRAF); rtRingRAF = null; }
+    try { if (rtMicSrc) rtMicSrc.disconnect(); } catch (e) {}
+    try { if (rtMicStream) rtMicStream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) {}
+    rtAnalyser = null; rtMicSrc = null; rtMicStream = null;
+    rtRingBarsReset();
 }
 
 
