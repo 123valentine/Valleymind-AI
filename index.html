@@ -1510,9 +1510,10 @@
       <button class="rt-btn rt-send" id="rtSendBtn" onclick="rtSendFromInput()" title="Send"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg></button>
     </div>
     <div class="rt-modes" id="rtModes">
-      <span class="rt-modes-label">Replies</span>
-      <button class="rt-mode-btn active" id="rtModeVoice" onclick="rtSetMode('voice')">Voice</button>
-      <button class="rt-mode-btn" id="rtModeText" onclick="rtSetMode('text')">Text</button>
+      <span class="rt-modes-label">This session</span>
+      <button class="rt-mode-btn" id="rtModeVoice" onclick="rtSetMode('voice')" title="Everyone replies out loud as voice notes only — nothing written">Voice</button>
+      <button class="rt-mode-btn" id="rtModeText" onclick="rtSetMode('text')" title="Everything in text only — no voice">Text</button>
+      <button class="rt-mode-btn active" id="rtModeBoth" onclick="rtSetMode('both')" title="Both — a voice note and the text together">Both</button>
     </div>
   </div>
   <audio id="rtPlayer" preload="auto" style="display:none;"></audio>
@@ -3869,7 +3870,13 @@ function closeStudio() {
 // uses a silence debounce so a mid-sentence pause never submits early.
 var rtHistory = [];
 var rtState = "entry";        // "entry" (topic prompt) | "live"
-var rtMode = "voice";         // "voice" (spoken replies, mic-first) | "text"
+// One session-wide choice picked at the start:
+//   voice — all three reply as voice notes only, nothing written
+//   text  — text only, no voice
+//   both  — voice note AND text together
+var rtMode = "both";
+function rtShowText() { return rtMode !== "voice"; }   // render text bubbles?
+function rtPlayVoice() { return rtMode !== "text"; }   // synth + play audio?
 var rtRecognition = null;
 var rtListening = false;
 var rtSpeaking = false;
@@ -3941,18 +3948,21 @@ function rtRender() {
     set("rtEntryQ", isEntry);
     set("rtRecording", recording);
     set("rtInputbar", !recording);
-    set("rtModes", !recording);
+    // The reply mode is a ONE-TIME session choice — only offered at the start,
+    // then locked for the whole session.
+    set("rtModes", isEntry);
     var mv = document.getElementById("rtModeVoice"); if (mv) mv.classList.toggle("active", rtMode === "voice");
     var mt = document.getElementById("rtModeText"); if (mt) mt.classList.toggle("active", rtMode === "text");
+    var mb = document.getElementById("rtModeBoth"); if (mb) mb.classList.toggle("active", rtMode === "both");
     rtSetMicUI();
 }
 
 function rtSetMode(mode) {
     rtUnlockAudio();
-    rtMode = (mode === "text") ? "text" : "voice";
-    if (rtMode === "text") rtStopVoice();
+    rtMode = (mode === "text" || mode === "both") ? mode : "voice";
+    if (!rtPlayVoice()) rtStopVoice();   // text-only: no mic
     rtRender();
-    var i = document.getElementById("rtInput"); if (i && rtMode === "text") i.focus();
+    var i = document.getElementById("rtInput"); if (i && rtMode !== "voice") i.focus();
 }
 
 function rtSetStatus(t) { var s = document.getElementById("rtStatus"); if (s) s.textContent = t || ""; }
@@ -4001,7 +4011,7 @@ async function rtSubmit(text) {
     if (rtBusy) return;
     rtBusy = true; rtInterrupted = false;
     if (rtState === "entry") rtState = "live";
-    rtAddMsg("user", text);
+    if (rtShowText()) rtAddMsg("user", text);   // voice mode writes nothing
     rtHistory.push({ persona: "user", text: text });
     rtSetStatus("The room is reading it…");
     rtRender();
@@ -4028,7 +4038,7 @@ async function rtSubmit(text) {
     if (!turns.length) rtSetStatus("(no one jumps in — try steering it)");
     for (var k = 0; k < turns.length; k++) {
         if (rtInterrupted) break;
-        rtAddMsg(turns[k].persona, turns[k].text);
+        if (rtShowText()) rtAddMsg(turns[k].persona, turns[k].text);   // voice mode: no bubbles
         rtHistory.push({ persona: turns[k].persona, text: turns[k].text });
         await rtSpeakTurn(turns[k].persona, turns[k].text);   // sequential — never overlap
     }
@@ -4048,8 +4058,8 @@ function rtSpeakTurn(persona, text) {
         rtSttFinal = "";                       // fresh slate for barge-in detection
         rtSetSpeaking(persona);
         rtRender();
-        // Text mode: show the line, brief readable pause, no audio.
-        if (rtMode === "text") {
+        // Text-only session: show the line, brief readable pause, no audio.
+        if (!rtPlayVoice()) {
             rtSetStatus("");
             setTimeout(function () { if (rtCurrentResolve) rtCurrentResolve(); }, 350);
             return;
