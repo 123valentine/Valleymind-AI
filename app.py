@@ -3200,12 +3200,14 @@ def api_studio_run():
         target_duration = 0
     if not target_duration:
         target_duration = sj.default_duration()
-    if test_mode:
-        target_clips = sj.test_clips()
-    elif requested > 0:
-        target_clips = max(1, min(sj.max_clips_cap(), requested))
-    else:
-        target_clips = sj.scenes_for_duration(target_duration)
+    # wan2.7-t2v renders at most ~15s per request, so a longer piece is split into
+    # several <=15s clips that the assembly engine joins into one continuous video.
+    # plan_clips decides how many and how long each is: 10s -> one 10s clip (no
+    # assembly); 40s -> four 10s clips joined.
+    n_clips, per_clip_seconds = sj.plan_clips(target_duration)
+    if requested > 0:
+        n_clips = max(1, min(sj.max_clips_cap(), requested))
+    target_clips = n_clips
 
     if run_id:
         with _studio_runs_lock:
@@ -3381,29 +3383,42 @@ def api_studio_run():
                 if not gate_ok:
                     yield f"data: {json.dumps({'stage': 'clips', 'status': 'denied', 'message': gate_reason})}\n\n"
                 else:
-                    # One long video costs like several short clips; charge the
-                    # budget as duration clip-equivalents so the cap stays honest.
-                    clip_equiv = sj.scenes_for_duration(target_duration)
-                    afford, est, remaining = (True, 0.0, sj.remaining_budget()) if test_mode else sj.can_afford(clip_equiv)
+                    # Budget is checked per clip (each clip is one paid generation).
+                    afford, est, remaining = (True, 0.0, sj.remaining_budget()) if test_mode else sj.can_afford(n_clips)
                     if not afford:
                         msg = (f"This needs about ${est:.2f} but only ${remaining:.2f} of the "
                                f"video budget is left. Try Test Mode or a shorter video.")
                         yield f"data: {json.dumps({'stage': 'clips', 'status': 'budget', 'message': msg, 'est_cost_usd': est, 'remaining_budget_usd': remaining})}\n\n"
-                    else:
-                        # ONE prompt for the whole piece, ONE Alibaba generation at
-                        # the full target duration. Elena waits and displays it.
+                    elif n_clips <= 1:
+                        # Fits in one clip (<= the model's 15s cap): ONE real
+                        # Alibaba generation, shown as-is — no assembly, no cards.
                         one_prompt = studio.single_video_prompt(
                             idea, script, scenes, sheet_text=sheet_text, look=look,
-                            notes=fold_notes(), duration=target_duration)
+                            notes=fold_notes(), duration=per_clip_seconds)
                         job = sj.new_single_video_job(
-                            user_id, prompt=one_prompt, duration=target_duration,
+                            user_id, prompt=one_prompt, duration=per_clip_seconds,
                             mode=gen_mode, image_ref=reference_image, test_mode=test_mode,
                             logline=saved.get("logline", ""),
                             title=(saved.get("logline") or "Your video"),
-                            charge_usd=(0.0 if test_mode else sj.estimate_cost(clip_equiv)))
+                            charge_usd=(0.0 if test_mode else sj.cost_per_clip()))
                         sj.launch(job["_id"])
                         cost = sj.public_view(job).get("cost", {})
-                        yield f"data: {json.dumps({'stage': 'clips', 'status': 'queued', 'job_id': job['_id'], 'total': 1, 'single_video': True, 'test_mode': test_mode, 'video_mode': gen_mode, 'duration': target_duration, 'cost': cost})}\n\n"
+                        yield f"data: {json.dumps({'stage': 'clips', 'status': 'queued', 'job_id': job['_id'], 'total': 1, 'single_video': True, 'test_mode': test_mode, 'video_mode': gen_mode, 'duration': per_clip_seconds, 'cost': cost})}\n\n"
+                    else:
+                        # Longer than one clip: generate N clips of per_clip_seconds
+                        # each and join them with the assembly engine into ONE
+                        # continuous video — NO title cards between shots (cards={}).
+                        frame_sources = ({s["number"]: reference_image for s in scenes}
+                                         if (reference_image and gen_mode == "i2v") else {})
+                        job = sj.new_job(
+                            user_id, scenes, frame_sources, target_clips=n_clips,
+                            per_clip=per_clip_seconds, test_mode=test_mode,
+                            notes=fold_notes(), mode=gen_mode, sheet_text=sheet_text,
+                            look=look, cards={},  # clean continuous cut, no cards
+                            logline=saved.get("logline", ""), beats=[])
+                        sj.launch(job["_id"])
+                        cost = sj.public_view(job).get("cost", {})
+                        yield f"data: {json.dumps({'stage': 'clips', 'status': 'queued', 'job_id': job['_id'], 'total': len(job['clips']), 'single_video': False, 'clip_seconds': per_clip_seconds, 'test_mode': test_mode, 'video_mode': gen_mode, 'duration': target_duration, 'cost': cost})}\n\n"
 
             yield f"data: {json.dumps({'done': True})}\n\n"
 

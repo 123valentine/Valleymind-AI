@@ -123,6 +123,43 @@ def default_clips() -> int:
     return scenes_for_duration(default_duration())
 
 
+def model_max_seconds() -> int:
+    """Hard per-clip ceiling of the video model. wan2.7-t2v accepts an integer
+    duration of 2–15s per single request (Alibaba Model Studio docs), so 15s is
+    the longest a single clip can be. Env-overridable if the model changes."""
+    return max(2, min(60, _i("STUDIO_MODEL_MAX_SECONDS", 15)))
+
+
+def clip_seconds() -> int:
+    """Target length of each generated clip. Default 10s: long enough that few
+    clips are needed, short enough to stay inside the model's 15s cap and divide
+    the common runtimes into whole clips (30/40/60/90 → 3/4/6/9). Clamped to the
+    model's real maximum."""
+    return max(2, min(model_max_seconds(), _i("STUDIO_CLIP_SECONDS", 10)))
+
+
+def plan_clips(target_seconds: int) -> tuple[int, int]:
+    """Split a requested runtime into (n_clips, seconds_per_clip), each clip at or
+    under the model's single-request cap.
+
+    This is what makes >15s videos possible at all: wan2.7-t2v renders at most 15s
+    per request, so a longer piece is generated as several clips and joined by the
+    assembly engine. A runtime that fits in one clip stays one clip (no assembly).
+      10s → (1, 10)   ·   40s → (4, 10)   ·   90s → (9, 10)
+    """
+    try:
+        target = max(2, int(target_seconds))
+    except (TypeError, ValueError):
+        target = default_duration()
+    cap = model_max_seconds()
+    if target <= cap:
+        return 1, min(target, cap)
+    base = clip_seconds()
+    n = max(1, -(-target // base))              # ceil(target / base)
+    per = max(2, min(cap, round(target / n)))
+    return n, per
+
+
 def test_clips() -> int:
     return _i("STUDIO_TEST_CLIPS", 3)
 
@@ -235,14 +272,20 @@ def _now_iso() -> str:
 def new_job(user_id: str, scenes: list, frame_sources: dict, *, target_clips: int,
             test_mode: bool = False, notes: list | None = None,
             mode: str = "t2v", sheet_text: str = "", look: str = "",
-            cards: dict | None = None, logline: str = "", beats: list | None = None) -> dict:
-    """Build a job over the scenes.
+            cards: dict | None = None, logline: str = "", beats: list | None = None,
+            per_clip: int | None = None) -> dict:
+    """Build a multi-clip job over the scenes — used for generate-from-scratch
+    runtimes longer than one clip can hold (each clip is joined by the assembly
+    engine). Pass ``cards={}`` for a clean continuous cut with no title cards.
 
     ``mode`` picks the video path per run:
       * "t2v" (default) — text-to-video straight from the scene. Better prompt
         following, and no paid storyboard image is needed as the video source.
       * "i2v" — animate a reference image (user upload / reference mode). Falls
         back to t2v for any scene that has no image.
+
+    ``per_clip`` sets each clip's generation length in seconds (≤ the model cap);
+    when unset it falls back to the global VIDEO_CLIP_DURATION.
     """
     import core.studio as studio
 
@@ -270,8 +313,11 @@ def new_job(user_id: str, scenes: list, frame_sources: dict, *, target_clips: in
         "_id": uuid.uuid4().hex,
         "user_id": user_id,
         "status": "running",
+        "source": "generate",
         "test_mode": bool(test_mode),
-        "duration": clip_duration(),
+        # Each clip is generated at per_clip seconds (≤ model cap); the whole is
+        # joined by the assembly engine into one continuous video.
+        "duration": int(per_clip) if per_clip else clip_duration(),
         "clips": clips,
         # {scene_number: card text} from Angelina's beats, cut in as their own
         # short clips at assembly (never burned over the footage).
