@@ -54,8 +54,19 @@ services:
         sync: false
       - key: NVIDIA_API_KEY                # LLM fallback #2
         sync: false
-      - key: NVIDIA_MODEL
-        value: meta/llama-3.1-8b-instruct
+      - key: NVIDIA_MODEL                  # 70b-class so no persona is weaker than the others
+        value: meta/llama-3.3-70b-instruct
+
+      # ── Round Table: one LLM provider per persona (env-overridable) ─
+      # Values: groq | openrouter | nvidia | gemini. Each keeps the full
+      # fallback chain behind it, so a persona still answers if its provider
+      # is down. Change the mapping here without a code edit.
+      - key: ROUNDTABLE_PROVIDER_MARCUS
+        value: groq
+      - key: ROUNDTABLE_PROVIDER_ELENA
+        value: openrouter
+      - key: ROUNDTABLE_PROVIDER_ANGELINA
+        value: nvidia
       - key: GEMINI_API_KEY                # LLM fallback #3 + image-prompt enhance
         sync: false
       - key: GOOGLE_GENERATIVE_AI_API_KEY  # accepted as an alias for GEMINI_API_KEY

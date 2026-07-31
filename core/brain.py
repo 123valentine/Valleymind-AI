@@ -551,6 +551,82 @@ def _call_llm_cluster(messages: list, timeout: int = 30) -> tuple[str, dict]:
     return response, meta
 
 
+# Default NVIDIA NIM model — a 70b-class model so a persona served by NVIDIA is
+# no weaker than one served by Groq/OpenRouter (was an 8b). Env NVIDIA_MODEL wins.
+NVIDIA_DEFAULT_MODEL = "meta/llama-3.3-70b-instruct"
+
+# Standard failover order for the preferred-provider caller below.
+_PROVIDER_ORDER = ["groq", "openrouter", "nvidia", "gemini"]
+
+
+def _provider_call(name: str, messages: list, timeout: int) -> str:
+    """Call ONE named provider directly; raise if unavailable or it fails.
+    Lets a caller pin a specific provider (e.g. one model per Round Table persona)
+    while still reusing the shared, tested per-provider request code."""
+    config = get_config()
+    name = (name or "").strip().lower()
+    if name == "groq":
+        if not config.groq_api_key:
+            raise RuntimeError("Groq: no API key")
+        model = get_latest_groq_model()
+        if not model:
+            raise RuntimeError("Groq: no model resolved")
+        return _call_groq(messages, model, timeout=timeout)
+    if name == "openrouter":
+        if not config.openrouter_api_key:
+            raise RuntimeError("OpenRouter: no API key")
+        model = config.openrouter_model or "openai/gpt-4o-mini"
+        url = config.openrouter_base_url or "https://openrouter.ai/api/v1"
+        return _call_openai_compat(messages, model, config.openrouter_api_key, url, "OpenRouter", timeout)
+    if name == "nvidia":
+        if not config.nvidia_api_key:
+            raise RuntimeError("Nvidia: no API key")
+        model = config.nvidia_model or NVIDIA_DEFAULT_MODEL
+        url = config.nvidia_base_url or "https://integrate.api.nvidia.com/v1"
+        return _call_openai_compat(messages, model, config.nvidia_api_key, url, "Nvidia", timeout)
+    if name == "gemini":
+        if not config.gemini_api_key:
+            raise RuntimeError("Gemini: no API key")
+        model = config.gemini_model or "gemini-2.0-flash"
+        return _call_gemini(messages, model, config.gemini_api_key, config.gemini_base_url or "", timeout)
+    raise RuntimeError(f"unknown provider: {name}")
+
+
+def provider_model_label(name: str) -> str:
+    """Human-readable 'provider (model)' for the given provider — for reporting."""
+    config = get_config()
+    name = (name or "").strip().lower()
+    model = {
+        "groq": get_latest_groq_model() or "?",
+        "openrouter": config.openrouter_model or "openai/gpt-4o-mini",
+        "nvidia": config.nvidia_model or NVIDIA_DEFAULT_MODEL,
+        "gemini": config.gemini_model or "gemini-2.0-flash",
+    }.get(name, "?")
+    return f"{name} ({model})"
+
+
+def call_cluster_preferred(messages: list, preferred: str = "", timeout: int = 30) -> tuple[str, str]:
+    """Try ``preferred`` provider first, then the rest of the standard order as
+    fallback. Returns (text, provider_that_served). Raises only if ALL fail.
+
+    This is what gives each Round Table persona its own model while keeping the
+    full fallback chain behind it — if a persona's provider is down, that persona
+    still answers via the next provider instead of going silent."""
+    preferred = (preferred or "").strip().lower()
+    order = ([preferred] if preferred in _PROVIDER_ORDER else []) + \
+            [p for p in _PROVIDER_ORDER if p != preferred]
+    last: Exception | None = None
+    for name in order:
+        try:
+            text = _provider_call(name, messages, timeout)
+            if text and text.strip():
+                return text.strip(), name
+        except Exception as exc:
+            last = exc
+            print(f"[PERSONA LLM] {name} failed: {_short_error_detail(str(exc))}; trying next")
+    raise RuntimeError(f"all providers failed. last: {_short_error_detail(str(last))}")
+
+
 def _call_llm_cluster_impl(
     messages: list,
     timeout: int = 30,
@@ -600,7 +676,7 @@ def _call_llm_cluster_impl(
     # ── 3. Fallback 2: NVIDIA NIM ─────────────────────────────────────────────
     nvidia_key = config.nvidia_api_key
     if nvidia_key:
-        nvidia_model = config.nvidia_model or "nvidia/llama-3.1-nv-8b-instruct"
+        nvidia_model = config.nvidia_model or NVIDIA_DEFAULT_MODEL
         nvidia_url = config.nvidia_base_url or "https://integrate.api.nvidia.com/v1"
         try:
             response = _call_openai_compat(

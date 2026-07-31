@@ -889,9 +889,10 @@ def api_roundtable():
     history = data.get("history")
     if not message:
         return jsonify({"status": "error", "message": "no message"}), 400
-    from core.roundtable import orchestrate
+    from core.roundtable import orchestrate, provider_report
     turns = orchestrate(message, history if isinstance(history, list) else [])
-    return jsonify({"status": "success", "turns": turns})
+    # models: which provider/model each persona ended up on (distinct per persona)
+    return jsonify({"status": "success", "turns": turns, "models": provider_report()})
 
 
 @app.route("/login", methods=["POST"])

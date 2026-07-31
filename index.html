@@ -4011,7 +4011,10 @@ async function rtSubmit(text) {
             method: "POST", credentials: "include",
             headers: authHeaders({ "Content-Type": "application/json" }),
             body: JSON.stringify({ message: text, history: rtHistory.slice(-14) }),
-            timeoutMs: 45000
+            // Each persona speaks with its own model (some slower, e.g. NVIDIA 70b)
+            // and later speakers wait for earlier ones so they can react — so a
+            // 2-3 voice turn can take ~40s. Allow headroom before aborting.
+            timeoutMs: 90000
         });
         var data = await res.json();
         turns = (data && data.turns) || [];
