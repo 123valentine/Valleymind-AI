@@ -110,6 +110,10 @@ services:
         value: wan2.7-t2v-2026-06-12
       - key: VIDEO_MAX_POLL_SECONDS
         value: "900"
+      # Hard app-side spend cap for video generation (protective, well under the
+      # real Alibaba coupon balance). Lowered 200 -> 100 for a safety margin.
+      - key: VIDEO_BUDGET_USD
+        value: "100"
       - key: FAL_KEY                       # fallback video provider (needs balance)
         sync: false
 
