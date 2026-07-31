@@ -891,7 +891,7 @@
 <body class="text-on-background font-body-md overflow-hidden">
 
 <div id="brandSplashScreen" style="position:fixed; top:0; left:0; width:100vw; height:100vh; background:#020617; z-index:999999; display:none; flex-direction:column; align-items:center; justify-content:center; gap:20px; transition: opacity 0.5s ease-out;">
-  <img src="/static/valleymind-logo.png" alt="Valleymind-AI Logo" style="width:240px;height:240px;object-fit:cover;object-position:top;clip-path:inset(0% 0% 32% 0%); animation: logoIntro 2s cubic-bezier(0.34,1.2,0.4,1) forwards;">
+  <img src="/static/valleymind-logo.png" alt="Valleymind-AI Logo" style="width:300px;height:auto;max-width:80vw;object-fit:contain; animation: logoIntro 2s cubic-bezier(0.34,1.2,0.4,1) forwards;">
   <h1 style="color:#38bdf8;font-family:'Space Grotesk','Inter',sans-serif;font-size:30px;font-weight:800;letter-spacing:0.14em;margin:0;text-align:center;">ValleyMind AI</h1>
 </div>
 
@@ -925,7 +925,7 @@
 <section id="loginView">
   <form id="loginForm" class="glass-panel" style="width:min(420px,100%);border-radius:16px;padding:28px;display:flex;flex-direction:column;gap:16px;">
     <div style="display:flex;flex-direction:column;align-items:center;gap:8px;">
-      <img src="/static/valleymind-logo.png" alt="Valleymind-AI Logo" width="180" height="180" style="width:180px;height:180px;object-fit:cover;object-position:top;clip-path:inset(0% 0% 32% 0%);">
+      <img src="/static/valleymind-logo.png" alt="Valleymind-AI Logo" style="width:220px;height:auto;object-fit:contain;">
       <p class="text-slate-400 text-[10px] uppercase tracking-[0.2em] mt-1">Login Required</p>
     </div>
     <input id="loginEmail" type="email" autocomplete="email" placeholder="Email" required
@@ -1495,6 +1495,14 @@
     </div>
   </div>
   <div class="rt-status" id="rtStatus"></div>
+  <!-- Voice visual: a glowing ring whose waveform animates to the user's mic
+       while they speak, and to each persona's voice note while it plays. -->
+  <div class="rt-ring" id="rtRing" style="display:none;">
+    <div class="rt-ring-core">
+      <span class="rt-ring-bars" id="rtRingBars"></span>
+    </div>
+    <div class="rt-ring-label" id="rtRingLabel"></div>
+  </div>
   <div class="rt-transcript" id="rtTranscript"></div>
   <div class="rt-controls" id="rtControls">
     <div class="rt-entry-q" id="rtEntryQ">What do you want to talk about?</div>
