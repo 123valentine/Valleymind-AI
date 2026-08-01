@@ -299,7 +299,8 @@
     display:flex; align-items:center; justify-content:center; gap:2px; height:60px; width:118px; }
   .rt-ring-bars i { width:3px; height:54px; border-radius:2px; background:linear-gradient(180deg,#e0f2fe,#00d4ff);
     transform:scaleY(0.12); transform-origin:center; box-shadow:0 0 6px rgba(0,212,255,0.85); transition:transform 0.07s linear; }
-  .rt-ring.speaking .rt-ring-bars i { animation:rtWave 0.85s ease-in-out infinite; }
+  .rt-ring.speaking .rt-ring-bars i,
+  .rt-ring.listening .rt-ring-bars i { animation:rtWave 0.85s ease-in-out infinite; }
   @keyframes rtWave { 0%,100%{ transform:scaleY(0.15);} 50%{ transform:scaleY(1);} }
   .rt-ring-label { font-size:12px; font-weight:700; letter-spacing:0.04em; color:#7dd3fc; }
   .rt-name { font-size:12px; font-weight:700; color:#cbd5e1; }
@@ -4370,8 +4371,11 @@ function rtStartListening() {
     rtListening = true;
     if (!rtBusy && !rtSpeaking) {
         rtSetStatus("Listening…");
-        rtRingShow("listening", "Listening…");   // ring animates to the user's voice
-        rtMicVizStart();
+        // Ring animates via CSS while listening. IMPORTANT: do NOT open a second
+        // getUserMedia stream here — SpeechRecognition already owns the mic, and a
+        // competing capture starves it (esp. on mobile), which stopped voice input
+        // from working at all. The CSS wave is enough.
+        rtRingShow("listening", "Listening…");
     }
     rtRender();
 }
@@ -4430,40 +4434,12 @@ function rtRingHide() {
     rtRingBarsReset();
 }
 
-// Real amplitude for the user's mic — a separate getUserMedia stream feeds an
-// analyser; the ring bars follow the voice. Falls back to the CSS wave if the
-// mic stream/AudioContext isn't available.
-function rtMicVizStart() {
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { rtRingShow("speaking", "Listening…"); return; }
-    navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
-        rtMicStream = stream;
-        var AC = window.AudioContext || window.webkitAudioContext;
-        if (!AC) { rtRingShow("speaking", "Listening…"); return; }
-        rtAC = rtAC || new AC();
-        if (rtAC.state === "suspended") { try { rtAC.resume(); } catch (e) {} }
-        rtMicSrc = rtAC.createMediaStreamSource(stream);
-        rtAnalyser = rtAC.createAnalyser();
-        rtAnalyser.fftSize = 64;
-        rtAnalyser.smoothingTimeConstant = 0.75;
-        rtMicSrc.connect(rtAnalyser);
-        var data = new Uint8Array(rtAnalyser.frequencyBinCount);
-        var bars = document.querySelectorAll("#rtRingBars i");
-        (function loop() {
-            if (!rtAnalyser) return;
-            rtAnalyser.getByteFrequencyData(data);
-            for (var i = 0; i < bars.length; i++) {
-                var v = data[Math.min(i, data.length - 1)] / 255;
-                bars[i].style.transform = "scaleY(" + (0.12 + v * 1.05).toFixed(3) + ")";
-            }
-            rtRingRAF = requestAnimationFrame(loop);
-        })();
-    }).catch(function () { rtRingShow("speaking", "Listening…"); });
-}
+// NOTE: the listening ring animates purely via CSS. We deliberately do NOT tap
+// the mic with getUserMedia for a live waveform — SpeechRecognition owns the mic
+// and a second capture broke voice input (especially on mobile). Kept as a safe
+// no-op cleanup so callers (rtStopListening) stay simple.
 function rtMicVizStop() {
     if (rtRingRAF) { cancelAnimationFrame(rtRingRAF); rtRingRAF = null; }
-    try { if (rtMicSrc) rtMicSrc.disconnect(); } catch (e) {}
-    try { if (rtMicStream) rtMicStream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) {}
-    rtAnalyser = null; rtMicSrc = null; rtMicStream = null;
     rtRingBarsReset();
 }
 
