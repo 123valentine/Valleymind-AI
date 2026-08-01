@@ -3018,6 +3018,57 @@ def api_studio_assemble_uploads():
     return jsonify({"status": "success", "job": sj.public_view(sj.get_job(job["_id"]))})
 
 
+def _edit_enabled() -> bool:
+    return os.getenv("EDIT_ENABLED", "1").strip().lower() not in ("0", "false", "no", "off")
+
+
+@app.route("/api/editing/run", methods=["POST"])
+def api_editing_run():
+    """Massive Editing: accept ONE raw talking-head video, store it, and launch a
+    background auto-edit job (transcribe -> trim silences/fillers -> B-roll ->
+    animated captions -> vertical short). Returns the job to poll via
+    /api/studio/job/<id>. No paid video-generation spend (Groq Whisper + a free
+    B-roll provider + local ffmpeg)."""
+    user_id, error = _require_login()
+    if error:
+        return error
+    if not _edit_enabled():
+        return jsonify({"status": "error", "message": "Editing is temporarily unavailable."}), 503
+
+    import core.studio_jobs as sj
+    upload = request.files.get("video")
+    if not upload or not upload.filename:
+        return jsonify({"status": "error", "message": "Upload a video to edit."}), 400
+    test_mode = str(request.form.get("test_mode", "")).strip().lower() in ("1", "true", "yes", "on")
+
+    import tempfile
+    suffix = os.path.splitext(upload.filename)[1][:8] or ".mp4"
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+    tmp_path = tmp.name
+    tmp.close()
+    try:
+        upload.save(tmp_path)
+        size_mb = os.path.getsize(tmp_path) / 1024 / 1024
+        if size_mb > _max_upload_mb:
+            return jsonify({"status": "error",
+                            "message": f"{upload.filename} is {size_mb:.0f}MB — the limit is "
+                                       f"{_max_upload_mb:.0f}MB."}), 413
+        rec = get_media_manager(user_id).save_video(
+            tmp_path, prompt=(upload.filename or "raw")[:200],
+            provider="EditUpload", chat_id=f"edit_{user_id}")
+        if not rec:
+            return jsonify({"status": "error", "message": "Couldn't store the upload."}), 502
+    finally:
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
+
+    job = sj.new_autoedit_job(user_id, rec["local_path"], test_mode=test_mode)
+    sj.launch(job["_id"])
+    return jsonify({"status": "success", "job": sj.public_view(sj.get_job(job["_id"]))})
+
+
 @app.route("/api/studio/estimate", methods=["GET"])
 def api_studio_estimate():
     """Cost meter data for the Studio: estimated cost, remaining budget, and

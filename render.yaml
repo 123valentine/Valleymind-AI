@@ -117,6 +117,23 @@ services:
       - key: FAL_KEY                       # fallback video provider (needs balance)
         sync: false
 
+      # ── Massive Editing (auto short-form editor) ──────────────────
+      # CPU/ffmpeg only + Groq Whisper + a free B-roll provider — no paid
+      # video-gen spend. Caps keep a render inside the free instance's RAM/CPU;
+      # raise them after upgrading the plan (no code change).
+      - key: EDIT_ENABLED
+        value: "1"
+      - key: EDIT_MAX_SECONDS              # hard-trim inputs longer than this
+        value: "60"
+      - key: EDIT_OUTPUT                   # vertical 9:16 output size
+        value: 720x1280
+      - key: EDIT_BROLL_PROVIDER           # free image provider for AI B-roll
+        value: Pollinations
+      - key: EDIT_MAX_BROLL
+        value: "4"
+      - key: GROQ_WHISPER_MODEL
+        value: whisper-large-v3
+
       # ── Media storage (Cloudflare R2) ─────────────────────────────
       # Media bytes (images, clips, trailers) live in R2, NOT GridFS. The app
       # HARD-FAILS a save if R2 is configured but unreachable — there is no
