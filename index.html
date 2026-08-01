@@ -4026,6 +4026,7 @@ function closeRoundTable() {
 // endpoint until the finished video is ready.
 var editJobId = "";
 var editTimer = null;
+var editStart = 0;
 
 function _editShow(id, on) { var e = document.getElementById(id); if (e) e.style.display = on ? "" : "none"; }
 
@@ -4102,6 +4103,7 @@ function editSubmit(file) {
                 return;
             }
             editJobId = d.job.job_id;
+            editStart = Date.now();
             editPhase("Editing your video…",
                 "Transcribing, trimming silences and filler words, captioning, and adding B-roll. This runs in the background — give it a few minutes.");
             editPoll();
@@ -4119,6 +4121,9 @@ function editPoll() {
             var label = document.getElementById("editStatusLabel");
             if (job.status === "running") {
                 if (label) label.textContent = job.stalled ? "reconnecting…" : "editing…";
+                var secs = editStart ? Math.round((Date.now() - editStart) / 1000) : 0;
+                editPhase(job.stalled ? "Reconnecting…" : "Editing your video…",
+                    "Working — " + secs + "s elapsed. Trimming, captioning and adding B-roll usually takes about 2–3 minutes; keep this open.");
                 editTimer = setTimeout(editPoll, 5000);
                 return;
             }
