@@ -378,3 +378,214 @@ def render_edit(src_path: str, plan: dict, ass_text: str, brolls: list, out_path
         return False, f"render error: {exc}"
     finally:
         shutil.rmtree(work, ignore_errors=True)
+
+
+# ── Full pipeline: source video → transcribe → trim → B-roll → captions → store
+
+def max_seconds() -> int:
+    return max(5, int(_f("EDIT_MAX_SECONDS", 60)))
+
+
+def max_broll() -> int:
+    return max(0, int(_f("EDIT_MAX_BROLL", 4)))
+
+
+def _json(raw: str):
+    m = re.search(r"\{.*\}", str(raw or ""), re.DOTALL)
+    if not m:
+        return {}
+    try:
+        import json
+        return json.loads(m.group(0))
+    except Exception:
+        return {}
+
+
+def _in_keep(t: float, keep: list) -> bool:
+    return any(s <= t <= e for s, e in keep)
+
+
+def _broll_cues(words: list, keep: list, *, limit: int) -> list:
+    """One LLM pass → up to `limit` B-roll cues {start, end, image_prompt}, in
+    ORIGINAL time, chosen from the kept transcript."""
+    if limit <= 0:
+        return []
+    from core.brain import _call_llm_cluster
+    lines, buf, buf_start = [], [], None
+    for w in words:
+        try:
+            s = float(w["start"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if not _in_keep(s, keep):
+            continue
+        if buf_start is None:
+            buf_start = s
+        buf.append(str(w.get("word", "")).strip())
+        if len(buf) >= 8:
+            lines.append(f"[{buf_start:.1f}s] " + " ".join(buf))
+            buf, buf_start = [], None
+    if buf:
+        lines.append(f"[{buf_start:.1f}s] " + " ".join(buf))
+    if not lines:
+        return []
+    system = (
+        "You pick B-roll moments for a short talking-head video. Given a timestamped "
+        f"transcript, choose UP TO {limit} moments where a single AI-generated image would "
+        "strengthen the point (spread them out, ~1 per 8-10s; fewer is fine). For each give the "
+        "start second copied from the transcript and a concise, vivid image prompt — concrete, "
+        "photographic, NO text/words in the image. Respond with ONLY JSON: "
+        '{"cues":[{"at": 12.3, "prompt": "..."}]}'
+    )
+    try:
+        raw, _ = _call_llm_cluster(
+            [{"role": "system", "content": system}, {"role": "user", "content": "\n".join(lines)}],
+            timeout=30)
+    except Exception as exc:
+        print(f"[EDIT] b-roll cue LLM failed: {exc}")
+        return []
+    data = _json(raw)
+    cues = []
+    for c in (data.get("cues") if isinstance(data, dict) else []) or []:
+        try:
+            at = float(c["at"])
+            pr = str(c["prompt"]).strip()
+        except (KeyError, TypeError, ValueError):
+            continue
+        if pr and _in_keep(at, keep):
+            cues.append({"start": at, "end": at + 2.5, "image_prompt": pr})
+    return cues[:limit]
+
+
+def _download_to(url: str, dest: str) -> bool:
+    try:
+        if str(url).startswith("http"):
+            import requests
+            r = requests.get(url, timeout=60)
+            if r.status_code != 200 or not r.content:
+                return False
+            data = r.content
+        else:
+            from core.media_manager import fetch_media_bytes
+            data = fetch_media_bytes(url)
+            if not data:
+                return False
+        with open(dest, "wb") as f:
+            f.write(data)
+        return True
+    except Exception:
+        return False
+
+
+def _gen_broll(cues: list, workdir: str) -> list:
+    """Generate a B-roll image per cue (free provider by default), downloaded to
+    a local file for ffmpeg overlay."""
+    import core.provider_manager as pm
+    provider = os.getenv("EDIT_BROLL_PROVIDER", "Pollinations")
+    out = []
+    for i, c in enumerate(cues):
+        try:
+            r = pm.get_manager().execute(pm.Capability.IMAGE, prompt=c["image_prompt"],
+                                         prefer=provider, enhance=False)
+            if not getattr(r, "success", False):
+                continue
+            url = (r.data or {}).get("image_url", "")
+            dest = os.path.join(workdir, f"broll_{i}.png")
+            if url and _download_to(url, dest):
+                out.append({"image": dest, "start": c["start"], "end": c["end"]})
+        except Exception as exc:
+            print(f"[EDIT] b-roll image {i} failed: {exc}")
+    return out
+
+
+def run_autoedit(user_id: str, source: str, *, on_progress=None, test_mode: bool = False) -> dict:
+    """Full Massive-Edit pipeline for one source video. Returns
+    {"video_url", "stats"} or {"error"}. Never raises. B-roll is skipped in
+    test_mode (keeps a dry run free + fast)."""
+    import shutil
+    import tempfile
+    from core.media_manager import get_media_manager, fetch_media_bytes
+    from core.video_assembly import ffmpeg_exe, _probe_duration
+    import core.transcription as tr
+
+    exe = ffmpeg_exe()
+    if not exe:
+        return {"error": "ffmpeg not available"}
+
+    def beat():
+        if on_progress:
+            try:
+                on_progress()
+            except Exception:
+                pass
+
+    work = tempfile.mkdtemp(prefix="autoedit_")
+    try:
+        # 1. Resolve source to a local file.
+        srcfile = os.path.join(work, "source.mp4")
+        if os.path.exists(source):
+            shutil.copy(source, srcfile)
+        else:
+            data = fetch_media_bytes(source)
+            if not data:
+                return {"error": "could not fetch source video"}
+            with open(srcfile, "wb") as f:
+                f.write(data)
+        beat()
+
+        # 2. Cap length: stream-copy trim to the first max_seconds (cheap, no re-encode).
+        dur = _probe_duration(exe, srcfile)[1]
+        work_src = srcfile
+        if dur and dur > max_seconds() + 0.5:
+            capped = os.path.join(work, "capped.mp4")
+            ok, _ = _run_cwd([exe, "-y", "-i", srcfile, "-t", str(max_seconds()),
+                              "-c", "copy", "-movflags", "+faststart", capped], 180)
+            if ok and os.path.exists(capped):
+                work_src = capped
+        beat()
+
+        # 3. Transcribe.
+        res = tr.transcribe(work_src)
+        if res.get("error"):
+            return {"error": "transcription: " + res["error"]}
+        words = res["words"]
+        beat()
+
+        # 4. Edit plan (trim silences/fillers).
+        plan = build_edit_plan(words)
+        if not plan["keep"] or plan["total_out"] < 1.0:
+            return {"error": "nothing usable to keep after trimming"}
+
+        # 5. B-roll (skipped in test mode).
+        brolls = []
+        if not test_mode and max_broll() > 0:
+            brolls = _gen_broll(_broll_cues(words, plan["keep"], limit=max_broll()), work)
+        beat()
+
+        # 6. Captions + render.
+        _, family = font_file_and_family()
+        w, h = output_size()
+        ass = build_ass(plan["kept_words"], fontname=family, play_w=w, play_h=h)
+        out = os.path.join(work, "final.mp4")
+        ok, err = render_edit(work_src, plan, ass, brolls, out, on_progress=on_progress)
+        if not ok:
+            return {"error": err}
+        beat()
+
+        # 7. Store (R2 via MediaManager).
+        rec = get_media_manager(user_id).save_media(
+            out, media_type="video", prompt="Massive Edit", provider="MassiveEdit",
+            chat_id=f"edit_{user_id}")
+        if not rec:
+            return {"error": "rendered but could not store the video"}
+        return {"video_url": rec["local_path"], "stats": {
+            "source_seconds": round(dur or 0.0, 1),
+            "output_seconds": plan["total_out"],
+            "removed_words": plan["removed"],
+            "brolls": len(brolls),
+            "caption_words": len(plan["kept_words"]),
+        }}
+    except Exception as exc:
+        return {"error": f"auto-edit error: {exc}"}
+    finally:
+        shutil.rmtree(work, ignore_errors=True)

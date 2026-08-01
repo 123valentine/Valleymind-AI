@@ -483,6 +483,80 @@ def new_single_video_job(user_id: str, *, prompt: str, duration: int | None,
     return job
 
 
+def new_autoedit_job(user_id: str, source_video_url: str, *, test_mode: bool = False) -> dict:
+    """Massive Editing: auto-edit ONE uploaded video into a vertical short.
+
+    The heavy work (transcribe → trim → B-roll → captions → render) is pure
+    CPU/ffmpeg, so this reuses the studio job engine (background driver, atomic
+    finalize claim, heartbeat, watchdog resume, durable terminal write) but runs
+    the video_edit pipeline instead of clip generation. Nothing is charged for
+    v1 (Groq Whisper + free B-roll provider)."""
+    job = {
+        "_id": uuid.uuid4().hex,
+        "user_id": user_id,
+        "status": "running",
+        "source": "autoedit",
+        "source_video": source_video_url,
+        "test_mode": bool(test_mode),
+        "clips": [],
+        "final_video": "",
+        "stats": None,
+        "assembly_mode": "autoedit",
+        "spend_usd": 0.0,
+        "finalize_attempts": 0,
+        "error": "",
+        "created_at": _now_iso(),
+        "updated_at": _now_iso(),
+        "heartbeat": _now_iso(),
+    }
+    save_job(job)
+    return job
+
+
+def _run_autoedit(job_id: str) -> None:
+    """Drive a Massive-Edit job to a terminal state. A background pulser keeps the
+    heartbeat + finalize claim alive through the long ffmpeg passes so the
+    watchdog never starts a duplicate render."""
+    job = get_job(job_id)
+    if not job or job.get("status") in JOB_TERMINAL:
+        return
+    if not _claim_finalize(job_id):
+        print(f"[JOB] autoedit {job_id[:8]} already claimed elsewhere; skipping")
+        return
+
+    stop = threading.Event()
+
+    def _pulse():
+        while not stop.wait(20.0):
+            _touch_heartbeat(job_id)
+
+    threading.Thread(target=_pulse, daemon=True, name=f"edit-hb-{job_id[:8]}").start()
+    try:
+        import core.video_edit as ve
+        result = ve.run_autoedit(job["user_id"], job.get("source_video", ""),
+                                 on_progress=lambda: _touch_heartbeat(job_id),
+                                 test_mode=bool(job.get("test_mode")))
+    finally:
+        stop.set()
+
+    job = get_job(job_id) or job
+    if job.get("status") in JOB_TERMINAL:
+        return
+    job["assembling_at"] = None
+    job["assembling_owner"] = None
+    job["finalize_attempts"] = int(job.get("finalize_attempts", 0)) + 1
+    if result.get("video_url"):
+        job["final_video"] = result["video_url"]
+        job["stats"] = result.get("stats")
+        job["status"] = "done"
+        job["error"] = ""
+    else:
+        job["status"] = "failed"
+        job["error"] = result.get("error", "auto-edit failed")
+    job["heartbeat"] = _now_iso()
+    save_job_durable(job)   # trailer is already in R2; don't lose the terminal write
+
+
 def get_job(job_id: str) -> dict | None:
     coll = studio_jobs_collection()
     if coll is None:
@@ -567,6 +641,7 @@ def public_view(job: dict) -> dict:
         "missing_scenes": job.get("missing_scenes", []),
         "final_video": job.get("final_video", ""),
         "assembly_mode": job.get("assembly_mode", "hard_cut"),
+        "stats": job.get("stats"),          # Massive Edit: trim/broll/caption counts
         "cost": {
             "spend_usd": round(job.get("spend_usd", 0.0), 2),
             "est_cost_usd": round(job.get("est_cost_usd", 0.0), 2),
@@ -605,7 +680,11 @@ def drive_job(job_id: str) -> None:
     if not lock.acquire(blocking=False):
         return  # already being driven in this process
     try:
-        _run(job_id)
+        job = get_job(job_id)
+        if job and job.get("source") == "autoedit":
+            _run_autoedit(job_id)          # Massive Editing pipeline
+        else:
+            _run(job_id)
     except Exception as exc:
         print(f"[JOB] driver crashed for {job_id}: {exc}")
         job = get_job(job_id)
