@@ -3069,6 +3069,100 @@ def api_editing_run():
     return jsonify({"status": "success", "job": sj.public_view(sj.get_job(job["_id"]))})
 
 
+# ── Editing asset library (user's own funny sounds / music / reactions) ──────
+_ASSET_CATEGORIES = {"sfx", "music", "reaction"}
+
+
+def _asset_kind(mimetype: str, filename: str) -> str:
+    mt = (mimetype or "").lower()
+    if mt.startswith("audio/"):
+        return "audio"
+    if mt.startswith("video/"):
+        return "video"
+    if mt.startswith("image/"):
+        return "image"
+    ext = os.path.splitext(filename or "")[1].lower().lstrip(".")
+    if ext in ("mp3", "wav", "ogg", "m4a", "aac", "weba"):
+        return "audio"
+    if ext in ("mp4", "webm", "mov", "m4v"):
+        return "video"
+    if ext in ("png", "jpg", "jpeg", "gif", "webp"):
+        return "image"
+    return ""
+
+
+@app.route("/api/editing/assets", methods=["GET"])
+def api_editing_assets_list():
+    """List the user's editing-library assets (their own SFX / music / reaction
+    clips), optionally filtered by category."""
+    user_id, error = _require_login()
+    if error:
+        return error
+    category = str(request.args.get("category", "")).strip().lower()
+    if category not in _ASSET_CATEGORIES:
+        category = ""
+    items = get_media_manager(user_id).list_assets(category=category)
+    return jsonify({"status": "success", "assets": items})
+
+
+@app.route("/api/editing/assets", methods=["POST"])
+def api_editing_assets_upload():
+    """Upload one or more editing assets (funny sounds, music, or reaction
+    photos/clips) into the user's own library — used later to auto-insert at
+    fitting moments. Their own files, so no music-licensing cost."""
+    user_id, error = _require_login()
+    if error:
+        return error
+    if not _edit_enabled():
+        return jsonify({"status": "error", "message": "Editing is temporarily unavailable."}), 503
+    category = str(request.form.get("category", "sfx")).strip().lower()
+    if category not in _ASSET_CATEGORIES:
+        category = "sfx"
+    files = [f for f in request.files.getlist("files") if f and f.filename]
+    if not files:
+        return jsonify({"status": "error", "message": "No files uploaded."}), 400
+
+    import tempfile
+    media = get_media_manager(user_id)
+    saved, errors = [], []
+    for up in files:
+        kind = _asset_kind(getattr(up, "mimetype", ""), up.filename)
+        if not kind:
+            errors.append(f"{up.filename}: unsupported file type")
+            continue
+        suffix = os.path.splitext(up.filename)[1][:8] or ""
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+        tmp_path = tmp.name
+        tmp.close()
+        try:
+            up.save(tmp_path)
+            size_mb = os.path.getsize(tmp_path) / 1024 / 1024
+            if size_mb > _max_upload_mb:
+                errors.append(f"{up.filename}: {size_mb:.0f}MB over the {_max_upload_mb:.0f}MB limit")
+                continue
+            rec = media.save_asset(tmp_path, kind=kind, category=category,
+                                   name=os.path.splitext(up.filename)[0][:80])
+            if rec:
+                saved.append(rec)
+            else:
+                errors.append(f"{up.filename}: could not store")
+        finally:
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+    return jsonify({"status": "success", "saved": len(saved), "assets": saved, "errors": errors})
+
+
+@app.route("/api/editing/assets/<media_id>/delete", methods=["POST"])
+def api_editing_assets_delete(media_id):
+    user_id, error = _require_login()
+    if error:
+        return error
+    ok = get_media_manager(user_id).delete_media(media_id)
+    return jsonify({"status": "success" if ok else "error"})
+
+
 @app.route("/api/studio/estimate", methods=["GET"])
 def api_studio_estimate():
     """Cost meter data for the Studio: estimated cost, remaining budget, and

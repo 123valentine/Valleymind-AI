@@ -31,7 +31,7 @@ from core.config import PROJECT_ROOT
 from core.db import get_db
 from core import r2_storage
 
-_SUBDIR = {"image": "images", "video": "videos"}
+_SUBDIR = {"image": "images", "video": "videos", "audio": "audio"}
 
 
 class MediaManager:
@@ -103,6 +103,8 @@ class MediaManager:
         revised_prompt: str = "",
         provider: str = "",
         chat_id: str = "",
+        library: str = "",
+        category: str = "",
     ) -> dict[str, Any] | None:
         """Fetch *source* (an http(s) URL or a local /static/... path) and store
         it permanently. Returns the media record dict, or ``None`` on failure.
@@ -145,6 +147,10 @@ class MediaManager:
                 "created_at": datetime.now(timezone.utc).isoformat(),
                 "file_size": file_size,
             }
+            if library:
+                record["library"] = library      # e.g. "edit" — a user asset, not gallery media
+            if category:
+                record["category"] = category     # e.g. sfx | music | reaction
 
             # Primary backend: Cloudflare R2 for the bytes, Mongo `media` doc for
             # the metadata. HARD-FAIL — if R2 is configured but the upload fails,
@@ -246,7 +252,9 @@ class MediaManager:
         coll = self._media_collection()
         if coll is not None:
             try:
-                query: dict[str, Any] = {"user_id": self.user_id, "type": media_type}
+                # Exclude editing-library assets (library="edit") from the galleries.
+                query: dict[str, Any] = {"user_id": self.user_id, "type": media_type,
+                                         "library": {"$in": [None, ""]}}
                 if chat_id:
                     query["chat_id"] = chat_id
                 items = [self._strip_mongo_fields(d) for d in coll.find(query)]
@@ -258,7 +266,7 @@ class MediaManager:
                 print(f"[MEDIA] Mongo list failed, falling back to local index: {exc}")
 
         with self._lock:
-            items = [r for r in self._index if r.get("type") == media_type]
+            items = [r for r in self._index if r.get("type") == media_type and not r.get("library")]
         if chat_id:
             items = [r for r in items if r.get("chat_id") == chat_id]
         if search:
@@ -297,6 +305,33 @@ class MediaManager:
 
         scored.sort(key=lambda x: x[0], reverse=True)
         return [r for _, r in scored]
+
+    # -- Editing asset library (per-user funny sounds / music / reactions) -----
+
+    def save_asset(self, source: str, *, kind: str, category: str, name: str = "") -> dict[str, Any] | None:
+        """Store a user-uploaded editing asset (kind: audio|video|image;
+        category: sfx|music|reaction) in the per-user 'edit' library."""
+        return self.save_media(source, media_type=kind, prompt=name, provider="EditAsset",
+                               library="edit", category=category, chat_id=f"edit_assets_{self.user_id}")
+
+    def list_assets(self, *, category: str = "", limit: int = 300, offset: int = 0) -> list[dict]:
+        """List the user's editing-library assets, newest first (optionally by category)."""
+        coll = self._media_collection()
+        if coll is not None:
+            try:
+                q: dict[str, Any] = {"user_id": self.user_id, "library": "edit"}
+                if category:
+                    q["category"] = category
+                items = [self._strip_mongo_fields(d) for d in coll.find(q)]
+                items.sort(key=lambda r: r.get("created_at", ""), reverse=True)
+                return items[offset : offset + limit]
+            except Exception as exc:
+                print(f"[MEDIA] Mongo asset list failed, falling back to local index: {exc}")
+        with self._lock:
+            items = [r for r in self._index if r.get("library") == "edit"
+                     and (not category or r.get("category") == category)]
+        items.sort(key=lambda r: r.get("created_at", ""), reverse=True)
+        return items[offset : offset + limit]
 
     def count_images(self, **kwargs: Any) -> int:
         return self._count("image", **kwargs)
@@ -395,12 +430,20 @@ class MediaManager:
             "video/mp4": "mp4",
             "video/webm": "webm",
             "video/quicktime": "mov",
+            "audio/mpeg": "mp3",
+            "audio/mp3": "mp3",
+            "audio/wav": "wav",
+            "audio/x-wav": "wav",
+            "audio/ogg": "ogg",
+            "audio/mp4": "m4a",
+            "audio/aac": "aac",
+            "audio/webm": "weba",
         }
         if ct in mapping:
             return mapping[ct]
         if "/" in ct:
             return ct.split("/")[-1]
-        return "png" if media_type == "image" else "mp4"
+        return {"image": "png", "audio": "mp3"}.get(media_type, "mp4")
 
     @staticmethod
     def _content_type_from_ext(ext: str, media_type: str) -> str:
