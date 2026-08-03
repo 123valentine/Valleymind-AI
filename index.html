@@ -547,6 +547,209 @@
     .studio-frame, .studio-frame.pending { width:120px; }
     .studio-frame.pending { height:120px; }
   }
+
+  /* ── Studio Dashboard ─────────────────────────────────────── */
+  #studioDash { flex:1; min-height:0; display:flex; flex-direction:column; }
+  #studioDash.hidden { display:none; }
+  .studio-back-btn {
+    display:inline-flex; align-items:center; gap:6px; white-space:nowrap;
+    background:rgba(15,23,42,0.7); border:1px solid rgba(255,255,255,0.12); border-radius:10px;
+    padding:8px 14px; color:#cbd5e1; font-size:12px; font-weight:700; cursor:pointer;
+    font-family:'Space Grotesk',sans-serif; transition:all 0.2s;
+  }
+  .studio-back-btn:hover { color:#00d4ff; border-color:rgba(0,212,255,0.4); background:rgba(0,212,255,0.06); }
+  .studio-tabbar {
+    display:flex; gap:4px; flex-shrink:0; align-items:flex-end;
+    padding:12px 32px 0; overflow-x:auto; scrollbar-width:none;
+    background:linear-gradient(180deg, rgba(0,212,255,0.05), transparent);
+    border-bottom:1px solid rgba(255,255,255,0.06);
+  }
+  .studio-tabbar::-webkit-scrollbar { display:none; }
+  .studio-tab {
+    position:relative; white-space:nowrap; flex-shrink:0;
+    display:inline-flex; align-items:center; gap:6px;
+    border:none; background:transparent; cursor:pointer;
+    padding:10px 15px; color:#94a3b8;
+    font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:13.5px;
+    letter-spacing:0.02em; border-radius:10px 10px 0 0;
+    transition:color 0.2s, background 0.2s;
+  }
+  .studio-tab i { opacity:0.85; }
+  .studio-tab:hover { color:#e2e8f0; background:rgba(255,255,255,0.04); }
+  .studio-tab.active { color:#00d4ff; background:rgba(0,212,255,0.08); }
+  .studio-tab.active::after {
+    content:""; position:absolute; left:12px; right:12px; bottom:-1px; height:2px;
+    border-radius:2px; background:linear-gradient(90deg,#00d4ff,#0ea5e9);
+    box-shadow:0 0 10px rgba(0,212,255,0.6);
+  }
+  .studio-dash-body { flex:1; min-height:0; overflow-y:auto; padding:24px 32px 48px; }
+  .studio-view { display:none; animation:sdViewIn 0.28s ease both; }
+  .studio-view.active { display:block; }
+  @keyframes sdViewIn { from { opacity:0; transform:translateY(10px);} to { opacity:1; transform:none;} }
+
+  .sd-hero { position:relative; overflow:hidden; border-radius:20px; padding:34px 30px; margin-bottom:26px;
+    border:1px solid rgba(0,212,255,0.18); background:
+      radial-gradient(420px 200px at 88% -20%, rgba(0,212,255,0.22), transparent 65%),
+      radial-gradient(320px 180px at -10% 110%, rgba(14,165,233,0.16), transparent 60%),
+      rgba(255,255,255,0.03);
+  }
+  .sd-hero::after { content:""; position:absolute; right:-60px; top:-60px; width:220px; height:220px; border-radius:50%;
+    border:1px solid rgba(0,212,255,0.12); pointer-events:none; }
+  .sd-hero::before { content:""; position:absolute; right:-20px; top:-20px; width:140px; height:140px; border-radius:50%;
+    border:1px solid rgba(0,212,255,0.14); pointer-events:none; }
+  .sd-hero-badge { display:inline-flex; align-items:center; gap:6px; font-size:10px; font-weight:800; text-transform:uppercase;
+    letter-spacing:0.12em; color:#00d4ff; font-family:'Space Grotesk',sans-serif;
+    background:rgba(0,212,255,0.1); border:1px solid rgba(0,212,255,0.25); border-radius:999px; padding:5px 12px; }
+  .sd-hero-badge i { width:13px; height:13px; }
+  .sd-hero-title { margin:14px 0 8px; color:#f1f5f9; font-family:'Space Grotesk',sans-serif; font-weight:800; font-size:30px; letter-spacing:-0.01em; }
+  .sd-hero-accent { background:linear-gradient(90deg,#00d4ff,#38bdf8); -webkit-background-clip:text; background-clip:text; color:transparent; }
+  .sd-hero-sub { color:#94a3b8; font-size:14px; max-width:520px; line-height:1.6; margin:0 0 20px; }
+  .sd-hero-actions { display:flex; gap:10px; flex-wrap:wrap; }
+  .sd-go { display:inline-flex; align-items:center; gap:8px; border:none; cursor:pointer; border-radius:12px;
+    padding:12px 20px; font-size:14px; font-weight:800; font-family:'Space Grotesk',sans-serif; letter-spacing:0.02em;
+    background:linear-gradient(135deg,#00d4ff,#0ea5e9); color:#003642; transition:opacity 0.2s, transform 0.2s; }
+  .sd-go:hover { opacity:0.92; transform:translateY(-1px); }
+  .sd-go.ghost { background:rgba(255,255,255,0.06); color:#e2e8f0; border:1px solid rgba(255,255,255,0.14); }
+  .sd-go.ghost:hover { border-color:rgba(0,212,255,0.4); color:#00d4ff; }
+  .sd-go.small { padding:9px 14px; font-size:12.5px; border-radius:10px; }
+
+  .sd-section { display:flex; align-items:center; gap:12px; margin:28px 0 14px; }
+  .sd-section:first-child { margin-top:0; }
+  .sd-section h3 { margin:0; color:#e2e8f0; font-family:'Space Grotesk',sans-serif; font-size:16px; font-weight:800; letter-spacing:0.02em; white-space:nowrap; }
+  .sd-section-line { flex:1; height:1px; background:linear-gradient(90deg, rgba(0,212,255,0.25), transparent); }
+  .sd-section-count { font-size:11px; color:#64748b; font-family:'Space Grotesk',sans-serif; white-space:nowrap; }
+
+  .sd-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(228px,1fr)); gap:14px; }
+  .sd-card {
+    position:relative; display:flex; flex-direction:column; gap:10px;
+    padding:18px; border-radius:16px; cursor:pointer; text-align:left; overflow:hidden;
+    background:rgba(255,255,255,0.04);
+    border:1px solid rgba(255,255,255,0.08);
+    backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
+    transition:transform 0.2s, border-color 0.2s, background 0.2s, box-shadow 0.2s;
+  }
+  .sd-card::before {
+    content:""; position:absolute; inset:0; opacity:0; pointer-events:none;
+    background:radial-gradient(260px 130px at 30% 0%, rgba(0,212,255,0.14), transparent 70%);
+    transition:opacity 0.25s;
+  }
+  .sd-card:hover { transform:translateY(-3px); border-color:rgba(0,212,255,0.35); background:rgba(255,255,255,0.06);
+    box-shadow:0 12px 34px rgba(0,0,0,0.35); }
+  .sd-card:hover::before { opacity:1; }
+  .sd-card.coming:hover { border-color:rgba(255,170,0,0.32); }
+  .sd-card.coming:hover::before { background:radial-gradient(260px 130px at 30% 0%, rgba(255,170,0,0.1), transparent 70%); opacity:1; }
+  .sd-card-top { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
+  .sd-card-icon {
+    width:42px; height:42px; border-radius:12px; flex-shrink:0;
+    display:flex; align-items:center; justify-content:center;
+    background:linear-gradient(135deg, rgba(0,212,255,0.16), rgba(14,165,233,0.08));
+    border:1px solid rgba(0,212,255,0.22); color:#00d4ff;
+  }
+  .sd-card.coming .sd-card-icon { background:rgba(148,163,184,0.12); border-color:rgba(148,163,184,0.25); color:#94a3b8; }
+  .sd-card-title { color:#f1f5f9; font-size:15px; font-weight:700; font-family:'Space Grotesk',sans-serif; }
+  .sd-card-desc { color:#8ba0b0; font-size:12.5px; line-height:1.55; }
+  .sd-badge {
+    font-size:9.5px; font-weight:800; text-transform:uppercase; letter-spacing:0.08em;
+    padding:4px 10px; border-radius:999px; white-space:nowrap; flex-shrink:0;
+    font-family:'Space Grotesk',sans-serif;
+  }
+  .sd-badge.ready { background:rgba(34,197,94,0.12); color:#22c55e; border:1px solid rgba(34,197,94,0.3); }
+  .sd-badge.soon { background:rgba(255,170,0,0.1); color:#ffaa00; border:1px solid rgba(255,170,0,0.3); }
+
+  .sd-chips { display:flex; gap:8px; flex-wrap:wrap; margin:6px 0 18px; }
+  .sd-chip { border:1px solid rgba(255,255,255,0.12); background:rgba(255,255,255,0.04); color:#94a3b8;
+    border-radius:999px; padding:7px 15px; font-size:12px; font-weight:700; cursor:pointer; transition:all 0.2s;
+    font-family:'Space Grotesk',sans-serif; }
+  .sd-chip:hover { color:#e2e8f0; border-color:rgba(255,255,255,0.28); }
+  .sd-chip.active { background:rgba(0,212,255,0.14); border-color:rgba(0,212,255,0.42); color:#00d4ff; }
+
+  .sd-search { position:relative; max-width:360px; width:100%; }
+  .sd-search input { width:100%; background:rgba(15,23,42,0.7); border:1px solid rgba(255,255,255,0.1);
+    border-radius:12px; padding:11px 14px 11px 40px; color:#e2e8f0; font-size:13.5px; outline:none;
+    font-family:'Inter',sans-serif; transition:border-color 0.2s; box-sizing:border-box; }
+  .sd-search input:focus { border-color:rgba(0,212,255,0.45); }
+  .sd-search input::placeholder { color:#475569; }
+  .sd-search svg { position:absolute; left:14px; top:50%; transform:translateY(-50%); color:#64748b; }
+
+  /* Templates */
+  .sd-tpl-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(190px,1fr)); gap:16px; }
+  .sd-tpl-strip { display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:14px; }
+  .sd-tpl-card { position:relative; border-radius:16px; overflow:hidden; cursor:pointer; background:rgba(255,255,255,0.03);
+    border:1px solid rgba(255,255,255,0.08); transition:transform 0.2s, border-color 0.2s, box-shadow 0.2s; }
+  .sd-tpl-card:hover { transform:translateY(-3px); border-color:rgba(0,212,255,0.38); box-shadow:0 12px 30px rgba(0,0,0,0.4); }
+  .sd-tpl-preview { aspect-ratio:9/14; position:relative; display:flex; align-items:center; justify-content:center; }
+  .sd-tpl-preview i { color:rgba(255,255,255,0.85); filter:drop-shadow(0 2px 8px rgba(0,0,0,0.4)); }
+  .sd-tpl-meta { position:absolute; top:8px; left:8px; display:flex; gap:5px; flex-wrap:wrap; }
+  .sd-tpl-chip { font-size:9.5px; font-weight:800; text-transform:uppercase; letter-spacing:0.05em;
+    padding:3px 8px; border-radius:999px; background:rgba(2,6,23,0.72); color:#e2e8f0; backdrop-filter:blur(4px); }
+  .sd-tpl-dur { position:absolute; bottom:8px; right:8px; font-size:10px; font-weight:700;
+    padding:3px 8px; border-radius:999px; background:rgba(2,6,23,0.72); color:#7dd3fc; backdrop-filter:blur(4px); }
+  .sd-tpl-body { padding:12px 13px 13px; }
+  .sd-tpl-name { color:#e2e8f0; font-size:13.5px; font-weight:700; font-family:'Space Grotesk',sans-serif; }
+  .sd-tpl-cat { color:#64748b; font-size:11px; margin-top:4px; line-height:1.45; }
+  .sd-tpl-btn { margin-top:11px; width:100%; border:none; border-radius:9px; padding:8px 10px; font-size:12px;
+    font-weight:800; cursor:pointer; background:linear-gradient(135deg,#00d4ff,#0ea5e9); color:#003642;
+    font-family:'Space Grotesk',sans-serif; letter-spacing:0.03em; transition:opacity 0.2s; }
+  .sd-tpl-btn:hover { opacity:0.9; }
+
+  /* Assets */
+  .sd-asset-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:12px; }
+  .sd-asset { position:relative; border-radius:12px; overflow:hidden; cursor:pointer; background:rgba(255,255,255,0.03);
+    border:1px solid rgba(255,255,255,0.08); transition:transform 0.2s, border-color 0.2s; }
+  .sd-asset:hover { transform:translateY(-2px); border-color:rgba(0,212,255,0.4); }
+  .sd-asset video, .sd-asset img { width:100%; aspect-ratio:1; object-fit:cover; display:block; background:#0f172a; }
+  .sd-asset-audio { aspect-ratio:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:9px;
+    background:linear-gradient(160deg, rgba(0,212,255,0.1), rgba(14,165,233,0.03)); color:#7dd3fc; font-size:11px; font-weight:700; }
+  .sd-asset-name { position:absolute; left:0; right:0; bottom:0; padding:16px 9px 7px; font-size:10.5px; color:#e2e8f0;
+    background:linear-gradient(180deg, transparent, rgba(2,6,23,0.88)); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+  /* Projects */
+  .sd-proj-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:14px; }
+  .sd-proj { display:flex; flex-direction:column; gap:7px; padding:16px; border-radius:14px; cursor:pointer;
+    background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); transition:transform 0.2s, border-color 0.2s; }
+  .sd-proj:hover { transform:translateY(-2px); border-color:rgba(0,212,255,0.32); }
+  .sd-proj-name { color:#e2e8f0; font-size:14px; font-weight:700; font-family:'Space Grotesk',sans-serif; line-height:1.35; }
+  .sd-proj-sub { color:#64748b; font-size:11.5px; line-height:1.5; }
+  .sd-proj-status { font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:0.08em;
+    padding:4px 11px; border-radius:999px; align-self:flex-start; font-family:'Space Grotesk',sans-serif; }
+  .sd-proj-status.active { background:rgba(0,212,255,0.12); color:#00d4ff; border:1px solid rgba(0,212,255,0.3); }
+  .sd-proj-status.draft { background:rgba(148,163,184,0.1); color:#94a3b8; border:1px solid rgba(148,163,184,0.22); }
+  .sd-proj-status.completed { background:rgba(34,197,94,0.12); color:#22c55e; border:1px solid rgba(34,197,94,0.3); }
+
+  .sd-empty { text-align:center; padding:44px 16px; color:#64748b; }
+  .sd-empty p { font-size:14px; font-weight:700; color:#94a3b8; margin:0 0 6px; font-family:'Space Grotesk',sans-serif; }
+  .sd-empty span { font-size:12px; line-height:1.6; }
+  .sd-grid-wide { grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); }
+
+  /* Coming Soon */
+  .studio-cs { flex:1; min-height:0; display:flex; align-items:center; justify-content:center; padding:24px; }
+  .studio-cs-card { max-width:430px; width:100%; text-align:center; padding:40px 30px; border-radius:22px;
+    background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); backdrop-filter:blur(14px);
+    box-shadow:0 24px 60px rgba(0,0,0,0.4); animation:sdViewIn 0.3s ease both; }
+  .studio-cs-icon { width:66px; height:66px; margin:0 auto 18px; border-radius:18px; display:flex; align-items:center;
+    justify-content:center; background:linear-gradient(135deg, rgba(255,170,0,0.14), rgba(255,170,0,0.05));
+    border:1px solid rgba(255,170,0,0.32); color:#ffaa00; }
+  .studio-cs-title { color:#f1f5f9; font-size:21px; font-weight:800; font-family:'Space Grotesk',sans-serif; }
+  .studio-cs-desc { color:#94a3b8; font-size:13.5px; line-height:1.6; margin:10px auto 18px; max-width:340px; }
+  .studio-cs-badge { display:inline-block; font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:0.1em;
+    padding:5px 15px; border-radius:999px; background:rgba(255,170,0,0.1); color:#ffaa00; border:1px solid rgba(255,170,0,0.32);
+    font-family:'Space Grotesk',sans-serif; }
+  .studio-cs-note { color:#64748b; font-size:12px; margin:18px 0 22px; line-height:1.6; }
+
+  @media(max-width:768px){
+    .studio-dash-body { padding:16px 14px 32px; }
+    .studio-tabbar { padding:10px 14px 0; }
+    .studio-tab { padding:9px 11px; font-size:12.5px; }
+    .studio-tab i { display:none; }
+    .sd-hero { padding:24px 20px; }
+    .sd-hero-title { font-size:23px; }
+    .sd-grid { grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:11px; }
+    .sd-tpl-grid { grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:12px; }
+    .sd-asset-grid { grid-template-columns:repeat(auto-fill,minmax(118px,1fr)); gap:10px; }
+    .sd-proj-grid { grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); }
+    .gallery-header { padding:16px 14px; }
+  }
+
   .gallery-header {
     display:flex; align-items:center; justify-content:space-between;
     padding:20px 32px; flex-shrink:0;
@@ -1460,18 +1663,61 @@
       <h2>ValleyMind Studio</h2>
       <span class="gallery-count" id="studioStatusLabel"></span>
     </div>
-    <button class="gallery-close-btn" onclick="closeStudio()">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-      Close
-    </button>
+    <div style="display:flex;align-items:center;gap:10px;">
+      <button class="studio-back-btn" id="studioBackBtn" style="display:none;" onclick="studioShowDashboard()" title="Back to the Studio dashboard">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+        Dashboard
+      </button>
+      <button class="gallery-close-btn" onclick="closeStudio()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        Close
+      </button>
+    </div>
   </div>
-  <div class="studio-body">
+
+  <!-- STUDIO DASHBOARD — CapCut-style creative-suite home. The classic
+       Studio surface below is untouched; these sections just layer on top. -->
+  <div id="studioDash" style="display:none;flex:1;min-height:0;flex-direction:column;">
+    <nav class="studio-tabbar" id="studioTabbar" aria-label="Studio sections">
+      <button class="studio-tab active" data-tab="home" onclick="studioTab('home')"><i data-lucide="layout-dashboard"></i> Home</button>
+      <button class="studio-tab" data-tab="video" onclick="studioTab('video')"><i data-lucide="clapperboard"></i> Video</button>
+      <button class="studio-tab" data-tab="photo" onclick="studioTab('photo')"><i data-lucide="image"></i> Photo</button>
+      <button class="studio-tab" data-tab="ai" onclick="studioTab('ai')"><i data-lucide="sparkles"></i> AI</button>
+      <button class="studio-tab" data-tab="templates" onclick="studioTab('templates')"><i data-lucide="layout-template"></i> Templates</button>
+      <button class="studio-tab" data-tab="assets" onclick="studioTab('assets')"><i data-lucide="folder-open"></i> Assets</button>
+      <button class="studio-tab" data-tab="projects" onclick="studioTab('projects')"><i data-lucide="projector"></i> Projects</button>
+    </nav>
+    <div class="studio-dash-body" id="studioDashBody">
+      <section class="studio-view active" id="studioViewHome"></section>
+      <section class="studio-view" id="studioViewVideo"></section>
+      <section class="studio-view" id="studioViewPhoto"></section>
+      <section class="studio-view" id="studioViewAI"></section>
+      <section class="studio-view" id="studioViewTemplates"></section>
+      <section class="studio-view" id="studioViewAssets"></section>
+      <section class="studio-view" id="studioViewProjects"></section>
+    </div>
+  </div>
+
+  <!-- COMING SOON — shown when a feature has no backend yet -->
+  <div id="studioComingSoon" class="studio-cs" style="display:none;">
+    <div class="studio-cs-card">
+      <div class="studio-cs-icon" id="csIcon"></div>
+      <div class="studio-cs-title" id="csTitle"></div>
+      <p class="studio-cs-desc" id="csDesc"></p>
+      <span class="studio-cs-badge">Coming Soon</span>
+      <p class="studio-cs-note">We're building this tool. The Studio team is hard at work — check back soon.</p>
+      <button class="studio-go-btn" onclick="studioShowDashboard()">Back to Dashboard</button>
+    </div>
+  </div>
+
+  <!-- CLASSIC STUDIO SURFACE (unchanged) -->
+  <div class="studio-body" id="studioBody">
     <div class="studio-inner">
       <div id="studioStages"></div>
     </div>
   </div>
   <!-- Pinned bottom input, full width of the column (mirrors the main chat input) -->
-  <div class="studio-input-bar">
+  <div class="studio-input-bar" id="studioInputBar">
     <div class="studio-inner">
       <div class="studio-prompt-wrap">
         <textarea id="studioPrompt" rows="2" placeholder="Describe your movie idea — a logline, a scene, a feeling..."></textarea>
@@ -3936,14 +4182,13 @@ function openStudio() {
     overlay.style.display = "flex";
     // Sync the Options-button label + wire the upload inputs on open.
     if (typeof onStudioControlsChange === "function") onStudioControlsChange();
+    studioRestoreOverlayZ();
     // rAF drives the slide-in; the timeout is a fallback so the overlay still
     // opens if rAF is throttled (background/non-rendering contexts).
     requestAnimationFrame(function () { overlay.classList.add("open"); });
     setTimeout(function () { overlay.classList.add("open"); }, 60);
-    setTimeout(function () {
-        var inp = document.getElementById("studioPrompt");
-        if (inp) inp.focus();
-    }, 400);
+    // Open on the dashboard home, not the raw pipeline.
+    studioShowDashboard();
 }
 
 function closeStudio() {
@@ -3951,6 +4196,7 @@ function closeStudio() {
     if (!overlay) return;
     overlay.classList.remove("open");
     overlay.classList.add("closing");
+    studioRestoreOverlayZ();
     setTimeout(function () {
         overlay.classList.remove("closing");
         overlay.style.display = "none";
@@ -3960,6 +4206,579 @@ function closeStudio() {
         if (chatNav) chatNav.classList.add("active");
         focusChatInput();
     }, 400);
+}
+
+// ── Studio Dashboard ──────────────────────────────────────────────────
+// A CapCut-style creative-suite home layered on top of the existing Studio.
+// Everything here is additive: the classic pipeline (stages, prompt bar,
+// filmstrip) is untouched and simply lives behind the dashboard.
+var SD_TABS = ["home", "video", "photo", "ai", "templates", "assets", "projects"];
+var sdActiveTab = "home";
+var sdTemplatesFilter = "All";
+var sdAssetCat = "All";
+var sdAssetQuery = "";
+var sdAssetTimer = null;
+
+// Overlays that can be launched from the dashboard. The Studio overlay sits at
+// z-index 9998 while these default lower, so we raise them while launched and
+// restore the defaults when the Studio closes.
+var STUDIO_LAUNCH_Z = {
+    galleryOverlay: 9998,
+    videoGalleryOverlay: 9998,
+    editingOverlay: 1000,
+    roundTableOverlay: 1000,
+    imageGenOverlay: 200,
+    imageGenModal: 210
+};
+
+function studioRefreshIcons() {
+    if (typeof lucide !== "undefined" && lucide.createIcons) {
+        try { lucide.createIcons(); } catch (e) {}
+    }
+}
+
+function studioIcon(name, size) {
+    size = size || 20;
+    return '<i data-lucide="' + name + '" style="width:' + size + 'px;height:' + size + 'px;"></i>';
+}
+
+function esc(s) {
+    return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+function formatSdDate(d) {
+    try {
+        var dt = new Date(d);
+        if (isNaN(dt.getTime())) return "";
+        return dt.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+    } catch (e) { return ""; }
+}
+
+function sdLoadingHTML() {
+    return '<div class="sd-empty"><p>Loading…</p></div>';
+}
+
+function sdEmptyHTML(title, sub) {
+    return '<div class="sd-empty"><p>' + esc(title) + '</p><span>' + esc(sub) + '</span></div>';
+}
+
+function studioLaunchOverlay(id, openFn) {
+    var ov = document.getElementById(id);
+    if (ov) ov.style.zIndex = "10000";
+    if (id === "imageGenOverlay") {
+        var modal = document.getElementById("imageGenModal");
+        if (modal) modal.style.zIndex = "10000";
+    }
+    if (typeof openFn === "function") openFn();
+}
+
+function studioRestoreOverlayZ() {
+    for (var id in STUDIO_LAUNCH_Z) {
+        if (!STUDIO_LAUNCH_Z.hasOwnProperty(id)) continue;
+        var ov = document.getElementById(id);
+        if (ov) ov.style.zIndex = String(STUDIO_LAUNCH_Z[id]);
+    }
+}
+
+// ── Tab switching (no page reload) ─────────────────────────────────────
+function studioTab(tab) {
+    if (SD_TABS.indexOf(tab) === -1) tab = "home";
+    sdActiveTab = tab;
+    var tabs = document.querySelectorAll("#studioTabbar .studio-tab");
+    for (var i = 0; i < tabs.length; i++) {
+        tabs[i].classList.toggle("active", tabs[i].getAttribute("data-tab") === tab);
+    }
+    var id = "studioView" + tab.charAt(0).toUpperCase() + tab.slice(1);
+    var views = document.querySelectorAll("#studioDashBody .studio-view");
+    for (var j = 0; j < views.length; j++) {
+        views[j].classList.toggle("active", views[j].id === id);
+    }
+}
+
+// ── Dashboard / classic / coming-soon surface switching ────────────────
+function studioShowDashboard() {
+    var dash = document.getElementById("studioDash");
+    var body = document.getElementById("studioBody");
+    var input = document.getElementById("studioInputBar");
+    var cs = document.getElementById("studioComingSoon");
+    var back = document.getElementById("studioBackBtn");
+    if (cs) cs.style.display = "none";
+    if (body) body.style.display = "none";
+    if (input) input.style.display = "none";
+    if (dash) dash.style.display = "flex";
+    if (back) back.style.display = "none";
+    var home = document.getElementById("studioViewHome");
+    if (home && !home.dataset.rendered) renderStudioDashboard();
+    studioTab(sdActiveTab);
+}
+
+function studioShowClassic() {
+    var dash = document.getElementById("studioDash");
+    var body = document.getElementById("studioBody");
+    var input = document.getElementById("studioInputBar");
+    var cs = document.getElementById("studioComingSoon");
+    var back = document.getElementById("studioBackBtn");
+    if (cs) cs.style.display = "none";
+    if (dash) dash.style.display = "none";
+    if (body) body.style.display = "";
+    if (input) input.style.display = "";
+    if (back) back.style.display = "";
+    if (typeof onStudioControlsChange === "function") onStudioControlsChange();
+    setTimeout(function () {
+        var p = document.getElementById("studioPrompt");
+        if (p) p.focus();
+    }, 300);
+}
+
+function studioShowComingSoon(f) {
+    var dash = document.getElementById("studioDash");
+    var body = document.getElementById("studioBody");
+    var input = document.getElementById("studioInputBar");
+    var cs = document.getElementById("studioComingSoon");
+    var back = document.getElementById("studioBackBtn");
+    if (dash) dash.style.display = "none";
+    if (body) body.style.display = "none";
+    if (input) input.style.display = "none";
+    if (back) back.style.display = "";
+    if (cs) {
+        var ic = document.getElementById("csIcon");
+        if (ic) ic.innerHTML = studioIcon(f.icon, 26);
+        var t = document.getElementById("csTitle");
+        if (t) t.textContent = f.title;
+        var d = document.getElementById("csDesc");
+        if (d) d.textContent = f.desc;
+        cs.style.display = "flex";
+        studioRefreshIcons();
+    }
+}
+
+// ── Feature catalog ────────────────────────────────────────────────────
+var SD_HOME_FEATURES = [
+    { id: "autocut", icon: "scissors", title: "AutoCut", desc: "Turn any idea into a finished trailer with the full AI crew.", ready: true, action: function () { studioShowClassic(); } },
+    { id: "retouch", icon: "wand-2", title: "Retouch", desc: "Clean up faces and details with one-tap AI retouching.", ready: false },
+    { id: "photo-tools", icon: "image", title: "Photo Tools", desc: "Browse, organise and manage every image you've created.", ready: true, action: function () { studioLaunchOverlay("galleryOverlay", openGallery); } },
+    { id: "shoot-record", icon: "video", title: "Shoot & Record", desc: "Capture raw footage straight from your camera.", ready: false },
+    { id: "auto-enhance", icon: "sparkles", title: "Auto Enhance", desc: "One tap to fix light, colour and sharpness automatically.", ready: false },
+    { id: "auto-captions", icon: "captions", title: "Auto Captions", desc: "Word-perfect captions synced to your video automatically.", ready: true, action: function () { studioLaunchOverlay("editingOverlay", openEditing); } },
+    { id: "ai-generator", icon: "bot", title: "AI Generator", desc: "The Studio crew writes, directs and edits for you.", ready: true, action: function () { studioShowClassic(); } },
+    { id: "remove-bg", icon: "eraser", title: "Remove Background", desc: "Cut any subject out of its background in one click.", ready: false },
+    { id: "ai-photo-editor", icon: "brush", title: "AI Photo Editor", desc: "Edit photos the way you'd ask a designer to.", ready: false },
+    { id: "ai-video-generator", icon: "clapperboard", title: "AI Video Generator", desc: "Text-to-video through the ValleyMind Studio crew.", ready: true, action: function () { studioShowClassic(); } },
+    { id: "ai-image-generator", icon: "image-plus", title: "AI Image Generator", desc: "Describe it and watch an image come to life.", ready: true, action: function () { studioLaunchOverlay("imageGenOverlay", generateImagesTool); } },
+    { id: "ai-voice", icon: "mic", title: "AI Voice", desc: "Multi-persona voice conversations at the Round Table.", ready: true, action: function () { studioLaunchOverlay("roundTableOverlay", openRoundTable); } },
+    { id: "ai-avatar", icon: "user", title: "AI Avatar", desc: "Your own talking AI avatar for videos.", ready: false },
+    { id: "marketing-tools", icon: "megaphone", title: "Marketing Tools", desc: "Posters, captions and creatives for social campaigns.", ready: false },
+    { id: "desktop-editor", icon: "monitor", title: "Desktop Editor", desc: "A full multi-track timeline for desktop browsers.", ready: false },
+    { id: "space", icon: "cloud", title: "Space", desc: "Your cloud workspace — every asset, project and draft.", ready: false },
+    { id: "record", icon: "circle-record", title: "Record", desc: "Record voice, webcam or screen in a click.", ready: false },
+    { id: "screen-recorder", icon: "monitor-play", title: "Screen Recorder", desc: "Capture your screen with crisp audio.", ready: false },
+    { id: "voice-recorder", icon: "audio-lines", title: "Voice Recorder", desc: "Record and trim clean voiceovers.", ready: false }
+];
+
+var SD_VIDEO_ITEMS = [
+    { id: "new-project", icon: "plus-circle", title: "Create New Project", desc: "Start a fresh production with the AI crew.", ready: true, action: function () { studioShowClassic(); } },
+    { id: "timeline-editor", icon: "layout-grid", title: "Timeline Editor", desc: "The classic Studio timeline — scenes, storyboards and clips.", ready: true, action: function () { studioShowClassic(); } },
+    { id: "auto-editing", icon: "zap", title: "Auto Editing", desc: "Turn a raw clip into a captioned short automatically.", ready: true, action: function () { studioLaunchOverlay("editingOverlay", openEditing); } },
+    { id: "video-generator", icon: "clapperboard", title: "Video Generator", desc: "Text-to-video through the Studio pipeline.", ready: true, action: function () { studioShowClassic(); } },
+    { id: "video-templates", icon: "layout-template", title: "Video Templates", desc: "Jump straight to the template gallery.", ready: true, action: function () { studioTab("templates"); } },
+    { id: "video-recents", icon: "history", title: "Recent Projects", desc: "Open your most recent Studio productions.", ready: true, action: function () { studioTab("projects"); } }
+];
+
+var SD_PHOTO_ITEMS = [
+    { id: "remove-bg", icon: "eraser", title: "Remove Background", desc: "Cut out subjects with one click.", ready: false },
+    { id: "upscaler", icon: "maximize", title: "Image Upscaler", desc: "Upgrade any photo to 4K with AI detail.", ready: false },
+    { id: "ai-enhance", icon: "sun", title: "AI Enhance", desc: "Restore light, tone and clarity instantly.", ready: false },
+    { id: "ai-edit", icon: "brush", title: "AI Edit", desc: "Edit photos with natural language commands.", ready: false },
+    { id: "object-removal", icon: "wand-2", title: "Object Removal", desc: "Erase unwanted objects cleanly.", ready: false },
+    { id: "portrait-tools", icon: "user", title: "Portrait Tools", desc: "Skin, eyes and smile tuning for portraits.", ready: false },
+    { id: "filters", icon: "palette", title: "Filters", desc: "Cinematic looks and presets.", ready: false }
+];
+
+var SD_AI_ITEMS = [
+    { id: "t2i", icon: "image", title: "Text → Image", desc: "Describe a picture and generate it.", ready: true, action: function () { studioLaunchOverlay("imageGenOverlay", generateImagesTool); } },
+    { id: "i2i", icon: "repeat", title: "Image → Image", desc: "Restyle an image from a prompt.", ready: false },
+    { id: "t2v", icon: "clapperboard", title: "Text → Video", desc: "Turn a script into moving footage.", ready: true, action: function () { studioShowClassic(); } },
+    { id: "i2v", icon: "film", title: "Image → Video", desc: "Animate a still into motion.", ready: false },
+    { id: "v2v", icon: "repeat-2", title: "Video → Video", desc: "Restyle or re-edit an existing video.", ready: false },
+    { id: "ai-voice", icon: "mic", title: "AI Voice", desc: "The crew answers aloud at the Round Table.", ready: true, action: function () { studioLaunchOverlay("roundTableOverlay", openRoundTable); } },
+    { id: "ai-music", icon: "music", title: "AI Music", desc: "Original scores and soundtracks.", ready: false },
+    { id: "story-generator", icon: "book-open", title: "AI Story Generator", desc: "Angelina writes stories and loglines for you.", ready: true, action: function () { studioShowClassic(); } },
+    { id: "script-writer", icon: "file-text", title: "AI Script Writer", desc: "Full scripts and beat sheets from an idea.", ready: true, action: function () { studioShowClassic(); } }
+];
+
+var SD_TEMPLATES = [
+    { name: "Cinematic Trailer", cat: "Trending", dur: "0:30", icon: "clapperboard", grad: "linear-gradient(160deg,#0ea5e9 0%,#00d4ff 55%,#0b2a3a 100%)", desc: "Suspense thriller trailer", prompt: "A cinematic movie trailer for a suspense thriller. Moody neon lighting, escalating action beats, a dramatic reveal, and a bold closing title card." },
+    { name: "Product Reveal", cat: "Business", dur: "0:20", icon: "package", grad: "linear-gradient(160deg,#f59e0b 0%,#f97316 60%,#1c1917 100%)", desc: "Sleek product commercial", prompt: "A sleek product reveal commercial for a new tech gadget. Close-up details, slow camera moves, premium lighting, and a confident tagline at the end." },
+    { name: "Match Highlights", cat: "Football", dur: "0:40", icon: "activity", grad: "linear-gradient(160deg,#22c55e 0%,#16a34a 55%,#052e16 100%)", desc: "Goals, saves & celebrations", prompt: "A football match highlights video. High-energy saves, goals, crowd reactions and a victory celebration, cut to fast pacing with quick zooms." },
+    { name: "Reels Cut", cat: "Social Media", dur: "0:15", icon: "smartphone", grad: "linear-gradient(160deg,#ec4899 0%,#f43f5e 60%,#500724 100%)", desc: "Vertical short for Reels", prompt: "A punchy vertical short for social media. Bright colors, fast cuts, on-screen captions, and a scroll-stopping first frame." },
+    { name: "Rising Up", cat: "Motivation", dur: "0:25", icon: "flame", grad: "linear-gradient(160deg,#f97316 0%,#eab308 55%,#292524 100%)", desc: "Motivational montage", prompt: "A motivational montage video. Someone training hard at dawn, overcoming obstacles, sweat and grit, building to a triumphant sunrise finish." },
+    { name: "Learning Loop", cat: "Education", dur: "0:20", icon: "book-open", grad: "linear-gradient(160deg,#6366f1 0%,#8b5cf6 60%,#1e1b4b 100%)", desc: "Clean explainer", prompt: "A clean explainer video about a science concept. Animated diagrams, friendly narration, clear simple language and a neat summary card." },
+    { name: "Epic Boss Battle", cat: "Gaming", dur: "0:30", icon: "gamepad-2", grad: "linear-gradient(160deg,#a855f7 0%,#7c3aed 55%,#0f0524 100%)", desc: "Game trailer energy", prompt: "An epic boss battle game trailer. A hero faces a towering foe, massive explosions, slow-motion moments and a hype ending title." },
+    { name: "Forever Together", cat: "Wedding", dur: "1:00", icon: "heart", grad: "linear-gradient(160deg,#fb7185 0%,#fda4af 55%,#3f1d24 100%)", desc: "Romantic wedding film", prompt: "A romantic wedding film. First look, vows, rings, golden hour couple shots and a joyful exit, with a soft cinematic grade." },
+    { name: "Birthday Blowout", cat: "Birthday", dur: "0:30", icon: "cake", grad: "linear-gradient(160deg,#38bdf8 0%,#a78bfa 60%,#2e1065 100%)", desc: "Party highlights reel", prompt: "A birthday party highlights video. Candles being blown out, cake, laughter, confetti and friends dancing, bright and fun." },
+    { name: "Golden Horizon", cat: "Africa", dur: "0:45", icon: "sun", grad: "linear-gradient(160deg,#f59e0b 0%,#fb923c 50%,#431407 100%)", desc: "Safari travel film", prompt: "A cinematic travel film across the African savanna. Golden hour light, wildlife, sweeping landscapes and a warm narrator tone." },
+    { name: "Naija Vibe", cat: "Nigeria", dur: "0:35", icon: "music", grad: "linear-gradient(160deg,#10b981 0%,#3b82f6 55%,#0f172a 100%)", desc: "Lagos street energy", prompt: "A vibrant video of Lagos street life. Danfo buses, bustling markets, music and movement, warm colors and kinetic energy." },
+    { name: "Fresh Drops", cat: "New", dur: "0:15", icon: "sparkles", grad: "linear-gradient(160deg,#06b6d4 0%,#22d3ee 55%,#0e7490 100%)", desc: "New-release teaser", prompt: "A teaser video for an upcoming release. Mystery build-up, quick flashes of product, a question hook and a bold reveal." },
+    { name: "Crowd Pleaser", cat: "Popular", dur: "0:25", icon: "trending-up", grad: "linear-gradient(160deg,#f43f5e 0%,#fb7185 55%,#3f0d17 100%)", desc: "Viral recap format", prompt: "A viral recap style video. Hook first three seconds, rapid scenes, big on-screen text and an upbeat ending." }
+];
+var SD_TEMPLATE_CATS = ["Trending", "New", "Popular", "Business", "Football", "Social Media", "Motivation", "Education", "Gaming", "Wedding", "Birthday", "Africa", "Nigeria"];
+
+var SD_ASSET_CATS = ["All", "Videos", "Images", "Audio", "Sound Effects", "Stickers", "GIFs", "Overlays", "Transitions", "Fonts"];
+
+// ── Dispatch ───────────────────────────────────────────────────────────
+function sdFeatureById(id) {
+    var all = SD_HOME_FEATURES.concat(SD_VIDEO_ITEMS, SD_PHOTO_ITEMS, SD_AI_ITEMS);
+    for (var i = 0; i < all.length; i++) {
+        if (all[i].id === id) return all[i];
+    }
+    return null;
+}
+
+function studioFeature(id) {
+    var f = sdFeatureById(id);
+    if (!f) return;
+    if (f.ready && f.action) f.action();
+    else studioShowComingSoon(f);
+}
+
+function studioUseTemplate(t) {
+    var p = document.getElementById("studioPrompt");
+    if (!studioRunning && studioPhase !== "producing" && typeof resetStudio === "function") resetStudio();
+    studioShowClassic();
+    setTimeout(function () {
+        if (p) p.value = t.prompt || "";
+        if (!studioRunning && typeof studioIntakeSend === "function") {
+            studioIntakeSend(t.prompt || "");
+        } else {
+            if (p) p.focus();
+        }
+    }, 250);
+}
+
+// ── Card / chip / template / asset / project renderers ─────────────────
+function sdCardHTML(f) {
+    var badge = f.ready
+        ? '<span class="sd-badge ready">Ready</span>'
+        : '<span class="sd-badge soon">Coming Soon</span>';
+    return '<div class="sd-card ' + (f.ready ? "" : "coming") + '" onclick="studioFeature(\'' + f.id + '\')">' +
+        '<div class="sd-card-top">' +
+            '<div class="sd-card-icon">' + studioIcon(f.icon, 20) + '</div>' +
+            badge +
+        '</div>' +
+        '<div class="sd-card-title">' + esc(f.title) + '</div>' +
+        '<div class="sd-card-desc">' + esc(f.desc) + '</div>' +
+    '</div>';
+}
+
+function sdChipHTML(label, active) {
+    var c = String(label).replace(/'/g, "\\'");
+    return '<button class="sd-chip' + (active ? " active" : "") + '" data-cat="' + c + '" onclick="sdFilterTemplates(\'' + c + '\')">' + c + '</button>';
+}
+
+function sdAssetChipHTML(label, active) {
+    var c = String(label).replace(/'/g, "\\'");
+    return '<button class="sd-chip' + (active ? " active" : "") + '" data-cat="' + c + '" onclick="sdAssetFilter(\'' + c + '\')">' + c + '</button>';
+}
+
+function sdTplCardHTML(t) {
+    var i = SD_TEMPLATES.indexOf(t);
+    var cats = String(t.cat).split(",").map(function (s) { return s.trim(); });
+    var chips = cats.map(function (c) {
+        return '<span class="sd-tpl-chip">' + esc(c) + '</span>';
+    }).join("");
+    return '<div class="sd-tpl-card" onclick="studioUseTemplate(SD_TEMPLATES[' + i + '])">' +
+        '<div class="sd-tpl-preview" style="background:' + t.grad + ';">' +
+            studioIcon(t.icon, 40) +
+            '<div class="sd-tpl-meta">' + chips + '</div>' +
+            '<span class="sd-tpl-dur">' + esc(t.dur) + '</span>' +
+        '</div>' +
+        '<div class="sd-tpl-body">' +
+            '<div class="sd-tpl-name">' + esc(t.name) + '</div>' +
+            '<div class="sd-tpl-cat">' + esc(t.desc) + '</div>' +
+            '<button class="sd-tpl-btn" onclick="event.stopPropagation();studioUseTemplate(SD_TEMPLATES[' + i + '])">Use Template</button>' +
+        '</div>' +
+    '</div>';
+}
+
+function sdProjHTML(name, sub, status, time) {
+    var stLabel = { active: "Active", draft: "Draft", completed: "Completed" }[status] || status;
+    var cls = status === "completed" ? "completed" : status === "draft" ? "draft" : "active";
+    var timeHtml = time ? '<div class="sd-proj-sub">' + esc(formatSdDate(time)) + '</div>' : "";
+    return '<div class="sd-proj" onclick="studioShowClassic()">' +
+        '<span class="sd-proj-status ' + cls + '">' + esc(stLabel) + '</span>' +
+        '<div class="sd-proj-name">' + esc(name) + '</div>' +
+        '<div class="sd-proj-sub">' + esc(sub || "") + '</div>' +
+        timeHtml +
+    '</div>';
+}
+
+function sdSetGrid(id, cards, emptyTitle, emptySub) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    el.innerHTML = cards.length ? cards.join("") : sdEmptyHTML(emptyTitle, emptySub);
+    studioRefreshIcons();
+}
+
+// ── View renderers ─────────────────────────────────────────────────────
+function renderStudioDashboard() {
+    sdRenderHome();
+    sdRenderVideo();
+    sdRenderPhoto();
+    sdRenderAI();
+    sdRenderTemplates();
+    sdRenderAssets();
+    sdRenderProjects();
+}
+
+function sdRenderHome() {
+    var el = document.getElementById("studioViewHome");
+    if (!el || el.dataset.rendered) return;
+    el.dataset.rendered = "1";
+    el.innerHTML =
+        '<div class="sd-hero">' +
+            '<div class="sd-hero-badge">' + studioIcon("sparkles", 13) + ' Creative Suite</div>' +
+            '<h1 class="sd-hero-title">Make something <span class="sd-hero-accent">incredible</span></h1>' +
+            '<p class="sd-hero-sub">Your AI creative suite — cut, edit, generate and publish from one place.</p>' +
+            '<div class="sd-hero-actions">' +
+                '<button class="sd-go" onclick="studioShowClassic()">' + studioIcon("clapperboard", 16) + ' New Project</button>' +
+                '<button class="sd-go ghost" onclick="studioTab(\'templates\')">' + studioIcon("layout-template", 16) + ' Browse Templates</button>' +
+            '</div>' +
+        '</div>' +
+        '<div class="sd-section"><h3>Creative tools</h3><div class="sd-section-line"></div><span class="sd-section-count">' + SD_HOME_FEATURES.length + ' tools</span></div>' +
+        '<div class="sd-grid">' + SD_HOME_FEATURES.map(sdCardHTML).join("") + '</div>';
+    studioRefreshIcons();
+}
+
+function sdRenderVideo() {
+    var el = document.getElementById("studioViewVideo");
+    if (!el || el.dataset.rendered) return;
+    el.dataset.rendered = "1";
+    el.innerHTML =
+        '<div class="sd-section"><h3>Start creating</h3><div class="sd-section-line"></div></div>' +
+        '<div class="sd-grid sd-grid-wide">' + SD_VIDEO_ITEMS.map(sdCardHTML).join("") + '</div>' +
+        '<div class="sd-section"><h3>Recent projects</h3><div class="sd-section-line"></div></div>' +
+        '<div class="sd-proj-grid" id="studioVideoRecents">' + sdLoadingHTML() + '</div>' +
+        '<div class="sd-section"><h3>Start from a template</h3><div class="sd-section-line"></div></div>' +
+        '<div class="sd-tpl-strip" id="studioVideoTemplates">' + sdLoadingHTML() + '</div>';
+    studioRefreshIcons();
+    loadStudioRecents();
+    loadStudioTplStrip();
+}
+
+function sdRenderPhoto() {
+    var el = document.getElementById("studioViewPhoto");
+    if (!el || el.dataset.rendered) return;
+    el.dataset.rendered = "1";
+    el.innerHTML =
+        '<div class="sd-section"><h3>Photo tools</h3><div class="sd-section-line"></div><span class="sd-section-count">' + SD_PHOTO_ITEMS.length + ' tools</span></div>' +
+        '<div class="sd-grid">' + SD_PHOTO_ITEMS.map(sdCardHTML).join("") + '</div>';
+    studioRefreshIcons();
+}
+
+function sdRenderAI() {
+    var el = document.getElementById("studioViewAI");
+    if (!el || el.dataset.rendered) return;
+    el.dataset.rendered = "1";
+    el.innerHTML =
+        '<div class="sd-section"><h3>AI tools</h3><div class="sd-section-line"></div><span class="sd-section-count">' + SD_AI_ITEMS.length + ' tools</span></div>' +
+        '<div class="sd-grid">' + SD_AI_ITEMS.map(sdCardHTML).join("") + '</div>';
+    studioRefreshIcons();
+}
+
+function sdRenderTemplates() {
+    var el = document.getElementById("studioViewTemplates");
+    if (!el || el.dataset.rendered) return;
+    el.dataset.rendered = "1";
+    el.innerHTML =
+        '<div class="sd-section"><h3>Template gallery</h3><div class="sd-section-line"></div><span class="sd-section-count">' + SD_TEMPLATES.length + ' templates</span></div>' +
+        '<div class="sd-chips" id="sdTplChips">' + SD_TEMPLATE_CATS.map(function (c, i) { return sdChipHTML(c, i === 0); }).join("") + '</div>' +
+        '<div class="sd-tpl-grid" id="sdTplGrid"></div>';
+    studioRefreshIcons();
+    sdFilterTemplates("Trending");
+}
+
+function sdFilterTemplates(cat) {
+    sdTemplatesFilter = cat;
+    var chips = document.querySelectorAll("#sdTplChips .sd-chip");
+    for (var i = 0; i < chips.length; i++) {
+        chips[i].classList.toggle("active", chips[i].getAttribute("data-cat") === cat);
+    }
+    var items = cat === "All" ? SD_TEMPLATES : SD_TEMPLATES.filter(function (t) { return t.cat === cat; });
+    var grid = document.getElementById("sdTplGrid");
+    if (grid) {
+        grid.innerHTML = items.length ? items.map(sdTplCardHTML).join("") : sdEmptyHTML("No templates here yet", "New templates in this category are on the way.");
+    }
+    studioRefreshIcons();
+}
+
+function sdRenderAssets() {
+    var el = document.getElementById("studioViewAssets");
+    if (!el || el.dataset.rendered) return;
+    el.dataset.rendered = "1";
+    el.innerHTML =
+        '<div class="sd-section"><h3>Asset library</h3><div class="sd-section-line"></div><span class="sd-section-count">Your files</span></div>' +
+        '<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:2px;">' +
+            '<div class="sd-search">' +
+                '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>' +
+                '<input id="sdAssetSearch" type="text" placeholder="Search your assets..." oninput="sdAssetSearchDebounce()">' +
+            '</div>' +
+        '</div>' +
+        '<div class="sd-chips" id="sdAssetChips">' + SD_ASSET_CATS.map(function (c, i) { return sdAssetChipHTML(c, i === 0); }).join("") + '</div>' +
+        '<div class="sd-asset-grid" id="sdAssetGrid">' + sdLoadingHTML() + '</div>';
+    studioRefreshIcons();
+    loadStudioAssets();
+}
+
+function sdRenderProjects() {
+    var el = document.getElementById("studioViewProjects");
+    if (!el || el.dataset.rendered) return;
+    el.dataset.rendered = "1";
+    el.innerHTML =
+        '<div class="sd-section"><h3>Recent projects</h3><div class="sd-section-line"></div></div>' +
+        '<div class="sd-proj-grid" id="sdProjRecent">' + sdLoadingHTML() + '</div>' +
+        '<div class="sd-section"><h3>Drafts</h3><div class="sd-section-line"></div></div>' +
+        '<div class="sd-proj-grid" id="sdProjDrafts">' + sdLoadingHTML() + '</div>' +
+        '<div class="sd-section"><h3>Completed</h3><div class="sd-section-line"></div></div>' +
+        '<div class="sd-proj-grid" id="sdProjCompleted">' + sdLoadingHTML() + '</div>' +
+        '<div class="sd-section"><h3>Cloud projects</h3><div class="sd-section-line"></div></div>' +
+        '<div class="sd-proj-grid" id="sdProjCloud">' + sdLoadingHTML() + '</div>';
+    studioRefreshIcons();
+    loadStudioProjects();
+}
+
+// ── Data loaders ───────────────────────────────────────────────────────
+async function loadStudioRecents() {
+    var el = document.getElementById("studioVideoRecents");
+    if (!el) return;
+    var cards = [];
+    try {
+        var res = await apiFetch("/api/settings/projects", { credentials: "include", headers: authHeaders(), timeoutMs: 15000 });
+        var data = await res.json();
+        (data.projects || []).forEach(function (p) {
+            cards.push(sdProjHTML(p.name || "Untitled", p.description || p.goal || "", p.status || "active", p.updated_at));
+        });
+    } catch (e) {}
+    try {
+        var r2 = await apiFetch("/api/studio/last", { credentials: "include", headers: authHeaders(), timeoutMs: 15000 });
+        var run = (await r2.json()).run;
+        if (run && (run.script || run.logline || run.beats || run.final_video)) {
+            var name = run.logline || String(run.script || "").replace(/\n/g, " ").slice(0, 60) || "Last production";
+            cards.unshift(sdProjHTML(name, "AI Studio run", run.final_video ? "completed" : "draft", run.updated_at || run.created_at || ""));
+        }
+    } catch (e) {}
+    el.innerHTML = cards.length ? cards.slice(0, 3).join("") : sdEmptyHTML("No projects yet", "Create your first project and it will show here.");
+    studioRefreshIcons();
+}
+
+function loadStudioTplStrip() {
+    var el = document.getElementById("studioVideoTemplates");
+    if (!el) return;
+    el.innerHTML = SD_TEMPLATES.slice(0, 6).map(sdTplCardHTML).join("");
+    studioRefreshIcons();
+}
+
+async function loadStudioProjects() {
+    var proj = [];
+    var run = null;
+    try {
+        var r1 = await apiFetch("/api/settings/projects", { credentials: "include", headers: authHeaders(), timeoutMs: 15000 });
+        proj = (await r1.json()).projects || [];
+    } catch (e) {}
+    try {
+        var r2 = await apiFetch("/api/studio/last", { credentials: "include", headers: authHeaders(), timeoutMs: 15000 });
+        run = (await r2.json()).run;
+    } catch (e) {}
+
+    var recent = [], drafts = [], completed = [], cloud = [];
+    proj.forEach(function (p) {
+        var st = (p.status || "active");
+        var card = sdProjHTML(p.name || "Untitled", p.description || p.goal || "", st, p.updated_at);
+        if (st === "completed") completed.push(card);
+        else if (st === "draft") drafts.push(card);
+        else recent.push(card);
+    });
+    if (run && (run.script || run.logline || run.beats || run.clips || run.final_video)) {
+        var name = run.logline || String(run.script || "").replace(/\n/g, " ").slice(0, 60) || "AI production";
+        var card = sdProjHTML(name, "AI Studio run", run.final_video ? "completed" : "draft", run.updated_at || run.created_at || "");
+        recent.unshift(card);
+        cloud.push(card);
+        if (run.final_video) completed.unshift(card); else drafts.unshift(card);
+    }
+    sdSetGrid("sdProjRecent", recent, "No projects yet", "Start one from the Video tab or Home.");
+    sdSetGrid("sdProjDrafts", drafts, "No drafts yet", "In-progress Studio runs appear here.");
+    sdSetGrid("sdProjCompleted", completed, "Nothing completed yet", "Finished productions will show up here.");
+    sdSetGrid("sdProjCloud", cloud, "No cloud projects", "Every project syncs to the cloud automatically.");
+}
+
+function sdAssetFilter(cat) {
+    sdAssetCat = cat;
+    var chips = document.querySelectorAll("#sdAssetChips .sd-chip");
+    for (var i = 0; i < chips.length; i++) {
+        chips[i].classList.toggle("active", chips[i].getAttribute("data-cat") === cat);
+    }
+    loadStudioAssets();
+}
+
+function sdAssetSearchDebounce() {
+    clearTimeout(sdAssetTimer);
+    sdAssetTimer = setTimeout(function () {
+        var inp = document.getElementById("sdAssetSearch");
+        sdAssetQuery = (inp && inp.value || "").trim();
+        loadStudioAssets();
+    }, 300);
+}
+
+function sdAssetHTML(m) {
+    var inner;
+    if (m.kind === "video") inner = '<video src="' + esc(m.url) + '" preload="metadata" muted playsinline></video>';
+    else if (m.kind === "image") inner = '<img src="' + esc(m.url) + '" loading="lazy" alt="' + esc(m.name) + '">';
+    else inner = '<div class="sd-asset-audio">' + studioIcon("music", 18) + '<span>Audio</span></div>';
+    return '<div class="sd-asset" title="' + esc(m.name) + '">' + inner + '<div class="sd-asset-name">' + esc(m.name) + '</div></div>';
+}
+
+async function loadStudioAssets() {
+    var grid = document.getElementById("sdAssetGrid");
+    if (!grid) return;
+    grid.innerHTML = sdLoadingHTML();
+    var stuck = ["Stickers", "GIFs", "Overlays", "Transitions", "Fonts"].indexOf(sdAssetCat) !== -1;
+    if (stuck) {
+        grid.innerHTML = sdEmptyHTML(sdAssetCat + " are coming soon", "This asset type isn't available yet — your images, videos and sound files are ready to use.");
+        return;
+    }
+    var wantImages = sdAssetCat === "All" || sdAssetCat === "Images";
+    var wantVideos = sdAssetCat === "All" || sdAssetCat === "Videos";
+    var wantAudio = sdAssetCat === "All" || sdAssetCat === "Audio" || sdAssetCat === "Sound Effects";
+    var items = [];
+    try {
+        if (wantImages) {
+            var r1 = await apiFetch("/api/media/images?limit=30&search=" + encodeURIComponent(sdAssetQuery), { credentials: "include", headers: authHeaders(), timeoutMs: 15000 });
+            var d1 = await r1.json();
+            (d1.images || []).forEach(function (m) {
+                items.push({ kind: "image", url: m.local_path || "", name: m.prompt || "Image", created: m.created_at });
+            });
+        }
+        if (wantVideos) {
+            var r2 = await apiFetch("/api/media/videos?limit=30&search=" + encodeURIComponent(sdAssetQuery), { credentials: "include", headers: authHeaders(), timeoutMs: 15000 });
+            var d2 = await r2.json();
+            (d2.videos || []).forEach(function (m) {
+                items.push({ kind: "video", url: m.local_path || "", name: m.prompt || "Video", created: m.created_at });
+            });
+        }
+        if (wantAudio) {
+            var acats = sdAssetCat === "All" ? ["sfx", "music"] : [sdAssetCat === "Audio" ? "music" : "sfx"];
+            for (var a = 0; a < acats.length; a++) {
+                var r3 = await apiFetch("/api/editing/assets?category=" + acats[a], { credentials: "include", headers: authHeaders(), timeoutMs: 15000 });
+                var d3 = await r3.json();
+                (d3.assets || []).forEach(function (m) {
+                    items.push({ kind: "audio", url: m.local_path || "", name: m.prompt || m.name || "Sound", created: m.created_at });
+                });
+            }
+        }
+        grid.innerHTML = items.length ? items.map(sdAssetHTML).join("") : sdEmptyHTML("No assets found", "Try a different search or category.");
+    } catch (e) {
+        grid.innerHTML = sdEmptyHTML("Could not load assets", "Check your connection and try again.");
+    }
+    studioRefreshIcons();
 }
 
 // ── The Round Table: three-way voice-first discussion room ─────────────────
