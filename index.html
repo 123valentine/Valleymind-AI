@@ -331,14 +331,14 @@
   #studioOverlay.open { display:flex; opacity:1; transform:translateY(0); }
   #studioOverlay.closing { display:flex; opacity:0; transform:translateY(100%); }
 
-  /* ── The Round Table ─────────────────────────────────────────── */
+  /* ── The Round Table ───────────────────────────────────────────
+     Lives INSIDE the Studio workspace now as a tab panel (not a standalone
+     fixed overlay). It stays a flex column so the existing stage / ring /
+     transcript / controls layout keeps working completely unchanged. */
   #roundTableOverlay {
-    position:fixed; inset:0; z-index:1000; display:none; flex-direction:column;
+    flex:1; min-height:0; display:flex; flex-direction:column;
     background:radial-gradient(1200px 800px at 50% -10%, rgba(0,212,255,0.08), transparent), #060b16;
-    opacity:0; transform:translateY(30px); transition:opacity 0.35s ease, transform 0.35s ease;
   }
-  #roundTableOverlay.open { display:flex; opacity:1; transform:translateY(0); }
-  #roundTableOverlay.closing { display:flex; opacity:0; transform:translateY(30px); }
   .rt-header { display:flex; align-items:center; justify-content:space-between; padding:16px 20px; border-bottom:1px solid rgba(255,255,255,0.08); }
   .rt-header h2 { font-family:'Space Grotesk',sans-serif; font-weight:800; font-size:18px; color:#e2e8f0; margin:0; letter-spacing:0.02em; }
   .rt-stage { display:flex; justify-content:center; gap:28px; padding:22px 16px 10px; flex-wrap:wrap; }
@@ -711,6 +711,9 @@
   .sd-card.coming .sd-card-icon { background:rgba(148,163,184,0.12); border-color:rgba(148,163,184,0.25); color:#94a3b8; }
   .sd-card-title { color:#f1f5f9; font-size:15px; font-weight:700; font-family:'Space Grotesk',sans-serif; }
   .sd-card-desc { color:#8ba0b0; font-size:12.5px; line-height:1.55; }
+  .sd-card-btn { width:100%; flex-direction:row; color:inherit; font:inherit; }
+  .sd-card-btn b { color:#f1f5f9; font-family:'Space Grotesk',sans-serif; font-size:15px; font-weight:700; display:block; }
+  .sd-card-sub { display:block; color:#8ba0b0; font-size:12.5px; line-height:1.55; margin-top:3px; }
   .sd-badge {
     font-size:9.5px; font-weight:800; text-transform:uppercase; letter-spacing:0.08em;
     padding:4px 10px; border-radius:999px; white-space:nowrap; flex-shrink:0;
@@ -798,6 +801,78 @@
     padding:5px 15px; border-radius:999px; background:rgba(255,170,0,0.1); color:#ffaa00; border:1px solid rgba(255,170,0,0.32);
     font-family:'Space Grotesk',sans-serif; }
   .studio-cs-note { color:#64748b; font-size:12px; margin:18px 0 22px; line-height:1.6; }
+
+  /* ── Studio workspace switcher (unified creative suite) ────────────── */
+  .vm-ws-tabbar {
+    display:flex; gap:8px; flex-shrink:0; align-items:center;
+    padding:14px 32px 12px; overflow-x:auto; scrollbar-width:none;
+    background:linear-gradient(180deg, rgba(0,212,255,0.06), transparent);
+    border-bottom:1px solid rgba(255,255,255,0.07);
+  }
+  .vm-ws-tabbar::-webkit-scrollbar { display:none; }
+  .vm-ws-tab {
+    position:relative; white-space:nowrap; flex-shrink:0;
+    display:inline-flex; align-items:center; gap:7px;
+    border:1px solid rgba(255,255,255,0.1); background:rgba(255,255,255,0.04); cursor:pointer;
+    padding:9px 16px; color:#94a3b8; border-radius:999px;
+    font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:13px;
+    letter-spacing:0.02em; transition:color 0.2s, background 0.2s, border-color 0.2s, box-shadow 0.2s;
+  }
+  .vm-ws-tab i { opacity:0.85; }
+  .vm-ws-tab:hover { color:#e2e8f0; background:rgba(255,255,255,0.07); border-color:rgba(255,255,255,0.18); }
+  .vm-ws-tab.active {
+    color:#00d4ff; border-color:rgba(0,212,255,0.5);
+    background:linear-gradient(135deg, rgba(0,212,255,0.14), rgba(14,165,233,0.1));
+    box-shadow:0 0 18px rgba(0,212,255,0.18);
+  }
+  .vm-ws-panel { display:none; flex:1; min-height:0; flex-direction:column; animation:sdViewIn 0.28s ease both; }
+  .vm-ws-panel.active { display:flex; }
+
+  /* ── Coming Soon workspace (glassmorphism, dark + light safe) ───────── */
+  .vm-cs { position:relative; flex:1; min-height:0; display:flex; align-items:center; justify-content:center; padding:28px 20px; overflow:hidden; }
+  .vm-cs-orb { position:absolute; border-radius:50%; filter:blur(70px); pointer-events:none; }
+  .vm-cs-orb.a { width:340px; height:340px; left:-80px; top:-80px; background:rgba(0,212,255,0.18); }
+  .vm-cs-orb.b { width:300px; height:300px; right:-70px; bottom:-90px; background:rgba(14,165,233,0.15); }
+  .vm-cs-card {
+    position:relative; max-width:480px; width:100%; text-align:center; padding:52px 38px 44px;
+    border-radius:28px; overflow:hidden;
+    background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.12);
+    backdrop-filter:blur(18px); -webkit-backdrop-filter:blur(18px);
+    box-shadow:0 30px 80px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.08);
+  }
+  .vm-cs-icon {
+    width:84px; height:84px; margin:0 auto 20px; border-radius:24px; display:flex; align-items:center; justify-content:center;
+    background:linear-gradient(135deg, rgba(0,212,255,0.16), rgba(14,165,233,0.08));
+    border:1px solid rgba(0,212,255,0.3); color:#22d3ee;
+    box-shadow:0 0 30px rgba(0,212,255,0.16);
+  }
+  .vm-cs-badge {
+    display:inline-flex; align-items:center; gap:6px; font-size:10px; font-weight:800; text-transform:uppercase;
+    letter-spacing:0.12em; color:#ffb74d; font-family:'Space Grotesk',sans-serif;
+    background:rgba(255,170,0,0.1); border:1px solid rgba(255,170,0,0.35); border-radius:999px; padding:5px 14px;
+  }
+  .vm-cs-title { margin:16px 0 10px; color:#f1f5f9; font-family:'Space Grotesk',sans-serif; font-weight:800; font-size:30px; letter-spacing:-0.01em; }
+  .vm-cs-desc { color:#94a3b8; font-size:14px; line-height:1.7; max-width:340px; margin:0 auto 24px; }
+  .vm-cs-dots { display:flex; justify-content:center; gap:5px; margin-bottom:18px; }
+  .vm-cs-dots i { width:5px; height:5px; border-radius:50%; background:rgba(0,212,255,0.35); }
+  .vm-cs-dots i:nth-child(2) { background:rgba(0,212,255,0.55); }
+  .vm-cs-dots i:nth-child(3) { background:rgba(0,212,255,0.8); }
+  .vm-cs-grid-lines {
+    position:absolute; inset:0; pointer-events:none; opacity:0.5;
+    background-image:linear-gradient(rgba(0,212,255,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(0,212,255,0.05) 1px, transparent 1px);
+    background-size:34px 34px;
+  }
+  .vm-cs-brand { display:inline-flex; align-items:center; gap:8px; font-size:10px; font-weight:700; text-transform:uppercase;
+    letter-spacing:0.18em; color:#64748b; font-family:'Space Grotesk',sans-serif; }
+  .vm-cs-brand-mark { width:16px; height:16px; border-radius:5px; background:linear-gradient(135deg,#00d4ff,#0ea5e9);
+    display:inline-flex; align-items:center; justify-content:center; color:#04222b; font-weight:900; font-size:10px; }
+
+  @media(max-width:768px){
+    .vm-ws-tabbar { padding:12px 14px 10px; gap:6px; }
+    .vm-ws-tab { padding:8px 12px; font-size:12px; }
+    .vm-cs-card { padding:38px 22px 32px; }
+    .vm-cs-title { font-size:24px; }
+  }
 
   @media(max-width:768px){
     .studio-dash-body { padding:16px 14px 32px; }
@@ -1327,42 +1402,18 @@
     <div class="space-y-1" id="historyList"></div>
   </div>
   </div><!-- /sidebarPanel-chats -->
-  <!-- Navigation -->
+  <!-- Navigation — the sidebar intentionally stays minimal: Chat + Studio.
+       Every other workspace (Image/Video Galleries, Website Builder, Sketch,
+       3D Studio, Round Table, Massive Editing) now lives inside Studio.
+       Settings/Profile/Theme/Account remain untouched in the gear menu. -->
   <nav class="mb-2" id="mainNav">
     <div class="vm-nav-item active" onclick="navTo('chat')" id="nav-chat">
       <span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg></span>
       Chat
     </div>
-    <div class="vm-nav-item" onclick="navTo('gallery')" id="nav-gallery">
-      <span class="nav-icon"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg></span>
-      Image Gallery
-    </div>
-    <div class="vm-nav-item" onclick="navTo('videoGallery')" id="nav-videoGallery">
-      <span class="nav-icon"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="14" height="14" rx="2"/><path d="M21 8l-4 3 4 3V8z"/></svg></span>
-      Video Gallery
-    </div>
     <div class="vm-nav-item" onclick="navTo('studio')" id="nav-studio">
       <span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M3 7h18v12a1 1 0 01-1 1H4a1 1 0 01-1-1V7z"/><path d="M3 7l3.5-3.5M9 7l3.5-3.5M15 7l3.5-3.5"/></svg></span>
       Studio
-    </div>
-    <div class="vm-nav-item" onclick="navTo('roundtable')" id="nav-roundtable">
-      <span class="nav-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="7" r="1.5"/><circle cx="7.2" cy="14.5" r="1.5"/><circle cx="16.8" cy="14.5" r="1.5"/></svg></span>
-      Round Table
-    </div>
-    <div class="vm-nav-item" onclick="navTo('editing')" id="nav-editing">
-      <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2.5" y="5" width="19" height="14" rx="2"/><path d="M9 9l4 3-4 3z" fill="currentColor" stroke="none"/><path d="M17 9v6"/></svg></span>
-      Massive Editing
-    </div>
-    <div class="vm-nav-item" onclick="showComingSoon('Website')">
-      Website
-      <span class="cs-badge">Soon</span>
-    </div>
-    <div class="vm-nav-item" onclick="showComingSoon('3D')">
-      3D
-      <span class="cs-badge">Soon</span>
-    </div>
-    <div class="vm-nav-item" onclick="navTo('sketch')" id="nav-sketch">
-      Sketch
     </div>
   </nav>
 
@@ -1740,6 +1791,19 @@
     </div>
   </div>
 
+  <!-- Workspace switcher — one unified creative suite, five workspaces.
+       Clicking a tab swaps the panels below instantly (no page reload). -->
+  <nav class="vm-ws-tabbar" id="vmWsTabbar" aria-label="Studio workspaces">
+    <button class="vm-ws-tab active" data-ws="studio" onclick="vmWsGo('studio')"><i data-lucide="clapperboard"></i> ValleyMind Studio</button>
+    <button class="vm-ws-tab" data-ws="website" onclick="vmWsGo('website')"><i data-lucide="globe"></i> Website Builder</button>
+    <button class="vm-ws-tab" data-ws="sketch" onclick="vmWsGo('sketch')"><i data-lucide="pencil-ruler"></i> Sketch</button>
+    <button class="vm-ws-tab" data-ws="threed" onclick="vmWsGo('threed')"><i data-lucide="box"></i> 3D Studio</button>
+    <button class="vm-ws-tab" data-ws="roundtable" onclick="vmWsGo('roundtable')"><i data-lucide="users"></i> Round Table</button>
+  </nav>
+
+  <!-- ── Workspace: ValleyMind Studio — the existing Studio, unchanged ── -->
+  <div class="vm-ws-panel active" data-ws-panel="studio">
+
   <!-- STUDIO DASHBOARD — CapCut-style creative-suite home. The classic
        Studio surface below is untouched; these sections just layer on top. -->
   <div id="studioDash" style="display:none;flex:1;min-height:0;flex-direction:column;">
@@ -1829,11 +1893,63 @@
       </div>
     </div>
   </div>
-</div>
+  </div><!-- /ValleyMind Studio workspace panel -->
 
-<!-- THE ROUND TABLE -->
-<div id="roundTableOverlay">
-  <div class="rt-header">
+  <!-- ── Workspace: Website Builder — Coming Soon ── -->
+  <div class="vm-ws-panel" data-ws-panel="website">
+    <div class="vm-cs">
+      <span class="vm-cs-orb a"></span>
+      <span class="vm-cs-orb b"></span>
+      <div class="vm-cs-card">
+        <div class="vm-cs-grid-lines"></div>
+        <div class="vm-cs-icon"><i data-lucide="globe" style="width:36px;height:36px;"></i></div>
+        <span class="vm-cs-badge">In Development</span>
+        <h2 class="vm-cs-title">Website Builder</h2>
+        <p class="vm-cs-desc">This feature is currently under development and will be available in a future update.</p>
+        <div class="vm-cs-dots"><i></i><i></i><i></i></div>
+        <span class="vm-cs-brand"><span class="vm-cs-brand-mark">V</span>Valley Mind-AI · Creative Suite</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Workspace: Sketch — Coming Soon ── -->
+  <div class="vm-ws-panel" data-ws-panel="sketch">
+    <div class="vm-cs">
+      <span class="vm-cs-orb a"></span>
+      <span class="vm-cs-orb b"></span>
+      <div class="vm-cs-card">
+        <div class="vm-cs-grid-lines"></div>
+        <div class="vm-cs-icon"><i data-lucide="pencil-ruler" style="width:36px;height:36px;"></i></div>
+        <span class="vm-cs-badge">In Development</span>
+        <h2 class="vm-cs-title">Sketch</h2>
+        <p class="vm-cs-desc">This feature is currently under development and will be available in a future update.</p>
+        <div class="vm-cs-dots"><i></i><i></i><i></i></div>
+        <span class="vm-cs-brand"><span class="vm-cs-brand-mark">V</span>Valley Mind-AI · Creative Suite</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Workspace: 3D Studio — Coming Soon ── -->
+  <div class="vm-ws-panel" data-ws-panel="threed">
+    <div class="vm-cs">
+      <span class="vm-cs-orb a"></span>
+      <span class="vm-cs-orb b"></span>
+      <div class="vm-cs-card">
+        <div class="vm-cs-grid-lines"></div>
+        <div class="vm-cs-icon"><i data-lucide="box" style="width:36px;height:36px;"></i></div>
+        <span class="vm-cs-badge">In Development</span>
+        <h2 class="vm-cs-title">3D Studio</h2>
+        <p class="vm-cs-desc">This feature is currently under development and will be available in a future update.</p>
+        <div class="vm-cs-dots"><i></i><i></i><i></i></div>
+        <span class="vm-cs-brand"><span class="vm-cs-brand-mark">V</span>Valley Mind-AI · Creative Suite</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Workspace: Round Table — the existing Council Hall interface ── -->
+  <div class="vm-ws-panel" data-ws-panel="roundtable">
+    <div id="roundTableOverlay">
+      <div class="rt-header">
     <h2>The Round Table</h2>
     <button class="gallery-close-btn" onclick="closeRoundTable()" title="Close">
       <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
@@ -1888,7 +2004,9 @@
     </div>
   </div>
   <audio id="rtPlayer" preload="auto" style="display:none;"></audio>
-</div>
+  </div>
+  </div><!-- /Round Table workspace panel -->
+</div><!-- /Studio overlay -->
 
 <!-- MASSIVE EDITING -->
 <div id="editingOverlay">
@@ -3850,24 +3968,39 @@ function navTo(view) {
     var active = document.getElementById("nav-" + view);
     if (active) active.classList.add("active");
 
-    if (view === "gallery") {
-        openGallery();
-    } else if (view === "videoGallery") {
-        openVideoGallery();
-    } else if (view === "studio") {
-        openStudio();
-    } else if (view === "roundtable") {
-        openRoundTable();
-    } else if (view === "editing") {
-        openEditing();
-    } else if (view === "chat") {
+    // Chat is the only standalone page now. Everything else is a workspace
+    // inside the Studio overlay. Legacy view names still route to the right
+    // workspace so no old entry point breaks.
+    if (view === "chat") {
         closeSidebar();
         focusChatInput();
-    } else if (view === "sketch") {
-        goTo("sketch");
-    } else {
-        closeSidebar();
+        return;
     }
+    if (view === "roundtable") {
+        openStudio();
+        vmWsGo("roundtable");
+        return;
+    }
+    if (view === "studio" || view === "gallery" || view === "videoGallery" ||
+        view === "editing" || view === "sketch") {
+        openStudio();
+        return;
+    }
+    closeSidebar();
+}
+
+// Return to the Studio workspace instead of Chat when a sub-overlay (image /
+// video gallery) is closed while Studio is still open underneath.
+function vmReturnToStudio() {
+    var st = document.getElementById("studioOverlay");
+    if (st && (st.classList.contains("open") || st.style.display === "flex")) {
+        currentNavView = "studio";
+        document.querySelectorAll(".vm-nav-item").forEach(function (el) { el.classList.remove("active"); });
+        var s = document.getElementById("nav-studio");
+        if (s) s.classList.add("active");
+        return true;
+    }
+    return false;
 }
 
 function openGallery() {
@@ -3893,6 +4026,7 @@ function closeGallery() {
     setTimeout(function () {
         overlay.classList.remove("closing");
         overlay.style.display = "none";
+        if (vmReturnToStudio()) return;
         currentNavView = "chat";
         document.querySelectorAll(".vm-nav-item").forEach(function (el) { el.classList.remove("active"); });
         var chatNav = document.getElementById("nav-chat");
@@ -4026,6 +4160,7 @@ function closeVideoGallery() {
     setTimeout(function () {
         overlay.classList.remove("closing");
         overlay.style.display = "none";
+        if (vmReturnToStudio()) return;
         currentNavView = "chat";
         document.querySelectorAll(".vm-nav-item").forEach(function (el) { el.classList.remove("active"); });
         var chatNav = document.getElementById("nav-chat");
@@ -4244,6 +4379,7 @@ function openStudio() {
     if (!studioState.length) resetStudio();
     // Restore the last run so a page reload doesn't lose the work
     if (!studioRunning && !studioFrames.length && !studioScript) restoreLastStudioRun();
+    vmWsGo("studio");
     overlay.style.display = "flex";
     // Sync the Options-button label + wire the upload inputs on open.
     if (typeof onStudioControlsChange === "function") onStudioControlsChange();
@@ -4256,6 +4392,23 @@ function openStudio() {
     studioShowDashboard();
 }
 
+// ── Workspace switcher (unified creative suite, no page reload) ──────────
+function vmWsGo(ws) {
+    document.querySelectorAll(".vm-ws-tab").forEach(function (t) {
+        t.classList.toggle("active", t.getAttribute("data-ws") === ws);
+    });
+    document.querySelectorAll(".vm-ws-panel").forEach(function (p) {
+        p.classList.toggle("active", p.getAttribute("data-ws-panel") === ws);
+    });
+    // Stop the Council's voice when you leave, refresh its layout on return.
+    if (ws !== "roundtable") {
+        if (typeof rtStopVoice === "function") rtStopVoice();
+        if (typeof rtStopSpeaking === "function") rtStopSpeaking();
+    } else {
+        if (typeof rtRender === "function") rtRender();
+    }
+}
+
 function closeStudio() {
     var overlay = document.getElementById("studioOverlay");
     if (!overlay) return;
@@ -4265,6 +4418,7 @@ function closeStudio() {
     setTimeout(function () {
         overlay.classList.remove("closing");
         overlay.style.display = "none";
+        vmWsGo("studio");
         currentNavView = "chat";
         document.querySelectorAll(".vm-nav-item").forEach(function (el) { el.classList.remove("active"); });
         var chatNav = document.getElementById("nav-chat");
@@ -4681,6 +4835,17 @@ function sdRenderAssets() {
     if (!el || el.dataset.rendered) return;
     el.dataset.rendered = "1";
     el.innerHTML =
+        '<div class="sd-section"><h3>Media library</h3><div class="sd-section-line"></div><span class="sd-section-count">Everything you generate</span></div>' +
+        '<div class="sd-grid sd-grid-wide" style="margin-bottom:18px;">' +
+            '<button class="sd-card sd-card-btn" onclick="studioLaunchOverlay(\'galleryOverlay\', openGallery)" style="display:flex;align-items:center;gap:14px;text-align:left;">' +
+                '<div class="sd-card-icon" style="color:#22d3ee;">' + studioIcon("images", 24) + '</div>' +
+                '<div><b>Image Gallery</b><span class="sd-card-sub">Browse, search and manage every image you have created.</span></div>' +
+            '</button>' +
+            '<button class="sd-card sd-card-btn" onclick="studioLaunchOverlay(\'videoGalleryOverlay\', openVideoGallery)" style="display:flex;align-items:center;gap:14px;text-align:left;">' +
+                '<div class="sd-card-icon" style="color:#a78bfa;">' + studioIcon("video", 24) + '</div>' +
+                '<div><b>Video Gallery</b><span class="sd-card-sub">Browse, search and manage every video you have generated.</span></div>' +
+            '</button>' +
+        '</div>' +
         '<div class="sd-section"><h3>Asset library</h3><div class="sd-section-line"></div><span class="sd-section-count">Your files</span></div>' +
         '<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:2px;">' +
             '<div class="sd-search">' +
@@ -4883,9 +5048,8 @@ function openRoundTable() {
     var tr = document.getElementById("rtTranscript"); if (tr) tr.innerHTML = "";
     rtSetSpeaking(null);
     rtRender();
-    ov.style.display = "flex";
-    requestAnimationFrame(function () { ov.classList.add("open"); });
-    setTimeout(function () { ov.classList.add("open"); }, 60);
+    // The Council Hall is a Studio workspace now: switch tabs in place.
+    vmWsGo("roundtable");
     setTimeout(function () { var i = document.getElementById("rtInput"); if (i) i.focus(); }, 400);
 }
 
@@ -4894,15 +5058,7 @@ function closeRoundTable() {
     if (!ov) return;
     rtStopVoice();
     rtStopSpeaking();
-    ov.classList.remove("open");
-    ov.classList.add("closing");
-    setTimeout(function () {
-        ov.classList.remove("closing");
-        ov.style.display = "none";
-        currentNavView = "chat";
-        document.querySelectorAll(".vm-nav-item").forEach(function (el) { el.classList.remove("active"); });
-        var c = document.getElementById("nav-chat"); if (c) c.classList.add("active");
-    }, 400);
+    vmWsGo("studio");
 }
 
 // ── Massive Editing: upload a raw clip -> auto-edited vertical short ─────────
@@ -4934,6 +5090,7 @@ function closeEditing() {
     setTimeout(function () {
         ov.classList.remove("closing");
         ov.style.display = "none";
+        if (vmReturnToStudio()) return;
         currentNavView = "chat";
         document.querySelectorAll(".vm-nav-item").forEach(function (el) { el.classList.remove("active"); });
         var c = document.getElementById("nav-chat"); if (c) c.classList.add("active");
@@ -7389,7 +7546,7 @@ function closeImageGenModal() {
         modal.style.opacity = "0"; modal.style.visibility = "hidden";
         modal.style.pointerEvents = "none"; modal.style.transform = "translate(-50%,-46%) scale(0.98)";
     }
-    focusChatInput();
+    if (!vmReturnToStudio()) focusChatInput();
 }
 
 function addImageSkeleton() {
