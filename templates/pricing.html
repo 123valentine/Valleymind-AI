@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="page-hero">
+  <div class="container">
+    <span class="eyebrow">Plans</span>
+    <h1>ValleyMind AI Pricing</h1>
+    <p class="lede">
+      Start free and upgrade when you need more. Every plan includes the full
+      assistant — you pay only for extra generations, studio power and support.
+    </p>
+    <nav class="breadcrumbs" aria-label="Breadcrumb">
+      <a href="/">Home</a><span>/</span><span>Pricing</span>
+    </nav>
+  </div>
+</section>
+
+<section class="section">
+  <div class="container">
+    <h2>Choose your plan</h2>
+    <p class="sub">
+      The Free plan is live today. Pro and Creator tiers are on the roadmap and
+      will unlock higher monthly limits as the platform grows.
+    </p>
+
+    <div class="price-row">
+      <div class="price-card featured">
+        <h3>Free</h3>
+        <div class="amount">$0<small> / forever</small></div>
+        <p class="plan-note">Everything you need to try the platform.</p>
+        <ul>
+          <li>AI chat with long-term memory</li>
+          <li>Round Table multi-persona conversations</li>
+          <li>Image generation</li>
+          <li>Video generation (limited)</li>
+          <li>ValleyMind Studio basics</li>
+          <li>Media library with storage</li>
+          <li>Live search, news &amp; sports</li>
+        </ul>
+        <a class="btn" href="/">Start free</a>
+      </div>
+
+      <div class="price-card">
+        <h3>Pro</h3>
+        <div class="amount">Coming soon</div>
+        <p class="plan-note">For creators who generate every day.</p>
+        <ul>
+          <li>Everything in Free</li>
+          <li>Higher monthly image &amp; video limits</li>
+          <li>Auto video editing &amp; B-roll</li>
+          <li>Faster generation queue</li>
+          <li>Larger media library</li>
+          <li>Priority support</li>
+        </ul>
+        <a class="btn ghost" href="/contact">Get notified</a>
+      </div>
+
+      <div class="price-card">
+        <h3>Creator</h3>
+        <div class="amount">Coming soon</div>
+        <p class="plan-note">For professionals and small teams.</p>
+        <ul>
+          <li>Everything in Pro</li>
+          <li>High-volume generation</li>
+          <li>Team workspaces &amp; shared assets</li>
+          <li>Advanced Studio tooling</li>
+          <li>Dedicated support channel</li>
+        </ul>
+        <a class="btn ghost" href="/contact">Get notified</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="cta-band">
+  <div class="container">
+    <h2>Start building with the Free plan</h2>
+    <p>Your first conversation, image and video are on us.</p>
+    <a class="btn" href="/">Launch ValleyMind AI</a>
+  </div>
+</section>
+{% endblock %}

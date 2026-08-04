@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+{# Base template for ValleyMind AI's server-rendered marketing pages.
+
+   This template owns the ENTIRE SEO head: title, meta description, canonical,
+   Open Graph, Twitter card, favicons, manifest, theme-colour and the JSON-LD
+   structured data passed in via ``jsonld`` (WebSite, Organization, WebPage and
+   BreadcrumbList). Every page template extends this one and only supplies
+   copy via ``{% block content %}``.
+
+   The layout is deliberately dependency-free (no CDN scripts, no webfonts) so
+   the pages load fast and stay indexable — the SPA remains the app shell. #}
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <!-- Primary SEO meta -->
+  <title>{{ page_title }}</title>
+  <meta name="description" content="{{ page_description }}">
+  <meta name="robots" content="index, follow">
+  <link rel="canonical" href="{{ canonical }}">
+
+  <!-- Open Graph (Facebook / LinkedIn / WhatsApp previews) -->
+  <meta property="og:type" content="{{ og_type }}">
+  <meta property="og:site_name" content="{{ site_name }}">
+  <meta property="og:title" content="{{ page_title }}">
+  <meta property="og:description" content="{{ page_description }}">
+  <meta property="og:url" content="{{ canonical }}">
+  <meta property="og:image" content="{{ og_image }}">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="{{ og_image_alt }}">
+  <meta property="og:locale" content="en_US">
+
+  <!-- Twitter / X card -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:site" content="{{ twitter_site }}">
+  <meta name="twitter:title" content="{{ page_title }}">
+  <meta name="twitter:description" content="{{ page_description }}">
+  <meta name="twitter:image" content="{{ og_image }}">
+  <meta name="twitter:image:alt" content="{{ og_image_alt }}">
+
+  <!-- PWA / installability metadata -->
+  <meta name="theme-color" content="#0b141a">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="manifest" href="/manifest.json">
+
+  <!-- Icons: classic ico, modern png and iOS home-screen touch icon -->
+  <link rel="icon" href="/static/favicon.ico" sizes="any">
+  <link rel="icon" type="image/png" href="/static/icons/icon-192.png">
+  <link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
+
+  {% block head_extra %}{% endblock %}
+
+  <!-- Schema.org structured data (WebSite + Organization + WebPage + Breadcrumbs) -->
+  {% for ld in jsonld %}
+  <script type="application/ld+json">{{ ld | tojson }}</script>
+  {% endfor %}
+
+  <style>
+    :root {
+      --bg: #0b141a;
+      --surface: #0e1720;
+      --surface-2: #111d27;
+      --accent: #00d4ff;
+      --accent-2: #0ea5e9;
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --border: rgba(255, 255, 255, 0.09);
+      --radius: 14px;
+    }
+    * { box-sizing: border-box; }
+    html { -webkit-text-size-adjust: 100%; }
+    body {
+      margin: 0;
+      font-family: "Space Grotesk", "Segoe UI", system-ui, -apple-system, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      font-size: 16px;
+    }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    img { max-width: 100%; height: auto; }
+
+    /* Accessible skip link (Lighthouse + keyboard users) */
+    .skip-link {
+      position: absolute; left: -999px; top: 0;
+      background: var(--accent); color: #003642;
+      padding: 10px 16px; border-radius: 0 0 8px 0; font-weight: 700; z-index: 100;
+    }
+    .skip-link:focus { left: 0; }
+
+    .container { max-width: 1080px; margin: 0 auto; padding: 0 20px; }
+
+    /* ── Header / navigation ── */
+    .site-header {
+      position: sticky; top: 0; z-index: 50;
+      background: rgba(11, 20, 26, 0.9);
+      backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+    }
+    .nav { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 64px; }
+    .nav .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 18px; color: var(--text); letter-spacing: 0.02em; }
+    .nav .brand img { height: 34px; width: auto; }
+    .nav-links { display: flex; align-items: center; gap: 4px; list-style: none; margin: 0; padding: 0; flex-wrap: wrap; }
+    .nav-links a {
+      display: inline-block; padding: 8px 12px; border-radius: 9px;
+      color: var(--muted); font-size: 14px; font-weight: 600;
+    }
+    .nav-links a:hover { color: var(--text); text-decoration: none; background: rgba(255, 255, 255, 0.05); }
+    .nav-links a.active { color: var(--accent); }
+    .nav-links .nav-cta {
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      color: #003642; border-radius: 10px; padding: 9px 16px; font-weight: 800; margin-left: 6px;
+    }
+    .nav-links .nav-cta:hover { color: #003642; text-decoration: none; opacity: 0.92; }
+    .nav-toggle {
+      display: none; background: none; border: 1px solid var(--border); color: var(--text);
+      border-radius: 9px; padding: 8px 12px; font-size: 14px; cursor: pointer;
+    }
+    @media (max-width: 860px) {
+      .nav-toggle { display: inline-block; }
+      .nav-links {
+        position: absolute; top: 64px; left: 0; right: 0;
+        flex-direction: column; align-items: stretch; gap: 2px;
+        background: var(--surface); border-bottom: 1px solid var(--border);
+        padding: 8px 20px 16px; display: none;
+      }
+      .nav-links.open { display: flex; }
+      .nav-links .nav-cta { margin-left: 0; text-align: center; margin-top: 6px; }
+    }
+
+    /* ── Page hero ── */
+    .page-hero {
+      padding: 64px 0 40px; text-align: center;
+      background:
+        radial-gradient(560px 260px at 85% -20%, rgba(0, 212, 255, 0.16), transparent 65%),
+        radial-gradient(420px 240px at 5% 110%, rgba(14, 165, 233, 0.10), transparent 60%);
+    }
+    .page-hero .eyebrow {
+      display: inline-block; font-size: 11px; font-weight: 800; letter-spacing: 0.14em;
+      text-transform: uppercase; color: var(--accent);
+      background: rgba(0, 212, 255, 0.08); border: 1px solid rgba(0, 212, 255, 0.25);
+      border-radius: 999px; padding: 6px 14px; margin-bottom: 18px;
+    }
+    .page-hero h1 { font-size: clamp(28px, 5vw, 44px); line-height: 1.15; margin: 0 0 14px; letter-spacing: -0.01em; }
+    .page-hero .lede { color: var(--muted); font-size: 17px; max-width: 640px; margin: 0 auto; }
+    .page-hero .breadcrumbs {
+      font-size: 13px; color: var(--muted); margin: 22px 0 0;
+      display: flex; justify-content: center; gap: 8px; flex-wrap: wrap;
+    }
+    .page-hero .breadcrumbs a { color: var(--muted); }
+    .page-hero .breadcrumbs a:hover { color: var(--accent); }
+    .page-hero .breadcrumbs span { color: var(--accent); }
+
+    /* ── Generic sections ── */
+    .section { padding: 48px 0; }
+    .section + .section { border-top: 1px solid var(--border); }
+    .section h2 { font-size: clamp(22px, 3vw, 30px); margin: 0 0 12px; letter-spacing: -0.01em; }
+    .section .sub { color: var(--muted); font-size: 16px; max-width: 680px; }
+    .section .sub + * { margin-top: 28px; }
+    .prose { max-width: 760px; }
+    .prose p { color: #cbd5e1; margin: 0 0 16px; }
+    .prose h3 { color: var(--text); font-size: 19px; margin: 28px 0 10px; }
+    .prose ul, .prose ol { color: #cbd5e1; padding-left: 22px; margin: 0 0 16px; }
+    .prose li { margin-bottom: 8px; }
+
+    /* ── Cards grid ── */
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 18px; margin-top: 28px; }
+    .card {
+      background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 24px; transition: transform 0.2s, border-color 0.2s;
+    }
+    .card:hover { transform: translateY(-3px); border-color: rgba(0, 212, 255, 0.35); }
+    .card .icon {
+      width: 42px; height: 42px; border-radius: 12px; display: flex; align-items: center; justify-content: center;
+      background: linear-gradient(135deg, rgba(0, 212, 255, 0.16), rgba(14, 165, 233, 0.08));
+      border: 1px solid rgba(0, 212, 255, 0.25); color: var(--accent);
+      font-size: 20px; font-weight: 800; margin-bottom: 14px;
+    }
+    .card h3 { margin: 0 0 8px; font-size: 17px; }
+    .card p { margin: 0; color: var(--muted); font-size: 14.5px; }
+
+    /* ── CTA band ── */
+    .cta-band {
+      margin: 48px 0 64px; padding: 40px 24px; text-align: center; border-radius: 20px;
+      border: 1px solid rgba(0, 212, 255, 0.22);
+      background:
+        radial-gradient(420px 200px at 90% -30%, rgba(0, 212, 255, 0.20), transparent 65%),
+        radial-gradient(320px 180px at 5% 115%, rgba(14, 165, 233, 0.14), transparent 60%),
+        var(--surface);
+    }
+    .cta-band h2 { margin: 0 0 10px; font-size: clamp(22px, 3vw, 30px); }
+    .cta-band p { color: var(--muted); margin: 0 auto 24px; max-width: 560px; }
+    .btn {
+      display: inline-block; padding: 13px 26px; border-radius: 12px; font-weight: 800; font-size: 15px;
+      background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: #003642; letter-spacing: 0.02em;
+    }
+    .btn:hover { text-decoration: none; opacity: 0.92; }
+    .btn.ghost { background: rgba(255, 255, 255, 0.06); color: var(--text); border: 1px solid var(--border); }
+
+    /* ── Footer ── */
+    .site-footer { border-top: 1px solid var(--border); background: var(--surface); padding: 40px 0 32px; }
+    .footer-grid { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 28px; }
+    .footer-grid h4 { margin: 0 0 10px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text); }
+    .footer-grid ul { list-style: none; margin: 0; padding: 0; }
+    .footer-grid li { margin-bottom: 8px; }
+    .footer-grid a { color: var(--muted); font-size: 14px; }
+    .footer-grid a:hover { color: var(--accent); }
+    .footer-brand p { color: var(--muted); font-size: 14px; margin: 10px 0 0; max-width: 320px; }
+    .footer-bottom {
+      margin-top: 32px; padding-top: 20px; border-top: 1px solid var(--border);
+      display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+      color: var(--muted); font-size: 13px;
+    }
+    @media (max-width: 700px) { .footer-grid { grid-template-columns: 1fr 1fr; } }
+
+    /* FAQ (no JS needed) */
+    details.faq {
+      background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px;
+      padding: 16px 20px; margin-bottom: 12px;
+    }
+    details.faq summary { cursor: pointer; font-weight: 700; color: var(--text); outline: none; }
+    details.faq p { color: var(--muted); margin: 12px 0 0; font-size: 14.5px; }
+
+    /* Pricing */
+    .price-row { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 28px; }
+    .price-card { flex: 1 1 280px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 18px; padding: 28px; display: flex; flex-direction: column; }
+    .price-card.featured { border-color: rgba(0, 212, 255, 0.45); box-shadow: 0 0 0 1px rgba(0, 212, 255, 0.2); }
+    .price-card h3 { margin: 0 0 4px; font-size: 18px; }
+    .price-card .amount { font-size: 34px; font-weight: 800; color: var(--text); margin: 8px 0 4px; }
+    .price-card .amount small { font-size: 15px; color: var(--muted); font-weight: 600; }
+    .price-card .plan-note { color: var(--muted); font-size: 13.5px; margin: 0 0 16px; min-height: 42px; }
+    .price-card ul { list-style: none; margin: 0 0 20px; padding: 0; flex: 1; }
+    .price-card li { color: #cbd5e1; font-size: 14px; padding-left: 22px; position: relative; margin-bottom: 9px; }
+    .price-card li::before { content: "✓"; position: absolute; left: 0; color: var(--accent); font-weight: 800; }
+
+    .contact-methods { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 18px; margin-top: 28px; }
+    .contact-method { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); padding: 22px; }
+    .contact-method h3 { margin: 0 0 8px; font-size: 16px; }
+    .contact-method p { margin: 0; color: var(--muted); font-size: 14px; }
+    .contact-method a { font-weight: 700; }
+  </style>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <header class="site-header">
+    <nav class="nav container" aria-label="Main navigation">
+      <a class="brand" href="/">
+        <img src="/static/valleymind-logo.png" alt="ValleyMind AI logo" width="104" height="34">
+        ValleyMind&nbsp;AI
+      </a>
+      <button class="nav-toggle" type="button" aria-label="Toggle navigation" aria-expanded="false" data-nav-toggle>
+        Menu
+      </button>
+      <ul class="nav-links" data-nav-links>
+        {% for link in nav_links %}
+        <li><a href="{{ link.path }}"{% if active_page == link.path %} class="active" aria-current="page"{% endif %}>{{ link.label }}</a></li>
+        {% endfor %}
+        <li><a class="nav-cta" href="/">Launch App</a></li>
+      </ul>
+    </nav>
+  </header>
+
+  <main id="main">
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-grid">
+        <div class="footer-brand">
+          <a class="brand" href="/"><img src="/static/valleymind-logo.png" alt="ValleyMind AI logo" width="104" height="34"></a>
+          <p>The intelligent AI assistant and creative studio — chat, images, video and more in one place.</p>
+        </div>
+        <div>
+          <h4>Product</h4>
+          <ul>
+            <li><a href="/features">Features</a></li>
+            <li><a href="/pricing">Pricing</a></li>
+            <li><a href="/help">Help</a></li>
+          </ul>
+        </div>
+        <div>
+          <h4>Company</h4>
+          <ul>
+            <li><a href="/about">About</a></li>
+            <li><a href="/contact">Contact</a></li>
+          </ul>
+        </div>
+        <div>
+          <h4>Legal</h4>
+          <ul>
+            <li><a href="/privacy">Privacy Policy</a></li>
+            <li><a href="/terms">Terms of Service</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <span>&copy; {{ "now"|utcnow_year }} {{ site_name }}. All rights reserved.</span>
+        <span>Made with care in Nigeria.</span>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    // Mobile nav toggle — progressive enhancement only.
+    var toggle = document.querySelector('[data-nav-toggle]');
+    var links = document.querySelector('[data-nav-links]');
+    if (toggle && links) {
+      toggle.addEventListener('click', function () {
+        var open = links.classList.toggle('open');
+        toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+      });
+    }
+    // Lazy-load any <img> that slipped through without loading="lazy".
+    // Standard browsers ignore the attribute if JS is off; content stays visible.
+    if ('IntersectionObserver' in window) {
+      var observer = new IntersectionObserver(function (entries, obs) {
+        entries.forEach(function (entry) {
+          if (entry.isIntersecting) {
+            var img = entry.target;
+            if (img.dataset.src && !img.src) img.src = img.dataset.src;
+            img.loading = 'lazy';
+            obs.unobserve(img);
+          }
+        });
+      }, { rootMargin: '200px' });
+      document.querySelectorAll('img:not([loading])').forEach(function (img) { observer.observe(img); });
+    }
+  </script>
+</body>
+</html>

@@ -24,6 +24,8 @@ services:
       # ── Runtime / server ──────────────────────────────────────────
       - key: PYTHON_VERSION
         value: 3.11.9
+      - key: SITE_URL                      # canonical host for SEO/sitemap/OG
+        value: https://valleymind-ai.onrender.com
       - key: SECRET_KEY                    # Flask session signing
         generateValue: true
       - key: SESSION_COOKIE_SECURE

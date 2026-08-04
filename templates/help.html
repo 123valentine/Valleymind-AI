@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="page-hero">
+  <div class="container">
+    <span class="eyebrow">Support</span>
+    <h1>Help &amp; Support</h1>
+    <p class="lede">
+      Quick answers to the questions we hear most. Can't find what you need?
+      Use the in-app <strong>Suggestions</strong> tool or contact us directly.
+    </p>
+    <nav class="breadcrumbs" aria-label="Breadcrumb">
+      <a href="/">Home</a><span>/</span><span>Help</span>
+    </nav>
+  </div>
+</section>
+
+<section class="section">
+  <div class="container" style="max-width: 760px;">
+    <h2>Frequently asked questions</h2>
+
+    <details class="faq" open>
+      <summary>How do I get started?</summary>
+      <p>
+        Open ValleyMind AI and create an account with your email or Google
+        Sign-In. You can start chatting immediately — the assistant walks you
+        through what it can do, or you can ask directly for an image, a video
+        or a studio project.
+      </p>
+    </details>
+
+    <details class="faq">
+      <summary>What can the assistant actually do?</summary>
+      <p>
+        Chat and answer questions (with live web, news and sports where
+        needed), remember facts about you, generate images, generate videos,
+        run multi-persona Round Table discussions, and create or edit video in
+        the Studio. Just describe what you want in plain language.
+      </p>
+    </details>
+
+    <details class="faq">
+      <summary>How do I log in or reset my password?</summary>
+      <p>
+        Use the login screen with your email and password or Google. Forgot
+        your password? The reset flow asks a security question you set up on
+        your first sign-in — answer it correctly to choose a new password.
+      </p>
+    </details>
+
+    <details class="faq">
+      <summary>Where are my generated images and videos stored?</summary>
+      <p>
+        Everything you create is saved to your personal media library in the
+        app. You can view, search, download or delete your media from there at
+        any time.
+      </p>
+    </details>
+
+    <details class="faq">
+      <summary>Why did my video take a long time (or fail)?</summary>
+      <p>
+        Video generation is the most compute-heavy feature and can take a few
+        minutes. Generation is billed against a daily budget, so unusually
+        heavy usage may be temporarily unavailable. Your completed videos are
+        always saved to your gallery when they finish.
+      </p>
+    </details>
+
+    <details class="faq">
+      <summary>Does ValleyMind AI remember what I say?</summary>
+      <p>
+        Yes — long-term memory is a core feature. It remembers facts you share,
+        project details and preferences so it can be helpful later. You can
+        review and manage this memory in Settings at any time.
+      </p>
+    </details>
+
+    <details class="faq">
+      <summary>How do I report a bug or send feedback?</summary>
+      <p>
+        Inside the app, open the <strong>Suggestions</strong> tool and describe
+        the issue or idea — it goes straight to the team (with an optional
+        WhatsApp follow-up). You can also reach us on the
+        <a href="/contact">Contact page</a>.
+      </p>
+    </details>
+
+    <details class="faq">
+      <summary>Is my data private?</summary>
+      <p>
+        We take privacy seriously. See the
+        <a href="/privacy">Privacy Policy</a> for exactly what we collect, how
+        it's stored and the third-party AI services used to power the app.
+      </p>
+    </details>
+  </div>
+</section>
+
+<section class="cta-band">
+  <div class="container">
+    <h2>Still stuck?</h2>
+    <p>We're happy to help — reach out and we'll get back to you.</p>
+    <a class="btn" href="/contact">Contact support</a>
+  </div>
+</section>
+{% endblock %}

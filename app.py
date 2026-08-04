@@ -5,7 +5,9 @@ with the advanced session handling functions from the previous version,
 adapted for Pinecone-backed architecture.
 """
 
+import gzip
 import hashlib
+import io
 import json
 import os
 import re
@@ -24,6 +26,11 @@ from core.config import PROJECT_ROOT, get_config
 from core.db import auth_tokens_collection, app_config_collection, chats_collection, get_db, studio_runs_collection, usage_collection, users_collection
 from core.media_manager import get_media_manager
 from core.router import RouteDecision, get_router
+from core.seo import PUBLIC_PAGES as SEO_PAGE_REGISTRY
+from core.seo import URL_ALIASES as SEO_URL_ALIASES
+from core.seo import robots_txt as seo_robots_body
+from core.seo import sitemap_xml as seo_sitemap_body
+from core.seo import render_page as seo_render_page
 from core.tts import speak_marcus
 from core.video_dispatcher import get_video_dispatcher
 import core.provider_manager as pm
@@ -165,6 +172,11 @@ app.config.update(
     SESSION_COOKIE_SAMESITE=os.getenv("SESSION_COOKIE_SAMESITE", "None"),
     SESSION_COOKIE_SECURE=True,
 )
+
+# Jinja helper used by the marketing templates' footer copyright year.
+@app.template_filter("utcnow_year")
+def _utcnow_year_filter(_value=None):
+    return datetime.now(timezone.utc).year
 
 
 def _safe_user_id(email: str) -> str:
@@ -3695,7 +3707,7 @@ def serve_index():
 
 @app.route("/<path:path>")
 def serve_frontend_assets(path):
-    allowed_files = ["manifest.json", "sw.js", "phone-studio.html", "jpj.txt"]
+    allowed_files = ["manifest.json", "sw.js", "phone-studio.html", "jpj.txt", "favicon.ico"]
 
     if path in allowed_files or path.startswith("static/"):
         import os as _os
@@ -3718,8 +3730,172 @@ def serve_frontend_assets(path):
             pass
         return resp
 
+    # Security scanners and crawlers probe for forged paths like index.php,
+    # .git, .env or .sql. Returning the SPA shell for those creates soft 404s
+    # that hurt SEO and can confuse crawlers, so reject them outright.
+    _lower = path.lower()
+    if any(_lower.endswith(ext) for ext in (".php", ".aspx", ".asp", ".jsp", ".cgi", ".pl", ".env", ".git", ".bak", ".sql", ".pem", ".sh")):
+        return Response("Not Found", status=404)
+
     print(f"[TRACE STATIC] SPA fallback for: /{path}")
     return send_from_directory(str(PROJECT_ROOT), "index.html")
+
+
+# ── SEO: robots.txt, sitemap.xml, server-rendered marketing pages ─────────
+# Every public page is registered from the same core.seo.PUBLIC_PAGES registry
+# that generates sitemap.xml, so routes and the sitemap can never drift out of
+# sync. Adding a page = add one entry to PUBLIC_PAGES + one template.
+
+@app.route("/robots.txt", methods=["GET"])
+def seo_robots_txt():
+    return Response(
+        seo_robots_body(),
+        mimetype="text/plain",
+        headers={"Cache-Control": "public, max-age=3600"},
+    )
+
+
+@app.route("/sitemap.xml", methods=["GET"])
+def seo_sitemap_xml():
+    return Response(
+        seo_sitemap_body(),
+        mimetype="application/xml",
+        headers={"Cache-Control": "public, max-age=3600"},
+    )
+
+
+def _make_page_view(page_key: str):
+    def _view():
+        return seo_render_page(page_key)
+    _view.__name__ = f"page_{page_key}"
+    return _view
+
+
+for _seo_page in SEO_PAGE_REGISTRY:
+    if _seo_page.get("template"):
+        app.add_url_rule(
+            _seo_page["path"],
+            endpoint=f"seo_page_{_seo_page['key']}",
+            view_func=_make_page_view(_seo_page["key"]),
+        )
+
+# Legacy/alternate URLs 301 to their canonical page (no duplicate content).
+for _alias_path, _target_path in SEO_URL_ALIASES.items():
+    app.add_url_rule(
+        _alias_path,
+        endpoint=f"seo_alias_{_target_path.strip('/')}",
+        view_func=lambda _t=_target_path: redirect(_t, code=301),
+    )
+
+
+# ── Response middleware: security headers, browser caching, gzip ───────────
+# All three run via Flask after_request hooks so every route benefits without
+# touching per-route code.
+
+@app.after_request
+def _add_security_headers(resp):
+    resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+    resp.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    resp.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+    return resp
+
+
+_SEO_PAGE_PATHS = {p["path"] for p in SEO_PAGE_REGISTRY if p.get("template")}
+
+
+@app.after_request
+def _add_cache_headers(resp):
+    # Flask 3 ships with SEND_FILE_MAX_AGE_DEFAULT=None, which makes file
+    # responses fall back to Werkzeug's default `Cache-Control: no-cache`.
+    # We override per URL class so the browser can cache aggressively where
+    # it is safe (static assets / marketing pages) and never cache dynamic
+    # JSON/SSE/API responses.
+    path = request.path
+    if path.startswith("/static/"):
+        # Brand images, icons and static assets — safe for a day (Last-Modified
+        # + ETag conditional requests still let browsers revalidate after).
+        resp.headers["Cache-Control"] = "public, max-age=86400"
+    elif path in ("/", "/robots.txt", "/sitemap.xml"):
+        # App shell + SEO control files — short public cache.
+        resp.headers["Cache-Control"] = "public, max-age=3600"
+    elif path in _SEO_PAGE_PATHS:
+        # Server-rendered marketing pages — short cache, still always fresh.
+        resp.headers["Cache-Control"] = "public, max-age=600"
+    else:
+        # Every dynamic/API/SSE response must never be cached by proxies.
+        resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    return resp
+
+
+# Compressible MIME families (kept conservative — never media/images).
+_GZIP_MIME_PREFIXES = (
+    "text/",
+    "application/json",
+    "application/javascript",
+    "application/xml",
+    "application/ld+json",
+    "image/svg+xml",
+)
+_GZIP_MIN_BYTES = 512
+
+# Whitespace spanning a newline *between* HTML tags. Collapsing it is safe:
+# text inside <script>/<style> elements is never between a `>` and `<`, so
+# their content is untouched, and inline spacing between words is preserved
+# (only newline-separated tag boundaries are joined).
+_HTML_WHITESPACE = re.compile(r">\s*[\r\n]\s*<")
+
+
+@app.after_request
+def _compress_response(resp):
+    # Minify + gzip in ONE handler. Flask 3 runs after_request hooks in
+    # REVERSE registration order, so separate hooks cannot rely on ordering;
+    # doing both steps here guarantees minify runs before compression.
+    # Streaming responses (SSE chat, media) are passed through untouched.
+    # The direct_passthrough check covers stream_with_context() responses;
+    # the explicit event-stream check covers the same routes even though they
+    # are built with a plain generator (get_data() would raise on those, but
+    # we never want to risk buffering a live stream).
+    if resp.direct_passthrough or resp.status_code not in (200, 201, 204):
+        return resp
+    if resp.headers.get("Content-Encoding"):
+        return resp  # already compressed downstream — do not touch
+    content_type = (resp.headers.get("Content-Type") or "").lower()
+    if content_type == "text/event-stream":
+        return resp
+
+    # Step 1 — minify server-rendered marketing HTML.
+    if content_type.startswith("text/html") and request.path in _SEO_PAGE_PATHS:
+        try:
+            html = resp.get_data(as_text=True)
+        except (RuntimeError, TypeError):
+            return resp
+        minified = _HTML_WHITESPACE.sub("><", html)
+        if len(minified) < len(html):
+            resp.set_data(minified.encode("utf-8"))
+
+    # Step 2 — gzip compressible MIME families (never media/images).
+    if not content_type.startswith(_GZIP_MIME_PREFIXES):
+        return resp
+    if "gzip" not in request.headers.get("Accept-Encoding", "").lower():
+        return resp
+    try:
+        body = resp.get_data()
+    except (RuntimeError, TypeError):
+        return resp
+    if len(body) < _GZIP_MIN_BYTES:
+        return resp
+    buf = io.BytesIO()
+    with gzip.GzipFile(fileobj=buf, mode="wb", compresslevel=6, mtime=0) as gz:
+        gz.write(body)
+    encoded = buf.getvalue()
+    if len(encoded) >= len(body):
+        return resp  # no savings — leave it uncompressed
+    resp.set_data(encoded)
+    resp.headers["Content-Encoding"] = "gzip"
+    resp.headers["Content-Length"] = str(len(encoded))
+    resp.headers["Vary"] = "Accept-Encoding"
+    resp.headers.pop("ETag", None)
+    return resp
 
 
 # ── Background workers ──────────────────────────────────────────────────────

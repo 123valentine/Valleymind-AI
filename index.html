@@ -7,8 +7,71 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#0b141a">
-<title>Valley Mind-AI - Quantum v2.4</title>
-<link rel="icon" type="image/png" href="/static/valleymind-logo.png">
+
+<!-- ── SEO primary meta ─────────────────────────────────────────────────
+     NOTE: keep the canonical host below in sync with SITE_URL in
+     core/seo.py. The SPA home is the "home" entry of sitemap.xml. -->
+<title>Valley Mind-AI - AI Assistant, Image &amp; Video Studio</title>
+<meta name="description" content="ValleyMind AI is an intelligent AI assistant with long-term memory, image and video generation, a full creative studio and multi-persona round-table conversations. Try it free.">
+<meta name="robots" content="index, follow">
+<link rel="canonical" href="https://valleymind-ai.onrender.com/">
+
+<!-- Open Graph (Facebook / LinkedIn / WhatsApp previews) -->
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Valley Mind-AI">
+<meta property="og:title" content="Valley Mind-AI - AI Assistant, Image &amp; Video Studio">
+<meta property="og:description" content="ValleyMind AI is an intelligent AI assistant with long-term memory, image and video generation, a full creative studio and multi-persona round-table conversations. Try it free.">
+<meta property="og:url" content="https://valleymind-ai.onrender.com/">
+<meta property="og:image" content="https://valleymind-ai.onrender.com/static/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Valley Mind-AI preview">
+<meta property="og:locale" content="en_US">
+
+<!-- Twitter / X card -->
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:site" content="@valleymindai">
+<meta name="twitter:title" content="Valley Mind-AI - AI Assistant, Image &amp; Video Studio">
+<meta name="twitter:description" content="ValleyMind AI is an intelligent AI assistant with long-term memory, image and video generation, a full creative studio and multi-persona round-table conversations. Try it free.">
+<meta name="twitter:image" content="https://valleymind-ai.onrender.com/static/og-image.png">
+<meta name="twitter:image:alt" content="Valley Mind-AI preview">
+
+<!-- PWA / installability metadata -->
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" href="/static/favicon.ico" sizes="any">
+<link rel="icon" type="image/png" href="/static/icons/icon-192.png">
+<link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
+
+<!-- Structured data: WebSite + Organization (mirrors core/seo.py JSON-LD) -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebSite",
+  "@id": "https://valleymind-ai.onrender.com/#website",
+  "name": "Valley Mind-AI",
+  "url": "https://valleymind-ai.onrender.com/",
+  "description": "ValleyMind AI is an intelligent AI assistant with long-term memory, image and video generation, a full creative studio and multi-persona round-table conversations.",
+  "publisher": {"@id": "https://valleymind-ai.onrender.com/#organization"},
+  "inLanguage": "en"
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Organization",
+  "@id": "https://valleymind-ai.onrender.com/#organization",
+  "name": "Valley Mind-AI",
+  "url": "https://valleymind-ai.onrender.com/",
+  "logo": {"@type": "ImageObject", "url": "https://valleymind-ai.onrender.com/static/valleymind-logo.png", "width": 426, "height": 176},
+  "image": "https://valleymind-ai.onrender.com/static/og-image.png",
+  "description": "ValleyMind AI is an intelligent AI assistant with long-term memory, image and video generation, a full creative studio and multi-persona round-table conversations.",
+  "email": "support@valleymind.ai",
+  "sameAs": [
+    "https://github.com/123valentine/Valleymind-AI",
+    "https://huggingface.co/spaces/ValentineEgbujie/valleymindai"
+  ]
+}
+</script>
 <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
 <script src="https://unpkg.com/lucide@latest"></script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
@@ -1778,17 +1841,17 @@
   </div>
   <div class="rt-stage" id="rtStage">
     <div class="rt-seat" id="rtSeat-angelina">
-      <div class="rt-portrait"><img src="/static/avatars/angelina.png" alt="Angelina"></div>
+      <div class="rt-portrait"><img loading="lazy" src="/static/avatars/angelina.png" alt="Angelina"></div>
       <div class="rt-name">Angelina</div>
       <div class="rt-seat-mic"><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/></svg><span class="rt-eq"><i></i><i></i><i></i><i></i></span></div>
     </div>
     <div class="rt-seat" id="rtSeat-marcus">
-      <div class="rt-portrait"><img src="/static/avatars/marcus.png" alt="Marcus"></div>
+      <div class="rt-portrait"><img loading="lazy" src="/static/avatars/marcus.png" alt="Marcus"></div>
       <div class="rt-name">Marcus</div>
       <div class="rt-seat-mic"><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/></svg><span class="rt-eq"><i></i><i></i><i></i><i></i></span></div>
     </div>
     <div class="rt-seat" id="rtSeat-elena">
-      <div class="rt-portrait"><img src="/static/avatars/elena.png" alt="Elena"></div>
+      <div class="rt-portrait"><img loading="lazy" src="/static/avatars/elena.png" alt="Elena"></div>
       <div class="rt-name">Elena</div>
       <div class="rt-seat-mic"><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/></svg><span class="rt-eq"><i></i><i></i><i></i><i></i></span></div>
     </div>
@@ -1798,7 +1861,7 @@
        while they speak, and to each persona's voice note while it plays. -->
   <div class="rt-ring" id="rtRing" style="display:none;">
     <div class="rt-ring-core">
-      <img class="rt-ring-img" src="/static/voice-wave.png" alt="">
+      <img loading="lazy" class="rt-ring-img" src="/static/voice-wave.png" alt="">
       <span class="rt-ring-bars" id="rtRingBars"></span>
     </div>
     <div class="rt-ring-label" id="rtRingLabel"></div>
@@ -4081,7 +4144,7 @@ function togglePersonaMenu() {
         var active = m.key === currentPersona;
         item.style.cssText = "padding:9px 10px;border-radius:8px;cursor:pointer;transition:all 0.12s;display:flex;align-items:center;gap:10px;" +
             (active ? "background:rgba(0,212,255,0.1);" : "");
-        item.innerHTML = '<img src="/static/avatars/' + m.key + '.png" alt="" style="width:30px;height:30px;border-radius:50%;object-fit:cover;object-position:top center;flex-shrink:0;">' +
+        item.innerHTML = '<img loading="lazy" src="/static/avatars/' + m.key + '.png" alt="" style="width:30px;height:30px;border-radius:50%;object-fit:cover;object-position:top center;flex-shrink:0;">' +
             '<div><div style="color:' + (active ? "#00d4ff" : "#e2e8f0") + ';font-size:13px;font-weight:700;">' + m.name + '</div>' +
             '<div style="color:#64748b;font-size:10.5px;margin-top:2px;">' + m.role + '</div></div>';
         item.onmouseover = function () { if (!active) item.style.background = "rgba(255,255,255,0.05)"; };
@@ -7487,4 +7550,16 @@ async function submitImageGen() {
 })();
 </script>
 
+<!-- PWA service worker: enables offline app shell + installability. -->
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function () {
+    navigator.serviceWorker.register('/sw.js').catch(function (err) {
+      console.warn('[SW] registration failed:', err);
+    });
+  });
+}
+</script>
+
+</body>
 </html>
