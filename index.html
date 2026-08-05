@@ -768,6 +768,25 @@
     background:linear-gradient(160deg, rgba(0,212,255,0.1), rgba(14,165,233,0.03)); color:#7dd3fc; font-size:11px; font-weight:700; }
   .sd-asset-name { position:absolute; left:0; right:0; bottom:0; padding:16px 9px 7px; font-size:10.5px; color:#e2e8f0;
     background:linear-gradient(180deg, transparent, rgba(2,6,23,0.88)); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  /* Stickers/GIFs are transparent — show the whole cutout on a checker backdrop */
+  .sd-asset-sticker img { object-fit:contain !important; padding:10px;
+    background:#0f172a repeating-conic-gradient(rgba(255,255,255,0.04) 0% 25%, transparent 0% 50%) 0 0 / 20px 20px; }
+  /* Apply-sticker modal */
+  #sdStickerModal { position:fixed; inset:0; z-index:100000; display:none; align-items:center; justify-content:center;
+    background:rgba(2,6,23,0.72); backdrop-filter:blur(6px); opacity:0; transition:opacity 0.25s ease; padding:16px; }
+  #sdStickerModal.open { opacity:1; }
+  .sd-sticker-card { position:relative; width:min(420px,100%); max-height:90vh; overflow-y:auto; border-radius:18px; padding:22px;
+    background:#0b1222; border:1px solid rgba(255,255,255,0.12); box-shadow:0 20px 60px rgba(0,0,0,0.5); }
+  .sd-sticker-x { position:absolute; top:12px; right:14px; background:transparent; border:none; color:#94a3b8; font-size:24px; cursor:pointer; line-height:1; }
+  .sd-sticker-head { display:flex; align-items:center; gap:14px; margin-bottom:16px; }
+  .sd-sticker-head img { width:66px; height:66px; object-fit:contain; border-radius:12px; flex-shrink:0;
+    background:#0f172a repeating-conic-gradient(rgba(255,255,255,0.05) 0% 25%, transparent 0% 50%) 0 0 / 14px 14px; }
+  .sd-sticker-title { color:#e2e8f0; font-family:'Space Grotesk',sans-serif; font-weight:800; font-size:16px; }
+  .sd-sticker-sub { color:#94a3b8; font-size:12px; margin-top:3px; }
+  .sd-pos-grid { display:flex; flex-wrap:wrap; gap:8px; }
+  .sd-pos { background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.12); color:#cbd5e1; border-radius:20px;
+    padding:7px 14px; font-size:12px; font-weight:700; cursor:pointer; transition:all 0.2s; }
+  .sd-pos.active { background:rgba(0,212,255,0.15); border-color:rgba(0,212,255,0.45); color:#00d4ff; }
 
   /* Projects */
   .sd-proj-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:14px; }
@@ -866,6 +885,189 @@
     letter-spacing:0.18em; color:#64748b; font-family:'Space Grotesk',sans-serif; }
   .vm-cs-brand-mark { width:16px; height:16px; border-radius:5px; background:linear-gradient(135deg,#00d4ff,#0ea5e9);
     display:inline-flex; align-items:center; justify-content:center; color:#04222b; font-weight:900; font-size:10px; }
+
+  /* ── AI Builder workspace (dark-first; the studio overlay is always dark and
+       html.theme-light re-inverts it via the app's existing filter trick). ── */
+  .aib { flex:1; min-height:0; display:flex; flex-direction:column; position:relative; overflow:hidden; }
+  .aib-topbar { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:14px 24px;
+    flex-shrink:0; border-bottom:1px solid rgba(255,255,255,0.07);
+    background:linear-gradient(90deg, rgba(0,212,255,0.05), transparent); }
+  .aib-topbar-title { display:flex; align-items:center; gap:12px; min-width:0; }
+  .aib-logo { width:34px; height:34px; flex-shrink:0; border-radius:10px; display:flex; align-items:center; justify-content:center;
+    color:#00d4ff; background:linear-gradient(135deg, rgba(0,212,255,0.18), rgba(14,165,233,0.1));
+    border:1px solid rgba(0,212,255,0.35); box-shadow:0 0 16px rgba(0,212,255,0.15); }
+  .aib-topbar-title h3 { margin:0; color:#f1f5f9; font-family:'Space Grotesk',sans-serif; font-weight:800; font-size:15px; letter-spacing:0.02em; }
+  .aib-topbar-title p { margin:1px 0 0; color:#64748b; font-size:11.5px; }
+  .aib-topbar-actions { display:flex; gap:8px; flex-shrink:0; }
+
+  .aib-btn { display:inline-flex; align-items:center; gap:7px; cursor:pointer; border-radius:10px; padding:9px 16px;
+    font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:12.5px; letter-spacing:0.02em;
+    border:1px solid transparent; transition:all 0.2s; text-decoration:none; color:inherit; }
+  .aib-btn i { opacity:0.9; flex-shrink:0; }
+  .aib-btn-ghost { background:rgba(255,255,255,0.05); color:#94a3b8; border-color:rgba(255,255,255,0.1); }
+  .aib-btn-ghost:hover { color:#e2e8f0; background:rgba(255,255,255,0.09); border-color:rgba(255,255,255,0.18); }
+  .aib-btn-primary { background:linear-gradient(135deg, #00d4ff, #0ea5e9); color:#04222b; box-shadow:0 4px 18px rgba(0,212,255,0.25); }
+  .aib-btn-primary:hover { filter:brightness(1.08); box-shadow:0 6px 24px rgba(0,212,255,0.35); }
+  .aib-btn:disabled { opacity:0.45; cursor:not-allowed; filter:none; }
+  .aib-btn-sm { padding:6px 11px; font-size:11.5px; }
+
+  .aib-body { flex:1; min-height:0; overflow-y:auto; padding:26px 32px 40px; }
+  .aib-view { display:flex; flex-direction:column; flex:1; min-height:0; animation:aibIn 0.25s ease both; }
+  @keyframes aibIn { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:none; } }
+
+  .aib-hero { max-width:860px; margin:0 auto; }
+  .aib-hero-title { color:#f1f5f9; font-family:'Space Grotesk',sans-serif; font-weight:800; font-size:30px;
+    letter-spacing:-0.01em; line-height:1.15; }
+  .aib-hero-accent { background:linear-gradient(90deg, #00d4ff, #0ea5e9); -webkit-background-clip:text;
+    background-clip:text; -webkit-text-fill-color:transparent; }
+  .aib-hero-sub { color:#94a3b8; font-size:14px; line-height:1.7; margin:10px 0 22px; max-width:620px; }
+
+  .aib-type-row { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:16px; }
+  .aib-type { display:inline-flex; align-items:center; gap:7px; padding:8px 14px; border-radius:999px; cursor:pointer;
+    border:1px solid rgba(255,255,255,0.1); background:rgba(255,255,255,0.03); color:#94a3b8;
+    font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:12px; transition:all 0.2s; }
+  .aib-type:hover { color:#e2e8f0; border-color:rgba(255,255,255,0.2); }
+  .aib-type.active { color:#00d4ff; border-color:rgba(0,212,255,0.5);
+    background:linear-gradient(135deg, rgba(0,212,255,0.14), rgba(14,165,233,0.1)); box-shadow:0 0 14px rgba(0,212,255,0.15); }
+
+  .aib-textarea { width:100%; box-sizing:border-box; resize:vertical; min-height:120px; background:rgba(2,6,23,0.6);
+    border:1px solid rgba(255,255,255,0.1); border-radius:14px; padding:14px 16px; color:#e2e8f0;
+    font-family:'Inter',sans-serif; font-size:13.5px; line-height:1.7; outline:none;
+    transition:border-color 0.2s, box-shadow 0.2s; }
+  .aib-textarea:focus { border-color:rgba(0,212,255,0.45); box-shadow:0 0 0 3px rgba(0,212,255,0.1); }
+  .aib-textarea::placeholder { color:#475569; }
+  .aib-textarea.aib-input-error { border-color:rgba(248,113,113,0.7) !important; box-shadow:0 0 0 3px rgba(248,113,113,0.12); }
+  .aib-hero-actions { display:flex; align-items:center; gap:14px; margin-top:16px; flex-wrap:wrap; }
+  .aib-note { color:#475569; font-size:11.5px; line-height:1.6; }
+
+  .aib-steps { max-width:860px; margin:34px auto 0; display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
+  .aib-step { background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.07); border-radius:16px; padding:18px 18px 16px; }
+  .aib-step-num { width:28px; height:28px; border-radius:9px; display:flex; align-items:center; justify-content:center;
+    background:linear-gradient(135deg, rgba(0,212,255,0.18), rgba(14,165,233,0.1)); color:#00d4ff;
+    font-family:'Space Grotesk',sans-serif; font-weight:800; font-size:12px; margin-bottom:12px; border:1px solid rgba(0,212,255,0.25); }
+  .aib-step h5 { margin:0 0 6px; color:#e2e8f0; font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:13px; }
+  .aib-step p { margin:0; color:#64748b; font-size:11.5px; line-height:1.6; }
+
+  .aib-projects { max-width:860px; margin:38px auto 0; }
+  .aib-section-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
+  .aib-section-head h4 { margin:0; color:#e2e8f0; font-family:'Space Grotesk',sans-serif; font-weight:800; font-size:15px; letter-spacing:0.01em; }
+  .aib-section-head span { color:#64748b; font-size:11.5px; }
+  .aib-projects-list { display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:12px; }
+  .aib-proj { background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:16px; padding:16px;
+    transition:border-color 0.2s, transform 0.2s, background 0.2s; }
+  .aib-proj:hover { border-color:rgba(0,212,255,0.35); background:rgba(0,212,255,0.04); transform:translateY(-2px); }
+  .aib-proj-head { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
+  .aib-proj-name { color:#f1f5f9; font-family:'Space Grotesk',sans-serif; font-weight:800; font-size:14px; }
+  .aib-proj-meta { color:#64748b; font-size:11px; margin-top:4px; display:flex; gap:10px; flex-wrap:wrap; }
+  .aib-proj-actions { display:flex; gap:6px; margin-top:14px; flex-wrap:wrap; }
+  .aib-proj .aib-btn { padding:6px 10px; font-size:11px; }
+  .aib-empty { color:#475569; font-size:13px; text-align:center; padding:28px 10px; border:1px dashed rgba(255,255,255,0.1); border-radius:16px; }
+
+  /* plan view */
+  .aib-body-plan { padding-bottom:40px; }
+  .aib-plan-layout { display:grid; grid-template-columns:1fr 280px; gap:16px; max-width:1100px; margin:0 auto; }
+  .aib-card { background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:18px; padding:18px; margin-bottom:16px; }
+  .aib-card-tight { padding:14px 16px; }
+  .aib-card-head { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px; flex-wrap:wrap; }
+  .aib-card-head h4 { margin:0; color:#e2e8f0; font-family:'Space Grotesk',sans-serif; font-weight:800; font-size:14px; letter-spacing:0.01em; }
+  .aib-card-sub { color:#64748b; font-size:11.5px; }
+  .aib-card-actions { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .aib-badge { font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:0.1em; padding:4px 10px;
+    border-radius:999px; font-family:'Space Grotesk',sans-serif; color:#94a3b8; background:rgba(255,255,255,0.06);
+    border:1px solid rgba(255,255,255,0.1); white-space:nowrap; }
+  .aib-badge-live { color:#4ade80; background:rgba(74,222,128,0.08); border-color:rgba(74,222,128,0.3); }
+  .aib-clarify-status { color:#94a3b8; font-size:12.5px; line-height:1.7; min-height:20px; }
+  .aib-clarify-status .aib-thinking { color:#00d4ff; }
+  .aib-questions { margin-top:14px; display:flex; flex-direction:column; gap:14px; }
+  .aib-q { background:rgba(2,6,23,0.45); border:1px solid rgba(255,255,255,0.08); border-radius:14px; padding:14px; }
+  .aib-q-text { color:#e2e8f0; font-weight:600; font-size:13px; margin-bottom:10px; line-height:1.6; }
+  .aib-q-opts { display:flex; flex-wrap:wrap; gap:8px; }
+  .aib-q-opt { padding:7px 13px; border-radius:999px; cursor:pointer; border:1px solid rgba(255,255,255,0.1);
+    background:rgba(255,255,255,0.03); color:#94a3b8; font-size:12px; font-family:'Space Grotesk',sans-serif;
+    font-weight:700; transition:all 0.2s; }
+  .aib-q-opt:hover { color:#e2e8f0; border-color:rgba(255,255,255,0.25); }
+  .aib-q-opt.active { color:#04222b; background:linear-gradient(135deg,#00d4ff,#0ea5e9); border-color:transparent;
+    box-shadow:0 2px 12px rgba(0,212,255,0.3); }
+  .aib-plan-actions { margin-top:16px; display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+  .aib-spec-tabs { display:flex; gap:4px; margin-bottom:10px; }
+  .aib-spec-tab { padding:7px 14px; border-radius:9px; cursor:pointer; border:1px solid transparent; background:transparent;
+    color:#64748b; font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:12px; transition:all 0.2s; }
+  .aib-spec-tab:hover { color:#e2e8f0; }
+  .aib-spec-tab.active { color:#00d4ff; background:rgba(0,212,255,0.1); }
+  .aib-spec-edit textarea { width:100%; box-sizing:border-box; min-height:420px; resize:vertical;
+    font-family:'JetBrains Mono',ui-monospace,'Cascadia Code',Consolas,monospace; font-size:12px; line-height:1.6;
+    background:#04070f; color:#c8d3e8; border:1px solid rgba(255,255,255,0.08); border-radius:12px; padding:14px;
+    outline:none; }
+  .aib-spec-preview { max-height:520px; overflow-y:auto; border:1px solid rgba(255,255,255,0.08); border-radius:12px;
+    background:#04070f; padding:16px; }
+  .aib-spec-preview .aib-spec-sec { margin-bottom:18px; }
+  .aib-spec-preview .aib-spec-sec h5 { color:#00d4ff; font-family:'Space Grotesk',sans-serif; font-weight:800;
+    font-size:11px; letter-spacing:0.14em; text-transform:uppercase; margin:0 0 8px; }
+  .aib-spec-preview p, .aib-spec-preview li { color:#c8d3e8; font-size:12.5px; line-height:1.7; margin:0; }
+  .aib-spec-preview ul { margin:4px 0; padding-left:18px; }
+  .aib-brief { color:#94a3b8; font-size:12.5px; line-height:1.7; margin:0; white-space:pre-wrap; word-break:break-word; }
+
+  /* build view */
+  .aib-body-build { max-width:1100px; margin:0 auto; padding-bottom:40px; }
+  .aib-progress-track { height:8px; border-radius:999px; background:rgba(255,255,255,0.07); overflow:hidden; margin:6px 0 10px; }
+  .aib-progress-bar { height:100%; border-radius:999px; background:linear-gradient(90deg,#00d4ff,#0ea5e9,#a78bfa,#00d4ff);
+    background-size:200% 100%; animation:aibFlow 2.2s linear infinite; transition:width 0.3s ease; }
+  @keyframes aibFlow { to { background-position:200% 0; } }
+  .aib-spin { animation:aibSpin 1s linear infinite; }
+  @keyframes aibSpin { to { transform:rotate(360deg); } }
+  .aib-progress-meta { display:flex; justify-content:space-between; color:#64748b; font-size:11.5px; gap:10px; }
+  .aib-progress-meta span:first-child { color:#94a3b8; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .aib-build-log { margin-top:12px; max-height:190px; overflow-y:auto; background:#04070f; border:1px solid rgba(255,255,255,0.07);
+    border-radius:12px; padding:10px 12px; font-family:'JetBrains Mono',ui-monospace,Consolas,monospace; font-size:11px;
+    line-height:1.8; color:#64748b; }
+  .aib-build-log div { white-space:pre-wrap; word-break:break-word; }
+  .aib-log-ok { color:#4ade80; }
+  .aib-log-err { color:#f87171; }
+  .aib-build-live { margin-top:12px; border:1px solid rgba(255,255,255,0.07); border-radius:12px; background:#04070f; overflow:hidden; }
+  .aib-build-live pre { margin:0; padding:12px 14px; max-height:260px; overflow:auto; color:#c8d3e8;
+    font-family:'JetBrains Mono',ui-monospace,'Cascadia Code',Consolas,monospace; font-size:12px; line-height:1.7; }
+  .aib-result-body { display:grid; grid-template-columns:1fr; gap:14px; min-height:520px; }
+  .aib-files-wrap { display:grid; grid-template-columns:250px 1fr; gap:14px; min-width:0; }
+  .aib-explorer { border:1px solid rgba(255,255,255,0.08); border-radius:14px; background:rgba(2,6,23,0.5); padding:10px;
+    overflow-y:auto; max-height:640px; }
+  .aib-file { display:flex; align-items:center; gap:8px; padding:6px 9px; border-radius:8px; cursor:pointer; color:#94a3b8;
+    font-family:'JetBrains Mono',ui-monospace,Consolas,monospace; font-size:12px; transition:all 0.15s; white-space:nowrap; }
+  .aib-file:hover { background:rgba(255,255,255,0.06); color:#e2e8f0; }
+  .aib-file.active { background:rgba(0,212,255,0.12); color:#00d4ff; }
+  .aib-file-dir { cursor:default; opacity:0.75; }
+  .aib-file i { opacity:0.7; flex-shrink:0; }
+  .aib-file .aib-file-name { overflow:hidden; text-overflow:ellipsis; }
+  .aib-code { border:1px solid rgba(255,255,255,0.08); border-radius:14px; background:#04070f; overflow:hidden;
+    display:flex; flex-direction:column; min-width:0; min-height:420px; }
+  .aib-code-head { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:9px 14px;
+    border-bottom:1px solid rgba(255,255,255,0.07); background:rgba(255,255,255,0.02); }
+  .aib-code-head span { color:#94a3b8; font-family:'JetBrains Mono',ui-monospace,Consolas,monospace; font-size:11.5px;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .aib-code pre { flex:1; margin:0; padding:14px 16px; overflow:auto; color:#c8d3e8;
+    font-family:'JetBrains Mono',ui-monospace,'Cascadia Code',Consolas,monospace; font-size:12px; line-height:1.7; }
+  .aib-code-empty { flex:1; display:flex; align-items:center; justify-content:center; color:#475569; font-size:12.5px;
+    padding:20px; text-align:center; }
+  .aib-tok-str { color:#7ee787; }
+  .aib-tok-com { color:#6b7280; font-style:italic; }
+  .aib-tok-kw { color:#22d3ee; }
+  .aib-tok-num { color:#fbbf24; }
+  .aib-preview { display:flex; flex-direction:column; border:1px solid rgba(255,255,255,0.08); border-radius:14px;
+    overflow:hidden; min-width:0; min-height:520px; }
+  .aib-preview-toolbar { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:9px 12px;
+    border-bottom:1px solid rgba(255,255,255,0.07); background:rgba(255,255,255,0.02); }
+  .aib-preview-toolbar span { color:#64748b; font-family:'JetBrains Mono',ui-monospace,Consolas,monospace; font-size:11px;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .aib-preview-controls { display:flex; gap:6px; flex-shrink:0; }
+  .aib-preview iframe { flex:1; border:0; width:100%; background:#fff; }
+
+  @media(max-width:900px){
+    .aib-body { padding:18px 16px 30px; }
+    .aib-plan-layout { grid-template-columns:1fr; }
+    .aib-files-wrap { grid-template-columns:1fr; }
+    .aib-steps { grid-template-columns:1fr; }
+    .aib-hero-title { font-size:24px; }
+    .aib-topbar { padding:12px 16px; }
+  }
 
   @media(max-width:768px){
     .vm-ws-tabbar { padding:12px 14px 10px; gap:6px; }
@@ -1403,7 +1605,7 @@
   </div>
   </div><!-- /sidebarPanel-chats -->
   <!-- Navigation — the sidebar intentionally stays minimal: Chat + Studio.
-       Every other workspace (Image/Video Galleries, Website Builder, Sketch,
+       Every other workspace (Image/Video Galleries, AI Builder, Sketch,
        3D Studio, Round Table, Massive Editing) now lives inside Studio.
        Settings/Profile/Theme/Account remain untouched in the gear menu. -->
   <nav class="mb-2" id="mainNav">
@@ -1795,7 +1997,7 @@
        Clicking a tab swaps the panels below instantly (no page reload). -->
   <nav class="vm-ws-tabbar" id="vmWsTabbar" aria-label="Studio workspaces">
     <button class="vm-ws-tab active" data-ws="studio" onclick="vmWsGo('studio')"><i data-lucide="clapperboard"></i> ValleyMind Studio</button>
-    <button class="vm-ws-tab" data-ws="website" onclick="vmWsGo('website')"><i data-lucide="globe"></i> Website Builder</button>
+    <button class="vm-ws-tab" data-ws="website" onclick="vmWsGo('website')"><i data-lucide="sparkles"></i> AI Builder</button>
     <button class="vm-ws-tab" data-ws="sketch" onclick="vmWsGo('sketch')"><i data-lucide="pencil-ruler"></i> Sketch</button>
     <button class="vm-ws-tab" data-ws="threed" onclick="vmWsGo('threed')"><i data-lucide="box"></i> 3D Studio</button>
     <button class="vm-ws-tab" data-ws="roundtable" onclick="vmWsGo('roundtable')"><i data-lucide="users"></i> Round Table</button>
@@ -1895,19 +2097,149 @@
   </div>
   </div><!-- /ValleyMind Studio workspace panel -->
 
-  <!-- ── Workspace: Website Builder — Coming Soon ── -->
+  <!-- ── Workspace: AI Builder — describe → plan → build → preview/download ── -->
   <div class="vm-ws-panel" data-ws-panel="website">
-    <div class="vm-cs">
-      <span class="vm-cs-orb a"></span>
-      <span class="vm-cs-orb b"></span>
-      <div class="vm-cs-card">
-        <div class="vm-cs-grid-lines"></div>
-        <div class="vm-cs-icon"><i data-lucide="globe" style="width:36px;height:36px;"></i></div>
-        <span class="vm-cs-badge">In Development</span>
-        <h2 class="vm-cs-title">Website Builder</h2>
-        <p class="vm-cs-desc">This feature is currently under development and will be available in a future update.</p>
-        <div class="vm-cs-dots"><i></i><i></i><i></i></div>
-        <span class="vm-cs-brand"><span class="vm-cs-brand-mark">V</span>Valley Mind-AI · Creative Suite</span>
+    <div class="aib">
+      <div class="aib-topbar">
+        <div class="aib-topbar-title">
+          <span class="aib-logo"><i data-lucide="sparkles" style="width:16px;height:16px;"></i></span>
+          <div>
+            <h3>AI Builder</h3>
+            <p id="aibTopbarSub">Describe an idea — get a full, production-ready project.</p>
+          </div>
+        </div>
+        <div class="aib-topbar-actions">
+          <button class="aib-btn aib-btn-ghost" id="aibBtnProjects" style="display:none;" onclick="aibReset()">
+            <i data-lucide="plus" style="width:15px;height:15px;"></i> New project
+          </button>
+        </div>
+      </div>
+
+      <!-- VIEW: home (describe + my projects) -->
+      <div class="aib-view" id="aibViewHome">
+        <div class="aib-body">
+          <div class="aib-hero">
+            <div class="aib-hero-title">Describe it. <span class="aib-hero-accent">We build it.</span></div>
+            <p class="aib-hero-sub">ValleyMind AI Builder turns a plain-language idea into a complete project — an editable specification, then the full codebase with a live preview and one-click download. Powered by the OpenCode API, running entirely on our server.</p>
+            <div class="aib-type-row" id="aibTypeRow">
+              <button type="button" class="aib-type active" data-type="website" onclick="aibSelectType(this)"><i data-lucide="globe" style="width:14px;height:14px;"></i> Website</button>
+              <button type="button" class="aib-type" data-type="mobile" onclick="aibSelectType(this)"><i data-lucide="smartphone" style="width:14px;height:14px;"></i> Mobile app</button>
+              <button type="button" class="aib-type" data-type="desktop" onclick="aibSelectType(this)"><i data-lucide="monitor" style="width:14px;height:14px;"></i> Desktop app</button>
+              <button type="button" class="aib-type" data-type="api" onclick="aibSelectType(this)"><i data-lucide="server" style="width:14px;height:14px;"></i> REST API</button>
+              <button type="button" class="aib-type" data-type="admin" onclick="aibSelectType(this)"><i data-lucide="layout-dashboard" style="width:14px;height:14px;"></i> Admin dashboard</button>
+              <button type="button" class="aib-type" data-type="ai" onclick="aibSelectType(this)"><i data-lucide="bot" style="width:14px;height:14px;"></i> AI app</button>
+              <button type="button" class="aib-type" data-type="saas" onclick="aibSelectType(this)"><i data-lucide="rocket" style="width:14px;height:14px;"></i> SaaS</button>
+            </div>
+            <textarea id="aibDesc" class="aib-textarea" rows="5" spellcheck="false" placeholder="Example: A subscription SaaS that lets content creators publish a paid newsletter — landing page, member portal, Stripe checkout, admin dashboard and a REST API."></textarea>
+            <div class="aib-hero-actions">
+              <button class="aib-btn aib-btn-primary" id="aibBtnStart" onclick="aibStart()"><i data-lucide="sparkles" style="width:16px;height:16px;"></i> Start building</button>
+              <span class="aib-note" id="aibModelNote"></span>
+            </div>
+          </div>
+
+          <div class="aib-steps">
+            <div class="aib-step"><div class="aib-step-num">1</div><h5>Describe &amp; answer</h5><p>Tell the builder what you want. It asks a few smart questions to shape the scope.</p></div>
+            <div class="aib-step"><div class="aib-step-num">2</div><h5>Review the plan</h5><p>You get a full project specification — features, stack, pages, database and roadmap. Edit anything.</p></div>
+            <div class="aib-step"><div class="aib-step-num">3</div><h5>Build &amp; ship</h5><p>Watch the code generate live, browse the file tree, preview it and download the whole project.</p></div>
+          </div>
+
+          <div class="aib-projects">
+            <div class="aib-section-head"><h4>My projects</h4><span id="aibProjectCount"></span></div>
+            <div class="aib-projects-list" id="aibProjectsList"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- VIEW: plan (clarifying questions + editable spec) -->
+      <div class="aib-view" id="aibViewPlan" style="display:none;">
+        <div class="aib-body aib-body-plan">
+          <div class="aib-plan-layout">
+            <div class="aib-plan-main">
+              <div class="aib-card" id="aibClarifyWrap">
+                <div class="aib-card-head">
+                  <h4>Quick questions</h4>
+                  <span class="aib-card-sub">These shape the project specification.</span>
+                </div>
+                <div class="aib-clarify-status" id="aibClarifyStatus"></div>
+                <div class="aib-questions" id="aibQuestions"></div>
+                <div class="aib-plan-actions" id="aibPlanActions" style="display:none;">
+                  <button class="aib-btn aib-btn-primary" onclick="aibGeneratePlan()"><i data-lucide="list-checks" style="width:16px;height:16px;"></i> Generate the plan</button>
+                </div>
+              </div>
+              <div class="aib-card" id="aibSpecWrap" style="display:none;">
+                <div class="aib-card-head">
+                  <h4>Project specification</h4>
+                  <div class="aib-card-actions">
+                    <span class="aib-badge" id="aibSpecStatus">Draft</span>
+                    <button class="aib-btn aib-btn-ghost aib-btn-sm" onclick="aibGeneratePlan()">Regenerate</button>
+                  </div>
+                </div>
+                <div class="aib-spec-tabs">
+                  <button type="button" class="aib-spec-tab active" data-mode="edit" onclick="aibSpecTab('edit')">Edit JSON</button>
+                  <button type="button" class="aib-spec-tab" data-mode="preview" onclick="aibSpecTab('preview')">Pretty preview</button>
+                </div>
+                <div class="aib-spec-edit">
+                  <textarea id="aibSpecEdit" spellcheck="false"></textarea>
+                </div>
+                <div class="aib-spec-preview" id="aibSpecPreview" style="display:none;"></div>
+                <div class="aib-plan-actions">
+                  <button class="aib-btn aib-btn-primary" id="aibBtnBuild" onclick="aibBuild()" disabled><i data-lucide="hammer" style="width:16px;height:16px;"></i> Build this project</button>
+                  <span class="aib-note">Edit the JSON to change scope, stack, pages or features before building.</span>
+                </div>
+              </div>
+            </div>
+            <div class="aib-plan-side">
+              <div class="aib-card aib-card-tight">
+                <div class="aib-card-head"><h4>Your brief</h4></div>
+                <p class="aib-brief" id="aibBrief"></p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- VIEW: build (live progress → files / preview / download) -->
+      <div class="aib-view" id="aibViewBuild" style="display:none;">
+        <div class="aib-body aib-body-build">
+          <div class="aib-card" id="aibBuildProgress">
+            <div class="aib-card-head">
+              <h4 id="aibBuildTitle">Building your project</h4>
+              <span class="aib-badge aib-badge-live" id="aibBuildStatus">Running</span>
+            </div>
+            <div class="aib-progress-track"><div class="aib-progress-bar" id="aibProgressBar" style="width:0%;"></div></div>
+            <div class="aib-progress-meta"><span id="aibProgressText">Designing the architecture…</span><span id="aibProgressCount">0/0</span></div>
+            <div class="aib-build-log" id="aibBuildLog"></div>
+            <div class="aib-build-live" id="aibBuildLive"><pre id="aibBuildLivePre"><span class="aib-tok-com">// waiting for the first file…</span></pre></div>
+          </div>
+          <div class="aib-card" id="aibBuildResult" style="display:none;">
+            <div class="aib-card-head">
+              <h4 id="aibResultName"></h4>
+              <div class="aib-card-actions">
+                <button class="aib-btn aib-btn-ghost aib-btn-sm" id="aibBtnFiles" onclick="aibShow('files')"><i data-lucide="folder-open" style="width:14px;height:14px;"></i> Files</button>
+                <button class="aib-btn aib-btn-ghost aib-btn-sm" id="aibBtnPreview" onclick="aibShow('preview')"><i data-lucide="eye" style="width:14px;height:14px;"></i> Preview</button>
+                <button class="aib-btn aib-btn-primary aib-btn-sm" onclick="aibDownload()"><i data-lucide="download" style="width:14px;height:14px;"></i> Download .zip</button>
+              </div>
+            </div>
+            <div class="aib-result-body">
+              <div class="aib-files-wrap" id="aibFilesWrap">
+                <div class="aib-explorer" id="aibExplorer"></div>
+                <div class="aib-code" id="aibCode">
+                  <div class="aib-code-empty" id="aibCodeEmpty">Select a file on the left to view its code.</div>
+                </div>
+              </div>
+              <div class="aib-preview" id="aibPreview" style="display:none;">
+                <div class="aib-preview-toolbar">
+                  <span id="aibPreviewPath">/</span>
+                  <div class="aib-preview-controls">
+                    <button class="aib-btn aib-btn-ghost aib-btn-sm" onclick="aibPreviewNavBack()">Back</button>
+                    <a class="aib-btn aib-btn-ghost aib-btn-sm" target="_blank" rel="noopener" id="aibPreviewOpen">Open in new tab</a>
+                  </div>
+                </div>
+                <iframe id="aibPreviewFrame" sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-popups allow-downloads" title="Project preview"></iframe>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -2042,6 +2374,41 @@
         <div class="edit-stats" id="editStats"></div>
         <button class="edit-cta" onclick="editReset()">Edit another</button>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- APPLY STICKER TO A VIDEO -->
+<input type="file" id="sdStickerVideoInput" accept="video/*" style="display:none;" onchange="if(this.files[0]) sdStickerApply(this.files[0]);">
+<div id="sdStickerModal">
+  <div class="sd-sticker-card">
+    <button class="sd-sticker-x" onclick="sdStickerClose()" title="Close">&times;</button>
+    <div id="sdStickerSetup">
+      <div class="sd-sticker-head">
+        <img id="sdStickerPreview" alt="">
+        <div>
+          <div class="sd-sticker-title" id="sdStickerTitle">Sticker</div>
+          <div class="sd-sticker-sub">Pick a corner, then choose a video to place it on.</div>
+        </div>
+      </div>
+      <div class="sd-pos-grid" id="sdStickerPositions">
+        <button class="sd-pos active" data-pos="br" onclick="sdStickerSetPos('br')">Bottom-right</button>
+        <button class="sd-pos" data-pos="bl" onclick="sdStickerSetPos('bl')">Bottom-left</button>
+        <button class="sd-pos" data-pos="tr" onclick="sdStickerSetPos('tr')">Top-right</button>
+        <button class="sd-pos" data-pos="tl" onclick="sdStickerSetPos('tl')">Top-left</button>
+        <button class="sd-pos" data-pos="center" onclick="sdStickerSetPos('center')">Center</button>
+      </div>
+      <button class="edit-cta" style="width:100%;margin-top:16px;" onclick="sdStickerPickVideo()">Choose a video</button>
+    </div>
+    <div id="sdStickerProgress" style="display:none;text-align:center;padding:34px 6px;">
+      <div class="edit-spinner"></div>
+      <div class="edit-phase" id="sdStickerPhase" style="margin-top:16px;">Applying the sticker…</div>
+      <div class="edit-sub">Overlaying and re-encoding — usually under a minute for a short clip; keep this open.</div>
+    </div>
+    <div id="sdStickerResult" style="display:none;text-align:center;">
+      <div class="edit-sheet-label" style="margin-top:6px;">Your video</div>
+      <video id="sdStickerVideo" controls playsinline preload="metadata" style="width:100%;max-width:280px;border-radius:12px;background:#0f172a;display:block;margin:10px auto 4px;"></video>
+      <button class="edit-cta" style="margin-top:10px;" onclick="sdStickerClose()">Done</button>
     </div>
   </div>
 </div>
@@ -4407,6 +4774,7 @@ function vmWsGo(ws) {
     } else {
         if (typeof rtRender === "function") rtRender();
     }
+    if (ws === "website" && typeof aibOnShow === "function") aibOnShow();
 }
 
 function closeStudio() {
@@ -4959,25 +5327,121 @@ function sdAssetSearchDebounce() {
 }
 
 function sdAssetHTML(m) {
-    var inner;
+    var inner, cls = "sd-asset";
     if (m.kind === "video") inner = '<video src="' + esc(m.url) + '" preload="metadata" muted playsinline></video>';
-    else if (m.kind === "image") inner = '<img src="' + esc(m.url) + '" loading="lazy" alt="' + esc(m.name) + '">';
+    else if (m.kind === "sticker" || m.kind === "gif") {
+        cls = "sd-asset sd-asset-sticker";
+        inner = '<img src="' + esc(m.url) + '" loading="lazy" alt="' + esc(m.name) + '">';
+    } else if (m.kind === "image") inner = '<img src="' + esc(m.url) + '" loading="lazy" alt="' + esc(m.name) + '">';
     else inner = '<div class="sd-asset-audio">' + studioIcon("music", 18) + '<span>Audio</span></div>';
-    return '<div class="sd-asset" title="' + esc(m.name) + '">' + inner + '<div class="sd-asset-name">' + esc(m.name) + '</div></div>';
+    return '<div class="' + cls + '" title="' + esc(m.name) + '" onclick="sdAssetPick(' + JSON.stringify(JSON.stringify(m)) + ')">' +
+        inner + '<div class="sd-asset-name">' + esc(m.name) + '</div></div>';
+}
+
+// Clicking a sticker/asset selects it — used by the "apply to a video" flow.
+var sdPickedAsset = null;
+var sdStickerPos = "br";
+var sdStickerJob = "";
+var sdStickerTimer = null;
+
+function sdAssetPick(json) {
+    try { sdPickedAsset = JSON.parse(json); } catch (e) { return; }
+    if (sdPickedAsset && (sdPickedAsset.kind === "sticker" || sdPickedAsset.kind === "gif")) {
+        sdApplyStickerPrompt(sdPickedAsset);
+    }
+}
+
+// Open the "apply this sticker to a video" panel: preview the sticker, choose a
+// corner, then pick a video to overlay it onto.
+function sdApplyStickerPrompt(asset) {
+    var modal = document.getElementById("sdStickerModal");
+    if (!modal || !asset) return;
+    sdStickerPos = "br";
+    if (sdStickerTimer) { clearTimeout(sdStickerTimer); sdStickerTimer = null; }
+    document.getElementById("sdStickerPreview").src = asset.url || "";
+    document.getElementById("sdStickerTitle").textContent = asset.name || "Sticker";
+    _sdStickerShow("sdStickerSetup", true);
+    _sdStickerShow("sdStickerProgress", false);
+    _sdStickerShow("sdStickerResult", false);
+    document.querySelectorAll("#sdStickerPositions .sd-pos").forEach(function (b) {
+        b.classList.toggle("active", b.getAttribute("data-pos") === sdStickerPos);
+    });
+    modal.style.display = "flex";
+    requestAnimationFrame(function () { modal.classList.add("open"); });
+}
+function _sdStickerShow(id, on) { var e = document.getElementById(id); if (e) e.style.display = on ? "" : "none"; }
+function sdStickerSetPos(pos) {
+    sdStickerPos = pos;
+    document.querySelectorAll("#sdStickerPositions .sd-pos").forEach(function (b) {
+        b.classList.toggle("active", b.getAttribute("data-pos") === pos);
+    });
+}
+function sdStickerClose() {
+    if (sdStickerTimer) { clearTimeout(sdStickerTimer); sdStickerTimer = null; }
+    var modal = document.getElementById("sdStickerModal");
+    if (!modal) return;
+    modal.classList.remove("open");
+    setTimeout(function () { modal.style.display = "none"; }, 250);
+}
+function sdStickerPickVideo() {
+    var inp = document.getElementById("sdStickerVideoInput");
+    if (inp) { inp.value = ""; inp.click(); }
+}
+function sdStickerApply(file) {
+    if (!file || !sdPickedAsset) return;
+    if (file.size > 100 * 1024 * 1024) { alert("That video is over the 100MB limit."); return; }
+    _sdStickerShow("sdStickerSetup", false);
+    _sdStickerShow("sdStickerProgress", true);
+    _sdStickerShow("sdStickerResult", false);
+    var fd = new FormData();
+    fd.append("video", file);
+    fd.append("sticker_url", sdPickedAsset.url || "");
+    fd.append("position", sdStickerPos);
+    fetch(apiUrl("/api/editing/apply-sticker"), { method: "POST", credentials: "include", headers: authHeaders(), body: fd })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+            if (!d || d.status !== "success" || !d.job) {
+                document.getElementById("sdStickerPhase").textContent = (d && d.message) || "Couldn’t start — try again.";
+                return;
+            }
+            sdStickerJob = d.job.job_id;
+            sdStickerPoll();
+        })
+        .catch(function () { document.getElementById("sdStickerPhase").textContent = "Upload failed — check your connection."; });
+}
+function sdStickerPoll() {
+    if (!sdStickerJob) return;
+    fetch(apiUrl("/api/studio/job/" + encodeURIComponent(sdStickerJob)), { credentials: "include", headers: authHeaders() })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+            var job = d && d.job;
+            if (!job) { sdStickerTimer = setTimeout(sdStickerPoll, 4000); return; }
+            if (job.status === "running") { sdStickerTimer = setTimeout(sdStickerPoll, 4000); return; }
+            if (job.final_video) {
+                _sdStickerShow("sdStickerProgress", false);
+                _sdStickerShow("sdStickerResult", true);
+                document.getElementById("sdStickerVideo").src = job.final_video;
+            } else {
+                document.getElementById("sdStickerPhase").textContent = job.error || "Couldn’t apply the sticker.";
+            }
+        })
+        .catch(function () { sdStickerTimer = setTimeout(sdStickerPoll, 5000); });
 }
 
 async function loadStudioAssets() {
     var grid = document.getElementById("sdAssetGrid");
     if (!grid) return;
     grid.innerHTML = sdLoadingHTML();
-    var stuck = ["Stickers", "GIFs", "Overlays", "Transitions", "Fonts"].indexOf(sdAssetCat) !== -1;
+    var stuck = ["Overlays", "Transitions", "Fonts"].indexOf(sdAssetCat) !== -1;
     if (stuck) {
-        grid.innerHTML = sdEmptyHTML(sdAssetCat + " are coming soon", "This asset type isn't available yet — your images, videos and sound files are ready to use.");
+        grid.innerHTML = sdEmptyHTML(sdAssetCat + " are coming soon", "This asset type isn't available yet — your images, videos, sound and stickers are ready to use.");
         return;
     }
     var wantImages = sdAssetCat === "All" || sdAssetCat === "Images";
     var wantVideos = sdAssetCat === "All" || sdAssetCat === "Videos";
     var wantAudio = sdAssetCat === "All" || sdAssetCat === "Audio" || sdAssetCat === "Sound Effects";
+    var wantStickers = sdAssetCat === "Stickers";   // heavy set — only on its own tab
+    var wantGifs = sdAssetCat === "GIFs";
     var items = [];
     try {
         if (wantImages) {
@@ -5002,6 +5466,26 @@ async function loadStudioAssets() {
                 (d3.assets || []).forEach(function (m) {
                     items.push({ kind: "audio", url: m.local_path || "", name: m.prompt || m.name || "Sound", created: m.created_at });
                 });
+            }
+        }
+        if (wantStickers || wantGifs) {
+            var stype = wantStickers ? "stickers" : "gifs";
+            var acat = wantStickers ? "sticker" : "gif";
+            // Built-in library bundled in the project.
+            var rb = await apiFetch("/api/editing/stickers?type=" + stype, { credentials: "include", headers: authHeaders(), timeoutMs: 15000 });
+            var db = await rb.json();
+            (db.stickers || []).forEach(function (m) {
+                items.push({ kind: m.kind || "sticker", url: m.url || "", name: m.name || "Sticker" });
+            });
+            // Plus any the user uploaded themselves.
+            var ru = await apiFetch("/api/editing/assets?category=" + acat, { credentials: "include", headers: authHeaders(), timeoutMs: 15000 });
+            var du = await ru.json();
+            (du.assets || []).forEach(function (m) {
+                items.push({ kind: (m.type === "video" ? "video" : "sticker"), url: m.local_path || "", name: m.prompt || m.name || "Sticker" });
+            });
+            if (sdAssetQuery) {
+                var q = sdAssetQuery.toLowerCase();
+                items = items.filter(function (m) { return (m.name || "").toLowerCase().indexOf(q) !== -1; });
             }
         }
         grid.innerHTML = items.length ? items.map(sdAssetHTML).join("") : sdEmptyHTML("No assets found", "Try a different search or category.");
@@ -7421,6 +7905,565 @@ window.send = async function () {
     clearImageUpload();
     focusChatInput();
 };
+
+/* === AI BUILDER (OpenCode-powered project generation) === */
+var aibState = { type: "website", desc: "", questions: [], answers: {}, specText: "", pid: null, resultMode: "files", previewPath: "/", prevStack: [] };
+
+function aibGo(view) {
+    var map = { home: "aibViewHome", plan: "aibViewPlan", build: "aibViewBuild" };
+    Object.keys(map).forEach(function (v) {
+        var el = document.getElementById(map[v]);
+        if (el) el.style.display = (v === view ? "" : "none");
+    });
+    var btn = document.getElementById("aibBtnProjects");
+    if (btn) btn.style.display = view === "home" ? "none" : "";
+    var sub = document.getElementById("aibTopbarSub");
+    if (sub) {
+        if (view === "plan") sub.textContent = "Plan your project before building — edit anything you like.";
+        else if (view === "build") sub.textContent = "Live build progress, files, preview and download.";
+        else sub.textContent = "Describe an idea — get a full, production-ready project.";
+    }
+}
+
+function aibOnShow() {
+    aibLoadStatus();
+    aibLoadProjects();
+}
+
+function aibReset() {
+    aibState = { type: aibState.type, desc: "", questions: [], answers: {}, specText: "", pid: null, resultMode: "files", previewPath: "/", prevStack: [] };
+    var desc = document.getElementById("aibDesc");
+    if (desc) desc.value = "";
+    var q = document.getElementById("aibQuestions");
+    if (q) q.innerHTML = "";
+    document.getElementById("aibSpecWrap").style.display = "none";
+    document.getElementById("aibPlanActions").style.display = "none";
+    document.getElementById("aibClarifyStatus").innerHTML = "";
+    document.getElementById("aibSpecEdit").value = "";
+    document.getElementById("aibBtnBuild").disabled = true;
+    document.getElementById("aibBtnStart").disabled = false;
+    aibGo("home");
+    aibLoadProjects();
+}
+
+function aibLoadStatus() {
+    apiFetch("/api/ai-builder/status", { timeoutMs: 20000 }).then(function (r) { return r.json(); })
+        .then(function (j) {
+            if (j && j.status === "success" && j.configured) {
+                var note = document.getElementById("aibModelNote");
+                if (note) note.textContent = "Build model: " + (j.build_model || "") + " · Free to use";
+            }
+        }).catch(function () {});
+}
+
+function aibLoaderHtml() {
+    return '<div class="aib-empty" style="display:flex;align-items:center;justify-content:center;gap:8px;color:#00d4ff;">' +
+        '<i data-lucide="loader-circle" style="width:15px;height:15px;" class="aib-spin"></i> Loading…</div>';
+}
+
+function aibSelectType(el) {
+    if (!el) return;
+    document.querySelectorAll("#aibTypeRow .aib-type").forEach(function (t) { t.classList.remove("active"); });
+    el.classList.add("active");
+    aibState.type = el.getAttribute("data-type") || "website";
+}
+
+function aibStart() {
+    var descEl = document.getElementById("aibDesc");
+    var desc = (descEl && descEl.value || "").trim();
+    if (!desc) {
+        if (descEl) {
+            descEl.focus();
+            descEl.classList.add("aib-input-error");
+            setTimeout(function () { descEl.classList.remove("aib-input-error"); }, 1200);
+        }
+        return;
+    }
+    aibState.desc = desc;
+    aibState.answers = {};
+    aibState.questions = [];
+    aibState.specText = "";
+    document.getElementById("aibBrief").textContent = desc;
+    document.getElementById("aibBtnStart").disabled = true;
+    aibGo("plan");
+    aibClarify();
+}
+
+function aibStream(url, body, onEvent) {
+    return fetch(apiUrl(url), {
+        method: "POST",
+        credentials: "include",
+        headers: authHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify(body || {})
+    }).then(function (res) {
+        if (!res.ok) {
+            return res.json().catch(function () { return {}; }).then(function (j) {
+                throw new Error((j && j.message) || ("Server error " + res.status));
+            });
+        }
+        var reader = res.body.getReader();
+        var decoder = new TextDecoder("utf-8");
+        var buffer = "";
+        function pump() {
+            return reader.read().then(function (chunk) {
+                if (chunk.done) return;
+                buffer += decoder.decode(chunk.value, { stream: true });
+                var lines = buffer.split("\n");
+                buffer = lines.pop() || "";
+                for (var i = 0; i < lines.length; i++) {
+                    var line = lines[i].trim();
+                    if (!line.startsWith("data:")) continue;
+                    var dataStr = line.slice(5).trim();
+                    if (!dataStr || dataStr === "[DONE]") continue;
+                    var evt;
+                    try { evt = JSON.parse(dataStr); } catch (e) { continue; }
+                    if (onEvent) onEvent(evt);
+                }
+                return pump();
+            });
+        }
+        return pump();
+    });
+}
+
+function aibClarify() {
+    var statusEl = document.getElementById("aibClarifyStatus");
+    statusEl.innerHTML = '<span class="aib-thinking">Analyzing your request…</span>';
+    document.getElementById("aibQuestions").innerHTML = "";
+    document.getElementById("aibPlanActions").style.display = "none";
+    aibStream("/api/ai-builder/clarify", { message: aibState.desc, project_type: aibState.type }, function (evt) {
+        if (evt.type === "status") {
+            statusEl.innerHTML = '<span class="aib-thinking">' + esc(evt.message) + '</span>';
+        } else if (evt.type === "result") {
+            aibState.questions = evt.questions || [];
+            aibRenderQuestions(aibState.questions);
+            statusEl.innerHTML = "";
+            if (aibState.questions.length) {
+                document.getElementById("aibPlanActions").style.display = "";
+            } else {
+                aibGeneratePlan();
+            }
+        } else if (evt.type === "error") {
+            statusEl.innerHTML = '<span style="color:#f87171">' + esc(evt.message || "Error") + '</span>';
+            document.getElementById("aibBtnStart").disabled = false;
+        }
+    }).catch(function (e) {
+        statusEl.innerHTML = '<span style="color:#f87171">' + esc(e.message || "Error") + '</span>';
+        document.getElementById("aibBtnStart").disabled = false;
+    });
+}
+
+function aibRenderQuestions(qs) {
+    var wrap = document.getElementById("aibQuestions");
+    var html = "";
+    (qs || []).forEach(function (q, idx) {
+        var qid = q.id || ("q_" + idx);
+        aibState.answers[qid] = "";
+        html += '<div class="aib-q"><div class="aib-q-text">' + esc(q.question || "") + '</div><div class="aib-q-opts">';
+        (q.options || []).forEach(function (opt) {
+            html += '<button type="button" class="aib-q-opt" data-q="' + esc(qid) + '" data-opt="' + esc(opt) + '" onclick="aibPickOpt(this)">' + esc(opt) + '</button>';
+        });
+        html += '</div></div>';
+    });
+    wrap.innerHTML = html || '<p class="aib-clarify-status">No questions needed — generating the plan.</p>';
+}
+
+function aibPickOpt(btn) {
+    if (!btn) return;
+    var qid = btn.getAttribute("data-q");
+    btn.parentElement.querySelectorAll(".aib-q-opt").forEach(function (o) { o.classList.remove("active"); });
+    btn.classList.add("active");
+    aibState.answers[qid] = btn.getAttribute("data-opt");
+}
+
+function aibGeneratePlan() {
+    var statusEl = document.getElementById("aibClarifyStatus");
+    document.getElementById("aibSpecWrap").style.display = "";
+    document.getElementById("aibPlanActions").style.display = "none";
+    document.getElementById("aibSpecStatus").textContent = "Generating";
+    document.getElementById("aibBtnBuild").disabled = true;
+    var editEl = document.getElementById("aibSpecEdit");
+    editEl.value = "";
+    editEl.disabled = true;
+    var deltaAcc = "";
+    var lastPaint = 0;
+    aibStream("/api/ai-builder/plan", { message: aibState.desc, project_type: aibState.type, answers: aibState.answers }, function (evt) {
+        if (evt.type === "status") {
+            statusEl.innerHTML = '<span class="aib-thinking">' + esc(evt.message) + '</span>';
+        } else if (evt.type === "delta") {
+            deltaAcc += evt.text || "";
+            var now = Date.now();
+            if (now - lastPaint > 120) { lastPaint = now; editEl.value = deltaAcc; }
+        } else if (evt.type === "result") {
+            aibState.specText = JSON.stringify(evt.spec, null, 2);
+            editEl.value = aibState.specText;
+            aibRenderSpecPreview(aibState.specText);
+            document.getElementById("aibSpecStatus").textContent = "Ready to edit";
+            document.getElementById("aibBtnBuild").disabled = false;
+            statusEl.innerHTML = "";
+        } else if (evt.type === "error") {
+            statusEl.innerHTML = '<span style="color:#f87171">' + esc(evt.message || "Error") + '</span>';
+        }
+    }).catch(function (e) {
+        statusEl.innerHTML = '<span style="color:#f87171">' + esc(e.message || "Error") + '</span>';
+    }).finally(function () {
+        editEl.disabled = false;
+    });
+}
+
+function aibSpecTab(mode) {
+    document.querySelectorAll(".aib-spec-tab").forEach(function (t) {
+        t.classList.toggle("active", t.getAttribute("data-mode") === mode);
+    });
+    var editWrap = document.getElementById("aibSpecEdit").parentElement;
+    var prev = document.getElementById("aibSpecPreview");
+    editWrap.style.display = mode === "edit" ? "" : "none";
+    prev.style.display = mode === "preview" ? "" : "none";
+}
+
+function aibRenderSpecPreview(text) {
+    var el = document.getElementById("aibSpecPreview");
+    var s;
+    try { s = JSON.parse(text); } catch (e) { el.innerHTML = '<pre>' + esc(text) + '</pre>'; return; }
+    function arr(items) {
+        if (!items || !items.length) return "";
+        var html = "<ul>";
+        items.forEach(function (it) { html += "<li>" + esc(typeof it === "string" ? it : JSON.stringify(it)) + "</li>"; });
+        return html + "</ul>";
+    }
+    var blocks = [];
+    if (s.project_name) blocks.push(["Project name", "<p>" + esc(s.project_name) + "</p>"]);
+    if (s.tagline) blocks.push(["Tagline", "<p>" + esc(s.tagline) + "</p>"]);
+    if (s.project_overview) blocks.push(["Overview", "<p>" + esc(s.project_overview) + "</p>"]);
+    if (s.features) blocks.push(["Features", arr(s.features)]);
+    if (s.stack) blocks.push(["Tech stack", arr(s.stack.map(function (x) { return x.category + " — " + (x.choice || x.name || "") + (x.reason ? " — " + x.reason : ""); }))]);
+    if (s.ui_pages) blocks.push(["UI pages", arr(s.ui_pages.map(function (p) { return (p.path || "") + " · " + (p.name || "") + (p.description ? " — " + p.description : ""); }))]);
+    if (s.database_design) blocks.push(["Database", arr(s.database_design.map(function (e) { return (e.entity || "") + (e.fields ? " — " + e.fields.map(function (f) { return (f.name || "") + ":" + (f.type || ""); }).join(", ") : ""); }))]);
+    if (s.api_design) blocks.push(["API design", arr(s.api_design.map(function (a) { return (a.method || "") + " " + (a.path || "") + (a.purpose ? " — " + a.purpose : ""); }))]);
+    if (s.folder_structure) blocks.push(["Folder structure", arr(s.folder_structure)]);
+    if (s.development_roadmap) blocks.push(["Roadmap", arr(s.development_roadmap.map(function (p) { return "Phase " + (p.phase || "") + ": " + (p.title || "") + (p.tasks ? " — " + p.tasks.join("; ") : ""); }))]);
+    if (s.estimated_complexity) blocks.push(["Complexity", "<p>" + esc((s.estimated_complexity.level || "") + " · " + (s.estimated_complexity.build_time || "") + (s.estimated_complexity.effort ? " · " + s.estimated_complexity.effort : "")) + "</p>"]);
+    var html = "";
+    blocks.forEach(function (b) { html += '<div class="aib-spec-sec"><h5>' + esc(b[0]) + '</h5>' + b[1] + '</div>'; });
+    el.innerHTML = html || '<pre>' + esc(text) + '</pre>';
+}
+
+function aibBuild() {
+    var text = document.getElementById("aibSpecEdit").value.trim();
+    var spec;
+    try { spec = JSON.parse(text); }
+    catch (e) { alert("The spec is not valid JSON — check for missing commas or quotes."); return; }
+    if (!spec || typeof spec !== "object") { alert("The spec must be a JSON object."); return; }
+    aibState.pid = null;
+    document.getElementById("aibBtnBuild").disabled = true;
+    aibGo("build");
+    aibResetBuildUI();
+    var fileCount = 0, total = 0;
+    var logEl = document.getElementById("aibBuildLog");
+    var statusEl = document.getElementById("aibProgressText");
+    var countEl = document.getElementById("aibProgressCount");
+    var barEl = document.getElementById("aibProgressBar");
+    var liveCode = "", liveDirty = false;
+    function addLog(html) {
+        var div = document.createElement("div");
+        div.innerHTML = html;
+        logEl.appendChild(div);
+        logEl.scrollTop = logEl.scrollHeight;
+    }
+    function paintLive() {
+        if (!liveDirty) return;
+        liveDirty = false;
+        var pre = document.getElementById("aibBuildLivePre");
+        if (pre) pre.innerHTML = aibHighlight(liveCode);
+    }
+    aibStream("/api/ai-builder/build", { spec: spec }, function (evt) {
+        if (evt.type === "status" || evt.type === "heartbeat") {
+            statusEl.textContent = evt.message || "Working…";
+        } else if (evt.type === "manifest") {
+            total = (evt.files || []).length;
+            countEl.textContent = "0/" + total;
+        } else if (evt.type === "file_start") {
+            statusEl.textContent = "Generating " + evt.path;
+            liveCode = "";
+            liveDirty = false;
+            aibShowLivePane(evt.path);
+        } else if (evt.type === "chunk") {
+            liveCode += evt.text || "";
+            liveDirty = true;
+            paintLive();
+        } else if (evt.type === "file_done") {
+            fileCount++;
+            var pct = total ? Math.round((fileCount / total) * 100) : 0;
+            barEl.style.width = pct + "%";
+            countEl.textContent = fileCount + "/" + total;
+            addLog('<span class="aib-log-ok">' + studioIcon("check", 13) + ' ' + esc(evt.path) + '</span>');
+            if (typeof studioRefreshIcons === "function") studioRefreshIcons();
+        } else if (evt.type === "file_error") {
+            addLog('<span class="aib-log-err">' + studioIcon("x-circle", 13) + ' ' + esc(evt.path) + ' — ' + esc(evt.message) + '</span>');
+            if (typeof studioRefreshIcons === "function") studioRefreshIcons();
+        } else if (evt.type === "project") {
+            aibState.pid = evt.project.id;
+            aibShowResult(evt.project);
+        } else if (evt.type === "done") {
+            document.getElementById("aibBuildStatus").textContent = "Complete";
+            document.getElementById("aibBuildStatus").className = "aib-badge aib-badge-live";
+            statusEl.textContent = "Build complete — " + fileCount + " files generated";
+        } else if (evt.type === "error") {
+            addLog('<span class="aib-log-err">' + esc(evt.message || "Error") + '</span>');
+            document.getElementById("aibBuildStatus").textContent = "Failed";
+            document.getElementById("aibBuildStatus").className = "aib-badge";
+            statusEl.textContent = "Build stopped";
+        }
+    }).catch(function (e) {
+        addLog('<span class="aib-log-err">' + esc(e.message || "Error") + '</span>');
+        document.getElementById("aibBuildStatus").textContent = "Failed";
+        document.getElementById("aibBuildStatus").className = "aib-badge";
+    });
+}
+
+function aibResetBuildUI() {
+    document.getElementById("aibBuildProgress").style.display = "";
+    document.getElementById("aibBuildResult").style.display = "none";
+    document.getElementById("aibProgressBar").style.width = "0%";
+    document.getElementById("aibProgressCount").textContent = "0/0";
+    document.getElementById("aibProgressText").textContent = "Designing the architecture…";
+    document.getElementById("aibBuildStatus").textContent = "Running";
+    document.getElementById("aibBuildStatus").className = "aib-badge aib-badge-live";
+    document.getElementById("aibBuildLog").innerHTML = "";
+    var live = document.getElementById("aibBuildLive");
+    if (live) live.innerHTML = '<pre id="aibBuildLivePre"><span class="aib-tok-com">// waiting for the first file…</span></pre>';
+}
+
+function aibShowLivePane(path) {
+    var head = document.getElementById("aibBuildLive");
+    if (!head) return;
+    head.innerHTML = '<div class="aib-code-head"><span>' + esc(path) + '</span></div>' +
+        '<pre id="aibBuildLivePre"><span class="aib-tok-com">// generating…</span></pre>';
+}
+
+function aibShowResult(project) {
+    document.getElementById("aibBuildProgress").style.display = "none";
+    document.getElementById("aibBuildResult").style.display = "";
+    document.getElementById("aibResultName").textContent = (project.meta && project.meta.name) || project.id;
+    aibState.pid = project.id;
+    aibLoadTree(project.id);
+    aibShow("files");
+}
+
+function aibShow(mode) {
+    aibState.resultMode = mode;
+    document.getElementById("aibFilesWrap").style.display = mode === "files" ? "" : "none";
+    document.getElementById("aibPreview").style.display = mode === "preview" ? "flex" : "none";
+    document.getElementById("aibBtnFiles").style.color = mode === "files" ? "#00d4ff" : "";
+    document.getElementById("aibBtnPreview").style.color = mode === "preview" ? "#00d4ff" : "";
+    if (mode === "preview" && aibState.pid) {
+        aibPreviewGo(aibState.pid, aibState.previewPath || "/");
+    }
+}
+
+function aibFileIcon(path) {
+    var p = String(path || "").toLowerCase();
+    if (p.endsWith(".html") || p.endsWith(".htm")) return "file-code";
+    if (p.endsWith(".js") || p.endsWith(".jsx") || p.endsWith(".ts") || p.endsWith(".tsx")) return "file-code";
+    if (p.endsWith(".css") || p.endsWith(".scss")) return "palette";
+    if (p.endsWith(".py") || p.endsWith(".rb") || p.endsWith(".php") || p.endsWith(".go") || p.endsWith(".java")) return "file-code";
+    if (p.endsWith(".json")) return "braces";
+    if (p.endsWith(".md")) return "file-text";
+    if (p.endsWith(".sql")) return "database";
+    return "file";
+}
+
+function aibLoadTree(pid) {
+    var ex = document.getElementById("aibExplorer");
+    ex.innerHTML = aibLoaderHtml();
+    if (typeof studioRefreshIcons === "function") studioRefreshIcons();
+    apiFetch("/api/ai-builder/projects/" + encodeURIComponent(pid), { timeoutMs: 20000 })
+        .then(function (r) { return r.json(); })
+        .then(function (j) {
+            if (j.status !== "success") throw new Error(j.message || "Load failed");
+            var tree = (j.project && j.project.tree) || [];
+            tree.sort(function (a, b) {
+                if (a.type === b.type) return a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
+                return a.type === "dir" ? -1 : 1;
+            });
+            if (!tree.length) { ex.innerHTML = '<div class="aib-empty">No files yet</div>'; return; }
+            var html = "";
+            tree.forEach(function (n) {
+                var depth = n.path.split("/").length - 1;
+                if (n.type === "dir") {
+                    html += '<div class="aib-file aib-file-dir" style="padding-left:' + (8 + depth * 14) + 'px">' +
+                        studioIcon("folder", 14) + '<span class="aib-file-name">' + esc(n.name) + '</span></div>';
+                } else {
+                    html += '<div class="aib-file" data-path="' + esc(n.path) + '" style="padding-left:' + (8 + depth * 14) + 'px" onclick="aibShowFile(this.getAttribute(\'data-path\'), this)">' +
+                        studioIcon(aibFileIcon(n.path), 14) + '<span class="aib-file-name">' + esc(n.name) + '</span></div>';
+                }
+            });
+            ex.innerHTML = html;
+            if (typeof studioRefreshIcons === "function") studioRefreshIcons();
+        })
+        .catch(function (e) { ex.innerHTML = '<div class="aib-empty">' + esc(e.message || "Error") + '</div>'; });
+}
+
+function aibShowFile(path, el) {
+    if (!aibState.pid) return;
+    document.querySelectorAll(".aib-file[data-path]").forEach(function (f) {
+        f.classList.toggle("active", f.getAttribute("data-path") === path);
+    });
+    if (el) el.classList.add("active");
+    var codeEl = document.getElementById("aibCode");
+    codeEl.innerHTML = '<div class="aib-code-head"><span>' + esc(path) + '</span>' +
+        '<button class="aib-btn aib-btn-ghost aib-btn-sm" onclick="aibCopyCode()">' + studioIcon("copy", 13) + ' Copy</button></div>' +
+        '<pre id="aibCodePre"><span class="aib-tok-com">loading…</span></pre>';
+    if (typeof studioRefreshIcons === "function") studioRefreshIcons();
+    apiFetch("/api/ai-builder/projects/" + encodeURIComponent(aibState.pid) + "/file?path=" + encodeURIComponent(path), { timeoutMs: 20000 })
+        .then(function (r) { return r.json(); })
+        .then(function (j) {
+            if (j.status !== "success") throw new Error(j.message || "Load failed");
+            var pre = document.getElementById("aibCodePre");
+            if (pre) pre.innerHTML = aibHighlight(j.content || "");
+        })
+        .catch(function (e) {
+            var pre = document.getElementById("aibCodePre");
+            if (pre) pre.innerHTML = '<span style="color:#f87171">' + esc(e.message || "Error") + '</span>';
+        });
+}
+
+function aibCopyCode() {
+    var pre = document.getElementById("aibCodePre");
+    if (!pre) return;
+    var txt = pre.textContent;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(txt).catch(function () {});
+    } else {
+        var ta = document.createElement("textarea");
+        ta.value = txt;
+        document.body.appendChild(ta);
+        ta.select();
+        try { document.execCommand("copy"); } catch (e) {}
+        ta.remove();
+    }
+}
+
+function aibHighlight(code) {
+    var s = esc(code == null ? "" : code);
+    var tokens = [];
+    s = s.replace(/('(?:[^'\\\n]|\\.)*'|"(?:[^"\\\n]|\\.)*"|`(?:[^`\\]|\\.)*`)/g, function (m) {
+        tokens.push('<span class="aib-tok aib-tok-str">' + m + '</span>');
+        return "\u0000" + (tokens.length - 1) + "\u0000";
+    });
+    s = s.replace(/(\/\/[^\n]*|\/\*[\s\S]*?\*\/|#.*)/g, function (m) {
+        tokens.push('<span class="aib-tok aib-tok-com">' + m + '</span>');
+        return "\u0000" + (tokens.length - 1) + "\u0000";
+    });
+    s = s.replace(/\b(function|return|const|let|var|if|else|for|while|do|switch|case|break|continue|new|class|extends|import|from|export|default|async|await|try|catch|finally|throw|typeof|instanceof|in|of|this|null|undefined|true|false|def|elif|lambda|yield|global|nonlocal|raise|pass|None|not|and|or|print|require|module|exports)\b/g, '<span class="aib-tok aib-tok-kw">$1</span>');
+    s = s.replace(/\b(\d[\d_.]*)\b/g, '<span class="aib-tok aib-tok-num">$1</span>');
+    return s.replace(/\u0000(\d+)\u0000/g, function (_, i) { return tokens[+i]; });
+}
+
+function aibLoadProjects() {
+    var list = document.getElementById("aibProjectsList");
+    list.innerHTML = aibLoaderHtml();
+    if (typeof studioRefreshIcons === "function") studioRefreshIcons();
+    apiFetch("/api/ai-builder/projects", { timeoutMs: 20000 })
+        .then(function (r) { return r.json(); })
+        .then(function (j) {
+            if (j.status !== "success") throw new Error(j.message || "Load failed");
+            var projects = j.projects || [];
+            var cnt = document.getElementById("aibProjectCount");
+            if (cnt) cnt.textContent = projects.length + (projects.length === 1 ? " project" : " projects");
+            if (!projects.length) {
+                list.innerHTML = '<div class="aib-empty">No projects yet — describe your first idea above and hit "Start building".</div>';
+                return;
+            }
+            var html = "";
+            projects.forEach(function (p) {
+                var created = String(p.created_at || "").replace("T", " ").slice(0, 16);
+                html += '<div class="aib-proj"><div class="aib-proj-head"><div>' +
+                    '<div class="aib-proj-name">' + esc(p.name) + '</div>' +
+                    '<div class="aib-proj-meta"><span>' + esc(p.status || "") + '</span><span>' + (p.file_count || 0) + ' files</span>' + (created ? '<span>' + esc(created) + '</span>' : '') + '</div>' +
+                    '</div><span class="aib-badge">' + esc(p.status || "") + '</span></div>' +
+                    '<div class="aib-proj-actions">' +
+                    '<button class="aib-btn aib-btn-ghost" onclick="aibOpenProject(\'' + p.id + '\')">' + studioIcon("folder-open", 13) + ' Open</button>' +
+                    '<button class="aib-btn aib-btn-ghost" onclick="aibDownloadPid(\'' + p.id + '\')">' + studioIcon("download", 13) + ' Download</button>' +
+                    '<button class="aib-btn aib-btn-ghost" title="Delete project" onclick="aibDelete(\'' + p.id + '\')">' + studioIcon("trash-2", 13) + '</button>' +
+                    '</div></div>';
+            });
+            list.innerHTML = html;
+            if (typeof studioRefreshIcons === "function") studioRefreshIcons();
+        })
+        .catch(function (e) { list.innerHTML = '<div class="aib-empty">' + esc(e.message || "Error") + '</div>'; });
+}
+
+function aibOpenProject(pid) {
+    aibState.pid = pid;
+    aibGo("build");
+    aibResetBuildUI();
+    document.getElementById("aibBuildProgress").style.display = "none";
+    var statusEl = document.getElementById("aibProgressText");
+    apiFetch("/api/ai-builder/projects/" + encodeURIComponent(pid), { timeoutMs: 20000 })
+        .then(function (r) { return r.json(); })
+        .then(function (j) {
+            if (j.status !== "success") throw new Error(j.message || "Load failed");
+            var meta = (j.project && j.project.meta) || {};
+            document.getElementById("aibResultName").textContent = meta.name || pid;
+            document.getElementById("aibBuildStatus").textContent = meta.status === "complete" ? "Complete" : (meta.status || "Project");
+            document.getElementById("aibBuildStatus").className = "aib-badge " + (meta.status === "complete" ? "aib-badge-live" : "");
+            aibState.pid = pid;
+            if (meta.spec) aibState.specText = JSON.stringify(meta.spec, null, 2);
+            aibLoadTree(pid);
+            aibShow("files");
+        })
+        .catch(function (e) { statusEl.textContent = e.message || "Error"; });
+}
+
+function aibDownload() {
+    if (!aibState.pid) return;
+    aibDownloadPid(aibState.pid);
+}
+
+function aibDownloadPid(pid) {
+    if (!pid) return;
+    window.location.href = apiUrl("/api/ai-builder/projects/" + encodeURIComponent(pid) + "/download");
+}
+
+function aibDelete(pid) {
+    if (!pid) return;
+    if (!confirm("Delete this project permanently? This cannot be undone.")) return;
+    apiFetch("/api/ai-builder/projects/" + encodeURIComponent(pid), { method: "DELETE", timeoutMs: 20000 })
+        .then(function (r) { return r.json(); })
+        .then(function (j) {
+            if (j.status !== "success") throw new Error(j.message || "Delete failed");
+            if (aibState.pid === pid) { aibState.pid = null; aibGo("home"); }
+            aibLoadProjects();
+        })
+        .catch(function (e) { alert(e.message || "Delete failed"); });
+}
+
+function aibPreviewGo(pid, path) {
+    if (!aibState.prevStack) aibState.prevStack = [];
+    aibState.prevStack.push(path);
+    aibPreviewLoad(pid, path);
+}
+
+function aibPreviewLoad(pid, path) {
+    aibState.previewPath = path;
+    var clean = String(path || "/").replace(/^\/+/, "");
+    var url = apiUrl("/api/ai-builder/projects/" + encodeURIComponent(pid) + "/preview/" + clean);
+    var frame = document.getElementById("aibPreviewFrame");
+    if (frame) frame.src = url;
+    var lbl = document.getElementById("aibPreviewPath");
+    if (lbl) lbl.textContent = "/" + clean;
+    var open = document.getElementById("aibPreviewOpen");
+    if (open) open.href = url;
+}
+
+function aibPreviewNavBack() {
+    if (!aibState.pid) return;
+    if (!aibState.prevStack || aibState.prevStack.length < 2) { aibPreviewLoad(aibState.pid, "/"); return; }
+    aibState.prevStack.pop();
+    var prev = aibState.prevStack[aibState.prevStack.length - 1];
+    aibPreviewLoad(aibState.pid, prev);
+}
 
 document.addEventListener("DOMContentLoaded", () => {
     setAppVisible(false);

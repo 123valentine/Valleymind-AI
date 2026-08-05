@@ -33,6 +33,7 @@ from core.seo import sitemap_xml as seo_sitemap_body
 from core.seo import render_page as seo_render_page
 from core.tts import speak_marcus
 from core.video_dispatcher import get_video_dispatcher
+from core import ai_builder
 import core.provider_manager as pm
 
 # ── Load .env for local dev ──────────────────────────────────────────────
@@ -3082,7 +3083,39 @@ def api_editing_run():
 
 
 # ── Editing asset library (user's own funny sounds / music / reactions) ──────
-_ASSET_CATEGORIES = {"sfx", "music", "reaction"}
+_ASSET_CATEGORIES = {"sfx", "music", "reaction", "sticker", "gif"}
+
+
+@app.route("/api/editing/stickers", methods=["GET"])
+def api_editing_stickers():
+    """List the BUILT-IN sticker / GIF library bundled in static/assets/. These
+    are global (available to everyone) and served as ordinary static files."""
+    user_id, error = _require_login()
+    if error:
+        return error
+    kind = str(request.args.get("type", "stickers")).strip().lower()
+    if kind not in ("stickers", "gifs"):
+        kind = "stickers"
+    from core.config import PROJECT_ROOT as _ROOT
+    base = _ROOT / "static" / "assets" / kind
+    label = "sticker" if kind == "stickers" else "gif"
+    items = []
+    try:
+        manifest = base / "manifest.json"
+        if manifest.exists():
+            for e in json.loads(manifest.read_text(encoding="utf-8-sig")):  # tolerate BOM
+                f = e.get("file")
+                if f and (base / f).exists():
+                    items.append({"name": e.get("name") or f, "kind": label,
+                                  "url": f"/static/assets/{kind}/{f}"})
+        elif base.exists():
+            for p in sorted(base.iterdir()):
+                if p.suffix.lower() in (".png", ".webp", ".gif"):
+                    items.append({"name": p.stem, "kind": label,
+                                  "url": f"/static/assets/{kind}/{p.name}"})
+    except Exception as exc:
+        print(f"[STICKERS] list failed: {exc}")
+    return jsonify({"status": "success", "stickers": items})
 
 
 def _asset_kind(mimetype: str, filename: str) -> str:
@@ -3173,6 +3206,57 @@ def api_editing_assets_delete(media_id):
         return error
     ok = get_media_manager(user_id).delete_media(media_id)
     return jsonify({"status": "success" if ok else "error"})
+
+
+@app.route("/api/editing/apply-sticker", methods=["POST"])
+def api_editing_apply_sticker():
+    """Apply a sticker/GIF to a video: store the uploaded clip, then run a
+    background overlay job. Poll the result via /api/studio/job/<id>."""
+    user_id, error = _require_login()
+    if error:
+        return error
+    if not _edit_enabled():
+        return jsonify({"status": "error", "message": "Editing is temporarily unavailable."}), 503
+    import core.studio_jobs as sj
+
+    sticker_url = str(request.form.get("sticker_url", "")).strip()
+    position = str(request.form.get("position", "br")).strip().lower()
+    if position not in ("br", "bl", "tr", "tl", "center"):
+        position = "br"
+    # SSRF guard: only in-app static assets (built-in stickers or the user's own
+    # stored media) may be overlaid — never an arbitrary remote URL.
+    if not sticker_url.startswith("/static/"):
+        return jsonify({"status": "error", "message": "Invalid sticker."}), 400
+    upload = request.files.get("video")
+    if not upload or not upload.filename:
+        return jsonify({"status": "error", "message": "Upload a video to sticker."}), 400
+
+    import tempfile
+    suffix = os.path.splitext(upload.filename)[1][:8] or ".mp4"
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+    tmp_path = tmp.name
+    tmp.close()
+    try:
+        upload.save(tmp_path)
+        size_mb = os.path.getsize(tmp_path) / 1024 / 1024
+        if size_mb > _max_upload_mb:
+            return jsonify({"status": "error",
+                            "message": f"{upload.filename} is {size_mb:.0f}MB — the limit is "
+                                       f"{_max_upload_mb:.0f}MB."}), 413
+        rec = get_media_manager(user_id).save_video(
+            tmp_path, prompt=(upload.filename or "clip")[:200],
+            provider="StickerSource", chat_id=f"edit_{user_id}")
+        if not rec:
+            return jsonify({"status": "error", "message": "Couldn't store the upload."}), 502
+    finally:
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
+
+    job = sj.new_sticker_job(user_id, rec["local_path"], sticker_url, position=position)
+    sj.launch(job["_id"])
+    return jsonify({"status": "success", "job": sj.public_view(sj.get_job(job["_id"]))})
 
 
 @app.route("/api/studio/estimate", methods=["GET"])
@@ -3786,6 +3870,212 @@ for _alias_path, _target_path in SEO_URL_ALIASES.items():
         endpoint=f"seo_alias_{_target_path.strip('/')}",
         view_func=lambda _t=_target_path: redirect(_t, code=301),
     )
+
+
+# ── AI Builder ──────────────────────────────────────────────────────────────
+# Engine: the OpenCode API (OpenCode Zen). Every call is made server-side; the
+# key is read from OPENCODE_API_KEY only and never reaches the browser. The
+# frontend talks exclusively to these /api/ai-builder/* routes.
+
+def _ai_builder_sse(events):
+    """Wrap an event-dict generator as a Server-Sent Events response."""
+    def _gen():
+        for ev in events:
+            yield f"data: {json.dumps(ev, ensure_ascii=False)}\n\n"
+        yield "data: [DONE]\n\n"
+    return Response(
+        stream_with_context(_gen()),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
+
+
+def _ai_builder_project(user_id: str, pid: str):
+    proj = ai_builder.resolve_project(user_id, pid)
+    if proj is None:
+        return None
+    return proj
+
+
+@app.route("/api/ai-builder/status", methods=["GET"])
+def ai_builder_status():
+    user_id, error = _require_login()
+    if error:
+        return error
+    return jsonify({
+        "status": "success",
+        "configured": ai_builder.configured(),
+        "plan_model": ai_builder.plan_model() if ai_builder.configured() else "",
+        "build_model": ai_builder.build_model() if ai_builder.configured() else "",
+        "models": ai_builder.available_models(),
+    })
+
+
+@app.route("/api/ai-builder/clarify", methods=["POST"])
+def ai_builder_clarify():
+    user_id, error = _require_login()
+    if error:
+        return error
+    data = request.get_json(silent=True) or {}
+    message = str(data.get("message") or "").strip()
+    if not message:
+        return jsonify({"status": "error", "message": "A project description is required"}), 400
+    project_type = str(data.get("project_type") or "website").strip()[:40]
+    model = ai_builder.plan_model()
+    if not ai_builder.configured():
+        return jsonify({"status": "error", "message": "AI Builder is not configured on the server"}), 503
+    return _ai_builder_sse(ai_builder.clarify_generator(model, message, project_type))
+
+
+@app.route("/api/ai-builder/plan", methods=["POST"])
+def ai_builder_plan():
+    user_id, error = _require_login()
+    if error:
+        return error
+    data = request.get_json(silent=True) or {}
+    message = str(data.get("message") or "").strip()
+    if not message:
+        return jsonify({"status": "error", "message": "A project description is required"}), 400
+    project_type = str(data.get("project_type") or "website").strip()[:40]
+    answers = data.get("answers")
+    model = ai_builder.plan_model()
+    if not ai_builder.configured():
+        return jsonify({"status": "error", "message": "AI Builder is not configured on the server"}), 503
+    return _ai_builder_sse(ai_builder.plan_generator(model, message, project_type, answers))
+
+
+@app.route("/api/ai-builder/build", methods=["POST"])
+def ai_builder_build():
+    user_id, error = _require_login()
+    if error:
+        return error
+    data = request.get_json(silent=True) or {}
+    spec = data.get("spec")
+    if not isinstance(spec, dict):
+        return jsonify({"status": "error", "message": "An approved project spec is required"}), 400
+    if not ai_builder.configured():
+        return jsonify({"status": "error", "message": "AI Builder is not configured on the server"}), 503
+    return _ai_builder_sse(ai_builder.build_generator(user_id, spec))
+
+
+@app.route("/api/ai-builder/projects", methods=["GET"])
+def ai_builder_projects():
+    user_id, error = _require_login()
+    if error:
+        return error
+    return jsonify({"status": "success", "projects": ai_builder.list_user_projects(user_id)})
+
+
+@app.route("/api/ai-builder/projects/<pid>", methods=["GET"])
+def ai_builder_project_detail(pid):
+    user_id, error = _require_login()
+    if error:
+        return error
+    proj = _ai_builder_project(user_id, pid)
+    if proj is None:
+        return jsonify({"status": "error", "message": "Project not found"}), 404
+    return jsonify({
+        "status": "success",
+        "project": {
+            "id": proj.name,
+            "meta": ai_builder.project_meta(proj),
+            "tree": ai_builder.build_tree(proj),
+        },
+    })
+
+
+@app.route("/api/ai-builder/projects/<pid>/file", methods=["GET"])
+def ai_builder_project_file(pid):
+    user_id, error = _require_login()
+    if error:
+        return error
+    proj = _ai_builder_project(user_id, pid)
+    if proj is None:
+        return jsonify({"status": "error", "message": "Project not found"}), 404
+    rel = request.args.get("path", "")
+    try:
+        target = ai_builder._safe_target(proj, rel)
+    except ValueError:
+        return jsonify({"status": "error", "message": "Invalid file path"}), 400
+    if not target.is_file():
+        return jsonify({"status": "error", "message": "File not found"}), 404
+    try:
+        content = target.read_text(encoding="utf-8")
+    except Exception as exc:
+        return jsonify({"status": "error", "message": f"Could not read file: {exc}"}), 500
+    return jsonify({
+        "status": "success",
+        "path": target.relative_to(proj).as_posix(),
+        "size": target.stat().st_size,
+        "content": content,
+    })
+
+
+@app.route("/api/ai-builder/projects/<pid>/download", methods=["GET"])
+def ai_builder_project_download(pid):
+    user_id, error = _require_login()
+    if error:
+        return error
+    proj = _ai_builder_project(user_id, pid)
+    if proj is None:
+        return jsonify({"status": "error", "message": "Project not found"}), 404
+    meta = ai_builder.project_meta(proj)
+    name = re.sub(r"[^A-Za-z0-9_\-]+", "-", str(meta.get("name") or proj.name)).strip("-") or "project"
+    try:
+        payload = ai_builder.zip_project_bytes(proj)
+    except Exception as exc:
+        return jsonify({"status": "error", "message": f"Could not zip project: {exc}"}), 500
+    return Response(
+        payload,
+        mimetype="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="{name}.zip"',
+            "Content-Length": str(len(payload)),
+        },
+    )
+
+
+@app.route("/api/ai-builder/projects/<pid>/preview/")
+@app.route("/api/ai-builder/projects/<pid>/preview/<path:subpath>")
+def ai_builder_project_preview(pid, subpath=""):
+    """Serve generated static files so the project can be previewed in an iframe."""
+    user_id, error = _require_login()
+    if error:
+        return error
+    proj = _ai_builder_project(user_id, pid)
+    if proj is None:
+        return ("Project not found", 404)
+    root = proj.resolve()
+    target = (root / subpath).resolve() if subpath else root
+    if not target.is_relative_to(root):
+        return ("Not found", 404)
+    if target.is_dir():
+        target = target / "index.html"
+    if not target.is_file():
+        return ("Not found", 404)
+    rel = target.relative_to(root).as_posix()
+    return send_from_directory(str(root), rel)
+
+
+@app.route("/api/ai-builder/projects/<pid>", methods=["DELETE"])
+def ai_builder_project_delete(pid):
+    user_id, error = _require_login()
+    if error:
+        return error
+    proj = _ai_builder_project(user_id, pid)
+    if proj is None:
+        return jsonify({"status": "error", "message": "Project not found"}), 404
+    import shutil as _shutil
+    try:
+        _shutil.rmtree(str(proj), ignore_errors=True)
+    except Exception as exc:
+        return jsonify({"status": "error", "message": f"Could not delete project: {exc}"}), 500
+    return jsonify({"status": "success"})
+
 
 
 # ── Response middleware: security headers, browser caching, gzip ───────────

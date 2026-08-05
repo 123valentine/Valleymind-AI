@@ -498,6 +498,89 @@ def _gen_broll(cues: list, workdir: str) -> list:
     return out
 
 
+def overlay_sticker(video_path: str, sticker_path: str, out_path: str, *,
+                    position: str = "br", scale: float = 0.28, start: float = 0.0,
+                    end: float | None = None, timeout: int = 600) -> tuple[bool, str]:
+    """Overlay a transparent sticker (PNG/alpha) onto a video at a corner/center
+    for an optional time window. Alpha is preserved by the overlay filter."""
+    from core.video_assembly import ffmpeg_exe, probe_params
+    exe = ffmpeg_exe()
+    if not exe:
+        return False, "ffmpeg not available"
+    p = probe_params(video_path)
+    w = int(p.get("width", 1280) or 1280)
+    sw = max(48, int(w * max(0.05, min(0.9, scale))))
+    m = max(8, int(w * 0.03))
+    pos = {
+        "br": (f"main_w-overlay_w-{m}", f"main_h-overlay_h-{m}"),
+        "bl": (f"{m}", f"main_h-overlay_h-{m}"),
+        "tr": (f"main_w-overlay_w-{m}", f"{m}"),
+        "tl": (f"{m}", f"{m}"),
+        "center": ("(main_w-overlay_w)/2", "(main_h-overlay_h)/2"),
+    }.get(position, (f"main_w-overlay_w-{m}", f"main_h-overlay_h-{m}"))
+    enable = ""
+    if end is not None:
+        enable = f":enable='between(t,{start},{end})'"
+    elif start > 0:
+        enable = f":enable='gte(t,{start})'"
+    # The sticker is a single still image; overlay's default eof_action=repeat
+    # holds it for the whole clip. (Avoid -loop 1 + -shortest — that makes the
+    # image an infinite input and hangs the encode.) Output length is bounded by
+    # the base video [0:v].
+    fc = f"[1:v]scale={sw}:-1[st];[0:v][st]overlay={pos[0]}:{pos[1]}{enable}[v]"
+    cmd = [exe, "-y", "-i", video_path, "-i", sticker_path,
+           "-filter_complex", fc, "-map", "[v]", "-map", "0:a?",
+           "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
+           "-c:a", "aac", "-movflags", "+faststart", out_path]
+    return _run_cwd(cmd, timeout)
+
+
+def run_sticker_apply(user_id: str, source: str, sticker_url: str, *,
+                      position: str = "br", on_progress=None) -> dict:
+    """Apply a sticker to a video and store the result. {video_url} or {error}."""
+    import shutil
+    import tempfile
+    from core.media_manager import get_media_manager, fetch_media_bytes
+
+    def beat():
+        if on_progress:
+            try:
+                on_progress()
+            except Exception:
+                pass
+
+    work = tempfile.mkdtemp(prefix="sticker_")
+    try:
+        srcfile = os.path.join(work, "src.mp4")
+        if os.path.exists(source):
+            shutil.copy(source, srcfile)
+        else:
+            data = fetch_media_bytes(source)
+            if not data:
+                return {"error": "could not fetch the video"}
+            with open(srcfile, "wb") as f:
+                f.write(data)
+        stf = os.path.join(work, "sticker.png")
+        if not _download_to(sticker_url, stf):
+            return {"error": "could not fetch the sticker"}
+        beat()
+        out = os.path.join(work, "out.mp4")
+        ok, err = overlay_sticker(srcfile, stf, out, position=position)
+        if not ok or not os.path.exists(out):
+            return {"error": err or "sticker overlay failed"}
+        beat()
+        rec = get_media_manager(user_id).save_media(
+            out, media_type="video", prompt="Sticker overlay", provider="StickerApply",
+            chat_id=f"edit_{user_id}")
+        if not rec:
+            return {"error": "overlaid the sticker but could not store the video"}
+        return {"video_url": rec["local_path"]}
+    except Exception as exc:
+        return {"error": f"sticker apply error: {exc}"}
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
 def run_autoedit(user_id: str, source: str, *, on_progress=None, test_mode: bool = False) -> dict:
     """Full Massive-Edit pipeline for one source video. Returns
     {"video_url", "stats"} or {"error"}. Never raises. B-roll is skipped in

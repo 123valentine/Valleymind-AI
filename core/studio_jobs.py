@@ -513,6 +513,72 @@ def new_autoedit_job(user_id: str, source_video_url: str, *, test_mode: bool = F
     return job
 
 
+def new_sticker_job(user_id: str, source_video_url: str, sticker_url: str,
+                    *, position: str = "br") -> dict:
+    """Apply a sticker/GIF to a video as a background job (one overlay re-encode),
+    reusing the studio job engine for resume/heartbeat/durable-write."""
+    job = {
+        "_id": uuid.uuid4().hex,
+        "user_id": user_id,
+        "status": "running",
+        "source": "sticker_overlay",
+        "source_video": source_video_url,
+        "sticker_url": sticker_url,
+        "position": position or "br",
+        "clips": [],
+        "final_video": "",
+        "assembly_mode": "sticker",
+        "spend_usd": 0.0,
+        "finalize_attempts": 0,
+        "error": "",
+        "created_at": _now_iso(),
+        "updated_at": _now_iso(),
+        "heartbeat": _now_iso(),
+    }
+    save_job(job)
+    return job
+
+
+def _run_sticker(job_id: str) -> None:
+    """Drive a sticker-overlay job to a terminal state (heartbeat-pulsed)."""
+    job = get_job(job_id)
+    if not job or job.get("status") in JOB_TERMINAL:
+        return
+    if not _claim_finalize(job_id):
+        print(f"[JOB] sticker {job_id[:8]} already claimed elsewhere; skipping")
+        return
+    stop = threading.Event()
+
+    def _pulse():
+        while not stop.wait(20.0):
+            _touch_heartbeat(job_id)
+
+    threading.Thread(target=_pulse, daemon=True, name=f"sticker-hb-{job_id[:8]}").start()
+    try:
+        import core.video_edit as ve
+        result = ve.run_sticker_apply(job["user_id"], job.get("source_video", ""),
+                                      job.get("sticker_url", ""), position=job.get("position", "br"),
+                                      on_progress=lambda: _touch_heartbeat(job_id))
+    finally:
+        stop.set()
+
+    job = get_job(job_id) or job
+    if job.get("status") in JOB_TERMINAL:
+        return
+    job["assembling_at"] = None
+    job["assembling_owner"] = None
+    job["finalize_attempts"] = int(job.get("finalize_attempts", 0)) + 1
+    if result.get("video_url"):
+        job["final_video"] = result["video_url"]
+        job["status"] = "done"
+        job["error"] = ""
+    else:
+        job["status"] = "failed"
+        job["error"] = result.get("error", "sticker overlay failed")
+    job["heartbeat"] = _now_iso()
+    save_job_durable(job)
+
+
 def _run_autoedit(job_id: str) -> None:
     """Drive a Massive-Edit job to a terminal state. A background pulser keeps the
     heartbeat + finalize claim alive through the long ffmpeg passes so the
@@ -683,6 +749,8 @@ def drive_job(job_id: str) -> None:
         job = get_job(job_id)
         if job and job.get("source") == "autoedit":
             _run_autoedit(job_id)          # Massive Editing pipeline
+        elif job and job.get("source") == "sticker_overlay":
+            _run_sticker(job_id)           # apply a sticker to a video
         else:
             _run(job_id)
     except Exception as exc:
