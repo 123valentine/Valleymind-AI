@@ -1,0 +1,264 @@
+{
+  "schema_version": 1,
+  "id": "ng_lagos",
+  "name": "Lagos Vibe",
+  "category": "Nigeria",
+  "tags": [
+    "nigeria",
+    "template"
+  ],
+  "description": "Kinetic Lagos street-energy reel.",
+  "icon": "music",
+  "grad": [
+    "#10b981",
+    "#3b82f6"
+  ],
+  "thumbnail": "/static/templates/ng_lagos/thumbnail.webp",
+  "preview": "/static/templates/ng_lagos/preview.mp4",
+  "duration": 12.5,
+  "aspect_ratio": "9:16",
+  "width": 1080,
+  "height": 1920,
+  "fps": 30,
+  "popularity": 94,
+  "likes": 27650,
+  "downloads": 12980,
+  "edit_time_min": 5,
+  "media_required": 2,
+  "placeholders": [
+    {
+      "key": "VIDEO_1",
+      "label": "Street clip",
+      "type": "video",
+      "required": true,
+      "hint": ""
+    },
+    {
+      "key": "PHOTO_1",
+      "label": "Street photo",
+      "type": "image",
+      "required": true,
+      "hint": ""
+    },
+    {
+      "key": "TITLE",
+      "label": "Vibe caption",
+      "type": "text",
+      "required": true,
+      "max_chars": 60,
+      "hint": ""
+    },
+    {
+      "key": "SUBTITLE",
+      "label": "Supporting text",
+      "type": "text",
+      "required": false,
+      "max_chars": 90,
+      "hint": ""
+    }
+  ],
+  "music": {
+    "bpm": 130,
+    "tracks": [
+      {
+        "src": "",
+        "placeholder": "MUSIC",
+        "start": 0.0,
+        "volume": 0.85,
+        "fade_in": 0.2,
+        "fade_out": 0.5
+      }
+    ]
+  },
+  "beat_markers": [
+    0.0,
+    0.462,
+    0.923,
+    1.385,
+    1.846,
+    2.308,
+    2.769,
+    3.231,
+    3.692,
+    4.154,
+    4.615,
+    5.077,
+    5.538,
+    6.0,
+    6.462,
+    6.923,
+    7.385,
+    7.846,
+    8.308,
+    8.769,
+    9.231,
+    9.692,
+    10.154,
+    10.615,
+    11.077,
+    11.538,
+    12.0,
+    12.462,
+    12.5
+  ],
+  "timeline": [
+    {
+      "media": "VIDEO_1",
+      "start": 0.0,
+      "duration": 3.5,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.0,
+        "to": 1.3,
+        "ease": "ease-in-out"
+      },
+      "filters": [
+        {
+          "type": "eq",
+          "contrast": 1.15,
+          "saturation": 1.35,
+          "brightness": 1.0
+        }
+      ],
+      "effects": [
+        {
+          "type": "vignette",
+          "amount": 0.35
+        }
+      ],
+      "text_layers": [],
+      "stickers": [],
+      "transition_out": {
+        "type": "slideleft",
+        "duration": 0.5
+      }
+    },
+    {
+      "media": "PHOTO_1",
+      "start": 0.0,
+      "duration": 3.5,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.05,
+        "to": 1.22,
+        "ease": "ease-in-out"
+      },
+      "filters": [
+        {
+          "type": "eq",
+          "contrast": 1.08,
+          "saturation": 1.25,
+          "brightness": 0.99
+        }
+      ],
+      "effects": [
+        {
+          "type": "vignette",
+          "amount": 0.35
+        }
+      ],
+      "text_layers": [],
+      "stickers": [],
+      "transition_out": {
+        "type": "slideleft",
+        "duration": 0.5
+      }
+    },
+    {
+      "media": "VIDEO_1",
+      "start": 0.0,
+      "duration": 3.5,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.18,
+        "to": 1.0,
+        "ease": "ease-in-out"
+      },
+      "filters": [
+        {
+          "type": "eq",
+          "contrast": 1.15,
+          "saturation": 1.35,
+          "brightness": 1.0
+        }
+      ],
+      "effects": [
+        {
+          "type": "vignette",
+          "amount": 0.35
+        }
+      ],
+      "text_layers": [],
+      "stickers": [],
+      "transition_out": {
+        "type": "fade",
+        "duration": 0.5
+      }
+    },
+    {
+      "media": "bg",
+      "start": 0.0,
+      "duration": 3.5,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.0,
+        "to": 1.18,
+        "ease": "ease-in-out"
+      },
+      "filters": [],
+      "effects": [],
+      "text_layers": [
+        {
+          "key": "TITLE",
+          "start": 0.3,
+          "duration": 2.9,
+          "x": 0.5,
+          "y": 0.34,
+          "size": 76,
+          "align": "center",
+          "color": "#ffffff",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "pop",
+          "uppercase": true,
+          "max_chars": 0
+        },
+        {
+          "key": "SUBTITLE",
+          "start": 1.2,
+          "duration": 2.0,
+          "x": 0.5,
+          "y": 0.48,
+          "size": 40,
+          "align": "center",
+          "color": "#a7f3d0",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "fade-up",
+          "uppercase": false,
+          "max_chars": 0
+        }
+      ],
+      "stickers": [],
+      "transition_out": {
+        "type": "none",
+        "duration": 0.0
+      },
+      "background": {
+        "type": "gradient",
+        "from": "#022c22",
+        "to": "#064e3b",
+        "angle": 160
+      }
+    }
+  ],
+  "overlays": []
+}

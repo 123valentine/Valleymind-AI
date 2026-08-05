@@ -1,0 +1,288 @@
+{
+  "schema_version": 1,
+  "id": "prod_reveal",
+  "name": "Product Reveal",
+  "category": "Product Showcase",
+  "tags": [
+    "product-showcase",
+    "template"
+  ],
+  "description": "Sleek product reveal with premium motion.",
+  "icon": "package",
+  "grad": [
+    "#f59e0b",
+    "#f97316"
+  ],
+  "thumbnail": "/static/templates/prod_reveal/thumbnail.webp",
+  "preview": "/static/templates/prod_reveal/preview.mp4",
+  "duration": 13.4,
+  "aspect_ratio": "9:16",
+  "width": 1080,
+  "height": 1920,
+  "fps": 30,
+  "popularity": 94,
+  "likes": 28760,
+  "downloads": 13240,
+  "edit_time_min": 5,
+  "media_required": 1,
+  "placeholders": [
+    {
+      "key": "PRODUCT_IMG",
+      "label": "Product image",
+      "type": "image",
+      "required": true,
+      "hint": ""
+    },
+    {
+      "key": "LOGO",
+      "label": "Brand logo",
+      "type": "image",
+      "required": false,
+      "hint": ""
+    },
+    {
+      "key": "PRODUCT_NAME",
+      "label": "Product name",
+      "type": "text",
+      "required": true,
+      "max_chars": 40,
+      "hint": ""
+    },
+    {
+      "key": "PRICE",
+      "label": "Price",
+      "type": "text",
+      "required": false,
+      "max_chars": 20,
+      "hint": ""
+    }
+  ],
+  "music": {
+    "bpm": 122,
+    "tracks": [
+      {
+        "src": "",
+        "placeholder": "MUSIC",
+        "start": 0.0,
+        "volume": 0.85,
+        "fade_in": 0.2,
+        "fade_out": 0.5
+      }
+    ]
+  },
+  "beat_markers": [
+    0.0,
+    0.492,
+    0.984,
+    1.475,
+    1.967,
+    2.459,
+    2.951,
+    3.443,
+    3.934,
+    4.426,
+    4.918,
+    5.41,
+    5.902,
+    6.393,
+    6.885,
+    7.377,
+    7.869,
+    8.361,
+    8.852,
+    9.344,
+    9.836,
+    10.328,
+    10.82,
+    11.311,
+    11.803,
+    12.295,
+    12.787,
+    13.279,
+    13.4
+  ],
+  "timeline": [
+    {
+      "media": "bg",
+      "start": 0.0,
+      "duration": 2.5,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.0,
+        "to": 1.1,
+        "ease": "linear"
+      },
+      "filters": [],
+      "effects": [],
+      "text_layers": [
+        {
+          "key": "PRODUCT_NAME",
+          "start": 0.4,
+          "duration": 1.9,
+          "x": 0.5,
+          "y": 0.32,
+          "size": 88,
+          "align": "center",
+          "color": "#ffffff",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "pop",
+          "uppercase": true,
+          "max_chars": 0
+        }
+      ],
+      "stickers": [
+        {
+          "src": "/static/assets/stickers/sticker_0153.png",
+          "x": 0.5,
+          "y": 0.12,
+          "scale": 0.22,
+          "rotation": 0,
+          "start": 0.0,
+          "duration": 0.0,
+          "animation": "none",
+          "blend": "normal"
+        }
+      ],
+      "transition_out": {
+        "type": "fade",
+        "duration": 0.5
+      },
+      "background": {
+        "type": "gradient",
+        "from": "#050505",
+        "to": "#181818",
+        "angle": 150
+      }
+    },
+    {
+      "media": "PRODUCT_IMG",
+      "start": 0.0,
+      "duration": 3.5,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.0,
+        "to": 1.18,
+        "ease": "ease-in-out"
+      },
+      "filters": [
+        {
+          "type": "eq",
+          "contrast": 1.15,
+          "saturation": 1.35,
+          "brightness": 1.0
+        }
+      ],
+      "effects": [
+        {
+          "type": "vignette",
+          "amount": 0.35
+        }
+      ],
+      "text_layers": [],
+      "stickers": [],
+      "transition_out": {
+        "type": "circleopen",
+        "duration": 0.6
+      }
+    },
+    {
+      "media": "PRODUCT_IMG",
+      "start": 0.0,
+      "duration": 3.5,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.18,
+        "to": 1.0,
+        "ease": "ease-in-out"
+      },
+      "filters": [
+        {
+          "type": "eq",
+          "contrast": 1.08,
+          "saturation": 1.25,
+          "brightness": 0.99
+        }
+      ],
+      "effects": [
+        {
+          "type": "vignette",
+          "amount": 0.35
+        }
+      ],
+      "text_layers": [],
+      "stickers": [],
+      "transition_out": {
+        "type": "fade",
+        "duration": 0.5
+      }
+    },
+    {
+      "media": "bg",
+      "start": 0.0,
+      "duration": 5.5,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.0,
+        "to": 1.18,
+        "ease": "ease-in-out"
+      },
+      "filters": [],
+      "effects": [],
+      "text_layers": [
+        {
+          "key": "PRODUCT_NAME",
+          "start": 0.3,
+          "duration": 4.8,
+          "x": 0.5,
+          "y": 0.34,
+          "size": 64,
+          "align": "center",
+          "color": "#ffffff",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "fade-up",
+          "uppercase": true,
+          "max_chars": 0
+        },
+        {
+          "key": "PRICE",
+          "start": 1.2,
+          "duration": 3.9,
+          "x": 0.5,
+          "y": 0.48,
+          "size": 72,
+          "align": "center",
+          "color": "#fde68a",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "pop",
+          "uppercase": true,
+          "max_chars": 0
+        }
+      ],
+      "stickers": [],
+      "transition_out": {
+        "type": "none",
+        "duration": 0.0
+      },
+      "background": {
+        "type": "gradient",
+        "from": "#1c0f02",
+        "to": "#3b1d05",
+        "angle": 160
+      }
+    }
+  ],
+  "overlays": []
+}

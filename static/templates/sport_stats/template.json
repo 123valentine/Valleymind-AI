@@ -1,0 +1,227 @@
+{
+  "schema_version": 1,
+  "id": "sport_stats",
+  "name": "Stats Flash",
+  "category": "Sports",
+  "tags": [
+    "sports",
+    "template"
+  ],
+  "description": "Scoreboard-style stat reveal.",
+  "icon": "activity",
+  "grad": [
+    "#4ade80",
+    "#14532d"
+  ],
+  "thumbnail": "/static/templates/sport_stats/thumbnail.webp",
+  "preview": "/static/templates/sport_stats/preview.mp4",
+  "duration": 11.0,
+  "aspect_ratio": "9:16",
+  "width": 1080,
+  "height": 1920,
+  "fps": 30,
+  "popularity": 92,
+  "likes": 26180,
+  "downloads": 11940,
+  "edit_time_min": 4,
+  "media_required": 0,
+  "placeholders": [
+    {
+      "key": "TITLE",
+      "label": "Headline stat",
+      "type": "text",
+      "required": true,
+      "max_chars": 60,
+      "hint": ""
+    },
+    {
+      "key": "SUBTITLE",
+      "label": "Detail line",
+      "type": "text",
+      "required": false,
+      "hint": ""
+    },
+    {
+      "key": "NAME",
+      "label": "Team / context",
+      "type": "text",
+      "required": false,
+      "hint": ""
+    }
+  ],
+  "music": {
+    "bpm": 130,
+    "tracks": [
+      {
+        "src": "",
+        "placeholder": "MUSIC",
+        "start": 0.0,
+        "volume": 0.85,
+        "fade_in": 0.2,
+        "fade_out": 0.5
+      }
+    ]
+  },
+  "beat_markers": [
+    0.0,
+    0.462,
+    0.923,
+    1.385,
+    1.846,
+    2.308,
+    2.769,
+    3.231,
+    3.692,
+    4.154,
+    4.615,
+    5.077,
+    5.538,
+    6.0,
+    6.462,
+    6.923,
+    7.385,
+    7.846,
+    8.308,
+    8.769,
+    9.231,
+    9.692,
+    10.154,
+    10.615,
+    11.0
+  ],
+  "timeline": [
+    {
+      "media": "bg",
+      "start": 0.0,
+      "duration": 4.0,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.0,
+        "to": 1.1,
+        "ease": "linear"
+      },
+      "filters": [],
+      "effects": [],
+      "text_layers": [
+        {
+          "key": "TITLE",
+          "start": 0.3,
+          "duration": 3.3,
+          "x": 0.5,
+          "y": 0.36,
+          "size": 108,
+          "align": "center",
+          "color": "#ffffff",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "pop",
+          "uppercase": true,
+          "max_chars": 0
+        }
+      ],
+      "stickers": [],
+      "transition_out": {
+        "type": "fade",
+        "duration": 0.5
+      },
+      "background": {
+        "type": "gradient",
+        "from": "#022c22",
+        "to": "#064e3b",
+        "angle": 160
+      }
+    },
+    {
+      "media": "bg",
+      "start": 0.0,
+      "duration": 4.0,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.0,
+        "to": 1.18,
+        "ease": "ease-in-out"
+      },
+      "filters": [],
+      "effects": [],
+      "text_layers": [
+        {
+          "key": "SUBTITLE",
+          "start": 0.3,
+          "duration": 3.3,
+          "x": 0.5,
+          "y": 0.4,
+          "size": 54,
+          "align": "center",
+          "color": "#bbf7d0",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "fade-up",
+          "uppercase": false,
+          "max_chars": 0
+        }
+      ],
+      "stickers": [],
+      "transition_out": {
+        "type": "fade",
+        "duration": 0.5
+      },
+      "background": {
+        "type": "gradient",
+        "from": "#0b1020",
+        "to": "#1a1140",
+        "angle": 160
+      }
+    },
+    {
+      "media": "bg",
+      "start": 0.0,
+      "duration": 4.0,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.0,
+        "to": 1.18,
+        "ease": "ease-in-out"
+      },
+      "filters": [],
+      "effects": [],
+      "text_layers": [
+        {
+          "key": "NAME",
+          "start": 0.3,
+          "duration": 3.4,
+          "x": 0.5,
+          "y": 0.44,
+          "size": 40,
+          "align": "center",
+          "color": "#86efac",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "fade-up",
+          "uppercase": true,
+          "max_chars": 0
+        }
+      ],
+      "stickers": [],
+      "transition_out": {
+        "type": "none",
+        "duration": 0.0
+      },
+      "background": {
+        "type": "gradient",
+        "from": "#050505",
+        "to": "#181818",
+        "angle": 150
+      }
+    }
+  ],
+  "overlays": []
+}

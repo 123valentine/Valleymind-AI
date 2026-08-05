@@ -1,0 +1,272 @@
+{
+  "schema_version": 1,
+  "id": "cert_award",
+  "name": "Award Certificate",
+  "category": "Certificates",
+  "tags": [
+    "certificates",
+    "template"
+  ],
+  "description": "Elegant award certificate motion.",
+  "icon": "award",
+  "grad": [
+    "#f59e0b",
+    "#92400e"
+  ],
+  "thumbnail": "/static/templates/cert_award/thumbnail.webp",
+  "preview": "/static/templates/cert_award/preview.mp4",
+  "duration": 13.0,
+  "aspect_ratio": "16:9",
+  "width": 1080,
+  "height": 1920,
+  "fps": 30,
+  "popularity": 89,
+  "likes": 16840,
+  "downloads": 7940,
+  "edit_time_min": 4,
+  "media_required": 0,
+  "placeholders": [
+    {
+      "key": "NAME",
+      "label": "Recipient name",
+      "type": "text",
+      "required": true,
+      "max_chars": 50,
+      "hint": ""
+    },
+    {
+      "key": "PRODUCT_NAME",
+      "label": "Award / course title",
+      "type": "text",
+      "required": true,
+      "max_chars": 60,
+      "hint": ""
+    },
+    {
+      "key": "DATE",
+      "label": "Date",
+      "type": "text",
+      "required": false,
+      "max_chars": 30,
+      "hint": ""
+    }
+  ],
+  "music": {
+    "bpm": 104,
+    "tracks": [
+      {
+        "src": "",
+        "placeholder": "MUSIC",
+        "start": 0.0,
+        "volume": 0.85,
+        "fade_in": 0.2,
+        "fade_out": 0.5
+      }
+    ]
+  },
+  "beat_markers": [
+    0.0,
+    0.577,
+    1.154,
+    1.731,
+    2.308,
+    2.885,
+    3.462,
+    4.038,
+    4.615,
+    5.192,
+    5.769,
+    6.346,
+    6.923,
+    7.5,
+    8.077,
+    8.654,
+    9.231,
+    9.808,
+    10.385,
+    10.962,
+    11.538,
+    12.115,
+    12.692,
+    13.0
+  ],
+  "timeline": [
+    {
+      "media": "bg",
+      "start": 0.0,
+      "duration": 4.0,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.0,
+        "to": 1.1,
+        "ease": "linear"
+      },
+      "filters": [],
+      "effects": [],
+      "text_layers": [
+        {
+          "key": "PRODUCT_NAME",
+          "start": 0.3,
+          "duration": 3.3,
+          "x": 0.5,
+          "y": 0.3,
+          "size": 64,
+          "align": "center",
+          "color": "#fef3c7",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "fade-up",
+          "uppercase": true,
+          "max_chars": 0
+        },
+        {
+          "key": "NAME",
+          "start": 1.2,
+          "duration": 2.4,
+          "x": 0.5,
+          "y": 0.44,
+          "size": 96,
+          "align": "center",
+          "color": "#fde68a",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "pop",
+          "uppercase": true,
+          "max_chars": 0
+        }
+      ],
+      "stickers": [],
+      "transition_out": {
+        "type": "fade",
+        "duration": 0.5
+      },
+      "background": {
+        "type": "gradient",
+        "from": "#241a05",
+        "to": "#3d2c08",
+        "angle": 150
+      }
+    },
+    {
+      "media": "bg",
+      "start": 0.0,
+      "duration": 4.0,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.0,
+        "to": 1.18,
+        "ease": "ease-in-out"
+      },
+      "filters": [],
+      "effects": [],
+      "text_layers": [
+        {
+          "key": "PRODUCT_NAME",
+          "start": 0.3,
+          "duration": 3.3,
+          "x": 0.5,
+          "y": 0.36,
+          "size": 72,
+          "align": "center",
+          "color": "#78350f",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "fade-up",
+          "uppercase": true,
+          "max_chars": 0
+        },
+        {
+          "key": "DATE",
+          "start": 1.4,
+          "duration": 2.2,
+          "x": 0.5,
+          "y": 0.52,
+          "size": 44,
+          "align": "center",
+          "color": "#92400e",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "fade-up",
+          "uppercase": true,
+          "max_chars": 0
+        }
+      ],
+      "stickers": [],
+      "transition_out": {
+        "type": "fade",
+        "duration": 0.5
+      },
+      "background": {
+        "type": "gradient",
+        "from": "#f8f4e6",
+        "to": "#ece4cd",
+        "angle": 150
+      }
+    },
+    {
+      "media": "bg",
+      "start": 0.0,
+      "duration": 6.0,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.0,
+        "to": 1.18,
+        "ease": "ease-in-out"
+      },
+      "filters": [],
+      "effects": [],
+      "text_layers": [
+        {
+          "key": "NAME",
+          "start": 0.3,
+          "duration": 5.4,
+          "x": 0.5,
+          "y": 0.36,
+          "size": 88,
+          "align": "center",
+          "color": "#fde68a",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "pop",
+          "uppercase": true,
+          "max_chars": 0
+        }
+      ],
+      "stickers": [],
+      "transition_out": {
+        "type": "none",
+        "duration": 0.0
+      },
+      "background": {
+        "type": "gradient",
+        "from": "#241a05",
+        "to": "#3d2c08",
+        "angle": 150
+      }
+    }
+  ],
+  "overlays": [
+    {
+      "type": "gradientbar",
+      "from": "rgba(0,0,0,0.55)",
+      "to": "rgba(0,0,0,0)",
+      "position": "top",
+      "height": 0.16,
+      "start": 0.0,
+      "duration": 0.0
+    }
+  ]
+}

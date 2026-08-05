@@ -1,0 +1,194 @@
+{
+  "schema_version": 1,
+  "id": "wa_holiday",
+  "name": "Holiday Wish",
+  "category": "WhatsApp Status",
+  "tags": [
+    "whatsapp-status",
+    "template"
+  ],
+  "description": "Festive greeting status.",
+  "icon": "sparkles",
+  "grad": [
+    "#34d399",
+    "#059669"
+  ],
+  "thumbnail": "/static/templates/wa_holiday/thumbnail.webp",
+  "preview": "/static/templates/wa_holiday/preview.mp4",
+  "duration": 9.5,
+  "aspect_ratio": "9:16",
+  "width": 1080,
+  "height": 1920,
+  "fps": 30,
+  "popularity": 88,
+  "likes": 16470,
+  "downloads": 7320,
+  "edit_time_min": 2,
+  "media_required": 0,
+  "placeholders": [
+    {
+      "key": "TITLE",
+      "label": "Greeting",
+      "type": "text",
+      "required": true,
+      "max_chars": 60,
+      "hint": ""
+    },
+    {
+      "key": "SUBTITLE",
+      "label": "Extra line",
+      "type": "text",
+      "required": false,
+      "hint": ""
+    },
+    {
+      "key": "NAME",
+      "label": "From",
+      "type": "text",
+      "required": false,
+      "hint": ""
+    }
+  ],
+  "music": {
+    "bpm": 112,
+    "tracks": [
+      {
+        "src": "",
+        "placeholder": "MUSIC",
+        "start": 0.0,
+        "volume": 0.85,
+        "fade_in": 0.2,
+        "fade_out": 0.5
+      }
+    ]
+  },
+  "beat_markers": [
+    0.0,
+    0.536,
+    1.071,
+    1.607,
+    2.143,
+    2.679,
+    3.214,
+    3.75,
+    4.286,
+    4.821,
+    5.357,
+    5.893,
+    6.429,
+    6.964,
+    7.5,
+    8.036,
+    8.571,
+    9.107,
+    9.5
+  ],
+  "timeline": [
+    {
+      "media": "bg",
+      "start": 0.0,
+      "duration": 5.0,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.0,
+        "to": 1.18,
+        "ease": "ease-in-out"
+      },
+      "filters": [],
+      "effects": [],
+      "text_layers": [
+        {
+          "key": "TITLE",
+          "start": 0.3,
+          "duration": 4.3,
+          "x": 0.5,
+          "y": 0.36,
+          "size": 72,
+          "align": "center",
+          "color": "#ffffff",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "pop",
+          "uppercase": true,
+          "max_chars": 0
+        },
+        {
+          "key": "SUBTITLE",
+          "start": 0.9,
+          "duration": 3.7,
+          "x": 0.5,
+          "y": 0.5,
+          "size": 42,
+          "align": "center",
+          "color": "#a7f3d0",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "fade-up",
+          "uppercase": false,
+          "max_chars": 0
+        }
+      ],
+      "stickers": [],
+      "transition_out": {
+        "type": "fade",
+        "duration": 0.5
+      },
+      "background": {
+        "type": "gradient",
+        "from": "#022c22",
+        "to": "#064e3b",
+        "angle": 160
+      }
+    },
+    {
+      "media": "bg",
+      "start": 0.0,
+      "duration": 5.0,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.0,
+        "to": 1.1,
+        "ease": "linear"
+      },
+      "filters": [],
+      "effects": [],
+      "text_layers": [
+        {
+          "key": "NAME",
+          "start": 0.3,
+          "duration": 4.3,
+          "x": 0.5,
+          "y": 0.46,
+          "size": 44,
+          "align": "center",
+          "color": "#6ee7b7",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "fade-up",
+          "uppercase": true,
+          "max_chars": 0
+        }
+      ],
+      "stickers": [],
+      "transition_out": {
+        "type": "none",
+        "duration": 0.0
+      },
+      "background": {
+        "type": "gradient",
+        "from": "#0b1020",
+        "to": "#1a1140",
+        "angle": 160
+      }
+    }
+  ],
+  "overlays": []
+}

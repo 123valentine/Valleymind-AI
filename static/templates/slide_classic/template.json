@@ -1,0 +1,281 @@
+{
+  "schema_version": 1,
+  "id": "slide_classic",
+  "name": "Classic Slideshow",
+  "category": "Slideshow",
+  "tags": [
+    "slideshow",
+    "template"
+  ],
+  "description": "Clean photo slideshow with soft crossfades.",
+  "icon": "presentation",
+  "grad": [
+    "#f59e0b",
+    "#fb923c"
+  ],
+  "thumbnail": "/static/templates/slide_classic/thumbnail.webp",
+  "preview": "/static/templates/slide_classic/preview.mp4",
+  "duration": 17.6,
+  "aspect_ratio": "16:9",
+  "width": 1080,
+  "height": 1920,
+  "fps": 30,
+  "popularity": 90,
+  "likes": 18940,
+  "downloads": 9120,
+  "edit_time_min": 6,
+  "media_required": 3,
+  "placeholders": [
+    {
+      "key": "PHOTO_1",
+      "label": "Photo 1",
+      "type": "image",
+      "required": true,
+      "hint": ""
+    },
+    {
+      "key": "PHOTO_2",
+      "label": "Photo 2",
+      "type": "image",
+      "required": true,
+      "hint": ""
+    },
+    {
+      "key": "PHOTO_3",
+      "label": "Photo 3",
+      "type": "image",
+      "required": true,
+      "hint": ""
+    },
+    {
+      "key": "TITLE",
+      "label": "Title card",
+      "type": "text",
+      "required": true,
+      "max_chars": 60,
+      "hint": ""
+    }
+  ],
+  "music": {
+    "bpm": 104,
+    "tracks": [
+      {
+        "src": "",
+        "placeholder": "MUSIC",
+        "start": 0.0,
+        "volume": 0.85,
+        "fade_in": 0.2,
+        "fade_out": 0.5
+      }
+    ]
+  },
+  "beat_markers": [
+    0.0,
+    0.577,
+    1.154,
+    1.731,
+    2.308,
+    2.885,
+    3.462,
+    4.038,
+    4.615,
+    5.192,
+    5.769,
+    6.346,
+    6.923,
+    7.5,
+    8.077,
+    8.654,
+    9.231,
+    9.808,
+    10.385,
+    10.962,
+    11.538,
+    12.115,
+    12.692,
+    13.269,
+    13.846,
+    14.423,
+    15.0,
+    15.577,
+    16.154,
+    16.731,
+    17.308,
+    17.6
+  ],
+  "timeline": [
+    {
+      "media": "PHOTO_1",
+      "start": 0.0,
+      "duration": 4.0,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.0,
+        "to": 1.18,
+        "ease": "ease-in-out"
+      },
+      "filters": [
+        {
+          "type": "eq",
+          "contrast": 1.05,
+          "saturation": 1.12,
+          "brightness": 1.01
+        }
+      ],
+      "effects": [
+        {
+          "type": "vignette",
+          "amount": 0.22
+        }
+      ],
+      "text_layers": [],
+      "stickers": [],
+      "transition_out": {
+        "type": "dissolve",
+        "duration": 0.6
+      }
+    },
+    {
+      "media": "PHOTO_2",
+      "start": 0.0,
+      "duration": 4.0,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.05,
+        "to": 1.22,
+        "ease": "ease-in-out"
+      },
+      "filters": [
+        {
+          "type": "eq",
+          "contrast": 1.05,
+          "saturation": 1.12,
+          "brightness": 1.01
+        }
+      ],
+      "effects": [
+        {
+          "type": "vignette",
+          "amount": 0.22
+        }
+      ],
+      "text_layers": [],
+      "stickers": [],
+      "transition_out": {
+        "type": "dissolve",
+        "duration": 0.6
+      }
+    },
+    {
+      "media": "PHOTO_3",
+      "start": 0.0,
+      "duration": 4.0,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.18,
+        "to": 1.0,
+        "ease": "ease-in-out"
+      },
+      "filters": [
+        {
+          "type": "eq",
+          "contrast": 1.05,
+          "saturation": 1.12,
+          "brightness": 1.01
+        }
+      ],
+      "effects": [
+        {
+          "type": "vignette",
+          "amount": 0.22
+        }
+      ],
+      "text_layers": [],
+      "stickers": [],
+      "transition_out": {
+        "type": "dissolve",
+        "duration": 0.6
+      }
+    },
+    {
+      "media": "PHOTO_1",
+      "start": 0.0,
+      "duration": 4.0,
+      "fit": "cover",
+      "motion": {
+        "type": "pan",
+        "dx": 0.06,
+        "dy": 0.0,
+        "zoom": 1.15
+      },
+      "filters": [
+        {
+          "type": "eq",
+          "contrast": 1.05,
+          "saturation": 1.12,
+          "brightness": 1.01
+        }
+      ],
+      "effects": [
+        {
+          "type": "vignette",
+          "amount": 0.22
+        }
+      ],
+      "text_layers": [],
+      "stickers": [],
+      "transition_out": {
+        "type": "dissolve",
+        "duration": 0.6
+      }
+    },
+    {
+      "media": "bg",
+      "start": 0.0,
+      "duration": 4.0,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.0,
+        "to": 1.18,
+        "ease": "ease-in-out"
+      },
+      "filters": [],
+      "effects": [],
+      "text_layers": [
+        {
+          "key": "TITLE",
+          "start": 0.3,
+          "duration": 3.4,
+          "x": 0.5,
+          "y": 0.44,
+          "size": 76,
+          "align": "center",
+          "color": "#ffffff",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "fade-up",
+          "uppercase": true,
+          "max_chars": 0
+        }
+      ],
+      "stickers": [],
+      "transition_out": {
+        "type": "none",
+        "duration": 0.0
+      },
+      "background": {
+        "type": "gradient",
+        "from": "#1c0f02",
+        "to": "#3b1d05",
+        "angle": 160
+      }
+    }
+  ],
+  "overlays": []
+}

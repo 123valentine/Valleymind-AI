@@ -1,0 +1,194 @@
+{
+  "schema_version": 1,
+  "id": "logo_reveal",
+  "name": "Logo Reveal",
+  "category": "Logos",
+  "tags": [
+    "logos",
+    "template"
+  ],
+  "description": "Minimal logo reveal with glow pop.",
+  "icon": "pen-tool",
+  "grad": [
+    "#22d3ee",
+    "#0ea5e9"
+  ],
+  "thumbnail": "/static/templates/logo_reveal/thumbnail.webp",
+  "preview": "/static/templates/logo_reveal/preview.mp4",
+  "duration": 9.5,
+  "aspect_ratio": "1:1",
+  "width": 1080,
+  "height": 1088,
+  "fps": 30,
+  "popularity": 90,
+  "likes": 19340,
+  "downloads": 9150,
+  "edit_time_min": 3,
+  "media_required": 1,
+  "placeholders": [
+    {
+      "key": "LOGO",
+      "label": "Logo",
+      "type": "image",
+      "required": true,
+      "hint": ""
+    },
+    {
+      "key": "NAME",
+      "label": "Brand name",
+      "type": "text",
+      "required": false,
+      "max_chars": 40,
+      "hint": ""
+    }
+  ],
+  "music": {
+    "bpm": 110,
+    "tracks": [
+      {
+        "src": "",
+        "placeholder": "MUSIC",
+        "start": 0.0,
+        "volume": 0.85,
+        "fade_in": 0.2,
+        "fade_out": 0.5
+      }
+    ]
+  },
+  "beat_markers": [
+    0.0,
+    0.545,
+    1.091,
+    1.636,
+    2.182,
+    2.727,
+    3.273,
+    3.818,
+    4.364,
+    4.909,
+    5.455,
+    6.0,
+    6.545,
+    7.091,
+    7.636,
+    8.182,
+    8.727,
+    9.273,
+    9.5
+  ],
+  "timeline": [
+    {
+      "media": "bg",
+      "start": 0.0,
+      "duration": 5.0,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.0,
+        "to": 1.1,
+        "ease": "linear"
+      },
+      "filters": [],
+      "effects": [],
+      "text_layers": [
+        {
+          "key": "NAME",
+          "start": 0.8,
+          "duration": 3.8,
+          "x": 0.5,
+          "y": 0.36,
+          "size": 88,
+          "align": "center",
+          "color": "#ffffff",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "fade-up",
+          "uppercase": true,
+          "max_chars": 0
+        }
+      ],
+      "stickers": [
+        {
+          "src": "/static/assets/stickers/sticker_0153.png",
+          "x": 0.5,
+          "y": 0.12,
+          "scale": 0.22,
+          "rotation": 0,
+          "start": 0.0,
+          "duration": 0.0,
+          "animation": "none",
+          "blend": "normal"
+        }
+      ],
+      "transition_out": {
+        "type": "fade",
+        "duration": 0.5
+      },
+      "background": {
+        "type": "gradient",
+        "from": "#06121e",
+        "to": "#083344",
+        "angle": 160
+      }
+    },
+    {
+      "media": "bg",
+      "start": 0.0,
+      "duration": 5.0,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.0,
+        "to": 1.18,
+        "ease": "ease-in-out"
+      },
+      "filters": [],
+      "effects": [],
+      "text_layers": [
+        {
+          "key": "NAME",
+          "start": 0.6,
+          "duration": 4.0,
+          "x": 0.5,
+          "y": 0.44,
+          "size": 56,
+          "align": "center",
+          "color": "#a5f3fc",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "pop",
+          "uppercase": true,
+          "max_chars": 0
+        }
+      ],
+      "stickers": [
+        {
+          "src": "/static/assets/stickers/sticker_0153.png",
+          "x": 0.5,
+          "y": 0.12,
+          "scale": 0.22,
+          "rotation": 0,
+          "start": 0.0,
+          "duration": 0.0,
+          "animation": "none",
+          "blend": "normal"
+        }
+      ],
+      "transition_out": {
+        "type": "none",
+        "duration": 0.0
+      },
+      "background": {
+        "type": "gradient",
+        "from": "#0b1020",
+        "to": "#1a1140",
+        "angle": 160
+      }
+    }
+  ],
+  "overlays": []
+}

@@ -1,0 +1,245 @@
+{
+  "schema_version": 1,
+  "id": "tech_update",
+  "name": "Update Drop",
+  "category": "Technology",
+  "tags": [
+    "technology",
+    "template"
+  ],
+  "description": "App-update announcement card.",
+  "icon": "refresh-cw",
+  "grad": [
+    "#2563eb",
+    "#06b6d4"
+  ],
+  "thumbnail": "/static/templates/tech_update/thumbnail.webp",
+  "preview": "/static/templates/tech_update/preview.mp4",
+  "duration": 11.0,
+  "aspect_ratio": "9:16",
+  "width": 1080,
+  "height": 1920,
+  "fps": 30,
+  "popularity": 90,
+  "likes": 19830,
+  "downloads": 9240,
+  "edit_time_min": 4,
+  "media_required": 0,
+  "placeholders": [
+    {
+      "key": "TITLE",
+      "label": "Update name",
+      "type": "text",
+      "required": true,
+      "max_chars": 60,
+      "hint": ""
+    },
+    {
+      "key": "SUBTITLE",
+      "label": "What's new",
+      "type": "text",
+      "required": false,
+      "max_chars": 90,
+      "hint": ""
+    },
+    {
+      "key": "BUTTON_TEXT",
+      "label": "Button label",
+      "type": "text",
+      "required": false,
+      "max_chars": 24,
+      "default_value": "Update now",
+      "hint": ""
+    }
+  ],
+  "music": {
+    "bpm": 120,
+    "tracks": [
+      {
+        "src": "",
+        "placeholder": "MUSIC",
+        "start": 0.0,
+        "volume": 0.85,
+        "fade_in": 0.2,
+        "fade_out": 0.5
+      }
+    ]
+  },
+  "beat_markers": [
+    0.0,
+    0.5,
+    1.0,
+    1.5,
+    2.0,
+    2.5,
+    3.0,
+    3.5,
+    4.0,
+    4.5,
+    5.0,
+    5.5,
+    6.0,
+    6.5,
+    7.0,
+    7.5,
+    8.0,
+    8.5,
+    9.0,
+    9.5,
+    10.0,
+    10.5,
+    11.0
+  ],
+  "timeline": [
+    {
+      "media": "bg",
+      "start": 0.0,
+      "duration": 4.0,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.0,
+        "to": 1.1,
+        "ease": "linear"
+      },
+      "filters": [],
+      "effects": [],
+      "text_layers": [
+        {
+          "key": "TITLE",
+          "start": 0.3,
+          "duration": 3.3,
+          "x": 0.5,
+          "y": 0.36,
+          "size": 84,
+          "align": "center",
+          "color": "#ffffff",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "pop",
+          "uppercase": true,
+          "max_chars": 0
+        }
+      ],
+      "stickers": [],
+      "transition_out": {
+        "type": "fade",
+        "duration": 0.5
+      },
+      "background": {
+        "type": "gradient",
+        "from": "#0a1128",
+        "to": "#1e1b4b",
+        "angle": 160
+      }
+    },
+    {
+      "media": "bg",
+      "start": 0.0,
+      "duration": 4.0,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.0,
+        "to": 1.18,
+        "ease": "ease-in-out"
+      },
+      "filters": [],
+      "effects": [],
+      "text_layers": [
+        {
+          "key": "SUBTITLE",
+          "start": 0.3,
+          "duration": 3.3,
+          "x": 0.5,
+          "y": 0.38,
+          "size": 52,
+          "align": "center",
+          "color": "#cffafe",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "fade-up",
+          "uppercase": false,
+          "max_chars": 0
+        },
+        {
+          "key": "BUTTON_TEXT",
+          "start": 1.6,
+          "duration": 2.0,
+          "x": 0.5,
+          "y": 0.56,
+          "size": 44,
+          "align": "center",
+          "color": "#ffffff",
+          "stroke": "#2563eb",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "pop",
+          "uppercase": true,
+          "max_chars": 0
+        }
+      ],
+      "stickers": [],
+      "transition_out": {
+        "type": "fade",
+        "duration": 0.5
+      },
+      "background": {
+        "type": "gradient",
+        "from": "#06121e",
+        "to": "#083344",
+        "angle": 160
+      }
+    },
+    {
+      "media": "bg",
+      "start": 0.0,
+      "duration": 4.0,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.0,
+        "to": 1.18,
+        "ease": "ease-in-out"
+      },
+      "filters": [],
+      "effects": [],
+      "text_layers": [
+        {
+          "key": "TITLE",
+          "start": 0.3,
+          "duration": 3.4,
+          "x": 0.5,
+          "y": 0.44,
+          "size": 60,
+          "align": "center",
+          "color": "#ffffff",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "fade-up",
+          "uppercase": true,
+          "max_chars": 0
+        }
+      ],
+      "stickers": [],
+      "transition_out": {
+        "type": "none",
+        "duration": 0.0
+      },
+      "background": {
+        "type": "gradient",
+        "from": "#0b1020",
+        "to": "#1a1140",
+        "angle": 160
+      }
+    }
+  ],
+  "overlays": []
+}

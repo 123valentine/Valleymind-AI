@@ -1,0 +1,246 @@
+{
+  "schema_version": 1,
+  "id": "invite_party",
+  "name": "Party Invite",
+  "category": "Invitations",
+  "tags": [
+    "invitations",
+    "template"
+  ],
+  "description": "Bright party invitation card.",
+  "icon": "party-popper",
+  "grad": [
+    "#f472b6",
+    "#a78bfa"
+  ],
+  "thumbnail": "/static/templates/invite_party/thumbnail.webp",
+  "preview": "/static/templates/invite_party/preview.mp4",
+  "duration": 11.2,
+  "aspect_ratio": "9:16",
+  "width": 1080,
+  "height": 1920,
+  "fps": 30,
+  "popularity": 91,
+  "likes": 20410,
+  "downloads": 9650,
+  "edit_time_min": 3,
+  "media_required": 0,
+  "placeholders": [
+    {
+      "key": "NAME",
+      "label": "Party name",
+      "type": "text",
+      "required": true,
+      "max_chars": 50,
+      "hint": ""
+    },
+    {
+      "key": "DATE",
+      "label": "Date & time",
+      "type": "text",
+      "required": true,
+      "max_chars": 40,
+      "hint": ""
+    },
+    {
+      "key": "LOCATION",
+      "label": "Venue",
+      "type": "text",
+      "required": false,
+      "max_chars": 50,
+      "hint": ""
+    }
+  ],
+  "music": {
+    "bpm": 124,
+    "tracks": [
+      {
+        "src": "",
+        "placeholder": "MUSIC",
+        "start": 0.0,
+        "volume": 0.85,
+        "fade_in": 0.2,
+        "fade_out": 0.5
+      }
+    ]
+  },
+  "beat_markers": [
+    0.0,
+    0.484,
+    0.968,
+    1.452,
+    1.935,
+    2.419,
+    2.903,
+    3.387,
+    3.871,
+    4.355,
+    4.839,
+    5.323,
+    5.806,
+    6.29,
+    6.774,
+    7.258,
+    7.742,
+    8.226,
+    8.71,
+    9.194,
+    9.677,
+    10.161,
+    10.645,
+    11.129,
+    11.2
+  ],
+  "timeline": [
+    {
+      "media": "bg",
+      "start": 0.0,
+      "duration": 2.5,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.0,
+        "to": 1.1,
+        "ease": "linear"
+      },
+      "filters": [],
+      "effects": [],
+      "text_layers": [
+        {
+          "key": "NAME",
+          "start": 0.3,
+          "duration": 1.9,
+          "x": 0.5,
+          "y": 0.36,
+          "size": 84,
+          "align": "center",
+          "color": "#ffffff",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "pop",
+          "uppercase": true,
+          "max_chars": 0
+        }
+      ],
+      "stickers": [],
+      "transition_out": {
+        "type": "fade",
+        "duration": 0.3
+      },
+      "background": {
+        "type": "gradient",
+        "from": "#2a0f1f",
+        "to": "#4a1233",
+        "angle": 160
+      }
+    },
+    {
+      "media": "bg",
+      "start": 0.0,
+      "duration": 4.5,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.0,
+        "to": 1.18,
+        "ease": "ease-in-out"
+      },
+      "filters": [],
+      "effects": [],
+      "text_layers": [
+        {
+          "key": "DATE",
+          "start": 0.3,
+          "duration": 3.9,
+          "x": 0.5,
+          "y": 0.38,
+          "size": 60,
+          "align": "center",
+          "color": "#e9d5ff",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "fade-up",
+          "uppercase": true,
+          "max_chars": 0
+        },
+        {
+          "key": "LOCATION",
+          "start": 1.2,
+          "duration": 3.0,
+          "x": 0.5,
+          "y": 0.52,
+          "size": 40,
+          "align": "center",
+          "color": "#ffffff",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "fade-up",
+          "uppercase": false,
+          "max_chars": 0
+        }
+      ],
+      "stickers": [],
+      "transition_out": {
+        "type": "fade",
+        "duration": 0.5
+      },
+      "background": {
+        "type": "gradient",
+        "from": "#160b2e",
+        "to": "#2e1065",
+        "angle": 160
+      }
+    },
+    {
+      "media": "bg",
+      "start": 0.0,
+      "duration": 5.0,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.0,
+        "to": 1.18,
+        "ease": "ease-in-out"
+      },
+      "filters": [],
+      "effects": [],
+      "text_layers": [
+        {
+          "key": "NAME",
+          "start": 0.3,
+          "duration": 4.4,
+          "x": 0.5,
+          "y": 0.4,
+          "size": 64,
+          "align": "center",
+          "color": "#ffffff",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "fade-up",
+          "uppercase": true,
+          "max_chars": 0
+        }
+      ],
+      "stickers": [],
+      "transition_out": {
+        "type": "none",
+        "duration": 0.0
+      },
+      "background": {
+        "type": "gradient",
+        "from": "#2a0a14",
+        "to": "#4c1220",
+        "angle": 160
+      }
+    }
+  ],
+  "overlays": []
+}

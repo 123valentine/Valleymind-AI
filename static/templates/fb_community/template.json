@@ -1,0 +1,237 @@
+{
+  "schema_version": 1,
+  "id": "fb_community",
+  "name": "Community Post",
+  "category": "Facebook",
+  "tags": [
+    "facebook",
+    "template"
+  ],
+  "description": "Warm community announcement card.",
+  "icon": "users",
+  "grad": [
+    "#60a5fa",
+    "#0f172a"
+  ],
+  "thumbnail": "/static/templates/fb_community/thumbnail.webp",
+  "preview": "/static/templates/fb_community/preview.mp4",
+  "duration": 11.0,
+  "aspect_ratio": "4:5",
+  "width": 1080,
+  "height": 1344,
+  "fps": 30,
+  "popularity": 84,
+  "likes": 11230,
+  "downloads": 4910,
+  "edit_time_min": 3,
+  "media_required": 1,
+  "placeholders": [
+    {
+      "key": "PHOTO_1",
+      "label": "Community photo",
+      "type": "image",
+      "required": true,
+      "hint": ""
+    },
+    {
+      "key": "NAME",
+      "label": "Group / author",
+      "type": "text",
+      "required": false,
+      "hint": ""
+    },
+    {
+      "key": "TITLE",
+      "label": "Announcement",
+      "type": "text",
+      "required": true,
+      "max_chars": 60,
+      "hint": ""
+    },
+    {
+      "key": "SUBTITLE",
+      "label": "Details",
+      "type": "text",
+      "required": false,
+      "max_chars": 90,
+      "hint": ""
+    }
+  ],
+  "music": {
+    "bpm": 110,
+    "tracks": [
+      {
+        "src": "",
+        "placeholder": "MUSIC",
+        "start": 0.0,
+        "volume": 0.85,
+        "fade_in": 0.2,
+        "fade_out": 0.5
+      }
+    ]
+  },
+  "beat_markers": [
+    0.0,
+    0.545,
+    1.091,
+    1.636,
+    2.182,
+    2.727,
+    3.273,
+    3.818,
+    4.364,
+    4.909,
+    5.455,
+    6.0,
+    6.545,
+    7.091,
+    7.636,
+    8.182,
+    8.727,
+    9.273,
+    9.818,
+    10.364,
+    10.909,
+    11.0
+  ],
+  "timeline": [
+    {
+      "media": "PHOTO_1",
+      "start": 0.0,
+      "duration": 4.0,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.05,
+        "to": 1.22,
+        "ease": "ease-in-out"
+      },
+      "filters": [
+        {
+          "type": "eq",
+          "contrast": 1.05,
+          "saturation": 1.12,
+          "brightness": 1.01
+        }
+      ],
+      "effects": [
+        {
+          "type": "vignette",
+          "amount": 0.22
+        }
+      ],
+      "text_layers": [],
+      "stickers": [],
+      "transition_out": {
+        "type": "fade",
+        "duration": 0.5
+      }
+    },
+    {
+      "media": "bg",
+      "start": 0.0,
+      "duration": 4.0,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.0,
+        "to": 1.1,
+        "ease": "linear"
+      },
+      "filters": [],
+      "effects": [],
+      "text_layers": [
+        {
+          "key": "TITLE",
+          "start": 0.3,
+          "duration": 3.3,
+          "x": 0.5,
+          "y": 0.36,
+          "size": 72,
+          "align": "center",
+          "color": "#ffffff",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "fade-up",
+          "uppercase": true,
+          "max_chars": 0
+        },
+        {
+          "key": "NAME",
+          "start": 1.0,
+          "duration": 2.6,
+          "x": 0.5,
+          "y": 0.5,
+          "size": 40,
+          "align": "center",
+          "color": "#93c5fd",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "fade-up",
+          "uppercase": true,
+          "max_chars": 0
+        }
+      ],
+      "stickers": [],
+      "transition_out": {
+        "type": "fade",
+        "duration": 0.5
+      },
+      "background": {
+        "type": "gradient",
+        "from": "#0a1128",
+        "to": "#1e1b4b",
+        "angle": 160
+      }
+    },
+    {
+      "media": "bg",
+      "start": 0.0,
+      "duration": 4.0,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.0,
+        "to": 1.18,
+        "ease": "ease-in-out"
+      },
+      "filters": [],
+      "effects": [],
+      "text_layers": [
+        {
+          "key": "SUBTITLE",
+          "start": 0.3,
+          "duration": 3.4,
+          "x": 0.5,
+          "y": 0.44,
+          "size": 44,
+          "align": "center",
+          "color": "#e2e8f0",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "fade-up",
+          "uppercase": false,
+          "max_chars": 0
+        }
+      ],
+      "stickers": [],
+      "transition_out": {
+        "type": "none",
+        "duration": 0.0
+      },
+      "background": {
+        "type": "gradient",
+        "from": "#0b1020",
+        "to": "#1a1140",
+        "angle": 160
+      }
+    }
+  ],
+  "overlays": []
+}

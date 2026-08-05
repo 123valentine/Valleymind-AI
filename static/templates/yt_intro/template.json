@@ -1,0 +1,217 @@
+{
+  "schema_version": 1,
+  "id": "yt_intro",
+  "name": "YouTube Intro",
+  "category": "YouTube",
+  "tags": [
+    "youtube",
+    "template"
+  ],
+  "description": "Branded 8s channel intro.",
+  "icon": "play",
+  "grad": [
+    "#ef4444",
+    "#7f1d1d"
+  ],
+  "thumbnail": "/static/templates/yt_intro/thumbnail.webp",
+  "preview": "/static/templates/yt_intro/preview.mp4",
+  "duration": 7.4,
+  "aspect_ratio": "16:9",
+  "width": 1080,
+  "height": 1920,
+  "fps": 30,
+  "popularity": 92,
+  "likes": 18740,
+  "downloads": 8150,
+  "edit_time_min": 3,
+  "media_required": 0,
+  "placeholders": [
+    {
+      "key": "LOGO",
+      "label": "Channel logo",
+      "type": "image",
+      "required": false,
+      "hint": ""
+    },
+    {
+      "key": "CHANNEL_NAME",
+      "label": "Channel name",
+      "type": "text",
+      "required": true,
+      "max_chars": 30,
+      "hint": ""
+    },
+    {
+      "key": "SUBTITLE",
+      "label": "Slogan",
+      "type": "text",
+      "required": false,
+      "max_chars": 60,
+      "hint": ""
+    }
+  ],
+  "music": {
+    "bpm": 124,
+    "tracks": [
+      {
+        "src": "",
+        "placeholder": "MUSIC",
+        "start": 0.0,
+        "volume": 0.85,
+        "fade_in": 0.2,
+        "fade_out": 0.5
+      }
+    ]
+  },
+  "beat_markers": [
+    0.0,
+    0.484,
+    0.968,
+    1.452,
+    1.935,
+    2.419,
+    2.903,
+    3.387,
+    3.871,
+    4.355,
+    4.839,
+    5.323,
+    5.806,
+    6.29,
+    6.774,
+    7.258,
+    7.4
+  ],
+  "timeline": [
+    {
+      "media": "bg",
+      "start": 0.0,
+      "duration": 4.0,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.0,
+        "to": 1.18,
+        "ease": "ease-in-out"
+      },
+      "filters": [],
+      "effects": [],
+      "text_layers": [
+        {
+          "key": "CHANNEL_NAME",
+          "start": 0.5,
+          "duration": 3.1,
+          "x": 0.5,
+          "y": 0.34,
+          "size": 84,
+          "align": "center",
+          "color": "#ffffff",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "pop",
+          "uppercase": true,
+          "max_chars": 0
+        },
+        {
+          "key": "SUBTITLE",
+          "start": 1.2,
+          "duration": 2.4,
+          "x": 0.5,
+          "y": 0.48,
+          "size": 40,
+          "align": "center",
+          "color": "#fca5a5",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "fade-up",
+          "uppercase": false,
+          "max_chars": 0
+        }
+      ],
+      "stickers": [
+        {
+          "src": "/static/assets/stickers/sticker_0153.png",
+          "x": 0.5,
+          "y": 0.12,
+          "scale": 0.22,
+          "rotation": 0,
+          "start": 0.0,
+          "duration": 0.0,
+          "animation": "none",
+          "blend": "normal"
+        }
+      ],
+      "transition_out": {
+        "type": "circleopen",
+        "duration": 0.6
+      },
+      "background": {
+        "type": "gradient",
+        "from": "#0b1020",
+        "to": "#1a1140",
+        "angle": 160
+      }
+    },
+    {
+      "media": "bg",
+      "start": 0.0,
+      "duration": 4.0,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.18,
+        "to": 1.0,
+        "ease": "ease-in-out"
+      },
+      "filters": [],
+      "effects": [],
+      "text_layers": [
+        {
+          "key": "SUBTITLE",
+          "start": 0.4,
+          "duration": 3.2,
+          "x": 0.5,
+          "y": 0.46,
+          "size": 44,
+          "align": "center",
+          "color": "#ffffff",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "fade-up",
+          "uppercase": false,
+          "max_chars": 0
+        }
+      ],
+      "stickers": [
+        {
+          "src": "/static/assets/stickers/sticker_0153.png",
+          "x": 0.5,
+          "y": 0.12,
+          "scale": 0.22,
+          "rotation": 0,
+          "start": 0.0,
+          "duration": 0.0,
+          "animation": "none",
+          "blend": "normal"
+        }
+      ],
+      "transition_out": {
+        "type": "none",
+        "duration": 0.0
+      },
+      "background": {
+        "type": "gradient",
+        "from": "#050505",
+        "to": "#181818",
+        "angle": 150
+      }
+    }
+  ],
+  "overlays": []
+}

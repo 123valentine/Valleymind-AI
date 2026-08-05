@@ -758,6 +758,55 @@
     font-family:'Space Grotesk',sans-serif; letter-spacing:0.03em; transition:opacity 0.2s; }
   .sd-tpl-btn:hover { opacity:0.9; }
 
+  /* Template detail / use modal */
+  #templateModal { position:fixed; inset:0; z-index:100000; display:none; align-items:center; justify-content:center;
+    background:rgba(2,6,23,0.72); backdrop-filter:blur(6px); opacity:0; transition:opacity 0.25s ease; padding:16px; }
+  #templateModal.open { opacity:1; }
+  .tmpl-card { position:relative; width:min(760px,100%); max-height:92vh; overflow-y:auto; border-radius:18px; padding:22px;
+    background:#0b1222; border:1px solid rgba(255,255,255,0.12); box-shadow:0 20px 60px rgba(0,0,0,0.5); }
+  .tmpl-x { position:absolute; top:12px; right:14px; background:transparent; border:none; color:#94a3b8; font-size:24px; cursor:pointer; line-height:1; z-index:2; }
+  .tmpl-top { display:flex; gap:18px; flex-wrap:wrap; }
+  .tmpl-thumb { width:190px; aspect-ratio:9/14; border-radius:14px; object-fit:cover; flex-shrink:0; background:#0f172a; }
+  .tmpl-head { flex:1; min-width:220px; }
+  .tmpl-title { color:#e2e8f0; font-family:'Space Grotesk',sans-serif; font-weight:800; font-size:20px; line-height:1.25; }
+  .tmpl-cats { display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; }
+  .tmpl-desc { color:#94a3b8; font-size:13px; margin-top:10px; line-height:1.6; }
+  .tmpl-stats { display:flex; flex-wrap:wrap; gap:8px; margin-top:14px; }
+  .tmpl-stat { display:flex; align-items:center; gap:6px; font-size:11.5px; font-weight:700; color:#cbd5e1;
+    background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.09); padding:7px 11px; border-radius:999px; }
+  .tmpl-actions { display:flex; gap:10px; margin-top:16px; flex-wrap:wrap; }
+  .tmpl-btn { border:none; border-radius:10px; padding:10px 16px; font-size:12.5px; font-weight:800; cursor:pointer;
+    display:flex; align-items:center; gap:7px; font-family:'Space Grotesk',sans-serif; letter-spacing:0.03em; transition:opacity 0.2s; }
+  .tmpl-btn:hover { opacity:0.9; }
+  .tmpl-btn:disabled { opacity:0.55; cursor:default; }
+  .tmpl-btn.primary { background:linear-gradient(135deg,#00d4ff,#0ea5e9); color:#003642; }
+  .tmpl-btn.ghost { background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.12); color:#cbd5e1; }
+  .tmpl-btn.ghost.active { background:rgba(244,63,94,0.16); border-color:rgba(244,63,94,0.45); color:#fb7185; }
+  .tmpl-preview-wrap { margin-top:18px; }
+  .tmpl-preview-wrap video { width:100%; border-radius:14px; background:#000; }
+  .tmpl-divider { height:1px; background:rgba(255,255,255,0.08); margin:20px 0; }
+  .tmpl-step-title { color:#e2e8f0; font-family:'Space Grotesk',sans-serif; font-weight:800; font-size:15px; margin-bottom:14px; display:flex; align-items:center; gap:8px; }
+  .tmpl-form { display:flex; flex-direction:column; gap:14px; }
+  .tmpl-field { display:flex; flex-direction:column; gap:6px; }
+  .tmpl-field-label { color:#cbd5e1; font-size:12px; font-weight:700; }
+  .tmpl-field-label em { color:#fb7185; font-style:normal; margin-left:3px; }
+  .tmpl-hint { color:#64748b; font-size:11px; }
+  .tmpl-field input[type=text], .tmpl-field textarea { width:100%; background:rgba(15,23,42,0.7); border:1px solid rgba(255,255,255,0.1);
+    border-radius:10px; padding:10px 13px; color:#e2e8f0; font-size:13px; outline:none; box-sizing:border-box; font-family:'Inter',sans-serif; }
+  .tmpl-field input[type=text]:focus, .tmpl-field textarea:focus { border-color:rgba(0,212,255,0.45); }
+  .tmpl-file { display:flex; align-items:center; gap:10px; }
+  .tmpl-file input[type=file] { display:none; }
+  .tmpl-file-btn { flex-shrink:0; border:1px dashed rgba(255,255,255,0.2); background:rgba(255,255,255,0.04); color:#94a3b8;
+    border-radius:10px; padding:10px 14px; font-size:12px; font-weight:700; cursor:pointer; display:flex; align-items:center; gap:7px; }
+  .tmpl-file-btn:hover { border-color:rgba(0,212,255,0.45); color:#7dd3fc; }
+  .tmpl-file-name { color:#7dd3fc; font-size:11.5px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:280px; }
+  .tmpl-progress { height:10px; border-radius:999px; background:rgba(255,255,255,0.08); overflow:hidden; }
+  .tmpl-progress-fill { height:100%; width:0%; border-radius:999px; background:linear-gradient(90deg,#00d4ff,#0ea5e9); transition:width 0.4s ease; }
+  .tmpl-render-status { color:#94a3b8; font-size:12px; margin-top:8px; display:flex; justify-content:space-between; gap:12px; }
+  .tmpl-result { display:flex; flex-direction:column; gap:14px; }
+  .tmpl-result video { width:100%; max-height:420px; border-radius:14px; background:#000; }
+  .tmpl-result .tmpl-btn { text-decoration:none; }
+
   /* Assets */
   .sd-asset-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:12px; }
   .sd-asset { position:relative; border-radius:12px; overflow:hidden; cursor:pointer; background:rgba(255,255,255,0.03);
@@ -1686,6 +1735,11 @@
     Generate
   </button>
   <p id="imageGenStatus" style="min-height:18px;color:#ff6b7a;font-size:12px;margin-top:8px;"></p>
+</div>
+
+<!-- TEMPLATE DETAIL / USE MODAL -->
+<div id="templateModal" onclick="if(event.target===this)closeTemplateModal()">
+  <div class="tmpl-card" id="tmplCard"></div>
 </div>
 
 <!-- HEADER -->
@@ -5068,23 +5122,47 @@ function sdAssetChipHTML(label, active) {
 }
 
 function sdTplCardHTML(t) {
-    var i = SD_TEMPLATES.indexOf(t);
-    var cats = String(t.cat).split(",").map(function (s) { return s.trim(); });
+    var cats = (t.tags && t.tags.length ? t.tags : [t.category]).slice(0, 3);
     var chips = cats.map(function (c) {
         return '<span class="sd-tpl-chip">' + esc(c) + '</span>';
     }).join("");
-    return '<div class="sd-tpl-card" onclick="studioUseTemplate(SD_TEMPLATES[' + i + '])">' +
-        '<div class="sd-tpl-preview" style="background:' + t.grad + ';">' +
-            studioIcon(t.icon, 40) +
+    var id = esc(String(t.id));
+    var dur = tmplDur(t.duration);
+    var thumb = t.thumbnail
+        ? '<img src="' + esc(t.thumbnail) + '" alt="" loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;">'
+        : (t.grad ? '<div style="position:absolute;inset:0;background:' + t.grad + ';"></div>' : "");
+    var icon = t.icon ? studioIcon(t.icon, 40) : "";
+    return '<div class="sd-tpl-card" onclick="openTemplateDetail(\'' + id + '\')">' +
+        '<div class="sd-tpl-preview">' + thumb + icon +
             '<div class="sd-tpl-meta">' + chips + '</div>' +
-            '<span class="sd-tpl-dur">' + esc(t.dur) + '</span>' +
+            '<span class="sd-tpl-dur">' + dur + '</span>' +
         '</div>' +
         '<div class="sd-tpl-body">' +
             '<div class="sd-tpl-name">' + esc(t.name) + '</div>' +
-            '<div class="sd-tpl-cat">' + esc(t.desc) + '</div>' +
-            '<button class="sd-tpl-btn" onclick="event.stopPropagation();studioUseTemplate(SD_TEMPLATES[' + i + '])">Use Template</button>' +
+            '<div class="sd-tpl-cat">' + esc(t.description || "") + '</div>' +
+            '<div style="display:flex;gap:12px;margin-top:10px;font-size:11px;color:#64748b;font-weight:700;">' +
+                '<span style="display:flex;align-items:center;gap:4px;">' + studioIcon("trending-up", 12) + ' ' + (t.popularity || 0) + '</span>' +
+                '<span style="display:flex;align-items:center;gap:4px;">' + studioIcon("heart", 12) + ' ' + (t.likes || 0) + '</span>' +
+            '</div>' +
+            '<button class="sd-tpl-btn" onclick="event.stopPropagation();useTemplate(\'' + id + '\')">Use Template</button>' +
         '</div>' +
     '</div>';
+}
+
+function tmplDur(s) {
+    s = Number(s) || 0;
+    if (s >= 60) {
+        var m = Math.floor(s / 60);
+        var sec = Math.floor(s % 60);
+        return m + ":" + (sec < 10 ? "0" : "") + sec;
+    }
+    return (Math.round(s * 10) / 10) + "s";
+}
+
+function sdChipListHTML(cats, active) {
+    var names = ["All"];
+    (cats || []).forEach(function (c) { names.push(c.name || c); });
+    return names.map(function (c) { return sdChipHTML(c, c === active); }).join("");
 }
 
 function sdProjHTML(name, sub, status, time) {
@@ -5177,25 +5255,73 @@ function sdRenderTemplates() {
     if (!el || el.dataset.rendered) return;
     el.dataset.rendered = "1";
     el.innerHTML =
-        '<div class="sd-section"><h3>Template gallery</h3><div class="sd-section-line"></div><span class="sd-section-count">' + SD_TEMPLATES.length + ' templates</span></div>' +
-        '<div class="sd-chips" id="sdTplChips">' + SD_TEMPLATE_CATS.map(function (c, i) { return sdChipHTML(c, i === 0); }).join("") + '</div>' +
-        '<div class="sd-tpl-grid" id="sdTplGrid"></div>';
+        '<div class="sd-section"><h3>Template gallery</h3><div class="sd-section-line"></div><span class="sd-section-count" id="sdTplCount">Loading…</span></div>' +
+        '<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:2px;">' +
+            '<div class="sd-search">' +
+                '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>' +
+                '<input id="sdTplSearch" type="text" placeholder="Search templates..." oninput="sdTplSearchDebounce()">' +
+            '</div>' +
+            '<select id="sdTplSort" onchange="sdTmplSort(this.value)" style="background:rgba(15,23,42,0.7);border:1px solid rgba(255,255,255,0.1);border-radius:10px;padding:9px 12px;color:#cbd5e1;font-size:12.5px;font-weight:700;outline:none;font-family:\'Space Grotesk\',sans-serif;">' +
+                '<option value="popular">Most popular</option>' +
+                '<option value="newest">Newest</option>' +
+                '<option value="duration">Shortest first</option>' +
+            '</select>' +
+        '</div>' +
+        '<div class="sd-chips" id="sdTplChips"></div>' +
+        '<div class="sd-tpl-grid" id="sdTplGrid">' + sdLoadingHTML() + '</div>';
     studioRefreshIcons();
-    sdFilterTemplates("Trending");
+    loadTemplates();
+}
+
+var sdTmplState = { cats: [], activeCat: "All", search: "", sort: "popular", templates: [] };
+var sdTplSearchT = null;
+var sdTmplModal = { open: false, tid: null, pid: null, form: [], poll: null };
+
+function sdTplSearchDebounce() {
+    var el = document.getElementById("sdTplSearch");
+    if (!el) return;
+    clearTimeout(sdTplSearchT);
+    sdTplSearchT = setTimeout(function () {
+        sdTmplState.search = (el.value || "").trim();
+        loadTemplates();
+    }, 350);
+}
+
+function sdTmplSort(v) {
+    sdTmplState.sort = v || "popular";
+    loadTemplates();
+}
+
+async function loadTemplates() {
+    var grid = document.getElementById("sdTplGrid");
+    var chips = document.getElementById("sdTplChips");
+    var count = document.getElementById("sdTplCount");
+    try {
+        var qs = "?category=" + encodeURIComponent(sdTmplState.activeCat) +
+                 "&search=" + encodeURIComponent(sdTmplState.search) +
+                 "&sort=" + encodeURIComponent(sdTmplState.sort);
+        var res = await apiFetch("/api/templates" + qs, { credentials: "include", headers: authHeaders(), timeoutMs: 15000 });
+        var data = await res.json();
+        if (!data || data.status !== "success") throw new Error("bad response");
+        sdTmplState.cats = data.categories || [];
+        sdTmplState.templates = data.templates || [];
+    } catch (e) {
+        sdTmplState.cats = [];
+        sdTmplState.templates = [];
+    }
+    if (count) count.textContent = sdTmplState.templates.length + " templates";
+    if (chips) chips.innerHTML = sdChipListHTML(sdTmplState.cats, sdTmplState.activeCat);
+    if (grid) {
+        grid.innerHTML = sdTmplState.templates.length
+            ? sdTmplState.templates.map(sdTplCardHTML).join("")
+            : sdEmptyHTML("No templates match", "Try a different category or search.");
+    }
+    studioRefreshIcons();
 }
 
 function sdFilterTemplates(cat) {
-    sdTemplatesFilter = cat;
-    var chips = document.querySelectorAll("#sdTplChips .sd-chip");
-    for (var i = 0; i < chips.length; i++) {
-        chips[i].classList.toggle("active", chips[i].getAttribute("data-cat") === cat);
-    }
-    var items = cat === "All" ? SD_TEMPLATES : SD_TEMPLATES.filter(function (t) { return t.cat === cat; });
-    var grid = document.getElementById("sdTplGrid");
-    if (grid) {
-        grid.innerHTML = items.length ? items.map(sdTplCardHTML).join("") : sdEmptyHTML("No templates here yet", "New templates in this category are on the way.");
-    }
-    studioRefreshIcons();
+    sdTmplState.activeCat = cat;
+    loadTemplates();
 }
 
 function sdRenderAssets() {
@@ -5271,7 +5397,290 @@ async function loadStudioRecents() {
 function loadStudioTplStrip() {
     var el = document.getElementById("studioVideoTemplates");
     if (!el) return;
-    el.innerHTML = SD_TEMPLATES.slice(0, 6).map(sdTplCardHTML).join("");
+    apiFetch("/api/templates?sort=popular", { credentials: "include", headers: authHeaders(), timeoutMs: 15000 })
+        .then(function (res) { return res.json(); })
+        .then(function (data) {
+            var items = (data && data.status === "success" && data.templates) ? data.templates : SD_TEMPLATES;
+            el.innerHTML = items.slice(0, 6).map(sdTplCardHTML).join("");
+            studioRefreshIcons();
+        })
+        .catch(function () {
+            el.innerHTML = SD_TEMPLATES.slice(0, 6).map(sdTplCardHTML).join("");
+            studioRefreshIcons();
+        });
+}
+
+// ── Template detail / use modal ─────────────────────────────────────────
+function openTemplateModal() {
+    var modal = document.getElementById("templateModal");
+    if (!modal) return;
+    modal.style.display = "flex";
+    requestAnimationFrame(function () { modal.classList.add("open"); });
+    sdTmplModal.open = true;
+}
+
+function closeTemplateModal() {
+    var modal = document.getElementById("templateModal");
+    if (!modal) return;
+    if (sdTmplModal.poll) { clearInterval(sdTmplModal.poll); sdTmplModal.poll = null; }
+    sdTmplModal.open = false;
+    modal.classList.remove("open");
+    modal.classList.add("closing");
+    setTimeout(function () {
+        modal.classList.remove("closing");
+        modal.style.display = "none";
+    }, 250);
+}
+
+async function openTemplateDetail(tid) {
+    var card = document.getElementById("tmplCard");
+    if (!card) return;
+    sdTmplModal.tid = tid;
+    sdTmplModal.pid = null;
+    if (sdTmplModal.poll) { clearInterval(sdTmplModal.poll); sdTmplModal.poll = null; }
+    openTemplateModal();
+    card.innerHTML = sdLoadingHTML();
+    try {
+        var res = await apiFetch("/api/templates/" + encodeURIComponent(tid), { credentials: "include", headers: authHeaders(), timeoutMs: 15000 });
+        var data = await res.json();
+        if (!data || data.status !== "success") throw new Error("load failed");
+        renderTemplateDetail(data.template);
+    } catch (e) {
+        card.innerHTML = sdEmptyHTML("Couldn't load this template", "Please try again.");
+    }
+}
+
+function renderTemplateDetail(t) {
+    var card = document.getElementById("tmplCard");
+    if (!card) return;
+    var cats = (t.tags && t.tags.length ? t.tags : [t.category]).map(function (c) {
+        return '<span class="sd-tpl-chip">' + esc(c) + '</span>';
+    }).join("");
+    var stats = [
+        ["clock", tmplDur(t.duration)],
+        ["ratio", esc(t.aspect_ratio || "9:16")],
+        ["layers", (t.media_slots || 0) + " media"],
+        ["pencil", (t.edit_time_min || 1) + " min edit"],
+        ["trending-up", (t.popularity || 0) + " uses"]
+    ].map(function (s) {
+        return '<span class="tmpl-stat">' + studioIcon(s[0], 12) + ' ' + esc(s[1]) + '</span>';
+    }).join("");
+    var preview = "";
+    if (t.has_preview && t.preview) {
+        preview = '<div class="tmpl-preview-wrap"><video src="' + esc(t.preview) + '" controls playsinline></video></div>';
+    }
+    var thumb = t.thumbnail
+        ? '<img class="tmpl-thumb" src="' + esc(t.thumbnail) + '" alt="">'
+        : '<div class="tmpl-thumb" style="background:linear-gradient(160deg,#0ea5e9,#1e1b4b);"></div>';
+    card.innerHTML =
+        '<button class="tmpl-x" onclick="closeTemplateModal()">×</button>' +
+        '<div class="tmpl-top">' + thumb +
+            '<div class="tmpl-head">' +
+                '<div class="tmpl-title">' + esc(t.name) + '</div>' +
+                '<div class="tmpl-cats">' + cats + '</div>' +
+                '<p class="tmpl-desc">' + esc(t.description || "") + '</p>' +
+                '<div class="tmpl-stats">' + stats + '</div>' +
+                '<div class="tmpl-actions">' +
+                    '<button class="tmpl-btn primary" onclick="useTemplate(\'' + esc(String(t.id)) + '\')">' + studioIcon("sparkles", 14) + ' Use Template</button>' +
+                    '<button class="tmpl-btn ghost' + (t.liked ? " active" : "") + '" id="tmplLikeBtn" onclick="tmplToggleLike(\'' + esc(String(t.id)) + '\')">' + studioIcon("heart", 14) + ' <span id="tmplLikeLbl">' + (t.liked ? "Liked" : "Like") + ' · ' + (t.likes || 0) + '</span></button>' +
+                '</div>' +
+                '<p class="tmpl-hint" style="margin-top:12px;">Every template is a reusable project — add your text and photos, then render your own video.</p>' +
+            '</div>' +
+        '</div>' + preview;
+    studioRefreshIcons();
+}
+
+async function tmplToggleLike(tid) {
+    try {
+        var res = await apiFetch("/api/templates/" + encodeURIComponent(tid) + "/like",
+            { method: "POST", credentials: "include", headers: authHeaders(), timeoutMs: 15000 });
+        var data = await res.json();
+        if (!data || data.status !== "success") return;
+        var btn = document.getElementById("tmplLikeBtn");
+        var lbl = document.getElementById("tmplLikeLbl");
+        if (btn) btn.classList.toggle("active", !!data.liked);
+        if (lbl) lbl.textContent = (data.liked ? "Liked" : "Like") + " · " + data.count;
+    } catch (e) {}
+}
+
+async function useTemplate(tid) {
+    var card = document.getElementById("tmplCard");
+    if (!card) return;
+    sdTmplModal.tid = tid;
+    sdTmplModal.pid = null;
+    if (sdTmplModal.poll) { clearInterval(sdTmplModal.poll); sdTmplModal.poll = null; }
+    if (!sdTmplModal.open) openTemplateModal();
+    card.innerHTML = sdLoadingHTML();
+    try {
+        var res = await apiFetch("/api/templates/" + encodeURIComponent(tid) + "/use",
+            { method: "POST", credentials: "include", headers: authHeaders(), timeoutMs: 20000 });
+        var data = await res.json();
+        if (!data || data.status !== "success") {
+            throw new Error((data && data.message) || "Couldn't start this template");
+        }
+        sdTmplModal.pid = data.project_id;
+        renderTemplateForm(data);
+    } catch (e) {
+        card.innerHTML =
+            sdEmptyHTML("Couldn't start this template", String(e && e.message || "Please try again.")) +
+            '<div style="text-align:center;margin-top:14px;"><button class="tmpl-btn ghost" onclick="closeTemplateModal()">Close</button></div>';
+    }
+}
+
+function renderTemplateForm(d) {
+    var card = document.getElementById("tmplCard");
+    if (!card) return;
+    sdTmplModal.form = d.form || [];
+    var fields = sdTmplModal.form.map(function (f) {
+        var req = f.required ? '<em>*</em>' : "";
+        var hint = f.hint ? '<span class="tmpl-hint">' + esc(f.hint) + '</span>' : "";
+        var key = esc(String(f.key));
+        var label = '<label class="tmpl-field-label">' + esc(f.label || f.key) + req + '</label>';
+        if (f.type === "text" || f.type === "textarea") {
+            var max = f.max_chars ? ' maxlength="' + f.max_chars + '"' : "";
+            if (f.type === "textarea") {
+                return '<div class="tmpl-field">' + label +
+                    '<textarea id="tmplF_' + key + '" rows="3" placeholder="' + esc(f.label || f.key) + '"></textarea>' + hint + '</div>';
+            }
+            var value = f.default ? ' value="' + esc(f.default) + '"' : "";
+            return '<div class="tmpl-field">' + label +
+                '<input type="text" id="tmplF_' + key + '" placeholder="' + esc(f.label || f.key) + '"' + max + value + '>' + hint + '</div>';
+        }
+        var accept = f.type === "video" ? "video/*" : f.type === "audio" ? "audio/*" : "image/*";
+        var optional = f.required ? "" : " · optional, falls back to the template background";
+        return '<div class="tmpl-field">' + label +
+            '<div class="tmpl-file">' +
+                '<label class="tmpl-file-btn" for="tmplFile_' + key + '">' + studioIcon("upload", 13) + ' Choose ' + esc(f.type) + '</label>' +
+                '<input type="file" id="tmplFile_' + key + '" accept="' + accept + '" onchange="tmplFilePicked(\'' + key + '\')">' +
+                '<span class="tmpl-file-name" id="tmplName_' + key + '"></span>' +
+            '</div>' +
+            '<span class="tmpl-hint">' + (f.type === "video" ? "Video" : f.type === "audio" ? "Audio" : "Photo") + optional + '</span>' +
+        '</div>';
+    }).join("");
+    card.innerHTML =
+        '<button class="tmpl-x" onclick="closeTemplateModal()">×</button>' +
+        '<div class="tmpl-step-title">' + studioIcon("wand-2", 15) + ' Fill in ' + esc(d.name) + '</div>' +
+        '<div class="tmpl-stats" style="margin-bottom:18px;">' +
+            '<span class="tmpl-stat">' + studioIcon("clock", 12) + ' ' + tmplDur(d.duration) + '</span>' +
+            '<span class="tmpl-stat">' + studioIcon("ratio", 12) + ' ' + esc(d.aspect_ratio || "9:16") + '</span>' +
+            '<span class="tmpl-stat">' + studioIcon("layers", 12) + ' ' + (d.media_required || 0) + ' media slots</span>' +
+        '</div>' +
+        '<form class="tmpl-form" onsubmit="event.preventDefault();tmplSubmit(\'' + sdTmplModal.pid + '\')">' +
+            fields +
+            '<button class="tmpl-btn primary" type="submit" id="tmplSubmitBtn" style="margin-top:6px;justify-content:center;">' + studioIcon("play", 14) + ' Render Video</button>' +
+            '<p class="tmpl-hint" id="tmplFormError" style="color:#fb7185;min-height:16px;"></p>' +
+        '</form>' +
+        '<div class="tmpl-divider"></div>' +
+        '<div id="tmplRenderArea"></div>';
+    studioRefreshIcons();
+}
+
+function tmplFilePicked(key) {
+    var inp = document.getElementById("tmplFile_" + key);
+    var nameEl = document.getElementById("tmplName_" + key);
+    if (inp && nameEl) nameEl.textContent = inp.files && inp.files.length ? inp.files[0].name : "";
+}
+
+async function tmplSubmit(pid) {
+    var form = new FormData();
+    var missing = [];
+    (sdTmplModal.form || []).forEach(function (f) {
+        var key = String(f.key);
+        if (f.type === "text" || f.type === "textarea") {
+            var inp = document.getElementById("tmplF_" + key);
+            var value = inp ? (inp.value || "").trim() : "";
+            if (f.required && !value) missing.push(f.label || key);
+            form.append(key, value);
+        } else {
+            var inp = document.getElementById("tmplFile_" + key);
+            if (inp && inp.files && inp.files.length) form.append(key, inp.files[0]);
+            else if (f.required) missing.push(f.label || key);
+        }
+    });
+    if (missing.length) {
+        var err = document.getElementById("tmplFormError");
+        if (err) err.textContent = "Missing required: " + missing.join(", ");
+        return;
+    }
+    var btn = document.getElementById("tmplSubmitBtn");
+    if (btn) btn.disabled = true;
+    var area = document.getElementById("tmplRenderArea");
+    if (area) area.innerHTML = sdLoadingHTML();
+    try {
+        var res = await apiFetch("/api/templates/projects/" + encodeURIComponent(pid) + "/render",
+            { method: "POST", credentials: "include", body: form, headers: authHeaders(), timeoutMs: 60000 });
+        var data = await res.json();
+        if (!data || data.status !== "success") {
+            throw new Error((data && data.message) || "Render could not start");
+        }
+        startTmplPolling(pid);
+    } catch (e) {
+        var err2 = document.getElementById("tmplFormError");
+        if (err2) err2.textContent = String(e && e.message || "Something went wrong.");
+        if (btn) btn.disabled = false;
+        if (area) area.innerHTML = "";
+    }
+}
+
+function startTmplPolling(pid) {
+    var area = document.getElementById("tmplRenderArea");
+    if (!area) return;
+    if (sdTmplModal.poll) clearInterval(sdTmplModal.poll);
+    area.innerHTML =
+        '<div class="tmpl-step-title">' + studioIcon("loader", 15) + ' Rendering your video</div>' +
+        '<div class="tmpl-progress"><div class="tmpl-progress-fill" id="tmplProgFill"></div></div>' +
+        '<div class="tmpl-render-status"><span id="tmplProgPct">0%</span><span id="tmplProgLog">Preparing…</span></div>';
+    var tick = async function () {
+        var res = null, data = null;
+        try {
+            res = await apiFetch("/api/templates/projects/" + encodeURIComponent(pid), { credentials: "include", headers: authHeaders(), timeoutMs: 15000 });
+            data = await res.json();
+        } catch (e) { return; }
+        var proj = data && data.project;
+        if (!proj) return;
+        var fill = document.getElementById("tmplProgFill");
+        var pct = document.getElementById("tmplProgPct");
+        var log = document.getElementById("tmplProgLog");
+        var p = Math.round((proj.progress || 0) * 100);
+        if (fill) fill.style.width = p + "%";
+        if (pct) pct.textContent = p + "%";
+        if (log && proj.log && proj.log.length) log.textContent = proj.log[proj.log.length - 1];
+        if (proj.status === "done" && proj.final_video) {
+            if (sdTmplModal.poll) { clearInterval(sdTmplModal.poll); sdTmplModal.poll = null; }
+            tmplShowResult(proj);
+        } else if (proj.status === "failed") {
+            if (sdTmplModal.poll) { clearInterval(sdTmplModal.poll); sdTmplModal.poll = null; }
+            tmplShowError(proj.error || "Render failed. Please try again.");
+        }
+    };
+    tick();
+    sdTmplModal.poll = setInterval(tick, 2000);
+}
+
+function tmplShowResult(proj) {
+    var area = document.getElementById("tmplRenderArea");
+    if (!area) return;
+    var url = esc(proj.final_video);
+    area.innerHTML =
+        '<div class="tmpl-step-title">' + studioIcon("check-circle-2", 15) + ' Your video is ready</div>' +
+        '<div class="tmpl-result">' +
+            '<video src="' + url + '" controls playsinline autoplay muted loop></video>' +
+            '<div style="display:flex;gap:10px;flex-wrap:wrap;">' +
+                '<a class="tmpl-btn primary" href="' + url + '" download>' + studioIcon("download", 14) + ' Download MP4</a>' +
+                '<button class="tmpl-btn ghost" onclick="useTemplate(\'' + esc(String(sdTmplModal.tid)) + '\')">' + studioIcon("refresh-cw", 14) + ' Re-edit</button>' +
+                '<button class="tmpl-btn ghost" onclick="closeTemplateModal()">' + studioIcon("x", 14) + ' Done</button>' +
+            '</div>' +
+        '</div>';
+    studioRefreshIcons();
+}
+
+function tmplShowError(msg) {
+    var area = document.getElementById("tmplRenderArea");
+    if (!area) return;
+    area.innerHTML =
+        '<div class="tmpl-step-title" style="color:#fb7185;">' + studioIcon("alert-triangle", 15) + ' Render failed</div>' +
+        '<p class="tmpl-hint" style="color:#fb7185;">' + esc(msg) + '</p>' +
+        '<button class="tmpl-btn primary" onclick="tmplSubmit(\'' + sdTmplModal.pid + '\')">' + studioIcon("refresh-cw", 14) + ' Try again</button>';
     studioRefreshIcons();
 }
 

@@ -1,0 +1,262 @@
+{
+  "schema_version": 1,
+  "id": "bcard_contact",
+  "name": "Contact Card",
+  "category": "Business Cards",
+  "tags": [
+    "business-cards",
+    "template"
+  ],
+  "description": "Animated digital business card.",
+  "icon": "id-card",
+  "grad": [
+    "#64748b",
+    "#334155"
+  ],
+  "thumbnail": "/static/templates/bcard_contact/thumbnail.webp",
+  "preview": "/static/templates/bcard_contact/preview.mp4",
+  "duration": 11.0,
+  "aspect_ratio": "9:16",
+  "width": 1080,
+  "height": 1920,
+  "fps": 30,
+  "popularity": 87,
+  "likes": 13240,
+  "downloads": 6110,
+  "edit_time_min": 3,
+  "media_required": 0,
+  "placeholders": [
+    {
+      "key": "LOGO",
+      "label": "Logo",
+      "type": "image",
+      "required": false,
+      "hint": ""
+    },
+    {
+      "key": "NAME",
+      "label": "Full name",
+      "type": "text",
+      "required": true,
+      "max_chars": 40,
+      "hint": ""
+    },
+    {
+      "key": "PRODUCT_NAME",
+      "label": "Job title / company",
+      "type": "text",
+      "required": true,
+      "max_chars": 50,
+      "hint": ""
+    },
+    {
+      "key": "LOCATION",
+      "label": "Contact detail",
+      "type": "text",
+      "required": false,
+      "max_chars": 60,
+      "hint": ""
+    }
+  ],
+  "music": {
+    "bpm": 110,
+    "tracks": [
+      {
+        "src": "",
+        "placeholder": "MUSIC",
+        "start": 0.0,
+        "volume": 0.85,
+        "fade_in": 0.2,
+        "fade_out": 0.5
+      }
+    ]
+  },
+  "beat_markers": [
+    0.0,
+    0.545,
+    1.091,
+    1.636,
+    2.182,
+    2.727,
+    3.273,
+    3.818,
+    4.364,
+    4.909,
+    5.455,
+    6.0,
+    6.545,
+    7.091,
+    7.636,
+    8.182,
+    8.727,
+    9.273,
+    9.818,
+    10.364,
+    10.909,
+    11.0
+  ],
+  "timeline": [
+    {
+      "media": "bg",
+      "start": 0.0,
+      "duration": 4.0,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.0,
+        "to": 1.1,
+        "ease": "linear"
+      },
+      "filters": [],
+      "effects": [],
+      "text_layers": [
+        {
+          "key": "NAME",
+          "start": 0.4,
+          "duration": 3.2,
+          "x": 0.5,
+          "y": 0.34,
+          "size": 76,
+          "align": "center",
+          "color": "#ffffff",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "fade-up",
+          "uppercase": true,
+          "max_chars": 0
+        },
+        {
+          "key": "PRODUCT_NAME",
+          "start": 1.2,
+          "duration": 2.4,
+          "x": 0.5,
+          "y": 0.48,
+          "size": 40,
+          "align": "center",
+          "color": "#94a3b8",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "fade-up",
+          "uppercase": true,
+          "max_chars": 0
+        }
+      ],
+      "stickers": [
+        {
+          "src": "/static/assets/stickers/sticker_0153.png",
+          "x": 0.5,
+          "y": 0.12,
+          "scale": 0.22,
+          "rotation": 0,
+          "start": 0.0,
+          "duration": 0.0,
+          "animation": "none",
+          "blend": "normal"
+        }
+      ],
+      "transition_out": {
+        "type": "fade",
+        "duration": 0.5
+      },
+      "background": {
+        "type": "gradient",
+        "from": "#0b1020",
+        "to": "#1a1140",
+        "angle": 160
+      }
+    },
+    {
+      "media": "bg",
+      "start": 0.0,
+      "duration": 4.0,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.0,
+        "to": 1.18,
+        "ease": "ease-in-out"
+      },
+      "filters": [],
+      "effects": [],
+      "text_layers": [
+        {
+          "key": "PRODUCT_NAME",
+          "start": 0.3,
+          "duration": 3.3,
+          "x": 0.5,
+          "y": 0.38,
+          "size": 56,
+          "align": "center",
+          "color": "#93c5fd",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "fade-up",
+          "uppercase": true,
+          "max_chars": 0
+        }
+      ],
+      "stickers": [],
+      "transition_out": {
+        "type": "fade",
+        "duration": 0.5
+      },
+      "background": {
+        "type": "gradient",
+        "from": "#0a1128",
+        "to": "#1e1b4b",
+        "angle": 160
+      }
+    },
+    {
+      "media": "bg",
+      "start": 0.0,
+      "duration": 4.0,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.0,
+        "to": 1.18,
+        "ease": "ease-in-out"
+      },
+      "filters": [],
+      "effects": [],
+      "text_layers": [
+        {
+          "key": "LOCATION",
+          "start": 0.3,
+          "duration": 3.4,
+          "x": 0.5,
+          "y": 0.44,
+          "size": 40,
+          "align": "center",
+          "color": "#cbd5e1",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "fade-up",
+          "uppercase": false,
+          "max_chars": 0
+        }
+      ],
+      "stickers": [],
+      "transition_out": {
+        "type": "none",
+        "duration": 0.0
+      },
+      "background": {
+        "type": "gradient",
+        "from": "#050505",
+        "to": "#181818",
+        "angle": 150
+      }
+    }
+  ],
+  "overlays": []
+}

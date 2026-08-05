@@ -1,0 +1,289 @@
+{
+  "schema_version": 1,
+  "id": "wed_slideshow",
+  "name": "Wedding Slideshow",
+  "category": "Wedding",
+  "tags": [
+    "wedding",
+    "template"
+  ],
+  "description": "Golden-hour photo slideshow.",
+  "icon": "camera",
+  "grad": [
+    "#fda4af",
+    "#f472b6"
+  ],
+  "thumbnail": "/static/templates/wed_slideshow/thumbnail.webp",
+  "preview": "/static/templates/wed_slideshow/preview.mp4",
+  "duration": 17.6,
+  "aspect_ratio": "16:9",
+  "width": 1080,
+  "height": 1920,
+  "fps": 30,
+  "popularity": 94,
+  "likes": 27890,
+  "downloads": 13210,
+  "edit_time_min": 7,
+  "media_required": 3,
+  "placeholders": [
+    {
+      "key": "PHOTO_1",
+      "label": "Photo 1",
+      "type": "image",
+      "required": true,
+      "hint": ""
+    },
+    {
+      "key": "PHOTO_2",
+      "label": "Photo 2",
+      "type": "image",
+      "required": true,
+      "hint": ""
+    },
+    {
+      "key": "PHOTO_3",
+      "label": "Photo 3",
+      "type": "image",
+      "required": true,
+      "hint": ""
+    },
+    {
+      "key": "NAME",
+      "label": "Names",
+      "type": "text",
+      "required": true,
+      "max_chars": 40,
+      "hint": ""
+    }
+  ],
+  "music": {
+    "bpm": 96,
+    "tracks": [
+      {
+        "src": "",
+        "placeholder": "MUSIC",
+        "start": 0.0,
+        "volume": 0.85,
+        "fade_in": 0.2,
+        "fade_out": 0.5
+      }
+    ]
+  },
+  "beat_markers": [
+    0.0,
+    0.625,
+    1.25,
+    1.875,
+    2.5,
+    3.125,
+    3.75,
+    4.375,
+    5.0,
+    5.625,
+    6.25,
+    6.875,
+    7.5,
+    8.125,
+    8.75,
+    9.375,
+    10.0,
+    10.625,
+    11.25,
+    11.875,
+    12.5,
+    13.125,
+    13.75,
+    14.375,
+    15.0,
+    15.625,
+    16.25,
+    16.875,
+    17.5,
+    17.6
+  ],
+  "timeline": [
+    {
+      "media": "PHOTO_1",
+      "start": 0.0,
+      "duration": 4.0,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.0,
+        "to": 1.18,
+        "ease": "ease-in-out"
+      },
+      "filters": [
+        {
+          "type": "eq",
+          "contrast": 1.05,
+          "saturation": 1.12,
+          "brightness": 1.01
+        }
+      ],
+      "effects": [
+        {
+          "type": "vignette",
+          "amount": 0.22
+        }
+      ],
+      "text_layers": [],
+      "stickers": [],
+      "transition_out": {
+        "type": "dissolve",
+        "duration": 0.6
+      }
+    },
+    {
+      "media": "PHOTO_2",
+      "start": 0.0,
+      "duration": 4.0,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.05,
+        "to": 1.22,
+        "ease": "ease-in-out"
+      },
+      "filters": [
+        {
+          "type": "eq",
+          "contrast": 1.05,
+          "saturation": 1.12,
+          "brightness": 1.01
+        }
+      ],
+      "effects": [
+        {
+          "type": "vignette",
+          "amount": 0.22
+        }
+      ],
+      "text_layers": [],
+      "stickers": [],
+      "transition_out": {
+        "type": "dissolve",
+        "duration": 0.6
+      }
+    },
+    {
+      "media": "PHOTO_3",
+      "start": 0.0,
+      "duration": 4.0,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.18,
+        "to": 1.0,
+        "ease": "ease-in-out"
+      },
+      "filters": [
+        {
+          "type": "eq",
+          "contrast": 1.05,
+          "saturation": 1.12,
+          "brightness": 1.01
+        }
+      ],
+      "effects": [
+        {
+          "type": "vignette",
+          "amount": 0.22
+        }
+      ],
+      "text_layers": [],
+      "stickers": [],
+      "transition_out": {
+        "type": "dissolve",
+        "duration": 0.6
+      }
+    },
+    {
+      "media": "PHOTO_1",
+      "start": 0.0,
+      "duration": 4.0,
+      "fit": "cover",
+      "motion": {
+        "type": "pan",
+        "dx": 0.06,
+        "dy": 0.0,
+        "zoom": 1.15
+      },
+      "filters": [
+        {
+          "type": "eq",
+          "contrast": 1.05,
+          "saturation": 1.12,
+          "brightness": 1.01
+        }
+      ],
+      "effects": [
+        {
+          "type": "vignette",
+          "amount": 0.22
+        }
+      ],
+      "text_layers": [],
+      "stickers": [],
+      "transition_out": {
+        "type": "dissolve",
+        "duration": 0.6
+      }
+    },
+    {
+      "media": "bg",
+      "start": 0.0,
+      "duration": 4.0,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.0,
+        "to": 1.18,
+        "ease": "ease-in-out"
+      },
+      "filters": [],
+      "effects": [],
+      "text_layers": [
+        {
+          "key": "NAME",
+          "start": 0.3,
+          "duration": 3.4,
+          "x": 0.5,
+          "y": 0.42,
+          "size": 72,
+          "align": "center",
+          "color": "#ffffff",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "fade-up",
+          "uppercase": true,
+          "max_chars": 0
+        }
+      ],
+      "stickers": [],
+      "transition_out": {
+        "type": "none",
+        "duration": 0.0
+      },
+      "background": {
+        "type": "gradient",
+        "from": "#2a0a14",
+        "to": "#4c1220",
+        "angle": 160
+      }
+    }
+  ],
+  "overlays": [
+    {
+      "type": "gradientbar",
+      "from": "rgba(0,0,0,0)",
+      "to": "rgba(0,0,0,0.55)",
+      "position": "bottom",
+      "height": 0.22,
+      "start": 0.0,
+      "duration": 0.0
+    }
+  ]
+}

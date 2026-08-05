@@ -1,0 +1,239 @@
+{
+  "schema_version": 1,
+  "id": "love_valentine",
+  "name": "Valentine Card",
+  "category": "Love",
+  "tags": [
+    "love",
+    "template"
+  ],
+  "description": "Soft romantic card with pulse accents.",
+  "icon": "heart-pulse",
+  "grad": [
+    "#f43f5e",
+    "#fb7185"
+  ],
+  "thumbnail": "/static/templates/love_valentine/thumbnail.webp",
+  "preview": "/static/templates/love_valentine/preview.mp4",
+  "duration": 10.0,
+  "aspect_ratio": "9:16",
+  "width": 1080,
+  "height": 1920,
+  "fps": 30,
+  "popularity": 91,
+  "likes": 22940,
+  "downloads": 10410,
+  "edit_time_min": 3,
+  "media_required": 0,
+  "placeholders": [
+    {
+      "key": "TITLE",
+      "label": "Love note",
+      "type": "text",
+      "required": true,
+      "max_chars": 60,
+      "hint": ""
+    },
+    {
+      "key": "NAME",
+      "label": "To",
+      "type": "text",
+      "required": false,
+      "max_chars": 30,
+      "hint": ""
+    },
+    {
+      "key": "SUBTITLE",
+      "label": "Extra line",
+      "type": "text",
+      "required": false,
+      "hint": ""
+    }
+  ],
+  "music": {
+    "bpm": 104,
+    "tracks": [
+      {
+        "src": "",
+        "placeholder": "MUSIC",
+        "start": 0.0,
+        "volume": 0.85,
+        "fade_in": 0.2,
+        "fade_out": 0.5
+      }
+    ]
+  },
+  "beat_markers": [
+    0.0,
+    0.577,
+    1.154,
+    1.731,
+    2.308,
+    2.885,
+    3.462,
+    4.038,
+    4.615,
+    5.192,
+    5.769,
+    6.346,
+    6.923,
+    7.5,
+    8.077,
+    8.654,
+    9.231,
+    9.808,
+    10.0
+  ],
+  "timeline": [
+    {
+      "media": "bg",
+      "start": 0.0,
+      "duration": 3.5,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.0,
+        "to": 1.1,
+        "ease": "linear"
+      },
+      "filters": [],
+      "effects": [],
+      "text_layers": [
+        {
+          "key": "TITLE",
+          "start": 0.3,
+          "duration": 2.9,
+          "x": 0.5,
+          "y": 0.38,
+          "size": 72,
+          "align": "center",
+          "color": "#ffffff",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "pop",
+          "uppercase": true,
+          "max_chars": 0
+        },
+        {
+          "key": "NAME",
+          "start": 0.9,
+          "duration": 2.3,
+          "x": 0.5,
+          "y": 0.52,
+          "size": 42,
+          "align": "center",
+          "color": "#fecdd3",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "fade-up",
+          "uppercase": true,
+          "max_chars": 0
+        }
+      ],
+      "stickers": [],
+      "transition_out": {
+        "type": "fade",
+        "duration": 0.5
+      },
+      "background": {
+        "type": "gradient",
+        "from": "#2a0a14",
+        "to": "#4c1220",
+        "angle": 160
+      }
+    },
+    {
+      "media": "bg",
+      "start": 0.0,
+      "duration": 3.5,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.0,
+        "to": 1.18,
+        "ease": "ease-in-out"
+      },
+      "filters": [],
+      "effects": [],
+      "text_layers": [
+        {
+          "key": "SUBTITLE",
+          "start": 0.3,
+          "duration": 2.9,
+          "x": 0.5,
+          "y": 0.4,
+          "size": 56,
+          "align": "center",
+          "color": "#fda4af",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "fade-up",
+          "uppercase": false,
+          "max_chars": 0
+        }
+      ],
+      "stickers": [],
+      "transition_out": {
+        "type": "fade",
+        "duration": 0.5
+      },
+      "background": {
+        "type": "gradient",
+        "from": "#0b1020",
+        "to": "#1a1140",
+        "angle": 160
+      }
+    },
+    {
+      "media": "bg",
+      "start": 0.0,
+      "duration": 4.0,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.0,
+        "to": 1.18,
+        "ease": "ease-in-out"
+      },
+      "filters": [],
+      "effects": [],
+      "text_layers": [
+        {
+          "key": "SUBTITLE",
+          "start": 0.3,
+          "duration": 3.4,
+          "x": 0.5,
+          "y": 0.42,
+          "size": 48,
+          "align": "center",
+          "color": "#fff1f2",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "fade-up",
+          "uppercase": false,
+          "max_chars": 0
+        }
+      ],
+      "stickers": [],
+      "transition_out": {
+        "type": "none",
+        "duration": 0.0
+      },
+      "background": {
+        "type": "gradient",
+        "from": "#2a0a14",
+        "to": "#4c1220",
+        "angle": 160
+      }
+    }
+  ],
+  "overlays": []
+}

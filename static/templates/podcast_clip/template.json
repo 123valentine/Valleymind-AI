@@ -1,0 +1,264 @@
+{
+  "schema_version": 1,
+  "id": "podcast_clip",
+  "name": "Podcast Clip",
+  "category": "Podcast",
+  "tags": [
+    "podcast",
+    "template"
+  ],
+  "description": "Hook clip with highlight captions.",
+  "icon": "mic",
+  "grad": [
+    "#14b8a6",
+    "#0d9488"
+  ],
+  "thumbnail": "/static/templates/podcast_clip/thumbnail.webp",
+  "preview": "/static/templates/podcast_clip/preview.mp4",
+  "duration": 13.5,
+  "aspect_ratio": "9:16",
+  "width": 1080,
+  "height": 1920,
+  "fps": 30,
+  "popularity": 91,
+  "likes": 22450,
+  "downloads": 10820,
+  "edit_time_min": 5,
+  "media_required": 1,
+  "placeholders": [
+    {
+      "key": "VIDEO_1",
+      "label": "Podcast clip",
+      "type": "video",
+      "required": true,
+      "hint": ""
+    },
+    {
+      "key": "PHOTO_1",
+      "label": "Episode art",
+      "type": "image",
+      "required": false,
+      "hint": ""
+    },
+    {
+      "key": "TITLE",
+      "label": "Hot take",
+      "type": "text",
+      "required": true,
+      "max_chars": 60,
+      "hint": ""
+    },
+    {
+      "key": "SUBTITLE",
+      "label": "Episode name",
+      "type": "text",
+      "required": false,
+      "max_chars": 90,
+      "hint": ""
+    }
+  ],
+  "music": {
+    "bpm": 118,
+    "tracks": [
+      {
+        "src": "",
+        "placeholder": "MUSIC",
+        "start": 0.0,
+        "volume": 0.85,
+        "fade_in": 0.2,
+        "fade_out": 0.5
+      }
+    ]
+  },
+  "beat_markers": [
+    0.0,
+    0.508,
+    1.017,
+    1.525,
+    2.034,
+    2.542,
+    3.051,
+    3.559,
+    4.068,
+    4.576,
+    5.085,
+    5.593,
+    6.102,
+    6.61,
+    7.119,
+    7.627,
+    8.136,
+    8.644,
+    9.153,
+    9.661,
+    10.169,
+    10.678,
+    11.186,
+    11.695,
+    12.203,
+    12.712,
+    13.22,
+    13.5
+  ],
+  "timeline": [
+    {
+      "media": "VIDEO_1",
+      "start": 0.0,
+      "duration": 4.0,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.0,
+        "to": 1.18,
+        "ease": "ease-in-out"
+      },
+      "filters": [
+        {
+          "type": "eq",
+          "contrast": 1.0,
+          "saturation": 0.85,
+          "brightness": 1.0
+        }
+      ],
+      "effects": [
+        {
+          "type": "vignette",
+          "amount": 0.35
+        }
+      ],
+      "text_layers": [
+        {
+          "key": "TITLE",
+          "start": 0.2,
+          "duration": 3.6,
+          "x": 0.5,
+          "y": 0.16,
+          "size": 58,
+          "align": "center",
+          "color": "#ffffff",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "slide-left",
+          "uppercase": true,
+          "max_chars": 0
+        }
+      ],
+      "stickers": [],
+      "transition_out": {
+        "type": "fade",
+        "duration": 0.5
+      }
+    },
+    {
+      "media": "PHOTO_1",
+      "start": 0.0,
+      "duration": 4.0,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.05,
+        "to": 1.22,
+        "ease": "ease-in-out"
+      },
+      "filters": [
+        {
+          "type": "eq",
+          "contrast": 1.0,
+          "saturation": 0.85,
+          "brightness": 1.0
+        }
+      ],
+      "effects": [
+        {
+          "type": "vignette",
+          "amount": 0.22
+        }
+      ],
+      "text_layers": [],
+      "stickers": [],
+      "transition_out": {
+        "type": "fade",
+        "duration": 0.5
+      }
+    },
+    {
+      "media": "VIDEO_1",
+      "start": 0.0,
+      "duration": 3.5,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.18,
+        "to": 1.0,
+        "ease": "ease-in-out"
+      },
+      "filters": [
+        {
+          "type": "eq",
+          "contrast": 1.0,
+          "saturation": 0.85,
+          "brightness": 1.0
+        }
+      ],
+      "effects": [
+        {
+          "type": "vignette",
+          "amount": 0.35
+        }
+      ],
+      "text_layers": [],
+      "stickers": [],
+      "transition_out": {
+        "type": "fade",
+        "duration": 0.5
+      }
+    },
+    {
+      "media": "bg",
+      "start": 0.0,
+      "duration": 3.5,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.0,
+        "to": 1.18,
+        "ease": "ease-in-out"
+      },
+      "filters": [],
+      "effects": [],
+      "text_layers": [
+        {
+          "key": "SUBTITLE",
+          "start": 0.3,
+          "duration": 2.9,
+          "x": 0.5,
+          "y": 0.42,
+          "size": 44,
+          "align": "center",
+          "color": "#99f6e4",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "fade-up",
+          "uppercase": false,
+          "max_chars": 0
+        }
+      ],
+      "stickers": [],
+      "transition_out": {
+        "type": "none",
+        "duration": 0.0
+      },
+      "background": {
+        "type": "gradient",
+        "from": "#022c22",
+        "to": "#064e3b",
+        "angle": 160
+      }
+    }
+  ],
+  "overlays": []
+}

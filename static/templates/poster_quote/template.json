@@ -1,0 +1,229 @@
+{
+  "schema_version": 1,
+  "id": "poster_quote",
+  "name": "Poster Quote",
+  "category": "Posters",
+  "tags": [
+    "posters",
+    "template"
+  ],
+  "description": "Artistic quote poster.",
+  "icon": "image",
+  "grad": [
+    "#8b5cf6",
+    "#d946ef"
+  ],
+  "thumbnail": "/static/templates/poster_quote/thumbnail.webp",
+  "preview": "/static/templates/poster_quote/preview.mp4",
+  "duration": 10.0,
+  "aspect_ratio": "4:5",
+  "width": 1080,
+  "height": 1344,
+  "fps": 30,
+  "popularity": 88,
+  "likes": 15240,
+  "downloads": 7180,
+  "edit_time_min": 3,
+  "media_required": 0,
+  "placeholders": [
+    {
+      "key": "PHOTO_1",
+      "label": "Art photo",
+      "type": "image",
+      "required": false,
+      "hint": ""
+    },
+    {
+      "key": "QUOTE",
+      "label": "Quote",
+      "type": "text",
+      "required": true,
+      "max_chars": 120,
+      "hint": ""
+    },
+    {
+      "key": "NAME",
+      "label": "Author",
+      "type": "text",
+      "required": false,
+      "max_chars": 40,
+      "hint": ""
+    }
+  ],
+  "music": {
+    "bpm": 110,
+    "tracks": [
+      {
+        "src": "",
+        "placeholder": "MUSIC",
+        "start": 0.0,
+        "volume": 0.85,
+        "fade_in": 0.2,
+        "fade_out": 0.5
+      }
+    ]
+  },
+  "beat_markers": [
+    0.0,
+    0.545,
+    1.091,
+    1.636,
+    2.182,
+    2.727,
+    3.273,
+    3.818,
+    4.364,
+    4.909,
+    5.455,
+    6.0,
+    6.545,
+    7.091,
+    7.636,
+    8.182,
+    8.727,
+    9.273,
+    9.818,
+    10.0
+  ],
+  "timeline": [
+    {
+      "media": "bg",
+      "start": 0.0,
+      "duration": 3.5,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.0,
+        "to": 1.1,
+        "ease": "linear"
+      },
+      "filters": [],
+      "effects": [],
+      "text_layers": [
+        {
+          "key": "QUOTE",
+          "start": 0.3,
+          "duration": 2.9,
+          "x": 0.5,
+          "y": 0.4,
+          "size": 56,
+          "align": "center",
+          "color": "#ffffff",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": false,
+          "font": "",
+          "animation": "fade-up",
+          "uppercase": false,
+          "max_chars": 0
+        }
+      ],
+      "stickers": [],
+      "transition_out": {
+        "type": "fade",
+        "duration": 0.5
+      },
+      "background": {
+        "type": "gradient",
+        "from": "#160b2e",
+        "to": "#2e1065",
+        "angle": 160
+      }
+    },
+    {
+      "media": "PHOTO_1",
+      "start": 0.0,
+      "duration": 4.0,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.05,
+        "to": 1.22,
+        "ease": "ease-in-out"
+      },
+      "filters": [
+        {
+          "type": "eq",
+          "contrast": 1.0,
+          "saturation": 0.85,
+          "brightness": 1.0
+        }
+      ],
+      "effects": [
+        {
+          "type": "vignette",
+          "amount": 0.22
+        }
+      ],
+      "text_layers": [
+        {
+          "key": "NAME",
+          "start": 0.3,
+          "duration": 3.4,
+          "x": 0.5,
+          "y": 0.84,
+          "size": 40,
+          "align": "center",
+          "color": "#ffffff",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "fade-up",
+          "uppercase": true,
+          "max_chars": 0
+        }
+      ],
+      "stickers": [],
+      "transition_out": {
+        "type": "fade",
+        "duration": 0.5
+      }
+    },
+    {
+      "media": "bg",
+      "start": 0.0,
+      "duration": 3.5,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.0,
+        "to": 1.18,
+        "ease": "ease-in-out"
+      },
+      "filters": [],
+      "effects": [],
+      "text_layers": [
+        {
+          "key": "QUOTE",
+          "start": 0.3,
+          "duration": 2.9,
+          "x": 0.5,
+          "y": 0.4,
+          "size": 52,
+          "align": "center",
+          "color": "#d8b4fe",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": false,
+          "font": "",
+          "animation": "fade-up",
+          "uppercase": false,
+          "max_chars": 0
+        }
+      ],
+      "stickers": [],
+      "transition_out": {
+        "type": "none",
+        "duration": 0.0
+      },
+      "background": {
+        "type": "gradient",
+        "from": "#0b1020",
+        "to": "#1a1140",
+        "angle": 160
+      }
+    }
+  ],
+  "overlays": []
+}

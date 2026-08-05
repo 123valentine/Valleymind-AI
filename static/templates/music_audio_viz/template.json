@@ -1,0 +1,194 @@
+{
+  "schema_version": 1,
+  "id": "music_audio_viz",
+  "name": "Audio Viz",
+  "category": "Music",
+  "tags": [
+    "music",
+    "template"
+  ],
+  "description": "Album cover + beat pulse visualizer.",
+  "icon": "bar-chart-3",
+  "grad": [
+    "#0ea5e9",
+    "#10b981"
+  ],
+  "thumbnail": "/static/templates/music_audio_viz/thumbnail.webp",
+  "preview": "/static/templates/music_audio_viz/preview.mp4",
+  "duration": 11.0,
+  "aspect_ratio": "1:1",
+  "width": 1080,
+  "height": 1088,
+  "fps": 30,
+  "popularity": 90,
+  "likes": 21560,
+  "downloads": 9560,
+  "edit_time_min": 3,
+  "media_required": 1,
+  "placeholders": [
+    {
+      "key": "PHOTO_1",
+      "label": "Cover art",
+      "type": "image",
+      "required": true,
+      "hint": ""
+    },
+    {
+      "key": "NAME",
+      "label": "Artist / title",
+      "type": "text",
+      "required": true,
+      "max_chars": 40,
+      "hint": ""
+    }
+  ],
+  "music": {
+    "bpm": 120,
+    "tracks": [
+      {
+        "src": "",
+        "placeholder": "MUSIC",
+        "start": 0.0,
+        "volume": 0.85,
+        "fade_in": 0.2,
+        "fade_out": 0.5
+      }
+    ]
+  },
+  "beat_markers": [
+    0.0,
+    0.5,
+    1.0,
+    1.5,
+    2.0,
+    2.5,
+    3.0,
+    3.5,
+    4.0,
+    4.5,
+    5.0,
+    5.5,
+    6.0,
+    6.5,
+    7.0,
+    7.5,
+    8.0,
+    8.5,
+    9.0,
+    9.5,
+    10.0,
+    10.5,
+    11.0
+  ],
+  "timeline": [
+    {
+      "media": "PHOTO_1",
+      "start": 0.0,
+      "duration": 4.0,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.0,
+        "to": 1.18,
+        "ease": "ease-in-out"
+      },
+      "filters": [
+        {
+          "type": "eq",
+          "contrast": 1.08,
+          "saturation": 1.25,
+          "brightness": 0.99
+        }
+      ],
+      "effects": [
+        {
+          "type": "vignette",
+          "amount": 0.22
+        }
+      ],
+      "text_layers": [],
+      "stickers": [],
+      "transition_out": {
+        "type": "fade",
+        "duration": 0.5
+      }
+    },
+    {
+      "media": "bg",
+      "start": 0.0,
+      "duration": 4.0,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.0,
+        "to": 1.1,
+        "ease": "linear"
+      },
+      "filters": [],
+      "effects": [],
+      "text_layers": [
+        {
+          "key": "NAME",
+          "start": 0.3,
+          "duration": 3.4,
+          "x": 0.5,
+          "y": 0.4,
+          "size": 64,
+          "align": "center",
+          "color": "#ffffff",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "fade-up",
+          "uppercase": true,
+          "max_chars": 0
+        }
+      ],
+      "stickers": [],
+      "transition_out": {
+        "type": "fade",
+        "duration": 0.5
+      },
+      "background": {
+        "type": "gradient",
+        "from": "#06121e",
+        "to": "#083344",
+        "angle": 160
+      }
+    },
+    {
+      "media": "PHOTO_1",
+      "start": 0.0,
+      "duration": 4.0,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.18,
+        "to": 1.0,
+        "ease": "ease-in-out"
+      },
+      "filters": [
+        {
+          "type": "eq",
+          "contrast": 1.08,
+          "saturation": 1.25,
+          "brightness": 0.99
+        }
+      ],
+      "effects": [
+        {
+          "type": "vignette",
+          "amount": 0.22
+        }
+      ],
+      "text_layers": [],
+      "stickers": [],
+      "transition_out": {
+        "type": "none",
+        "duration": 0.0
+      }
+    }
+  ],
+  "overlays": []
+}

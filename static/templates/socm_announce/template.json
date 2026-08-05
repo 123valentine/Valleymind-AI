@@ -1,0 +1,246 @@
+{
+  "schema_version": 1,
+  "id": "socm_announce",
+  "name": "Announcement",
+  "category": "Social Media Posts",
+  "tags": [
+    "social-media-posts",
+    "template"
+  ],
+  "description": "Scroll-stopping announcement card.",
+  "icon": "megaphone",
+  "grad": [
+    "#8b5cf6",
+    "#ec4899"
+  ],
+  "thumbnail": "/static/templates/socm_announce/thumbnail.webp",
+  "preview": "/static/templates/socm_announce/preview.mp4",
+  "duration": 11.0,
+  "aspect_ratio": "9:16",
+  "width": 1080,
+  "height": 1920,
+  "fps": 30,
+  "popularity": 92,
+  "likes": 21940,
+  "downloads": 10380,
+  "edit_time_min": 3,
+  "media_required": 0,
+  "placeholders": [
+    {
+      "key": "TITLE",
+      "label": "Announcement",
+      "type": "text",
+      "required": true,
+      "max_chars": 60,
+      "hint": ""
+    },
+    {
+      "key": "SUBTITLE",
+      "label": "Details",
+      "type": "text",
+      "required": false,
+      "max_chars": 90,
+      "hint": ""
+    },
+    {
+      "key": "BUTTON_TEXT",
+      "label": "Button text",
+      "type": "text",
+      "required": false,
+      "max_chars": 24,
+      "default_value": "Learn more",
+      "hint": ""
+    }
+  ],
+  "music": {
+    "bpm": 122,
+    "tracks": [
+      {
+        "src": "",
+        "placeholder": "MUSIC",
+        "start": 0.0,
+        "volume": 0.85,
+        "fade_in": 0.2,
+        "fade_out": 0.5
+      }
+    ]
+  },
+  "beat_markers": [
+    0.0,
+    0.492,
+    0.984,
+    1.475,
+    1.967,
+    2.459,
+    2.951,
+    3.443,
+    3.934,
+    4.426,
+    4.918,
+    5.41,
+    5.902,
+    6.393,
+    6.885,
+    7.377,
+    7.869,
+    8.361,
+    8.852,
+    9.344,
+    9.836,
+    10.328,
+    10.82,
+    11.0
+  ],
+  "timeline": [
+    {
+      "media": "bg",
+      "start": 0.0,
+      "duration": 4.0,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.0,
+        "to": 1.1,
+        "ease": "linear"
+      },
+      "filters": [],
+      "effects": [],
+      "text_layers": [
+        {
+          "key": "TITLE",
+          "start": 0.3,
+          "duration": 3.3,
+          "x": 0.5,
+          "y": 0.34,
+          "size": 92,
+          "align": "center",
+          "color": "#ffffff",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "pop",
+          "uppercase": true,
+          "max_chars": 0
+        }
+      ],
+      "stickers": [],
+      "transition_out": {
+        "type": "fade",
+        "duration": 0.5
+      },
+      "background": {
+        "type": "gradient",
+        "from": "#160b2e",
+        "to": "#2e1065",
+        "angle": 160
+      }
+    },
+    {
+      "media": "bg",
+      "start": 0.0,
+      "duration": 4.0,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.0,
+        "to": 1.18,
+        "ease": "ease-in-out"
+      },
+      "filters": [],
+      "effects": [],
+      "text_layers": [
+        {
+          "key": "SUBTITLE",
+          "start": 0.3,
+          "duration": 3.3,
+          "x": 0.5,
+          "y": 0.4,
+          "size": 52,
+          "align": "center",
+          "color": "#c4b5fd",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "fade-up",
+          "uppercase": false,
+          "max_chars": 0
+        },
+        {
+          "key": "BUTTON_TEXT",
+          "start": 1.8,
+          "duration": 1.8,
+          "x": 0.5,
+          "y": 0.56,
+          "size": 44,
+          "align": "center",
+          "color": "#ffffff",
+          "stroke": "#8b5cf6",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "pop",
+          "uppercase": true,
+          "max_chars": 0
+        }
+      ],
+      "stickers": [],
+      "transition_out": {
+        "type": "fade",
+        "duration": 0.5
+      },
+      "background": {
+        "type": "gradient",
+        "from": "#0b1020",
+        "to": "#1a1140",
+        "angle": 160
+      }
+    },
+    {
+      "media": "bg",
+      "start": 0.0,
+      "duration": 4.0,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.0,
+        "to": 1.18,
+        "ease": "ease-in-out"
+      },
+      "filters": [],
+      "effects": [],
+      "text_layers": [
+        {
+          "key": "TITLE",
+          "start": 0.3,
+          "duration": 3.4,
+          "x": 0.5,
+          "y": 0.44,
+          "size": 64,
+          "align": "center",
+          "color": "#ffffff",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "fade-up",
+          "uppercase": true,
+          "max_chars": 0
+        }
+      ],
+      "stickers": [],
+      "transition_out": {
+        "type": "none",
+        "duration": 0.0
+      },
+      "background": {
+        "type": "gradient",
+        "from": "#2a0a14",
+        "to": "#4c1220",
+        "angle": 160
+      }
+    }
+  ],
+  "overlays": []
+}

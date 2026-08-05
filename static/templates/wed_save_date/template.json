@@ -1,0 +1,292 @@
+{
+  "schema_version": 1,
+  "id": "wed_save_date",
+  "name": "Save The Date",
+  "category": "Wedding",
+  "tags": [
+    "wedding",
+    "template"
+  ],
+  "description": "Romantic save-the-date reveal.",
+  "icon": "heart",
+  "grad": [
+    "#fb7185",
+    "#fda4af"
+  ],
+  "thumbnail": "/static/templates/wed_save_date/thumbnail.webp",
+  "preview": "/static/templates/wed_save_date/preview.mp4",
+  "duration": 12.5,
+  "aspect_ratio": "9:16",
+  "width": 1080,
+  "height": 1920,
+  "fps": 30,
+  "popularity": 95,
+  "likes": 31240,
+  "downloads": 14760,
+  "edit_time_min": 5,
+  "media_required": 1,
+  "placeholders": [
+    {
+      "key": "PHOTO_1",
+      "label": "Couple photo",
+      "type": "image",
+      "required": true,
+      "hint": ""
+    },
+    {
+      "key": "NAME",
+      "label": "Couple names",
+      "type": "text",
+      "required": true,
+      "max_chars": 40,
+      "hint": ""
+    },
+    {
+      "key": "DATE",
+      "label": "Wedding date",
+      "type": "text",
+      "required": true,
+      "max_chars": 30,
+      "hint": ""
+    },
+    {
+      "key": "LOCATION",
+      "label": "Venue",
+      "type": "text",
+      "required": false,
+      "max_chars": 40,
+      "hint": ""
+    }
+  ],
+  "music": {
+    "bpm": 100,
+    "tracks": [
+      {
+        "src": "",
+        "placeholder": "MUSIC",
+        "start": 0.0,
+        "volume": 0.85,
+        "fade_in": 0.2,
+        "fade_out": 0.5
+      }
+    ]
+  },
+  "beat_markers": [
+    0.0,
+    0.6,
+    1.2,
+    1.8,
+    2.4,
+    3.0,
+    3.6,
+    4.2,
+    4.8,
+    5.4,
+    6.0,
+    6.6,
+    7.2,
+    7.8,
+    8.4,
+    9.0,
+    9.6,
+    10.2,
+    10.8,
+    11.4,
+    12.0,
+    12.5
+  ],
+  "timeline": [
+    {
+      "media": "bg",
+      "start": 0.0,
+      "duration": 2.5,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.0,
+        "to": 1.1,
+        "ease": "linear"
+      },
+      "filters": [],
+      "effects": [],
+      "text_layers": [
+        {
+          "key": "NAME",
+          "start": 0.3,
+          "duration": 1.9,
+          "x": 0.5,
+          "y": 0.36,
+          "size": 84,
+          "align": "center",
+          "color": "#ffffff",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "pop",
+          "uppercase": true,
+          "max_chars": 0
+        }
+      ],
+      "stickers": [],
+      "transition_out": {
+        "type": "fade",
+        "duration": 0.5
+      },
+      "background": {
+        "type": "gradient",
+        "from": "#2a0a14",
+        "to": "#4c1220",
+        "angle": 160
+      }
+    },
+    {
+      "media": "PHOTO_1",
+      "start": 0.0,
+      "duration": 4.0,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.05,
+        "to": 1.22,
+        "ease": "ease-in-out"
+      },
+      "filters": [
+        {
+          "type": "eq",
+          "contrast": 1.05,
+          "saturation": 1.12,
+          "brightness": 1.01
+        }
+      ],
+      "effects": [
+        {
+          "type": "vignette",
+          "amount": 0.22
+        }
+      ],
+      "text_layers": [],
+      "stickers": [],
+      "transition_out": {
+        "type": "fade",
+        "duration": 0.5
+      }
+    },
+    {
+      "media": "bg",
+      "start": 0.0,
+      "duration": 4.0,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.0,
+        "to": 1.1,
+        "ease": "linear"
+      },
+      "filters": [],
+      "effects": [],
+      "text_layers": [
+        {
+          "key": "DATE",
+          "start": 0.3,
+          "duration": 3.4,
+          "x": 0.5,
+          "y": 0.38,
+          "size": 64,
+          "align": "center",
+          "color": "#fda4af",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "fade-up",
+          "uppercase": true,
+          "max_chars": 0
+        },
+        {
+          "key": "LOCATION",
+          "start": 1.0,
+          "duration": 2.7,
+          "x": 0.5,
+          "y": 0.52,
+          "size": 38,
+          "align": "center",
+          "color": "#fbcfe8",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "fade-up",
+          "uppercase": false,
+          "max_chars": 0
+        }
+      ],
+      "stickers": [],
+      "transition_out": {
+        "type": "fade",
+        "duration": 0.5
+      },
+      "background": {
+        "type": "gradient",
+        "from": "#0b1020",
+        "to": "#1a1140",
+        "angle": 160
+      }
+    },
+    {
+      "media": "bg",
+      "start": 0.0,
+      "duration": 3.5,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.0,
+        "to": 1.18,
+        "ease": "ease-in-out"
+      },
+      "filters": [],
+      "effects": [],
+      "text_layers": [
+        {
+          "key": "NAME",
+          "start": 0.3,
+          "duration": 2.9,
+          "x": 0.5,
+          "y": 0.42,
+          "size": 60,
+          "align": "center",
+          "color": "#ffffff",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "fade-up",
+          "uppercase": true,
+          "max_chars": 0
+        }
+      ],
+      "stickers": [],
+      "transition_out": {
+        "type": "none",
+        "duration": 0.0
+      },
+      "background": {
+        "type": "gradient",
+        "from": "#2a0a14",
+        "to": "#4c1220",
+        "angle": 160
+      }
+    }
+  ],
+  "overlays": [
+    {
+      "type": "gradientbar",
+      "from": "rgba(0,0,0,0.55)",
+      "to": "rgba(0,0,0,0)",
+      "position": "top",
+      "height": 0.16,
+      "start": 0.0,
+      "duration": 0.0
+    }
+  ]
+}

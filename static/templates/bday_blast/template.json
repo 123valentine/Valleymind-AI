@@ -1,0 +1,319 @@
+{
+  "schema_version": 1,
+  "id": "bday_blast",
+  "name": "Birthday Blast",
+  "category": "Birthday",
+  "tags": [
+    "birthday",
+    "template"
+  ],
+  "description": "Confetti-energy birthday highlights.",
+  "icon": "cake",
+  "grad": [
+    "#38bdf8",
+    "#a78bfa"
+  ],
+  "thumbnail": "/static/templates/bday_blast/thumbnail.webp",
+  "preview": "/static/templates/bday_blast/preview.mp4",
+  "duration": 13.2,
+  "aspect_ratio": "9:16",
+  "width": 1080,
+  "height": 1920,
+  "fps": 30,
+  "popularity": 94,
+  "likes": 28430,
+  "downloads": 12980,
+  "edit_time_min": 5,
+  "media_required": 2,
+  "placeholders": [
+    {
+      "key": "PHOTO_1",
+      "label": "Party photo 1",
+      "type": "image",
+      "required": true,
+      "hint": ""
+    },
+    {
+      "key": "PHOTO_2",
+      "label": "Party photo 2",
+      "type": "image",
+      "required": true,
+      "hint": ""
+    },
+    {
+      "key": "NAME",
+      "label": "Birthday name",
+      "type": "text",
+      "required": true,
+      "max_chars": 30,
+      "hint": ""
+    },
+    {
+      "key": "DATE",
+      "label": "Date / age",
+      "type": "text",
+      "required": false,
+      "max_chars": 20,
+      "hint": ""
+    }
+  ],
+  "music": {
+    "bpm": 128,
+    "tracks": [
+      {
+        "src": "",
+        "placeholder": "MUSIC",
+        "start": 0.0,
+        "volume": 0.85,
+        "fade_in": 0.2,
+        "fade_out": 0.5
+      }
+    ]
+  },
+  "beat_markers": [
+    0.0,
+    0.469,
+    0.938,
+    1.406,
+    1.875,
+    2.344,
+    2.812,
+    3.281,
+    3.75,
+    4.219,
+    4.688,
+    5.156,
+    5.625,
+    6.094,
+    6.562,
+    7.031,
+    7.5,
+    7.969,
+    8.438,
+    8.906,
+    9.375,
+    9.844,
+    10.312,
+    10.781,
+    11.25,
+    11.719,
+    12.188,
+    12.656,
+    13.125,
+    13.2
+  ],
+  "timeline": [
+    {
+      "media": "bg",
+      "start": 0.0,
+      "duration": 2.2,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.0,
+        "to": 1.1,
+        "ease": "linear"
+      },
+      "filters": [],
+      "effects": [],
+      "text_layers": [
+        {
+          "key": "NAME",
+          "start": 0.3,
+          "duration": 1.7,
+          "x": 0.5,
+          "y": 0.34,
+          "size": 96,
+          "align": "center",
+          "color": "#ffffff",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "pop",
+          "uppercase": true,
+          "max_chars": 0
+        },
+        {
+          "key": "DATE",
+          "start": 0.8,
+          "duration": 1.2,
+          "x": 0.5,
+          "y": 0.48,
+          "size": 40,
+          "align": "center",
+          "color": "#fbcfe8",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "fade-up",
+          "uppercase": true,
+          "max_chars": 0
+        }
+      ],
+      "stickers": [],
+      "transition_out": {
+        "type": "fade",
+        "duration": 0.3
+      },
+      "background": {
+        "type": "gradient",
+        "from": "#2a0f1f",
+        "to": "#4a1233",
+        "angle": 160
+      }
+    },
+    {
+      "media": "PHOTO_1",
+      "start": 0.0,
+      "duration": 3.0,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.0,
+        "to": 1.3,
+        "ease": "ease-in-out"
+      },
+      "filters": [
+        {
+          "type": "eq",
+          "contrast": 1.15,
+          "saturation": 1.35,
+          "brightness": 1.0
+        }
+      ],
+      "effects": [
+        {
+          "type": "vignette",
+          "amount": 0.35
+        }
+      ],
+      "text_layers": [],
+      "stickers": [],
+      "transition_out": {
+        "type": "slideleft",
+        "duration": 0.5
+      }
+    },
+    {
+      "media": "PHOTO_2",
+      "start": 0.0,
+      "duration": 3.0,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.0,
+        "to": 1.18,
+        "ease": "ease-in-out"
+      },
+      "filters": [
+        {
+          "type": "eq",
+          "contrast": 1.08,
+          "saturation": 1.25,
+          "brightness": 0.99
+        }
+      ],
+      "effects": [
+        {
+          "type": "vignette",
+          "amount": 0.35
+        }
+      ],
+      "text_layers": [],
+      "stickers": [],
+      "transition_out": {
+        "type": "slideleft",
+        "duration": 0.5
+      }
+    },
+    {
+      "media": "PHOTO_1",
+      "start": 0.0,
+      "duration": 3.0,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.18,
+        "to": 1.0,
+        "ease": "ease-in-out"
+      },
+      "filters": [
+        {
+          "type": "eq",
+          "contrast": 1.15,
+          "saturation": 1.35,
+          "brightness": 1.0
+        }
+      ],
+      "effects": [
+        {
+          "type": "vignette",
+          "amount": 0.35
+        }
+      ],
+      "text_layers": [],
+      "stickers": [],
+      "transition_out": {
+        "type": "fade",
+        "duration": 0.5
+      }
+    },
+    {
+      "media": "bg",
+      "start": 0.0,
+      "duration": 3.8,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.0,
+        "to": 1.18,
+        "ease": "ease-in-out"
+      },
+      "filters": [],
+      "effects": [],
+      "text_layers": [
+        {
+          "key": "DATE",
+          "start": 0.3,
+          "duration": 3.2,
+          "x": 0.5,
+          "y": 0.42,
+          "size": 64,
+          "align": "center",
+          "color": "#fecdd3",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "pop",
+          "uppercase": false,
+          "max_chars": 0
+        }
+      ],
+      "stickers": [],
+      "transition_out": {
+        "type": "none",
+        "duration": 0.0
+      },
+      "background": {
+        "type": "gradient",
+        "from": "#2a0a14",
+        "to": "#4c1220",
+        "angle": 160
+      }
+    }
+  ],
+  "overlays": [
+    {
+      "type": "gradientbar",
+      "from": "rgba(0,0,0,0)",
+      "to": "rgba(0,0,0,0.55)",
+      "position": "bottom",
+      "height": 0.22,
+      "start": 0.0,
+      "duration": 0.0
+    }
+  ]
+}

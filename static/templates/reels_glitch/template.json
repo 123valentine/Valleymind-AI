@@ -1,0 +1,262 @@
+{
+  "schema_version": 1,
+  "id": "reels_glitch",
+  "name": "Glitch Reveal",
+  "category": "Reels",
+  "tags": [
+    "reels",
+    "template"
+  ],
+  "description": "Neon glitch intro + beat reveal.",
+  "icon": "smartphone",
+  "grad": [
+    "#ec4899",
+    "#f43f5e"
+  ],
+  "thumbnail": "/static/templates/reels_glitch/thumbnail.webp",
+  "preview": "/static/templates/reels_glitch/preview.mp4",
+  "duration": 10.7,
+  "aspect_ratio": "9:16",
+  "width": 1080,
+  "height": 1920,
+  "fps": 30,
+  "popularity": 95,
+  "likes": 36150,
+  "downloads": 15980,
+  "edit_time_min": 5,
+  "media_required": 1,
+  "placeholders": [
+    {
+      "key": "PHOTO_1",
+      "label": "Reveal photo",
+      "type": "image",
+      "required": true,
+      "hint": ""
+    },
+    {
+      "key": "VIDEO_1",
+      "label": "Clip (optional)",
+      "type": "video",
+      "required": false,
+      "hint": ""
+    },
+    {
+      "key": "TITLE",
+      "label": "Reveal text",
+      "type": "text",
+      "required": true,
+      "max_chars": 60,
+      "hint": ""
+    },
+    {
+      "key": "SUBTITLE",
+      "label": "Supporting text",
+      "type": "text",
+      "required": false,
+      "max_chars": 90,
+      "hint": ""
+    }
+  ],
+  "music": {
+    "bpm": 136,
+    "tracks": [
+      {
+        "src": "",
+        "placeholder": "MUSIC",
+        "start": 0.0,
+        "volume": 0.85,
+        "fade_in": 0.2,
+        "fade_out": 0.5
+      }
+    ]
+  },
+  "beat_markers": [
+    0.0,
+    0.441,
+    0.882,
+    1.324,
+    1.765,
+    2.206,
+    2.647,
+    3.088,
+    3.529,
+    3.971,
+    4.412,
+    4.853,
+    5.294,
+    5.735,
+    6.176,
+    6.618,
+    7.059,
+    7.5,
+    7.941,
+    8.382,
+    8.824,
+    9.265,
+    9.706,
+    10.147,
+    10.588,
+    10.7
+  ],
+  "timeline": [
+    {
+      "media": "bg",
+      "start": 0.0,
+      "duration": 2.2,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.0,
+        "to": 1.3,
+        "ease": "ease-in-out"
+      },
+      "filters": [],
+      "effects": [],
+      "text_layers": [
+        {
+          "key": "TITLE",
+          "start": 0.2,
+          "duration": 1.8,
+          "x": 0.5,
+          "y": 0.36,
+          "size": 96,
+          "align": "center",
+          "color": "#ffffff",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "pop",
+          "uppercase": true,
+          "max_chars": 0
+        }
+      ],
+      "stickers": [],
+      "transition_out": {
+        "type": "slideleft",
+        "duration": 0.5
+      },
+      "background": {
+        "type": "gradient",
+        "from": "#2a0f1f",
+        "to": "#4a1233",
+        "angle": 160
+      }
+    },
+    {
+      "media": "PHOTO_1",
+      "start": 0.0,
+      "duration": 3.0,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.0,
+        "to": 1.3,
+        "ease": "ease-in-out"
+      },
+      "filters": [
+        {
+          "type": "eq",
+          "contrast": 1.15,
+          "saturation": 1.35,
+          "brightness": 1.0
+        }
+      ],
+      "effects": [
+        {
+          "type": "vignette",
+          "amount": 0.35
+        }
+      ],
+      "text_layers": [],
+      "stickers": [],
+      "transition_out": {
+        "type": "wipeleft",
+        "duration": 0.5
+      }
+    },
+    {
+      "media": "VIDEO_1",
+      "start": 0.0,
+      "duration": 3.4,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.0,
+        "to": 1.18,
+        "ease": "ease-in-out"
+      },
+      "filters": [
+        {
+          "type": "eq",
+          "contrast": 1.08,
+          "saturation": 1.25,
+          "brightness": 0.99
+        }
+      ],
+      "effects": [
+        {
+          "type": "vignette",
+          "amount": 0.35
+        }
+      ],
+      "text_layers": [],
+      "stickers": [],
+      "transition_out": {
+        "type": "fade",
+        "duration": 0.3
+      }
+    },
+    {
+      "media": "PHOTO_1",
+      "start": 0.0,
+      "duration": 3.4,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.18,
+        "to": 1.0,
+        "ease": "ease-in-out"
+      },
+      "filters": [
+        {
+          "type": "eq",
+          "contrast": 1.15,
+          "saturation": 1.35,
+          "brightness": 1.0
+        }
+      ],
+      "effects": [
+        {
+          "type": "vignette",
+          "amount": 0.35
+        }
+      ],
+      "text_layers": [
+        {
+          "key": "SUBTITLE",
+          "start": 0.3,
+          "duration": 2.8,
+          "x": 0.5,
+          "y": 0.8,
+          "size": 48,
+          "align": "center",
+          "color": "#f9a8d4",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "fade-up",
+          "uppercase": false,
+          "max_chars": 0
+        }
+      ],
+      "stickers": [],
+      "transition_out": {
+        "type": "none",
+        "duration": 0.0
+      }
+    }
+  ],
+  "overlays": []
+}

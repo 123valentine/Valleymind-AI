@@ -1,0 +1,308 @@
+{
+  "schema_version": 1,
+  "id": "trend_speedramp",
+  "name": "Speed Ramp",
+  "category": "Trending",
+  "tags": [
+    "trending",
+    "template"
+  ],
+  "description": "Fast cuts, punch-ins and flash captions.",
+  "icon": "gauge",
+  "grad": [
+    "#fb923c",
+    "#ef4444"
+  ],
+  "thumbnail": "/static/templates/trend_speedramp/thumbnail.webp",
+  "preview": "/static/templates/trend_speedramp/preview.mp4",
+  "duration": 12.2,
+  "aspect_ratio": "9:16",
+  "width": 1080,
+  "height": 1920,
+  "fps": 30,
+  "popularity": 95,
+  "likes": 36120,
+  "downloads": 12870,
+  "edit_time_min": 6,
+  "media_required": 1,
+  "placeholders": [
+    {
+      "key": "VIDEO_1",
+      "label": "Main clip",
+      "type": "video",
+      "required": true,
+      "hint": ""
+    },
+    {
+      "key": "VIDEO_2",
+      "label": "Extra clip",
+      "type": "video",
+      "required": false,
+      "hint": ""
+    },
+    {
+      "key": "TITLE",
+      "label": "Bold caption",
+      "type": "text",
+      "required": true,
+      "max_chars": 60,
+      "hint": ""
+    },
+    {
+      "key": "SUBTITLE",
+      "label": "Supporting text",
+      "type": "text",
+      "required": false,
+      "max_chars": 90,
+      "hint": ""
+    }
+  ],
+  "music": {
+    "bpm": 140,
+    "tracks": [
+      {
+        "src": "",
+        "placeholder": "MUSIC",
+        "start": 0.0,
+        "volume": 0.85,
+        "fade_in": 0.2,
+        "fade_out": 0.5
+      }
+    ]
+  },
+  "beat_markers": [
+    0.0,
+    0.429,
+    0.857,
+    1.286,
+    1.714,
+    2.143,
+    2.571,
+    3.0,
+    3.429,
+    3.857,
+    4.286,
+    4.714,
+    5.143,
+    5.571,
+    6.0,
+    6.429,
+    6.857,
+    7.286,
+    7.714,
+    8.143,
+    8.571,
+    9.0,
+    9.429,
+    9.857,
+    10.286,
+    10.714,
+    11.143,
+    11.571,
+    12.0,
+    12.2
+  ],
+  "timeline": [
+    {
+      "media": "VIDEO_1",
+      "start": 0.0,
+      "duration": 3.0,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.0,
+        "to": 1.18,
+        "ease": "ease-in-out"
+      },
+      "filters": [
+        {
+          "type": "eq",
+          "contrast": 1.15,
+          "saturation": 1.35,
+          "brightness": 1.0
+        }
+      ],
+      "effects": [
+        {
+          "type": "vignette",
+          "amount": 0.35
+        }
+      ],
+      "text_layers": [
+        {
+          "key": "TITLE",
+          "start": 0.2,
+          "duration": 2.6,
+          "x": 0.5,
+          "y": 0.18,
+          "size": 78,
+          "align": "center",
+          "color": "#ffffff",
+          "stroke": "#000000",
+          "stroke_width": 4,
+          "box": true,
+          "font": "",
+          "animation": "slide-left",
+          "uppercase": true,
+          "max_chars": 0
+        }
+      ],
+      "stickers": [],
+      "transition_out": {
+        "type": "wipeleft",
+        "duration": 0.5
+      }
+    },
+    {
+      "media": "VIDEO_2",
+      "start": 0.0,
+      "duration": 3.0,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.0,
+        "to": 1.3,
+        "ease": "ease-in-out"
+      },
+      "filters": [
+        {
+          "type": "eq",
+          "contrast": 1.08,
+          "saturation": 1.25,
+          "brightness": 0.99
+        }
+      ],
+      "effects": [
+        {
+          "type": "vignette",
+          "amount": 0.35
+        }
+      ],
+      "text_layers": [],
+      "stickers": [],
+      "transition_out": {
+        "type": "slideleft",
+        "duration": 0.5
+      }
+    },
+    {
+      "media": "VIDEO_1",
+      "start": 0.0,
+      "duration": 3.0,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.18,
+        "to": 1.0,
+        "ease": "ease-in-out"
+      },
+      "filters": [
+        {
+          "type": "eq",
+          "contrast": 1.15,
+          "saturation": 1.35,
+          "brightness": 1.0
+        }
+      ],
+      "effects": [
+        {
+          "type": "vignette",
+          "amount": 0.35
+        }
+      ],
+      "text_layers": [],
+      "stickers": [],
+      "transition_out": {
+        "type": "fade",
+        "duration": 0.3
+      }
+    },
+    {
+      "media": "VIDEO_2",
+      "start": 0.0,
+      "duration": 2.5,
+      "fit": "cover",
+      "motion": {
+        "type": "pan",
+        "dx": 0.0,
+        "dy": -0.05,
+        "zoom": 1.15
+      },
+      "filters": [
+        {
+          "type": "eq",
+          "contrast": 1.08,
+          "saturation": 1.25,
+          "brightness": 0.99
+        }
+      ],
+      "effects": [
+        {
+          "type": "vignette",
+          "amount": 0.35
+        }
+      ],
+      "text_layers": [],
+      "stickers": [],
+      "transition_out": {
+        "type": "fade",
+        "duration": 0.5
+      }
+    },
+    {
+      "media": "bg",
+      "start": 0.0,
+      "duration": 2.5,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.0,
+        "to": 1.18,
+        "ease": "ease-in-out"
+      },
+      "filters": [],
+      "effects": [],
+      "text_layers": [
+        {
+          "key": "SUBTITLE",
+          "start": 0.2,
+          "duration": 2.1,
+          "x": 0.5,
+          "y": 0.42,
+          "size": 64,
+          "align": "center",
+          "color": "#fca5a5",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "pop",
+          "uppercase": false,
+          "max_chars": 0
+        }
+      ],
+      "stickers": [],
+      "transition_out": {
+        "type": "none",
+        "duration": 0.0
+      },
+      "background": {
+        "type": "gradient",
+        "from": "#050505",
+        "to": "#181818",
+        "angle": 150
+      }
+    }
+  ],
+  "overlays": [
+    {
+      "type": "gradientbar",
+      "from": "rgba(0,0,0,0)",
+      "to": "rgba(0,0,0,0.55)",
+      "position": "bottom",
+      "height": 0.22,
+      "start": 0.0,
+      "duration": 0.0
+    }
+  ]
+}

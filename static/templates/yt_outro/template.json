@@ -1,0 +1,208 @@
+{
+  "schema_version": 1,
+  "id": "yt_outro",
+  "name": "YouTube Outro",
+  "category": "YouTube",
+  "tags": [
+    "youtube",
+    "template"
+  ],
+  "description": "End-screen card with subscribe nudge.",
+  "icon": "hand",
+  "grad": [
+    "#dc2626",
+    "#450a0a"
+  ],
+  "thumbnail": "/static/templates/yt_outro/thumbnail.webp",
+  "preview": "/static/templates/yt_outro/preview.mp4",
+  "duration": 9.5,
+  "aspect_ratio": "16:9",
+  "width": 1080,
+  "height": 1920,
+  "fps": 30,
+  "popularity": 90,
+  "likes": 14320,
+  "downloads": 6900,
+  "edit_time_min": 3,
+  "media_required": 0,
+  "placeholders": [
+    {
+      "key": "LOGO",
+      "label": "Channel logo",
+      "type": "image",
+      "required": false,
+      "hint": ""
+    },
+    {
+      "key": "CHANNEL_NAME",
+      "label": "Channel name",
+      "type": "text",
+      "required": true,
+      "max_chars": 30,
+      "hint": ""
+    },
+    {
+      "key": "BUTTON_TEXT",
+      "label": "Button text",
+      "type": "text",
+      "required": false,
+      "max_chars": 24,
+      "default_value": "Subscribe",
+      "hint": ""
+    }
+  ],
+  "music": {
+    "bpm": 110,
+    "tracks": [
+      {
+        "src": "",
+        "placeholder": "MUSIC",
+        "start": 0.0,
+        "volume": 0.85,
+        "fade_in": 0.2,
+        "fade_out": 0.5
+      }
+    ]
+  },
+  "beat_markers": [
+    0.0,
+    0.545,
+    1.091,
+    1.636,
+    2.182,
+    2.727,
+    3.273,
+    3.818,
+    4.364,
+    4.909,
+    5.455,
+    6.0,
+    6.545,
+    7.091,
+    7.636,
+    8.182,
+    8.727,
+    9.273,
+    9.5
+  ],
+  "timeline": [
+    {
+      "media": "bg",
+      "start": 0.0,
+      "duration": 5.0,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.0,
+        "to": 1.1,
+        "ease": "linear"
+      },
+      "filters": [],
+      "effects": [],
+      "text_layers": [
+        {
+          "key": "CHANNEL_NAME",
+          "start": 0.4,
+          "duration": 4.2,
+          "x": 0.5,
+          "y": 0.36,
+          "size": 80,
+          "align": "center",
+          "color": "#ffffff",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "fade-up",
+          "uppercase": true,
+          "max_chars": 0
+        },
+        {
+          "key": "BUTTON_TEXT",
+          "start": 1.2,
+          "duration": 3.4,
+          "x": 0.5,
+          "y": 0.52,
+          "size": 56,
+          "align": "center",
+          "color": "#ffffff",
+          "stroke": "#16a34a",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "pop",
+          "uppercase": true,
+          "max_chars": 0
+        }
+      ],
+      "stickers": [
+        {
+          "src": "/static/assets/stickers/sticker_0153.png",
+          "x": 0.5,
+          "y": 0.12,
+          "scale": 0.22,
+          "rotation": 0,
+          "start": 0.0,
+          "duration": 0.0,
+          "animation": "none",
+          "blend": "normal"
+        }
+      ],
+      "transition_out": {
+        "type": "fade",
+        "duration": 0.5
+      },
+      "background": {
+        "type": "gradient",
+        "from": "#050505",
+        "to": "#181818",
+        "angle": 150
+      }
+    },
+    {
+      "media": "bg",
+      "start": 0.0,
+      "duration": 5.0,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.0,
+        "to": 1.18,
+        "ease": "ease-in-out"
+      },
+      "filters": [],
+      "effects": [],
+      "text_layers": [
+        {
+          "key": "CHANNEL_NAME",
+          "start": 0.4,
+          "duration": 4.2,
+          "x": 0.5,
+          "y": 0.44,
+          "size": 60,
+          "align": "center",
+          "color": "#fca5a5",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "fade-up",
+          "uppercase": true,
+          "max_chars": 0
+        }
+      ],
+      "stickers": [],
+      "transition_out": {
+        "type": "none",
+        "duration": 0.0
+      },
+      "background": {
+        "type": "gradient",
+        "from": "#0b1020",
+        "to": "#1a1140",
+        "angle": 160
+      }
+    }
+  ],
+  "overlays": []
+}

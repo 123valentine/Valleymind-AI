@@ -1,0 +1,248 @@
+{
+  "schema_version": 1,
+  "id": "edu_explainer",
+  "name": "Explainer",
+  "category": "Education",
+  "tags": [
+    "education",
+    "template"
+  ],
+  "description": "Clean classroom explainer with bullet captions.",
+  "icon": "graduation-cap",
+  "grad": [
+    "#6366f1",
+    "#8b5cf6"
+  ],
+  "thumbnail": "/static/templates/edu_explainer/thumbnail.webp",
+  "preview": "/static/templates/edu_explainer/preview.mp4",
+  "duration": 13.5,
+  "aspect_ratio": "16:9",
+  "width": 1080,
+  "height": 1920,
+  "fps": 30,
+  "popularity": 89,
+  "likes": 15420,
+  "downloads": 6820,
+  "edit_time_min": 6,
+  "media_required": 1,
+  "placeholders": [
+    {
+      "key": "PHOTO_1",
+      "label": "Concept image",
+      "type": "image",
+      "required": true,
+      "hint": ""
+    },
+    {
+      "key": "PHOTO_2",
+      "label": "Diagram / image 2",
+      "type": "image",
+      "required": false,
+      "hint": ""
+    },
+    {
+      "key": "TITLE",
+      "label": "Lesson title",
+      "type": "text",
+      "required": true,
+      "max_chars": 60,
+      "hint": ""
+    },
+    {
+      "key": "SUBTITLE",
+      "label": "Key point",
+      "type": "text",
+      "required": false,
+      "max_chars": 90,
+      "hint": ""
+    }
+  ],
+  "music": {
+    "bpm": 112,
+    "tracks": [
+      {
+        "src": "",
+        "placeholder": "MUSIC",
+        "start": 0.0,
+        "volume": 0.85,
+        "fade_in": 0.2,
+        "fade_out": 0.5
+      }
+    ]
+  },
+  "beat_markers": [
+    0.0,
+    0.536,
+    1.071,
+    1.607,
+    2.143,
+    2.679,
+    3.214,
+    3.75,
+    4.286,
+    4.821,
+    5.357,
+    5.893,
+    6.429,
+    6.964,
+    7.5,
+    8.036,
+    8.571,
+    9.107,
+    9.643,
+    10.179,
+    10.714,
+    11.25,
+    11.786,
+    12.321,
+    12.857,
+    13.393,
+    13.5
+  ],
+  "timeline": [
+    {
+      "media": "bg",
+      "start": 0.0,
+      "duration": 3.0,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.0,
+        "to": 1.1,
+        "ease": "linear"
+      },
+      "filters": [],
+      "effects": [],
+      "text_layers": [
+        {
+          "key": "TITLE",
+          "start": 0.3,
+          "duration": 2.4,
+          "x": 0.5,
+          "y": 0.38,
+          "size": 76,
+          "align": "center",
+          "color": "#ffffff",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "fade-up",
+          "uppercase": true,
+          "max_chars": 0
+        }
+      ],
+      "stickers": [],
+      "transition_out": {
+        "type": "fade",
+        "duration": 0.5
+      },
+      "background": {
+        "type": "gradient",
+        "from": "#0a1128",
+        "to": "#1e1b4b",
+        "angle": 160
+      }
+    },
+    {
+      "media": "PHOTO_1",
+      "start": 0.0,
+      "duration": 4.0,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.0,
+        "to": 1.18,
+        "ease": "ease-in-out"
+      },
+      "filters": [
+        {
+          "type": "eq",
+          "contrast": 1.0,
+          "saturation": 0.85,
+          "brightness": 1.0
+        }
+      ],
+      "effects": [],
+      "text_layers": [
+        {
+          "key": "SUBTITLE",
+          "start": 0.3,
+          "duration": 3.4,
+          "x": 0.5,
+          "y": 0.84,
+          "size": 46,
+          "align": "center",
+          "color": "#c7d2fe",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "fade-up",
+          "uppercase": false,
+          "max_chars": 0
+        }
+      ],
+      "stickers": [],
+      "transition_out": {
+        "type": "fade",
+        "duration": 0.5
+      }
+    },
+    {
+      "media": "PHOTO_2",
+      "start": 0.0,
+      "duration": 4.0,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.05,
+        "to": 1.22,
+        "ease": "ease-in-out"
+      },
+      "filters": [
+        {
+          "type": "eq",
+          "contrast": 1.0,
+          "saturation": 0.85,
+          "brightness": 1.0
+        }
+      ],
+      "effects": [],
+      "text_layers": [],
+      "stickers": [],
+      "transition_out": {
+        "type": "fade",
+        "duration": 0.5
+      }
+    },
+    {
+      "media": "PHOTO_1",
+      "start": 0.0,
+      "duration": 4.0,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.18,
+        "to": 1.0,
+        "ease": "ease-in-out"
+      },
+      "filters": [
+        {
+          "type": "eq",
+          "contrast": 1.0,
+          "saturation": 0.85,
+          "brightness": 1.0
+        }
+      ],
+      "effects": [],
+      "text_layers": [],
+      "stickers": [],
+      "transition_out": {
+        "type": "none",
+        "duration": 0.0
+      }
+    }
+  ],
+  "overlays": []
+}

@@ -1,0 +1,207 @@
+{
+  "schema_version": 1,
+  "id": "podcast_intro",
+  "name": "Podcast Intro",
+  "category": "Podcast",
+  "tags": [
+    "podcast",
+    "template"
+  ],
+  "description": "Show-branded intro card.",
+  "icon": "radio",
+  "grad": [
+    "#2dd4bf",
+    "#115e59"
+  ],
+  "thumbnail": "/static/templates/podcast_intro/thumbnail.webp",
+  "preview": "/static/templates/podcast_intro/preview.mp4",
+  "duration": 9.5,
+  "aspect_ratio": "16:9",
+  "width": 1080,
+  "height": 1920,
+  "fps": 30,
+  "popularity": 88,
+  "likes": 15430,
+  "downloads": 6890,
+  "edit_time_min": 3,
+  "media_required": 0,
+  "placeholders": [
+    {
+      "key": "LOGO",
+      "label": "Show logo",
+      "type": "image",
+      "required": false,
+      "hint": ""
+    },
+    {
+      "key": "PRODUCT_NAME",
+      "label": "Show name",
+      "type": "text",
+      "required": true,
+      "max_chars": 40,
+      "hint": ""
+    },
+    {
+      "key": "SUBTITLE",
+      "label": "Tagline",
+      "type": "text",
+      "required": false,
+      "max_chars": 90,
+      "hint": ""
+    }
+  ],
+  "music": {
+    "bpm": 112,
+    "tracks": [
+      {
+        "src": "",
+        "placeholder": "MUSIC",
+        "start": 0.0,
+        "volume": 0.85,
+        "fade_in": 0.2,
+        "fade_out": 0.5
+      }
+    ]
+  },
+  "beat_markers": [
+    0.0,
+    0.536,
+    1.071,
+    1.607,
+    2.143,
+    2.679,
+    3.214,
+    3.75,
+    4.286,
+    4.821,
+    5.357,
+    5.893,
+    6.429,
+    6.964,
+    7.5,
+    8.036,
+    8.571,
+    9.107,
+    9.5
+  ],
+  "timeline": [
+    {
+      "media": "bg",
+      "start": 0.0,
+      "duration": 5.0,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.0,
+        "to": 1.1,
+        "ease": "linear"
+      },
+      "filters": [],
+      "effects": [],
+      "text_layers": [
+        {
+          "key": "PRODUCT_NAME",
+          "start": 0.5,
+          "duration": 4.1,
+          "x": 0.5,
+          "y": 0.34,
+          "size": 88,
+          "align": "center",
+          "color": "#ffffff",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "fade-up",
+          "uppercase": true,
+          "max_chars": 0
+        },
+        {
+          "key": "SUBTITLE",
+          "start": 1.2,
+          "duration": 3.4,
+          "x": 0.5,
+          "y": 0.48,
+          "size": 40,
+          "align": "center",
+          "color": "#99f6e4",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "fade-up",
+          "uppercase": false,
+          "max_chars": 0
+        }
+      ],
+      "stickers": [
+        {
+          "src": "/static/assets/stickers/sticker_0153.png",
+          "x": 0.5,
+          "y": 0.12,
+          "scale": 0.22,
+          "rotation": 0,
+          "start": 0.0,
+          "duration": 0.0,
+          "animation": "none",
+          "blend": "normal"
+        }
+      ],
+      "transition_out": {
+        "type": "fade",
+        "duration": 0.5
+      },
+      "background": {
+        "type": "gradient",
+        "from": "#022c22",
+        "to": "#064e3b",
+        "angle": 160
+      }
+    },
+    {
+      "media": "bg",
+      "start": 0.0,
+      "duration": 5.0,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.0,
+        "to": 1.18,
+        "ease": "ease-in-out"
+      },
+      "filters": [],
+      "effects": [],
+      "text_layers": [
+        {
+          "key": "PRODUCT_NAME",
+          "start": 0.4,
+          "duration": 4.2,
+          "x": 0.5,
+          "y": 0.44,
+          "size": 64,
+          "align": "center",
+          "color": "#ffffff",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "fade-up",
+          "uppercase": true,
+          "max_chars": 0
+        }
+      ],
+      "stickers": [],
+      "transition_out": {
+        "type": "none",
+        "duration": 0.0
+      },
+      "background": {
+        "type": "gradient",
+        "from": "#0b1020",
+        "to": "#1a1140",
+        "angle": 160
+      }
+    }
+  ],
+  "overlays": []
+}

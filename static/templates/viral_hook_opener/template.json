@@ -1,0 +1,296 @@
+{
+  "schema_version": 1,
+  "id": "viral_hook_opener",
+  "name": "Viral Hook Opener",
+  "category": "Viral",
+  "tags": [
+    "viral",
+    "template"
+  ],
+  "description": "Scroll-stopping hook with punchy beat cuts.",
+  "icon": "zap",
+  "grad": [
+    "#a855f7",
+    "#ec4899"
+  ],
+  "thumbnail": "/static/templates/viral_hook_opener/thumbnail.webp",
+  "preview": "/static/templates/viral_hook_opener/preview.mp4",
+  "duration": 10.4,
+  "aspect_ratio": "9:16",
+  "width": 1080,
+  "height": 1920,
+  "fps": 30,
+  "popularity": 97,
+  "likes": 45210,
+  "downloads": 18240,
+  "edit_time_min": 4,
+  "media_required": 2,
+  "placeholders": [
+    {
+      "key": "PHOTO_1",
+      "label": "Hook image",
+      "type": "image",
+      "required": true,
+      "hint": ""
+    },
+    {
+      "key": "PHOTO_2",
+      "label": "Reveal image",
+      "type": "image",
+      "required": true,
+      "hint": ""
+    },
+    {
+      "key": "TITLE",
+      "label": "The hook",
+      "type": "text",
+      "required": true,
+      "max_chars": 60,
+      "hint": ""
+    },
+    {
+      "key": "SUBTITLE",
+      "label": "Supporting text",
+      "type": "text",
+      "required": false,
+      "max_chars": 90,
+      "hint": ""
+    }
+  ],
+  "music": {
+    "bpm": 130,
+    "tracks": [
+      {
+        "src": "",
+        "placeholder": "MUSIC",
+        "start": 0.0,
+        "volume": 0.85,
+        "fade_in": 0.2,
+        "fade_out": 0.5
+      }
+    ]
+  },
+  "beat_markers": [
+    0.0,
+    0.462,
+    0.923,
+    1.385,
+    1.846,
+    2.308,
+    2.769,
+    3.231,
+    3.692,
+    4.154,
+    4.615,
+    5.077,
+    5.538,
+    6.0,
+    6.462,
+    6.923,
+    7.385,
+    7.846,
+    8.308,
+    8.769,
+    9.231,
+    9.692,
+    10.154,
+    10.4
+  ],
+  "timeline": [
+    {
+      "media": "bg",
+      "start": 0.0,
+      "duration": 1.8,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.0,
+        "to": 1.1,
+        "ease": "linear"
+      },
+      "filters": [],
+      "effects": [],
+      "text_layers": [
+        {
+          "key": "TITLE",
+          "start": 0.2,
+          "duration": 1.4,
+          "x": 0.5,
+          "y": 0.32,
+          "size": 104,
+          "align": "center",
+          "color": "#ffffff",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "pop",
+          "uppercase": true,
+          "max_chars": 0
+        }
+      ],
+      "stickers": [],
+      "transition_out": {
+        "type": "fade",
+        "duration": 0.3
+      },
+      "background": {
+        "type": "gradient",
+        "from": "#160b2e",
+        "to": "#2e1065",
+        "angle": 160
+      }
+    },
+    {
+      "media": "PHOTO_1",
+      "start": 0.0,
+      "duration": 2.6,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.0,
+        "to": 1.3,
+        "ease": "ease-in-out"
+      },
+      "filters": [
+        {
+          "type": "eq",
+          "contrast": 1.15,
+          "saturation": 1.35,
+          "brightness": 1.0
+        }
+      ],
+      "effects": [
+        {
+          "type": "vignette",
+          "amount": 0.35
+        }
+      ],
+      "text_layers": [],
+      "stickers": [],
+      "transition_out": {
+        "type": "slideleft",
+        "duration": 0.5
+      }
+    },
+    {
+      "media": "PHOTO_2",
+      "start": 0.0,
+      "duration": 2.6,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.0,
+        "to": 1.18,
+        "ease": "ease-in-out"
+      },
+      "filters": [
+        {
+          "type": "eq",
+          "contrast": 1.08,
+          "saturation": 1.25,
+          "brightness": 0.99
+        }
+      ],
+      "effects": [
+        {
+          "type": "vignette",
+          "amount": 0.35
+        }
+      ],
+      "text_layers": [],
+      "stickers": [],
+      "transition_out": {
+        "type": "fade",
+        "duration": 0.3
+      }
+    },
+    {
+      "media": "PHOTO_1",
+      "start": 0.0,
+      "duration": 2.6,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.18,
+        "to": 1.0,
+        "ease": "ease-in-out"
+      },
+      "filters": [
+        {
+          "type": "eq",
+          "contrast": 1.15,
+          "saturation": 1.35,
+          "brightness": 1.0
+        }
+      ],
+      "effects": [
+        {
+          "type": "vignette",
+          "amount": 0.35
+        }
+      ],
+      "text_layers": [],
+      "stickers": [],
+      "transition_out": {
+        "type": "fade",
+        "duration": 0.5
+      }
+    },
+    {
+      "media": "bg",
+      "start": 0.0,
+      "duration": 2.4,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.0,
+        "to": 1.18,
+        "ease": "ease-in-out"
+      },
+      "filters": [],
+      "effects": [],
+      "text_layers": [
+        {
+          "key": "SUBTITLE",
+          "start": 0.2,
+          "duration": 2.0,
+          "x": 0.5,
+          "y": 0.44,
+          "size": 52,
+          "align": "center",
+          "color": "#d8b4fe",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "fade-up",
+          "uppercase": true,
+          "max_chars": 0
+        }
+      ],
+      "stickers": [],
+      "transition_out": {
+        "type": "none",
+        "duration": 0.0
+      },
+      "background": {
+        "type": "gradient",
+        "from": "#160b2e",
+        "to": "#2e1065",
+        "angle": 160
+      }
+    }
+  ],
+  "overlays": [
+    {
+      "type": "gradientbar",
+      "from": "rgba(0,0,0,0)",
+      "to": "rgba(0,0,0,0.55)",
+      "position": "bottom",
+      "height": 0.22,
+      "start": 0.0,
+      "duration": 0.0
+    }
+  ]
+}

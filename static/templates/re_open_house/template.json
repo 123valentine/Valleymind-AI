@@ -1,0 +1,218 @@
+{
+  "schema_version": 1,
+  "id": "re_open_house",
+  "name": "Open House",
+  "category": "Real Estate",
+  "tags": [
+    "real-estate",
+    "template"
+  ],
+  "description": "Bright open-house invite card.",
+  "icon": "key-round",
+  "grad": [
+    "#059669",
+    "#34d399"
+  ],
+  "thumbnail": "/static/templates/re_open_house/thumbnail.webp",
+  "preview": "/static/templates/re_open_house/preview.mp4",
+  "duration": 11.0,
+  "aspect_ratio": "16:9",
+  "width": 1080,
+  "height": 1920,
+  "fps": 30,
+  "popularity": 90,
+  "likes": 17430,
+  "downloads": 8120,
+  "edit_time_min": 4,
+  "media_required": 1,
+  "placeholders": [
+    {
+      "key": "PHOTO_1",
+      "label": "Property photo",
+      "type": "image",
+      "required": true,
+      "hint": ""
+    },
+    {
+      "key": "DATE",
+      "label": "Date & time",
+      "type": "text",
+      "required": true,
+      "max_chars": 40,
+      "hint": ""
+    },
+    {
+      "key": "LOCATION",
+      "label": "Address",
+      "type": "text",
+      "required": true,
+      "max_chars": 60,
+      "hint": ""
+    }
+  ],
+  "music": {
+    "bpm": 112,
+    "tracks": [
+      {
+        "src": "",
+        "placeholder": "MUSIC",
+        "start": 0.0,
+        "volume": 0.85,
+        "fade_in": 0.2,
+        "fade_out": 0.5
+      }
+    ]
+  },
+  "beat_markers": [
+    0.0,
+    0.536,
+    1.071,
+    1.607,
+    2.143,
+    2.679,
+    3.214,
+    3.75,
+    4.286,
+    4.821,
+    5.357,
+    5.893,
+    6.429,
+    6.964,
+    7.5,
+    8.036,
+    8.571,
+    9.107,
+    9.643,
+    10.179,
+    10.714,
+    11.0
+  ],
+  "timeline": [
+    {
+      "media": "PHOTO_1",
+      "start": 0.0,
+      "duration": 4.0,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.05,
+        "to": 1.22,
+        "ease": "ease-in-out"
+      },
+      "filters": [
+        {
+          "type": "eq",
+          "contrast": 1.05,
+          "saturation": 1.12,
+          "brightness": 1.01
+        }
+      ],
+      "effects": [
+        {
+          "type": "vignette",
+          "amount": 0.22
+        }
+      ],
+      "text_layers": [],
+      "stickers": [],
+      "transition_out": {
+        "type": "fade",
+        "duration": 0.5
+      }
+    },
+    {
+      "media": "bg",
+      "start": 0.0,
+      "duration": 4.0,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.0,
+        "to": 1.1,
+        "ease": "linear"
+      },
+      "filters": [],
+      "effects": [],
+      "text_layers": [
+        {
+          "key": "DATE",
+          "start": 0.3,
+          "duration": 3.3,
+          "x": 0.5,
+          "y": 0.36,
+          "size": 64,
+          "align": "center",
+          "color": "#a7f3d0",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "pop",
+          "uppercase": true,
+          "max_chars": 0
+        },
+        {
+          "key": "LOCATION",
+          "start": 1.0,
+          "duration": 2.6,
+          "x": 0.5,
+          "y": 0.5,
+          "size": 40,
+          "align": "center",
+          "color": "#ffffff",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "fade-up",
+          "uppercase": false,
+          "max_chars": 0
+        }
+      ],
+      "stickers": [],
+      "transition_out": {
+        "type": "fade",
+        "duration": 0.5
+      },
+      "background": {
+        "type": "gradient",
+        "from": "#022c22",
+        "to": "#064e3b",
+        "angle": 160
+      }
+    },
+    {
+      "media": "PHOTO_1",
+      "start": 0.0,
+      "duration": 4.0,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.18,
+        "to": 1.0,
+        "ease": "ease-in-out"
+      },
+      "filters": [
+        {
+          "type": "eq",
+          "contrast": 1.05,
+          "saturation": 1.12,
+          "brightness": 1.01
+        }
+      ],
+      "effects": [
+        {
+          "type": "vignette",
+          "amount": 0.22
+        }
+      ],
+      "text_layers": [],
+      "stickers": [],
+      "transition_out": {
+        "type": "none",
+        "duration": 0.0
+      }
+    }
+  ],
+  "overlays": []
+}

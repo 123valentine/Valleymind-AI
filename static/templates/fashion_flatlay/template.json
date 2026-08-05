@@ -1,0 +1,221 @@
+{
+  "schema_version": 1,
+  "id": "fashion_flatlay",
+  "name": "Flatlay Pop",
+  "category": "Fashion",
+  "tags": [
+    "fashion",
+    "template"
+  ],
+  "description": "Stylish flatlay card with label captions.",
+  "icon": "layers",
+  "grad": [
+    "#e879f9",
+    "#f472b6"
+  ],
+  "thumbnail": "/static/templates/fashion_flatlay/thumbnail.webp",
+  "preview": "/static/templates/fashion_flatlay/preview.mp4",
+  "duration": 12.0,
+  "aspect_ratio": "1:1",
+  "width": 1080,
+  "height": 1088,
+  "fps": 30,
+  "popularity": 89,
+  "likes": 18540,
+  "downloads": 8360,
+  "edit_time_min": 4,
+  "media_required": 1,
+  "placeholders": [
+    {
+      "key": "PHOTO_1",
+      "label": "Flatlay photo",
+      "type": "image",
+      "required": true,
+      "hint": ""
+    },
+    {
+      "key": "PRODUCT_NAME",
+      "label": "Collection",
+      "type": "text",
+      "required": true,
+      "max_chars": 40,
+      "hint": ""
+    },
+    {
+      "key": "PRICE",
+      "label": "Price / note",
+      "type": "text",
+      "required": false,
+      "max_chars": 20,
+      "hint": ""
+    }
+  ],
+  "music": {
+    "bpm": 118,
+    "tracks": [
+      {
+        "src": "",
+        "placeholder": "MUSIC",
+        "start": 0.0,
+        "volume": 0.85,
+        "fade_in": 0.2,
+        "fade_out": 0.5
+      }
+    ]
+  },
+  "beat_markers": [
+    0.0,
+    0.508,
+    1.017,
+    1.525,
+    2.034,
+    2.542,
+    3.051,
+    3.559,
+    4.068,
+    4.576,
+    5.085,
+    5.593,
+    6.102,
+    6.61,
+    7.119,
+    7.627,
+    8.136,
+    8.644,
+    9.153,
+    9.661,
+    10.169,
+    10.678,
+    11.186,
+    11.695,
+    12.0
+  ],
+  "timeline": [
+    {
+      "media": "PHOTO_1",
+      "start": 0.0,
+      "duration": 4.0,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.0,
+        "to": 1.18,
+        "ease": "ease-in-out"
+      },
+      "filters": [
+        {
+          "type": "eq",
+          "contrast": 1.15,
+          "saturation": 1.35,
+          "brightness": 1.0
+        }
+      ],
+      "effects": [
+        {
+          "type": "vignette",
+          "amount": 0.35
+        }
+      ],
+      "text_layers": [],
+      "stickers": [],
+      "transition_out": {
+        "type": "fade",
+        "duration": 0.5
+      }
+    },
+    {
+      "media": "bg",
+      "start": 0.0,
+      "duration": 4.0,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.0,
+        "to": 1.1,
+        "ease": "linear"
+      },
+      "filters": [],
+      "effects": [],
+      "text_layers": [
+        {
+          "key": "PRODUCT_NAME",
+          "start": 0.3,
+          "duration": 3.3,
+          "x": 0.5,
+          "y": 0.38,
+          "size": 76,
+          "align": "center",
+          "color": "#ffffff",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "fade-up",
+          "uppercase": true,
+          "max_chars": 0
+        },
+        {
+          "key": "PRICE",
+          "start": 1.0,
+          "duration": 2.6,
+          "x": 0.5,
+          "y": 0.52,
+          "size": 44,
+          "align": "center",
+          "color": "#fce7f3",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "pop",
+          "uppercase": true,
+          "max_chars": 0
+        }
+      ],
+      "stickers": [],
+      "transition_out": {
+        "type": "fade",
+        "duration": 0.5
+      },
+      "background": {
+        "type": "gradient",
+        "from": "#2a0f1f",
+        "to": "#4a1233",
+        "angle": 160
+      }
+    },
+    {
+      "media": "PHOTO_1",
+      "start": 0.0,
+      "duration": 5.0,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.18,
+        "to": 1.0,
+        "ease": "ease-in-out"
+      },
+      "filters": [
+        {
+          "type": "eq",
+          "contrast": 1.15,
+          "saturation": 1.35,
+          "brightness": 1.0
+        }
+      ],
+      "effects": [
+        {
+          "type": "vignette",
+          "amount": 0.35
+        }
+      ],
+      "text_layers": [],
+      "stickers": [],
+      "transition_out": {
+        "type": "none",
+        "duration": 0.0
+      }
+    }
+  ],
+  "overlays": []
+}

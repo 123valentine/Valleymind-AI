@@ -1,0 +1,254 @@
+{
+  "schema_version": 1,
+  "id": "invite_wedding",
+  "name": "Wedding Invite",
+  "category": "Invitations",
+  "tags": [
+    "invitations",
+    "template"
+  ],
+  "description": "Romantic invitation motion card.",
+  "icon": "mail",
+  "grad": [
+    "#fbbf24",
+    "#f59e0b"
+  ],
+  "thumbnail": "/static/templates/invite_wedding/thumbnail.webp",
+  "preview": "/static/templates/invite_wedding/preview.mp4",
+  "duration": 12.0,
+  "aspect_ratio": "9:16",
+  "width": 1080,
+  "height": 1920,
+  "fps": 30,
+  "popularity": 93,
+  "likes": 22890,
+  "downloads": 10940,
+  "edit_time_min": 4,
+  "media_required": 0,
+  "placeholders": [
+    {
+      "key": "NAME",
+      "label": "Couple names",
+      "type": "text",
+      "required": true,
+      "max_chars": 40,
+      "hint": ""
+    },
+    {
+      "key": "DATE",
+      "label": "Date & time",
+      "type": "text",
+      "required": true,
+      "max_chars": 40,
+      "hint": ""
+    },
+    {
+      "key": "LOCATION",
+      "label": "Venue",
+      "type": "text",
+      "required": true,
+      "max_chars": 50,
+      "hint": ""
+    }
+  ],
+  "music": {
+    "bpm": 106,
+    "tracks": [
+      {
+        "src": "",
+        "placeholder": "MUSIC",
+        "start": 0.0,
+        "volume": 0.85,
+        "fade_in": 0.2,
+        "fade_out": 0.5
+      }
+    ]
+  },
+  "beat_markers": [
+    0.0,
+    0.566,
+    1.132,
+    1.698,
+    2.264,
+    2.83,
+    3.396,
+    3.962,
+    4.528,
+    5.094,
+    5.66,
+    6.226,
+    6.792,
+    7.358,
+    7.925,
+    8.491,
+    9.057,
+    9.623,
+    10.189,
+    10.755,
+    11.321,
+    11.887,
+    12.0
+  ],
+  "timeline": [
+    {
+      "media": "bg",
+      "start": 0.0,
+      "duration": 2.5,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.0,
+        "to": 1.1,
+        "ease": "linear"
+      },
+      "filters": [],
+      "effects": [],
+      "text_layers": [
+        {
+          "key": "NAME",
+          "start": 0.3,
+          "duration": 1.9,
+          "x": 0.5,
+          "y": 0.36,
+          "size": 76,
+          "align": "center",
+          "color": "#fef3c7",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "pop",
+          "uppercase": true,
+          "max_chars": 0
+        }
+      ],
+      "stickers": [],
+      "transition_out": {
+        "type": "fade",
+        "duration": 0.5
+      },
+      "background": {
+        "type": "gradient",
+        "from": "#241a05",
+        "to": "#3d2c08",
+        "angle": 150
+      }
+    },
+    {
+      "media": "bg",
+      "start": 0.0,
+      "duration": 4.5,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.0,
+        "to": 1.18,
+        "ease": "ease-in-out"
+      },
+      "filters": [],
+      "effects": [],
+      "text_layers": [
+        {
+          "key": "DATE",
+          "start": 0.3,
+          "duration": 3.9,
+          "x": 0.5,
+          "y": 0.38,
+          "size": 56,
+          "align": "center",
+          "color": "#fde68a",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "fade-up",
+          "uppercase": true,
+          "max_chars": 0
+        },
+        {
+          "key": "LOCATION",
+          "start": 1.2,
+          "duration": 3.0,
+          "x": 0.5,
+          "y": 0.52,
+          "size": 38,
+          "align": "center",
+          "color": "#ffffff",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "fade-up",
+          "uppercase": false,
+          "max_chars": 0
+        }
+      ],
+      "stickers": [],
+      "transition_out": {
+        "type": "fade",
+        "duration": 0.5
+      },
+      "background": {
+        "type": "gradient",
+        "from": "#0b1020",
+        "to": "#1a1140",
+        "angle": 160
+      }
+    },
+    {
+      "media": "bg",
+      "start": 0.0,
+      "duration": 6.0,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.0,
+        "to": 1.18,
+        "ease": "ease-in-out"
+      },
+      "filters": [],
+      "effects": [],
+      "text_layers": [
+        {
+          "key": "NAME",
+          "start": 0.3,
+          "duration": 5.4,
+          "x": 0.5,
+          "y": 0.4,
+          "size": 56,
+          "align": "center",
+          "color": "#fef3c7",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "fade-up",
+          "uppercase": true,
+          "max_chars": 0
+        }
+      ],
+      "stickers": [],
+      "transition_out": {
+        "type": "none",
+        "duration": 0.0
+      },
+      "background": {
+        "type": "gradient",
+        "from": "#241a05",
+        "to": "#3d2c08",
+        "angle": 150
+      }
+    }
+  ],
+  "overlays": [
+    {
+      "type": "gradientbar",
+      "from": "rgba(0,0,0,0)",
+      "to": "rgba(0,0,0,0.55)",
+      "position": "bottom",
+      "height": 0.22,
+      "start": 0.0,
+      "duration": 0.0
+    }
+  ]
+}

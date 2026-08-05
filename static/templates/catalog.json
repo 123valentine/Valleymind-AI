@@ -1,0 +1,1076 @@
+{
+  "count": 63,
+  "templates": [
+    {
+      "id": "trend_beat_hook",
+      "name": "Beat Hook",
+      "category": "Trending",
+      "icon": "flame",
+      "grad": [
+        "#f43f5e",
+        "#fb923c"
+      ],
+      "duration": 10.4,
+      "aspect_ratio": "9:16",
+      "popularity": 98,
+      "likes": 48210,
+      "downloads": 19340,
+      "edit_time_min": 4,
+      "media_required": 2
+    },
+    {
+      "id": "trend_speedramp",
+      "name": "Speed Ramp",
+      "category": "Trending",
+      "icon": "gauge",
+      "grad": [
+        "#fb923c",
+        "#ef4444"
+      ],
+      "duration": 12.2,
+      "aspect_ratio": "9:16",
+      "popularity": 95,
+      "likes": 36120,
+      "downloads": 12870,
+      "edit_time_min": 6,
+      "media_required": 1
+    },
+    {
+      "id": "viral_hook_opener",
+      "name": "Viral Hook Opener",
+      "category": "Viral",
+      "icon": "zap",
+      "grad": [
+        "#a855f7",
+        "#ec4899"
+      ],
+      "duration": 10.4,
+      "aspect_ratio": "9:16",
+      "popularity": 97,
+      "likes": 45210,
+      "downloads": 18240,
+      "edit_time_min": 4,
+      "media_required": 2
+    },
+    {
+      "id": "viral_before_after",
+      "name": "Before / After",
+      "category": "Viral",
+      "icon": "replace",
+      "grad": [
+        "#ec4899",
+        "#8b5cf6"
+      ],
+      "duration": 12.7,
+      "aspect_ratio": "9:16",
+      "popularity": 93,
+      "likes": 38900,
+      "downloads": 15120,
+      "edit_time_min": 5,
+      "media_required": 2
+    },
+    {
+      "id": "biz_clean_launch",
+      "name": "Clean Launch",
+      "category": "Business",
+      "icon": "rocket",
+      "grad": [
+        "#f59e0b",
+        "#ef4444"
+      ],
+      "duration": 15.8,
+      "aspect_ratio": "16:9",
+      "popularity": 94,
+      "likes": 22140,
+      "downloads": 9760,
+      "edit_time_min": 7,
+      "media_required": 2
+    },
+    {
+      "id": "biz_quote_card",
+      "name": "Quote Card",
+      "category": "Business",
+      "icon": "quote",
+      "grad": [
+        "#f97316",
+        "#facc15"
+      ],
+      "duration": 9.0,
+      "aspect_ratio": "1:1",
+      "popularity": 88,
+      "likes": 15870,
+      "downloads": 7230,
+      "edit_time_min": 3,
+      "media_required": 0
+    },
+    {
+      "id": "yt_intro",
+      "name": "YouTube Intro",
+      "category": "YouTube",
+      "icon": "play",
+      "grad": [
+        "#ef4444",
+        "#7f1d1d"
+      ],
+      "duration": 7.4,
+      "aspect_ratio": "16:9",
+      "popularity": 92,
+      "likes": 18740,
+      "downloads": 8150,
+      "edit_time_min": 3,
+      "media_required": 0
+    },
+    {
+      "id": "yt_outro",
+      "name": "YouTube Outro",
+      "category": "YouTube",
+      "icon": "hand",
+      "grad": [
+        "#dc2626",
+        "#450a0a"
+      ],
+      "duration": 9.5,
+      "aspect_ratio": "16:9",
+      "popularity": 90,
+      "likes": 14320,
+      "downloads": 6900,
+      "edit_time_min": 3,
+      "media_required": 0
+    },
+    {
+      "id": "yt_highlights",
+      "name": "YouTube Highlights",
+      "category": "YouTube",
+      "icon": "zap",
+      "grad": [
+        "#ef4444",
+        "#0f172a"
+      ],
+      "duration": 18.2,
+      "aspect_ratio": "16:9",
+      "popularity": 91,
+      "likes": 23610,
+      "downloads": 9640,
+      "edit_time_min": 8,
+      "media_required": 1
+    },
+    {
+      "id": "tiktok_ducttape",
+      "name": "Duct-Tape Cuts",
+      "category": "TikTok",
+      "icon": "clapperboard",
+      "grad": [
+        "#22d3ee",
+        "#a78bfa"
+      ],
+      "duration": 11.7,
+      "aspect_ratio": "9:16",
+      "popularity": 96,
+      "likes": 41230,
+      "downloads": 17650,
+      "edit_time_min": 5,
+      "media_required": 1
+    },
+    {
+      "id": "tiktok_pov",
+      "name": "POV Story",
+      "category": "TikTok",
+      "icon": "user",
+      "grad": [
+        "#a78bfa",
+        "#f472b6"
+      ],
+      "duration": 13.5,
+      "aspect_ratio": "9:16",
+      "popularity": 94,
+      "likes": 33780,
+      "downloads": 14120,
+      "edit_time_min": 6,
+      "media_required": 1
+    },
+    {
+      "id": "reels_glitch",
+      "name": "Glitch Reveal",
+      "category": "Reels",
+      "icon": "smartphone",
+      "grad": [
+        "#ec4899",
+        "#f43f5e"
+      ],
+      "duration": 10.7,
+      "aspect_ratio": "9:16",
+      "popularity": 95,
+      "likes": 36150,
+      "downloads": 15980,
+      "edit_time_min": 5,
+      "media_required": 1
+    },
+    {
+      "id": "reels_duet",
+      "name": "Duet Format",
+      "category": "Reels",
+      "icon": "users",
+      "grad": [
+        "#fb7185",
+        "#f472b6"
+      ],
+      "duration": 11.5,
+      "aspect_ratio": "9:16",
+      "popularity": 92,
+      "likes": 27890,
+      "downloads": 11240,
+      "edit_time_min": 5,
+      "media_required": 1
+    },
+    {
+      "id": "fb_newsflash",
+      "name": "Newsflash",
+      "category": "Facebook",
+      "icon": "megaphone",
+      "grad": [
+        "#3b82f6",
+        "#1e3a8a"
+      ],
+      "duration": 11.0,
+      "aspect_ratio": "1:1",
+      "popularity": 86,
+      "likes": 12940,
+      "downloads": 5480,
+      "edit_time_min": 3,
+      "media_required": 1
+    },
+    {
+      "id": "fb_community",
+      "name": "Community Post",
+      "category": "Facebook",
+      "icon": "users",
+      "grad": [
+        "#60a5fa",
+        "#0f172a"
+      ],
+      "duration": 11.0,
+      "aspect_ratio": "4:5",
+      "popularity": 84,
+      "likes": 11230,
+      "downloads": 4910,
+      "edit_time_min": 3,
+      "media_required": 1
+    },
+    {
+      "id": "wa_quote",
+      "name": "Status Quote",
+      "category": "WhatsApp Status",
+      "icon": "message-circle",
+      "grad": [
+        "#22c55e",
+        "#065f46"
+      ],
+      "duration": 9.5,
+      "aspect_ratio": "9:16",
+      "popularity": 90,
+      "likes": 19840,
+      "downloads": 8760,
+      "edit_time_min": 2,
+      "media_required": 0
+    },
+    {
+      "id": "wa_holiday",
+      "name": "Holiday Wish",
+      "category": "WhatsApp Status",
+      "icon": "sparkles",
+      "grad": [
+        "#34d399",
+        "#059669"
+      ],
+      "duration": 9.5,
+      "aspect_ratio": "9:16",
+      "popularity": 88,
+      "likes": 16470,
+      "downloads": 7320,
+      "edit_time_min": 2,
+      "media_required": 0
+    },
+    {
+      "id": "edu_explainer",
+      "name": "Explainer",
+      "category": "Education",
+      "icon": "graduation-cap",
+      "grad": [
+        "#6366f1",
+        "#8b5cf6"
+      ],
+      "duration": 13.5,
+      "aspect_ratio": "16:9",
+      "popularity": 89,
+      "likes": 15420,
+      "downloads": 6820,
+      "edit_time_min": 6,
+      "media_required": 1
+    },
+    {
+      "id": "edu_quiz",
+      "name": "Quiz Pop",
+      "category": "Education",
+      "icon": "help-circle",
+      "grad": [
+        "#8b5cf6",
+        "#6366f1"
+      ],
+      "duration": 11.0,
+      "aspect_ratio": "9:16",
+      "popularity": 87,
+      "likes": 13890,
+      "downloads": 6010,
+      "edit_time_min": 4,
+      "media_required": 0
+    },
+    {
+      "id": "bday_blast",
+      "name": "Birthday Blast",
+      "category": "Birthday",
+      "icon": "cake",
+      "grad": [
+        "#38bdf8",
+        "#a78bfa"
+      ],
+      "duration": 13.2,
+      "aspect_ratio": "9:16",
+      "popularity": 94,
+      "likes": 28430,
+      "downloads": 12980,
+      "edit_time_min": 5,
+      "media_required": 2
+    },
+    {
+      "id": "bday_candles",
+      "name": "Candle Countdown",
+      "category": "Birthday",
+      "icon": "hourglass",
+      "grad": [
+        "#a78bfa",
+        "#38bdf8"
+      ],
+      "duration": 10.5,
+      "aspect_ratio": "9:16",
+      "popularity": 90,
+      "likes": 20140,
+      "downloads": 9180,
+      "edit_time_min": 4,
+      "media_required": 1
+    },
+    {
+      "id": "wed_save_date",
+      "name": "Save The Date",
+      "category": "Wedding",
+      "icon": "heart",
+      "grad": [
+        "#fb7185",
+        "#fda4af"
+      ],
+      "duration": 12.5,
+      "aspect_ratio": "9:16",
+      "popularity": 95,
+      "likes": 31240,
+      "downloads": 14760,
+      "edit_time_min": 5,
+      "media_required": 1
+    },
+    {
+      "id": "wed_slideshow",
+      "name": "Wedding Slideshow",
+      "category": "Wedding",
+      "icon": "camera",
+      "grad": [
+        "#fda4af",
+        "#f472b6"
+      ],
+      "duration": 17.6,
+      "aspect_ratio": "16:9",
+      "popularity": 94,
+      "likes": 27890,
+      "downloads": 13210,
+      "edit_time_min": 7,
+      "media_required": 3
+    },
+    {
+      "id": "love_valentine",
+      "name": "Valentine Card",
+      "category": "Love",
+      "icon": "heart-pulse",
+      "grad": [
+        "#f43f5e",
+        "#fb7185"
+      ],
+      "duration": 10.0,
+      "aspect_ratio": "9:16",
+      "popularity": 91,
+      "likes": 22940,
+      "downloads": 10410,
+      "edit_time_min": 3,
+      "media_required": 0
+    },
+    {
+      "id": "love_anniversary",
+      "name": "Anniversary Film",
+      "category": "Love",
+      "icon": "sparkles",
+      "grad": [
+        "#fb7185",
+        "#f43f5e"
+      ],
+      "duration": 14.5,
+      "aspect_ratio": "9:16",
+      "popularity": 90,
+      "likes": 19820,
+      "downloads": 8760,
+      "edit_time_min": 6,
+      "media_required": 2
+    },
+    {
+      "id": "travel_adventure",
+      "name": "Adventure Reel",
+      "category": "Travel",
+      "icon": "mountain",
+      "grad": [
+        "#0ea5e9",
+        "#22d3ee"
+      ],
+      "duration": 14.5,
+      "aspect_ratio": "9:16",
+      "popularity": 95,
+      "likes": 34210,
+      "downloads": 15640,
+      "edit_time_min": 6,
+      "media_required": 2
+    },
+    {
+      "id": "travel_polaroid",
+      "name": "Polaroid Trip",
+      "category": "Travel",
+      "icon": "camera",
+      "grad": [
+        "#22d3ee",
+        "#0ea5e9"
+      ],
+      "duration": 12.5,
+      "aspect_ratio": "1:1",
+      "popularity": 91,
+      "likes": 23780,
+      "downloads": 10490,
+      "edit_time_min": 5,
+      "media_required": 2
+    },
+    {
+      "id": "food_delicious",
+      "name": "Delicious Bite",
+      "category": "Food",
+      "icon": "utensils",
+      "grad": [
+        "#f97316",
+        "#eab308"
+      ],
+      "duration": 11.5,
+      "aspect_ratio": "9:16",
+      "popularity": 93,
+      "likes": 25980,
+      "downloads": 11870,
+      "edit_time_min": 4,
+      "media_required": 2
+    },
+    {
+      "id": "food_recipe",
+      "name": "Recipe Steps",
+      "category": "Food",
+      "icon": "list-checks",
+      "grad": [
+        "#fbbf24",
+        "#f97316"
+      ],
+      "duration": 12.5,
+      "aspect_ratio": "9:16",
+      "popularity": 90,
+      "likes": 21450,
+      "downloads": 9820,
+      "edit_time_min": 5,
+      "media_required": 1
+    },
+    {
+      "id": "sport_matchday",
+      "name": "Matchday Hype",
+      "category": "Sports",
+      "icon": "trophy",
+      "grad": [
+        "#22c55e",
+        "#16a34a"
+      ],
+      "duration": 13.5,
+      "aspect_ratio": "9:16",
+      "popularity": 96,
+      "likes": 40210,
+      "downloads": 18340,
+      "edit_time_min": 5,
+      "media_required": 2
+    },
+    {
+      "id": "sport_stats",
+      "name": "Stats Flash",
+      "category": "Sports",
+      "icon": "activity",
+      "grad": [
+        "#4ade80",
+        "#14532d"
+      ],
+      "duration": 11.0,
+      "aspect_ratio": "9:16",
+      "popularity": 92,
+      "likes": 26180,
+      "downloads": 11940,
+      "edit_time_min": 4,
+      "media_required": 0
+    },
+    {
+      "id": "game_clip",
+      "name": "Game Clip",
+      "category": "Gaming",
+      "icon": "gamepad-2",
+      "grad": [
+        "#a855f7",
+        "#7c3aed"
+      ],
+      "duration": 12.5,
+      "aspect_ratio": "16:9",
+      "popularity": 95,
+      "likes": 35280,
+      "downloads": 16210,
+      "edit_time_min": 5,
+      "media_required": 1
+    },
+    {
+      "id": "game_boss",
+      "name": "Boss Battle",
+      "category": "Gaming",
+      "icon": "swords",
+      "grad": [
+        "#7c3aed",
+        "#312e81"
+      ],
+      "duration": 16.2,
+      "aspect_ratio": "16:9",
+      "popularity": 94,
+      "likes": 30120,
+      "downloads": 14280,
+      "edit_time_min": 7,
+      "media_required": 1
+    },
+    {
+      "id": "music_lyric",
+      "name": "Lyric Motion",
+      "category": "Music",
+      "icon": "music",
+      "grad": [
+        "#10b981",
+        "#3b82f6"
+      ],
+      "duration": 11.0,
+      "aspect_ratio": "9:16",
+      "popularity": 93,
+      "likes": 27830,
+      "downloads": 12840,
+      "edit_time_min": 4,
+      "media_required": 0
+    },
+    {
+      "id": "music_audio_viz",
+      "name": "Audio Viz",
+      "category": "Music",
+      "icon": "bar-chart-3",
+      "grad": [
+        "#0ea5e9",
+        "#10b981"
+      ],
+      "duration": 11.0,
+      "aspect_ratio": "1:1",
+      "popularity": 90,
+      "likes": 21560,
+      "downloads": 9560,
+      "edit_time_min": 3,
+      "media_required": 1
+    },
+    {
+      "id": "motiv_dawn",
+      "name": "Rising Up",
+      "category": "Motivation",
+      "icon": "flame",
+      "grad": [
+        "#f97316",
+        "#eab308"
+      ],
+      "duration": 16.5,
+      "aspect_ratio": "9:16",
+      "popularity": 95,
+      "likes": 34120,
+      "downloads": 15760,
+      "edit_time_min": 6,
+      "media_required": 1
+    },
+    {
+      "id": "motiv_discipline",
+      "name": "Discipline",
+      "category": "Motivation",
+      "icon": "target",
+      "grad": [
+        "#f59e0b",
+        "#f43f5e"
+      ],
+      "duration": 12.0,
+      "aspect_ratio": "9:16",
+      "popularity": 92,
+      "likes": 26840,
+      "downloads": 12370,
+      "edit_time_min": 4,
+      "media_required": 0
+    },
+    {
+      "id": "podcast_clip",
+      "name": "Podcast Clip",
+      "category": "Podcast",
+      "icon": "mic",
+      "grad": [
+        "#14b8a6",
+        "#0d9488"
+      ],
+      "duration": 13.5,
+      "aspect_ratio": "9:16",
+      "popularity": 91,
+      "likes": 22450,
+      "downloads": 10820,
+      "edit_time_min": 5,
+      "media_required": 1
+    },
+    {
+      "id": "podcast_intro",
+      "name": "Podcast Intro",
+      "category": "Podcast",
+      "icon": "radio",
+      "grad": [
+        "#2dd4bf",
+        "#115e59"
+      ],
+      "duration": 9.5,
+      "aspect_ratio": "16:9",
+      "popularity": 88,
+      "likes": 15430,
+      "downloads": 6890,
+      "edit_time_min": 3,
+      "media_required": 0
+    },
+    {
+      "id": "slide_classic",
+      "name": "Classic Slideshow",
+      "category": "Slideshow",
+      "icon": "presentation",
+      "grad": [
+        "#f59e0b",
+        "#fb923c"
+      ],
+      "duration": 17.6,
+      "aspect_ratio": "16:9",
+      "popularity": 90,
+      "likes": 18940,
+      "downloads": 9120,
+      "edit_time_min": 6,
+      "media_required": 3
+    },
+    {
+      "id": "slide_memory",
+      "name": "Memory Recap",
+      "category": "Slideshow",
+      "icon": "images",
+      "grad": [
+        "#fb923c",
+        "#f43f5e"
+      ],
+      "duration": 16.2,
+      "aspect_ratio": "1:1",
+      "popularity": 89,
+      "likes": 16720,
+      "downloads": 7340,
+      "edit_time_min": 6,
+      "media_required": 3
+    },
+    {
+      "id": "prod_reveal",
+      "name": "Product Reveal",
+      "category": "Product Showcase",
+      "icon": "package",
+      "grad": [
+        "#f59e0b",
+        "#f97316"
+      ],
+      "duration": 13.4,
+      "aspect_ratio": "9:16",
+      "popularity": 94,
+      "likes": 28760,
+      "downloads": 13240,
+      "edit_time_min": 5,
+      "media_required": 1
+    },
+    {
+      "id": "prod_360",
+      "name": "360 Spin",
+      "category": "Product Showcase",
+      "icon": "rotate-cw",
+      "grad": [
+        "#f97316",
+        "#f59e0b"
+      ],
+      "duration": 11.0,
+      "aspect_ratio": "1:1",
+      "popularity": 91,
+      "likes": 21430,
+      "downloads": 9870,
+      "edit_time_min": 4,
+      "media_required": 1
+    },
+    {
+      "id": "fashion_lookbook",
+      "name": "Lookbook",
+      "category": "Fashion",
+      "icon": "shirt",
+      "grad": [
+        "#f472b6",
+        "#e879f9"
+      ],
+      "duration": 13.5,
+      "aspect_ratio": "9:16",
+      "popularity": 93,
+      "likes": 26980,
+      "downloads": 12140,
+      "edit_time_min": 5,
+      "media_required": 2
+    },
+    {
+      "id": "fashion_flatlay",
+      "name": "Flatlay Pop",
+      "category": "Fashion",
+      "icon": "layers",
+      "grad": [
+        "#e879f9",
+        "#f472b6"
+      ],
+      "duration": 12.0,
+      "aspect_ratio": "1:1",
+      "popularity": 89,
+      "likes": 18540,
+      "downloads": 8360,
+      "edit_time_min": 4,
+      "media_required": 1
+    },
+    {
+      "id": "tech_feature",
+      "name": "Tech Feature",
+      "category": "Technology",
+      "icon": "cpu",
+      "grad": [
+        "#06b6d4",
+        "#2563eb"
+      ],
+      "duration": 13.5,
+      "aspect_ratio": "16:9",
+      "popularity": 92,
+      "likes": 23180,
+      "downloads": 10740,
+      "edit_time_min": 5,
+      "media_required": 1
+    },
+    {
+      "id": "tech_update",
+      "name": "Update Drop",
+      "category": "Technology",
+      "icon": "refresh-cw",
+      "grad": [
+        "#2563eb",
+        "#06b6d4"
+      ],
+      "duration": 11.0,
+      "aspect_ratio": "9:16",
+      "popularity": 90,
+      "likes": 19830,
+      "downloads": 9240,
+      "edit_time_min": 4,
+      "media_required": 0
+    },
+    {
+      "id": "re_listing",
+      "name": "Listing Tour",
+      "category": "Real Estate",
+      "icon": "building-2",
+      "grad": [
+        "#34d399",
+        "#0f766e"
+      ],
+      "duration": 14.5,
+      "aspect_ratio": "9:16",
+      "popularity": 93,
+      "likes": 24780,
+      "downloads": 11830,
+      "edit_time_min": 6,
+      "media_required": 2
+    },
+    {
+      "id": "re_open_house",
+      "name": "Open House",
+      "category": "Real Estate",
+      "icon": "key-round",
+      "grad": [
+        "#059669",
+        "#34d399"
+      ],
+      "duration": 11.0,
+      "aspect_ratio": "16:9",
+      "popularity": 90,
+      "likes": 17430,
+      "downloads": 8120,
+      "edit_time_min": 4,
+      "media_required": 1
+    },
+    {
+      "id": "news_breaking",
+      "name": "Breaking News",
+      "category": "News",
+      "icon": "alert-triangle",
+      "grad": [
+        "#f87171",
+        "#991b1b"
+      ],
+      "duration": 11.2,
+      "aspect_ratio": "9:16",
+      "popularity": 89,
+      "likes": 16980,
+      "downloads": 7450,
+      "edit_time_min": 4,
+      "media_required": 1
+    },
+    {
+      "id": "flyer_event",
+      "name": "Event Flyer",
+      "category": "Flyers",
+      "icon": "megaphone",
+      "grad": [
+        "#fb923c",
+        "#f43f5e"
+      ],
+      "duration": 11.2,
+      "aspect_ratio": "9:16",
+      "popularity": 90,
+      "likes": 18730,
+      "downloads": 8620,
+      "edit_time_min": 4,
+      "media_required": 1
+    },
+    {
+      "id": "poster_quote",
+      "name": "Poster Quote",
+      "category": "Posters",
+      "icon": "image",
+      "grad": [
+        "#8b5cf6",
+        "#d946ef"
+      ],
+      "duration": 10.0,
+      "aspect_ratio": "4:5",
+      "popularity": 88,
+      "likes": 15240,
+      "downloads": 7180,
+      "edit_time_min": 3,
+      "media_required": 0
+    },
+    {
+      "id": "cert_award",
+      "name": "Award Certificate",
+      "category": "Certificates",
+      "icon": "award",
+      "grad": [
+        "#f59e0b",
+        "#92400e"
+      ],
+      "duration": 13.0,
+      "aspect_ratio": "16:9",
+      "popularity": 89,
+      "likes": 16840,
+      "downloads": 7940,
+      "edit_time_min": 4,
+      "media_required": 0
+    },
+    {
+      "id": "logo_reveal",
+      "name": "Logo Reveal",
+      "category": "Logos",
+      "icon": "pen-tool",
+      "grad": [
+        "#22d3ee",
+        "#0ea5e9"
+      ],
+      "duration": 9.5,
+      "aspect_ratio": "1:1",
+      "popularity": 90,
+      "likes": 19340,
+      "downloads": 9150,
+      "edit_time_min": 3,
+      "media_required": 1
+    },
+    {
+      "id": "invite_wedding",
+      "name": "Wedding Invite",
+      "category": "Invitations",
+      "icon": "mail",
+      "grad": [
+        "#fbbf24",
+        "#f59e0b"
+      ],
+      "duration": 12.0,
+      "aspect_ratio": "9:16",
+      "popularity": 93,
+      "likes": 22890,
+      "downloads": 10940,
+      "edit_time_min": 4,
+      "media_required": 0
+    },
+    {
+      "id": "invite_party",
+      "name": "Party Invite",
+      "category": "Invitations",
+      "icon": "party-popper",
+      "grad": [
+        "#f472b6",
+        "#a78bfa"
+      ],
+      "duration": 11.2,
+      "aspect_ratio": "9:16",
+      "popularity": 91,
+      "likes": 20410,
+      "downloads": 9650,
+      "edit_time_min": 3,
+      "media_required": 0
+    },
+    {
+      "id": "bcard_contact",
+      "name": "Contact Card",
+      "category": "Business Cards",
+      "icon": "id-card",
+      "grad": [
+        "#64748b",
+        "#334155"
+      ],
+      "duration": 11.0,
+      "aspect_ratio": "9:16",
+      "popularity": 87,
+      "likes": 13240,
+      "downloads": 6110,
+      "edit_time_min": 3,
+      "media_required": 0
+    },
+    {
+      "id": "socm_announce",
+      "name": "Announcement",
+      "category": "Social Media Posts",
+      "icon": "megaphone",
+      "grad": [
+        "#8b5cf6",
+        "#ec4899"
+      ],
+      "duration": 11.0,
+      "aspect_ratio": "9:16",
+      "popularity": 92,
+      "likes": 21940,
+      "downloads": 10380,
+      "edit_time_min": 3,
+      "media_required": 0
+    },
+    {
+      "id": "socm_promo",
+      "name": "Sale Promo",
+      "category": "Social Media Posts",
+      "icon": "tag",
+      "grad": [
+        "#ec4899",
+        "#f43f5e"
+      ],
+      "duration": 10.0,
+      "aspect_ratio": "4:5",
+      "popularity": 91,
+      "likes": 20270,
+      "downloads": 9740,
+      "edit_time_min": 3,
+      "media_required": 0
+    },
+    {
+      "id": "africa_safari",
+      "name": "Safari Film",
+      "category": "Africa",
+      "icon": "sun",
+      "grad": [
+        "#f59e0b",
+        "#fb923c"
+      ],
+      "duration": 14.5,
+      "aspect_ratio": "9:16",
+      "popularity": 94,
+      "likes": 27840,
+      "downloads": 13120,
+      "edit_time_min": 6,
+      "media_required": 2
+    },
+    {
+      "id": "africa_drums",
+      "name": "Drums & Dance",
+      "category": "Africa",
+      "icon": "music-2",
+      "grad": [
+        "#f97316",
+        "#10b981"
+      ],
+      "duration": 12.5,
+      "aspect_ratio": "9:16",
+      "popularity": 93,
+      "likes": 24310,
+      "downloads": 11540,
+      "edit_time_min": 5,
+      "media_required": 1
+    },
+    {
+      "id": "ng_lagos",
+      "name": "Lagos Vibe",
+      "category": "Nigeria",
+      "icon": "music",
+      "grad": [
+        "#10b981",
+        "#3b82f6"
+      ],
+      "duration": 12.5,
+      "aspect_ratio": "9:16",
+      "popularity": 94,
+      "likes": 27650,
+      "downloads": 12980,
+      "edit_time_min": 5,
+      "media_required": 2
+    },
+    {
+      "id": "ng_green",
+      "name": "Green Sweat",
+      "category": "Nigeria",
+      "icon": "flame",
+      "grad": [
+        "#22c55e",
+        "#16a34a"
+      ],
+      "duration": 11.2,
+      "aspect_ratio": "9:16",
+      "popularity": 92,
+      "likes": 21540,
+      "downloads": 9820,
+      "edit_time_min": 4,
+      "media_required": 1
+    }
+  ]
+}

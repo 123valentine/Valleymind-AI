@@ -34,6 +34,8 @@ from core.seo import render_page as seo_render_page
 from core.tts import speak_marcus
 from core.video_dispatcher import get_video_dispatcher
 from core import ai_builder
+from core import template_library as tpllib
+import core.template_render as tr
 import core.provider_manager as pm
 
 # ── Load .env for local dev ──────────────────────────────────────────────
@@ -4074,6 +4076,246 @@ def ai_builder_project_delete(pid):
         _shutil.rmtree(str(proj), ignore_errors=True)
     except Exception as exc:
         return jsonify({"status": "error", "message": f"Could not delete project: {exc}"}), 500
+    return jsonify({"status": "success"})
+
+
+
+# ── Template Library API ───────────────────────────────────────────────────
+
+_template_render_locks: dict = {}
+_template_render_locks_guard = Lock()
+
+
+def _template_render_lock(pid: str) -> Lock:
+    with _template_render_locks_guard:
+        return _template_render_locks.setdefault(pid, Lock())
+
+
+def _template_launch_render(user_id: str, pid: str) -> None:
+    lock = _template_render_lock(pid)
+    if not lock.acquire(blocking=False):
+        return
+
+    def _run():
+        try:
+            tr.render_project(user_id, pid)
+        except Exception as exc:
+            proj = tpllib.get_project(user_id, pid)
+            if proj:
+                proj["status"] = "failed"
+                proj["error"] = str(exc)[:400]
+                tpllib.save_project(user_id, pid, proj)
+        finally:
+            try:
+                lock.release()
+            except Exception:
+                pass
+
+    Thread(target=_run, daemon=True, name=f"tmpl-{pid[:8]}").start()
+
+
+@app.route("/api/templates/categories", methods=["GET"])
+def api_template_categories():
+    user_id, error = _require_login()
+    if error:
+        return error
+    return jsonify({"status": "success", "categories": tpllib.categories()})
+
+
+@app.route("/api/templates", methods=["GET"])
+def api_template_list():
+    user_id, error = _require_login()
+    if error:
+        return error
+    category = (request.args.get("category") or "").strip()
+    search = (request.args.get("search") or "").strip().lower()
+    sort = (request.args.get("sort") or "popular").strip()
+    cards = tpllib.list_cards()
+    if category and category != "All":
+        cards = [c for c in cards if c.get("category") == category]
+    if search:
+        cards = [c for c in cards if search in str(c.get("name", "")).lower()
+                 or search in str(c.get("description", "")).lower()
+                 or search in str(c.get("category", "")).lower()]
+    if sort == "newest":
+        cards.sort(key=lambda c: c.get("id", ""), reverse=True)
+    elif sort == "duration":
+        cards.sort(key=lambda c: c.get("duration", 0))
+    else:
+        cards.sort(key=lambda c: c.get("popularity", 0), reverse=True)
+    return jsonify({
+        "status": "success",
+        "count": len(cards),
+        "categories": tpllib.categories(),
+        "templates": cards,
+    })
+
+
+@app.route("/api/templates/projects", methods=["GET"])
+def api_template_projects():
+    user_id, error = _require_login()
+    if error:
+        return error
+    return jsonify({"status": "success", "projects": tpllib.list_user_projects(user_id)})
+
+
+@app.route("/api/templates/<tid>", methods=["GET"])
+def api_template_detail(tid):
+    user_id, error = _require_login()
+    if error:
+        return error
+    t = tpllib.get_template(tid)
+    if t is None:
+        return jsonify({"status": "error", "message": "Template not found"}), 404
+    view = tpllib.card_view(t)
+    view["placeholders"] = t.get("placeholders") or []
+    view["timeline"] = t.get("timeline") or []
+    view["beat_markers"] = t.get("beat_markers") or []
+    view["music"] = t.get("music") or {}
+    view["liked"] = user_id in tpllib._stat_for(tid).get("liked_by", [])
+    return jsonify({"status": "success", "template": view})
+
+
+@app.route("/api/templates/<tid>/like", methods=["POST"])
+def api_template_like(tid):
+    user_id, error = _require_login()
+    if error:
+        return error
+    result = tpllib.toggle_like(tid, user_id)
+    if result["count"] == 0:
+        return jsonify({"status": "error", "message": "Template not found"}), 404
+    return jsonify({"status": "success", **result})
+
+
+@app.route("/api/templates/<tid>/download", methods=["POST"])
+def api_template_download_count(tid):
+    user_id, error = _require_login()
+    if error:
+        return error
+    count = tpllib.add_download(tid)
+    return jsonify({"status": "success", "count": count})
+
+
+@app.route("/api/templates/<tid>/use", methods=["POST"])
+def api_template_use(tid):
+    """Create a per-user project from a template; returns the placeholder form."""
+    user_id, error = _require_login()
+    if error:
+        return error
+    project, err = tpllib.create_project(user_id, tid)
+    if err:
+        return jsonify({"status": "error", "message": err}), 404
+    t = tpllib.get_template(tid)
+    form = []
+    for p in (t.get("placeholders") or []):
+        form.append({
+            "key": p.get("key", ""),
+            "label": p.get("label", p.get("key", "")),
+            "type": p.get("type", "text"),
+            "required": bool(p.get("required", False)),
+            "max_chars": p.get("max_chars", 0),
+            "default": p.get("default_value", ""),
+            "hint": p.get("hint", ""),
+        })
+    return jsonify({
+        "status": "success",
+        "project_id": project["_pid"],
+        "name": project.get("name"),
+        "aspect_ratio": project.get("aspect_ratio"),
+        "duration": t.get("duration"),
+        "media_required": t.get("media_required"),
+        "form": form,
+    })
+
+
+@app.route("/api/templates/projects/<pid>", methods=["GET"])
+def api_template_project(pid):
+    user_id, error = _require_login()
+    if error:
+        return error
+    proj = tpllib.get_project(user_id, pid)
+    if proj is None:
+        return jsonify({"status": "error", "message": "Project not found"}), 404
+    return jsonify({"status": "success", "project": tpllib.project_public(user_id, proj)})
+
+
+@app.route("/api/templates/projects/<pid>/render", methods=["POST"])
+def api_template_render(pid):
+    """Save placeholder text + uploaded media, then kick off a background render."""
+    user_id, error = _require_login()
+    if error:
+        return error
+    proj = tpllib.get_project(user_id, pid)
+    if proj is None:
+        return jsonify({"status": "error", "message": "Project not found"}), 404
+    if proj.get("status") == "rendering":
+        return jsonify({"status": "success", "project": tpllib.project_public(user_id, proj)})
+
+    template = tpllib.get_template(proj.get("template_id", ""))
+    if template is None:
+        return jsonify({"status": "error", "message": "Template not found"}), 404
+
+    placeholders = proj.get("placeholders") or {}
+    missing = []
+    for p in template.get("placeholders") or []:
+        key = p.get("key", "")
+        ptype = p.get("type", "text")
+        required = bool(p.get("required", False))
+        entry = placeholders.get(key) or {}
+        if ptype == "text":
+            value = (request.form.get(key) or "").strip()
+            if required and not value:
+                missing.append(p.get("label") or key)
+            entry["value"] = value
+        else:
+            upload = request.files.get(key)
+            if upload and upload.filename:
+                fname = tpllib.save_project_media(user_id, pid, key, upload)
+                entry["file"] = fname
+                entry["value"] = upload.filename[:120]
+            elif required and not entry.get("file"):
+                missing.append(p.get("label") or key)
+        placeholders[key] = entry
+
+    if missing:
+        return jsonify({"status": "error",
+                        "message": f"Missing required placeholders: {', '.join(missing)}"}), 400
+
+    proj["placeholders"] = placeholders
+    proj["status"] = "queued"
+    proj["progress"] = 0.0
+    proj["error"] = ""
+    proj["log"] = ["Render queued"]
+    tpllib.save_project(user_id, pid, proj)
+    _template_launch_render(user_id, pid)
+    return jsonify({"status": "success", "project": tpllib.project_public(user_id, proj)})
+
+
+@app.route("/api/templates/projects/<pid>/media/<path:rel>", methods=["GET"])
+def api_template_project_media(pid, rel):
+    """Serve a project's uploaded media (safe path resolution)."""
+    user_id, error = _require_login()
+    if error:
+        return error
+    proj = tpllib.get_project(user_id, pid)
+    if proj is None:
+        return ("Project not found", 404)
+    try:
+        target = tpllib.media_path(user_id, pid, rel)
+    except ValueError:
+        return ("Not found", 404)
+    if not target.is_file():
+        return ("Not found", 404)
+    return send_from_directory(str(target.parent), target.name)
+
+
+@app.route("/api/templates/projects/<pid>", methods=["DELETE"])
+def api_template_project_delete(pid):
+    user_id, error = _require_login()
+    if error:
+        return error
+    if not tpllib.delete_project(user_id, pid):
+        return jsonify({"status": "error", "message": "Project not found"}), 404
     return jsonify({"status": "success"})
 
 

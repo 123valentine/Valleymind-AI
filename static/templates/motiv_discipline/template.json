@@ -1,0 +1,222 @@
+{
+  "schema_version": 1,
+  "id": "motiv_discipline",
+  "name": "Discipline",
+  "category": "Motivation",
+  "tags": [
+    "motivation",
+    "template"
+  ],
+  "description": "Spartan stat-driven motivation card.",
+  "icon": "target",
+  "grad": [
+    "#f59e0b",
+    "#f43f5e"
+  ],
+  "thumbnail": "/static/templates/motiv_discipline/thumbnail.webp",
+  "preview": "/static/templates/motiv_discipline/preview.mp4",
+  "duration": 12.0,
+  "aspect_ratio": "9:16",
+  "width": 1080,
+  "height": 1920,
+  "fps": 30,
+  "popularity": 92,
+  "likes": 26840,
+  "downloads": 12370,
+  "edit_time_min": 4,
+  "media_required": 0,
+  "placeholders": [
+    {
+      "key": "TITLE",
+      "label": "The rule",
+      "type": "text",
+      "required": true,
+      "max_chars": 60,
+      "hint": ""
+    },
+    {
+      "key": "QUOTE",
+      "label": "Motivation line",
+      "type": "text",
+      "required": true,
+      "max_chars": 100,
+      "hint": ""
+    }
+  ],
+  "music": {
+    "bpm": 124,
+    "tracks": [
+      {
+        "src": "",
+        "placeholder": "MUSIC",
+        "start": 0.0,
+        "volume": 0.85,
+        "fade_in": 0.2,
+        "fade_out": 0.5
+      }
+    ]
+  },
+  "beat_markers": [
+    0.0,
+    0.484,
+    0.968,
+    1.452,
+    1.935,
+    2.419,
+    2.903,
+    3.387,
+    3.871,
+    4.355,
+    4.839,
+    5.323,
+    5.806,
+    6.29,
+    6.774,
+    7.258,
+    7.742,
+    8.226,
+    8.71,
+    9.194,
+    9.677,
+    10.161,
+    10.645,
+    11.129,
+    11.613,
+    12.0
+  ],
+  "timeline": [
+    {
+      "media": "bg",
+      "start": 0.0,
+      "duration": 4.0,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.0,
+        "to": 1.1,
+        "ease": "linear"
+      },
+      "filters": [],
+      "effects": [],
+      "text_layers": [
+        {
+          "key": "TITLE",
+          "start": 0.3,
+          "duration": 3.3,
+          "x": 0.5,
+          "y": 0.36,
+          "size": 96,
+          "align": "center",
+          "color": "#ffffff",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "pop",
+          "uppercase": true,
+          "max_chars": 0
+        }
+      ],
+      "stickers": [],
+      "transition_out": {
+        "type": "fade",
+        "duration": 0.5
+      },
+      "background": {
+        "type": "gradient",
+        "from": "#050505",
+        "to": "#181818",
+        "angle": 150
+      }
+    },
+    {
+      "media": "bg",
+      "start": 0.0,
+      "duration": 4.5,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.0,
+        "to": 1.18,
+        "ease": "ease-in-out"
+      },
+      "filters": [],
+      "effects": [],
+      "text_layers": [
+        {
+          "key": "QUOTE",
+          "start": 0.3,
+          "duration": 3.9,
+          "x": 0.5,
+          "y": 0.42,
+          "size": 52,
+          "align": "center",
+          "color": "#fef3c7",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": false,
+          "font": "",
+          "animation": "fade-up",
+          "uppercase": false,
+          "max_chars": 0
+        }
+      ],
+      "stickers": [],
+      "transition_out": {
+        "type": "fade",
+        "duration": 0.5
+      },
+      "background": {
+        "type": "gradient",
+        "from": "#1c0f02",
+        "to": "#3b1d05",
+        "angle": 160
+      }
+    },
+    {
+      "media": "bg",
+      "start": 0.0,
+      "duration": 4.5,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.0,
+        "to": 1.18,
+        "ease": "ease-in-out"
+      },
+      "filters": [],
+      "effects": [],
+      "text_layers": [
+        {
+          "key": "QUOTE",
+          "start": 0.3,
+          "duration": 3.9,
+          "x": 0.5,
+          "y": 0.42,
+          "size": 56,
+          "align": "center",
+          "color": "#fbbf24",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": false,
+          "font": "",
+          "animation": "fade-up",
+          "uppercase": false,
+          "max_chars": 0
+        }
+      ],
+      "stickers": [],
+      "transition_out": {
+        "type": "none",
+        "duration": 0.0
+      },
+      "background": {
+        "type": "gradient",
+        "from": "#0b1020",
+        "to": "#1a1140",
+        "angle": 160
+      }
+    }
+  ],
+  "overlays": []
+}

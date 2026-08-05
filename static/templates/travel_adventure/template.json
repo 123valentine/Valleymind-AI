@@ -1,0 +1,266 @@
+{
+  "schema_version": 1,
+  "id": "travel_adventure",
+  "name": "Adventure Reel",
+  "category": "Travel",
+  "tags": [
+    "travel",
+    "template"
+  ],
+  "description": "Wanderlust montage with cinematic grade.",
+  "icon": "mountain",
+  "grad": [
+    "#0ea5e9",
+    "#22d3ee"
+  ],
+  "thumbnail": "/static/templates/travel_adventure/thumbnail.webp",
+  "preview": "/static/templates/travel_adventure/preview.mp4",
+  "duration": 14.5,
+  "aspect_ratio": "9:16",
+  "width": 1080,
+  "height": 1920,
+  "fps": 30,
+  "popularity": 95,
+  "likes": 34210,
+  "downloads": 15640,
+  "edit_time_min": 6,
+  "media_required": 2,
+  "placeholders": [
+    {
+      "key": "VIDEO_1",
+      "label": "Main travel clip",
+      "type": "video",
+      "required": true,
+      "hint": ""
+    },
+    {
+      "key": "PHOTO_1",
+      "label": "Landscape photo",
+      "type": "image",
+      "required": true,
+      "hint": ""
+    },
+    {
+      "key": "LOCATION",
+      "label": "Destination",
+      "type": "text",
+      "required": true,
+      "max_chars": 40,
+      "hint": ""
+    },
+    {
+      "key": "SUBTITLE",
+      "label": "Caption",
+      "type": "text",
+      "required": false,
+      "max_chars": 90,
+      "hint": ""
+    }
+  ],
+  "music": {
+    "bpm": 122,
+    "tracks": [
+      {
+        "src": "",
+        "placeholder": "MUSIC",
+        "start": 0.0,
+        "volume": 0.85,
+        "fade_in": 0.2,
+        "fade_out": 0.5
+      }
+    ]
+  },
+  "beat_markers": [
+    0.0,
+    0.492,
+    0.984,
+    1.475,
+    1.967,
+    2.459,
+    2.951,
+    3.443,
+    3.934,
+    4.426,
+    4.918,
+    5.41,
+    5.902,
+    6.393,
+    6.885,
+    7.377,
+    7.869,
+    8.361,
+    8.852,
+    9.344,
+    9.836,
+    10.328,
+    10.82,
+    11.311,
+    11.803,
+    12.295,
+    12.787,
+    13.279,
+    13.77,
+    14.262,
+    14.5
+  ],
+  "timeline": [
+    {
+      "media": "VIDEO_1",
+      "start": 0.0,
+      "duration": 4.0,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.0,
+        "to": 1.18,
+        "ease": "ease-in-out"
+      },
+      "filters": [
+        {
+          "type": "eq",
+          "contrast": 1.12,
+          "saturation": 1.05,
+          "brightness": 0.96
+        }
+      ],
+      "effects": [
+        {
+          "type": "vignette",
+          "amount": 0.22
+        }
+      ],
+      "text_layers": [],
+      "stickers": [],
+      "transition_out": {
+        "type": "fade",
+        "duration": 0.5
+      }
+    },
+    {
+      "media": "PHOTO_1",
+      "start": 0.0,
+      "duration": 4.0,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.05,
+        "to": 1.22,
+        "ease": "ease-in-out"
+      },
+      "filters": [
+        {
+          "type": "eq",
+          "contrast": 1.12,
+          "saturation": 1.05,
+          "brightness": 0.96
+        }
+      ],
+      "effects": [
+        {
+          "type": "vignette",
+          "amount": 0.22
+        }
+      ],
+      "text_layers": [],
+      "stickers": [],
+      "transition_out": {
+        "type": "fade",
+        "duration": 0.5
+      }
+    },
+    {
+      "media": "VIDEO_1",
+      "start": 0.0,
+      "duration": 4.0,
+      "fit": "cover",
+      "motion": {
+        "type": "pan",
+        "dx": 0.06,
+        "dy": 0.0,
+        "zoom": 1.15
+      },
+      "filters": [
+        {
+          "type": "eq",
+          "contrast": 1.12,
+          "saturation": 1.05,
+          "brightness": 0.96
+        }
+      ],
+      "effects": [
+        {
+          "type": "vignette",
+          "amount": 0.22
+        }
+      ],
+      "text_layers": [],
+      "stickers": [],
+      "transition_out": {
+        "type": "fade",
+        "duration": 0.5
+      }
+    },
+    {
+      "media": "bg",
+      "start": 0.0,
+      "duration": 4.0,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.0,
+        "to": 1.18,
+        "ease": "ease-in-out"
+      },
+      "filters": [],
+      "effects": [],
+      "text_layers": [
+        {
+          "key": "LOCATION",
+          "start": 0.3,
+          "duration": 3.4,
+          "x": 0.5,
+          "y": 0.36,
+          "size": 80,
+          "align": "center",
+          "color": "#ffffff",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "fade-up",
+          "uppercase": true,
+          "max_chars": 0
+        },
+        {
+          "key": "SUBTITLE",
+          "start": 1.0,
+          "duration": 2.7,
+          "x": 0.5,
+          "y": 0.5,
+          "size": 40,
+          "align": "center",
+          "color": "#a5f3fc",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "fade-up",
+          "uppercase": false,
+          "max_chars": 0
+        }
+      ],
+      "stickers": [],
+      "transition_out": {
+        "type": "none",
+        "duration": 0.0
+      },
+      "background": {
+        "type": "gradient",
+        "from": "#06121e",
+        "to": "#083344",
+        "angle": 160
+      }
+    }
+  ],
+  "overlays": []
+}

@@ -1,0 +1,264 @@
+{
+  "schema_version": 1,
+  "id": "game_clip",
+  "name": "Game Clip",
+  "category": "Gaming",
+  "tags": [
+    "gaming",
+    "template"
+  ],
+  "description": "Epic gameplay clip with punchy captions.",
+  "icon": "gamepad-2",
+  "grad": [
+    "#a855f7",
+    "#7c3aed"
+  ],
+  "thumbnail": "/static/templates/game_clip/thumbnail.webp",
+  "preview": "/static/templates/game_clip/preview.mp4",
+  "duration": 12.5,
+  "aspect_ratio": "16:9",
+  "width": 1080,
+  "height": 1920,
+  "fps": 30,
+  "popularity": 95,
+  "likes": 35280,
+  "downloads": 16210,
+  "edit_time_min": 5,
+  "media_required": 1,
+  "placeholders": [
+    {
+      "key": "VIDEO_1",
+      "label": "Gameplay clip",
+      "type": "video",
+      "required": true,
+      "hint": ""
+    },
+    {
+      "key": "PHOTO_1",
+      "label": "Screenshot",
+      "type": "image",
+      "required": false,
+      "hint": ""
+    },
+    {
+      "key": "TITLE",
+      "label": "Caption",
+      "type": "text",
+      "required": true,
+      "max_chars": 60,
+      "hint": ""
+    },
+    {
+      "key": "NAME",
+      "label": "Gamer tag",
+      "type": "text",
+      "required": false,
+      "max_chars": 30,
+      "hint": ""
+    }
+  ],
+  "music": {
+    "bpm": 126,
+    "tracks": [
+      {
+        "src": "",
+        "placeholder": "MUSIC",
+        "start": 0.0,
+        "volume": 0.85,
+        "fade_in": 0.2,
+        "fade_out": 0.5
+      }
+    ]
+  },
+  "beat_markers": [
+    0.0,
+    0.476,
+    0.952,
+    1.429,
+    1.905,
+    2.381,
+    2.857,
+    3.333,
+    3.81,
+    4.286,
+    4.762,
+    5.238,
+    5.714,
+    6.19,
+    6.667,
+    7.143,
+    7.619,
+    8.095,
+    8.571,
+    9.048,
+    9.524,
+    10.0,
+    10.476,
+    10.952,
+    11.429,
+    11.905,
+    12.381,
+    12.5
+  ],
+  "timeline": [
+    {
+      "media": "VIDEO_1",
+      "start": 0.0,
+      "duration": 3.5,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.0,
+        "to": 1.18,
+        "ease": "ease-in-out"
+      },
+      "filters": [
+        {
+          "type": "eq",
+          "contrast": 1.15,
+          "saturation": 1.35,
+          "brightness": 1.0
+        }
+      ],
+      "effects": [
+        {
+          "type": "vignette",
+          "amount": 0.35
+        }
+      ],
+      "text_layers": [
+        {
+          "key": "TITLE",
+          "start": 0.2,
+          "duration": 3.1,
+          "x": 0.5,
+          "y": 0.16,
+          "size": 60,
+          "align": "center",
+          "color": "#ffffff",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "slide-left",
+          "uppercase": true,
+          "max_chars": 0
+        }
+      ],
+      "stickers": [],
+      "transition_out": {
+        "type": "slideleft",
+        "duration": 0.5
+      }
+    },
+    {
+      "media": "PHOTO_1",
+      "start": 0.0,
+      "duration": 3.5,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.05,
+        "to": 1.22,
+        "ease": "ease-in-out"
+      },
+      "filters": [
+        {
+          "type": "eq",
+          "contrast": 1.08,
+          "saturation": 1.25,
+          "brightness": 0.99
+        }
+      ],
+      "effects": [
+        {
+          "type": "vignette",
+          "amount": 0.35
+        }
+      ],
+      "text_layers": [],
+      "stickers": [],
+      "transition_out": {
+        "type": "slideleft",
+        "duration": 0.5
+      }
+    },
+    {
+      "media": "VIDEO_1",
+      "start": 0.0,
+      "duration": 3.5,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.18,
+        "to": 1.0,
+        "ease": "ease-in-out"
+      },
+      "filters": [
+        {
+          "type": "eq",
+          "contrast": 1.15,
+          "saturation": 1.35,
+          "brightness": 1.0
+        }
+      ],
+      "effects": [
+        {
+          "type": "vignette",
+          "amount": 0.35
+        }
+      ],
+      "text_layers": [],
+      "stickers": [],
+      "transition_out": {
+        "type": "fade",
+        "duration": 0.5
+      }
+    },
+    {
+      "media": "bg",
+      "start": 0.0,
+      "duration": 3.5,
+      "fit": "cover",
+      "motion": {
+        "type": "zoom",
+        "from": 1.0,
+        "to": 1.18,
+        "ease": "ease-in-out"
+      },
+      "filters": [],
+      "effects": [],
+      "text_layers": [
+        {
+          "key": "NAME",
+          "start": 0.3,
+          "duration": 2.9,
+          "x": 0.5,
+          "y": 0.42,
+          "size": 56,
+          "align": "center",
+          "color": "#d8b4fe",
+          "stroke": "#000000",
+          "stroke_width": 3,
+          "box": true,
+          "font": "",
+          "animation": "fade-up",
+          "uppercase": true,
+          "max_chars": 0
+        }
+      ],
+      "stickers": [],
+      "transition_out": {
+        "type": "none",
+        "duration": 0.0
+      },
+      "background": {
+        "type": "gradient",
+        "from": "#160b2e",
+        "to": "#2e1065",
+        "angle": 160
+      }
+    }
+  ],
+  "overlays": []
+}
