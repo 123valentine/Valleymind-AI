@@ -76,6 +76,18 @@ services:
       - key: GEMINI_MODEL
         value: gemini-2.0-flash
 
+      # ➌ AI Builder (OpenCode API). The key is server-only — it is read from
+      # this env var inside the backend and NEVER sent to the browser. Set it
+      # in the Render dashboard (sync: false, raw value, no quotes).
+      - key: OPENCODE_API_KEY
+        sync: false
+      - key: OPENCODE_BASE_URL
+        value: https://opencode.ai/zen/v1
+      - key: OPENCODE_PLAN_MODEL
+        value: deepseek-v4-flash-free
+      - key: OPENCODE_BUILD_MODEL
+        value: deepseek-v4-flash-free
+
       # ── Semantic memory (Pinecone + OpenRouter embeddings) ────────
       # EMBEDDING_DIMS MUST be 768 to match the existing index dimension.
       - key: EMBEDDING_MODEL
