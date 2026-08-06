@@ -84,9 +84,9 @@ services:
       - key: OPENCODE_BASE_URL
         value: https://opencode.ai/zen/v1
       - key: OPENCODE_PLAN_MODEL
-        value: deepseek-v4-flash-free
+        value: ling-3.0-flash-free
       - key: OPENCODE_BUILD_MODEL
-        value: deepseek-v4-flash-free
+        value: ling-3.0-flash-free
 
       # ── Semantic memory (Pinecone + OpenRouter embeddings) ────────
       # EMBEDDING_DIMS MUST be 768 to match the existing index dimension.

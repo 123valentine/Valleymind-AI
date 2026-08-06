@@ -78,6 +78,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="/static/settings.js"></script>
+<script src="/static/tutorials.js"></script>
 <script id="tailwind-config">
   tailwind.config = {
     darkMode: "class",
@@ -1037,7 +1038,12 @@
   .aib-q-opt:hover { color:#e2e8f0; border-color:rgba(255,255,255,0.25); }
   .aib-q-opt.active { color:#04222b; background:linear-gradient(135deg,#00d4ff,#0ea5e9); border-color:transparent;
     box-shadow:0 2px 12px rgba(0,212,255,0.3); }
-  .aib-plan-actions { margin-top:16px; display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+  .aib-model-row { margin-top:16px; display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  .aib-model-label { display:inline-flex; align-items:center; gap:6px; color:#94a3b8; font-size:12px; font-weight:600; }
+  .aib-model-select { background:#0f172a; color:#e2e8f0; border:1px solid rgba(0,212,255,0.25); border-radius:8px; padding:6px 10px; font-size:12.5px; outline:none; cursor:pointer; max-width:220px; }
+  .aib-model-select:focus { border-color:rgba(0,212,255,0.55); }
+  .aib-model-hint { color:#64748b; font-size:11px; flex-basis:100%; line-height:1.5; }
+  .aib-plan-actions { margin-top:12px; display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
   .aib-spec-tabs { display:flex; gap:4px; margin-bottom:10px; }
   .aib-spec-tab { padding:7px 14px; border-radius:9px; cursor:pointer; border:1px solid transparent; background:transparent;
     color:#64748b; font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:12px; transition:all 0.2s; }
@@ -1072,6 +1078,7 @@
   .aib-build-log div { white-space:pre-wrap; word-break:break-word; }
   .aib-log-ok { color:#4ade80; }
   .aib-log-err { color:#f87171; }
+  .aib-log-skip { color:#fbbf24; }
   .aib-build-live { margin-top:12px; border:1px solid rgba(255,255,255,0.07); border-radius:12px; background:#04070f; overflow:hidden; }
   .aib-build-live pre { margin:0; padding:12px 14px; max-height:260px; overflow:auto; color:#c8d3e8;
     font-family:'JetBrains Mono',ui-monospace,'Cascadia Code',Consolas,monospace; font-size:12px; line-height:1.7; }
@@ -1594,6 +1601,86 @@
     <!-- Link back to the public marketing site (the other half of the site<->app loop). -->
     <a href="https://valley-mind-website-o3l8.onrender.com" rel="noopener" style="font-size:0.8rem;display:block;color:#64748b;text-align:center;text-decoration:none;">&larr; Back to the ValleyMind website</a>
   </form>
+  <!-- New-account entry point. The login system itself is untouched. -->
+  <p style="text-align:center;margin:14px 0 0;font-size:0.85rem;color:#64748b;font-family:'Inter',sans-serif;">
+    Don't have an account? <a href="#" id="signupToggleLink" style="color:#00d4ff;text-decoration:none;font-weight:600;cursor:pointer;">Create one</a>
+  </p>
+</section>
+
+<!-- SIGN UP -->
+<section id="signupView" style="min-height:100vh;display:none;align-items:center;justify-content:center;padding:24px;">
+  <form id="signupForm" class="glass-panel" style="width:min(440px,100%);border-radius:16px;padding:28px;display:flex;flex-direction:column;gap:12px;max-height:96vh;overflow-y:auto;">
+    <div style="display:flex;flex-direction:column;align-items:center;gap:8px;">
+      <img src="/static/valleymind-logo.png" alt="Valleymind-AI Logo" style="width:200px;height:auto;object-fit:contain;">
+      <p class="text-slate-400 text-[10px] uppercase tracking-[0.2em] mt-1">Create your free account</p>
+    </div>
+
+    <!-- Profile picture (optional) -->
+    <div style="display:flex;flex-direction:column;align-items:center;gap:8px;margin-bottom:2px;">
+      <div style="position:relative;width:84px;height:84px;border-radius:50%;background:#1a1f2e;border:2px solid rgba(0,212,255,0.3);display:flex;align-items:center;justify-content:center;overflow:hidden;cursor:pointer;" onclick="document.getElementById('signupPhotoInput').click()" title="Add a profile picture (optional)">
+        <img id="signupPhotoPreview" src="" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:none;">
+        <span class="material-icons" id="signupPhotoPlaceholder" style="color:#475569;font-size:34px;">add_a_photo</span>
+      </div>
+      <button type="button" onclick="document.getElementById('signupPhotoInput').click()" style="background:none;border:none;color:#00d4ff;font-size:11px;cursor:pointer;font-family:'Inter',sans-serif;">Add profile picture (optional)</button>
+      <input type="file" id="signupPhotoInput" accept="image/*" style="display:none;">
+    </div>
+
+    <input id="signupFullName" type="text" autocomplete="name" placeholder="Full name" required
+      style="background:#1a1f2e;border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:12px 14px;color:white;outline:none;">
+    <input id="signupUsername" type="text" autocomplete="username" placeholder="Username (unique)" required
+      style="background:#1a1f2e;border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:12px 14px;color:white;outline:none;">
+    <input id="signupEmail" type="email" autocomplete="email" placeholder="Email address" required
+      style="background:#1a1f2e;border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:12px 14px;color:white;outline:none;">
+    <div style="display:flex;gap:10px;">
+      <input id="signupPassword" type="password" autocomplete="new-password" placeholder="Password" required
+        style="flex:1;background:#1a1f2e;border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:12px 14px;color:white;outline:none;min-width:0;">
+      <input id="signupConfirmPassword" type="password" autocomplete="new-password" placeholder="Confirm password" required
+        style="flex:1;background:#1a1f2e;border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:12px 14px;color:white;outline:none;min-width:0;">
+    </div>
+
+    <!-- Legal consents -->
+    <div style="display:flex;flex-direction:column;gap:8px;margin:2px 0;">
+      <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;">
+        <input id="signupTerms" type="checkbox" style="margin-top:3px;accent-color:#00d4ff;">
+        <span style="color:#94a3b8;font-size:12px;font-family:'Inter',sans-serif;line-height:1.4;">I agree to the <a href="#" onclick="openTerms();return false;" style="color:#00d4ff;text-decoration:none;">Terms of Service</a></span>
+      </label>
+      <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;">
+        <input id="signupPrivacy" type="checkbox" style="margin-top:3px;accent-color:#00d4ff;">
+        <span style="color:#94a3b8;font-size:12px;font-family:'Inter',sans-serif;line-height:1.4;">I have read the <a href="#" onclick="openPrivacy();return false;" style="color:#00d4ff;text-decoration:none;">Privacy Policy</a></span>
+      </label>
+    </div>
+
+    <button type="submit" id="signupSubmitBtn" class="glow-button"
+      style="border:none;border-radius:12px;background:#00d4ff;color:#003642;font-weight:800;padding:12px 16px;cursor:pointer;text-transform:uppercase;letter-spacing:0.12em;font-family:'Space Grotesk',sans-serif;">
+      Create Account
+    </button>
+
+    <div style="display:flex;align-items:center;gap:12px;margin:2px 0;">
+      <div style="flex:1;height:1px;background:rgba(255,255,255,0.08);"></div>
+      <span style="color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:0.1em;">or continue with</span>
+      <div style="flex:1;height:1px;background:rgba(255,255,255,0.08);"></div>
+    </div>
+
+    <div style="display:flex;gap:8px;">
+      <button type="button" id="signupGoogleBtn" style="flex:1;display:flex;align-items:center;justify-content:center;gap:8px;background:#1a1f2e;border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:10px 8px;cursor:pointer;font-family:'Space Grotesk',sans-serif;font-size:12px;transition:border-color 0.15s;">
+        <span style="display:flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:#4285F4;color:white;font-weight:700;font-size:12px;line-height:1;">G</span>
+        <span style="color:white;">Google</span>
+      </button>
+      <button type="button" title="GitHub sign-in is coming soon" disabled style="flex:1;display:flex;align-items:center;justify-content:center;gap:8px;background:#1a1f2e;border:1px solid rgba(255,255,255,0.06);border-radius:12px;padding:10px 8px;cursor:not-allowed;opacity:0.45;font-family:'Space Grotesk',sans-serif;font-size:12px;">
+        <span style="display:flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:#24292F;color:white;font-weight:700;font-size:12px;line-height:1;">G</span>
+        <span style="color:#94a3b8;">GitHub</span>
+      </button>
+      <button type="button" title="Apple sign-in is coming soon" disabled style="flex:1;display:flex;align-items:center;justify-content:center;gap:8px;background:#1a1f2e;border:1px solid rgba(255,255,255,0.06);border-radius:12px;padding:10px 8px;cursor:not-allowed;opacity:0.45;font-family:'Space Grotesk',sans-serif;font-size:12px;">
+        <span style="display:flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:#A2AAAD;color:#000;font-weight:700;font-size:12px;line-height:1;">A</span>
+        <span style="color:#94a3b8;">Apple</span>
+      </button>
+    </div>
+
+    <p style="text-align:center;margin:4px 0 0;font-size:0.85rem;color:#64748b;font-family:'Inter',sans-serif;">
+      Already have an account? <a href="#" id="signupLoginToggleLink" style="color:#00d4ff;text-decoration:none;font-weight:600;cursor:pointer;">Login</a>
+    </p>
+    <p id="signupError" style="min-height:18px;color:#ff6b7a;font-size:12px;text-align:center;"></p>
+  </form>
 </section>
 
 <!-- RECOVERY MODAL -->
@@ -1666,6 +1753,10 @@
       <span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M3 7h18v12a1 1 0 01-1 1H4a1 1 0 01-1-1V7z"/><path d="M3 7l3.5-3.5M9 7l3.5-3.5M15 7l3.5-3.5"/></svg></span>
       Studio
     </div>
+    <div class="vm-nav-item" onclick="vmHelpCenter.open()" id="nav-help">
+      <span class="nav-icon"><svg viewBox="0 0 24 24"><path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z"/><circle cx="12" cy="12" r="9"/><path d="M9.3 9a2.8 2.8 0 0 1 5.4 1c0 1.6-2.4 2-2.4 3.5M12 17h.01"/></svg></span>
+      Help &amp; Learning
+    </div>
   </nav>
 
   <div class="px-6 mb-4">
@@ -1701,6 +1792,9 @@
     </div>
     <button id="settingsGearBtn" onclick="openSettings()" style="position: relative; z-index: 99999 !important; background:none; border:none; color:#94a3b8; cursor:pointer; padding:8px; display:flex; align-items:center; justify-content:center; transition:color 0.2s;">
       <span class="material-icons" style="font-size:24px;">settings</span>
+    </button>
+    <button onclick="vmHelpCenter.open()" title="Help &amp; Learning" style="background:none; border:none; color:#94a3b8; cursor:pointer; padding:8px; display:flex; align-items:center; justify-content:center; transition:color 0.2s;">
+      <span class="material-icons" style="font-size:24px;">help_outline</span>
     </button>
   </div>
 </aside>
@@ -1879,6 +1973,33 @@
     </div>
   </div>
 </main>
+
+<!-- HELP & LEARNING CENTER OVERLAY -->
+<div id="vmHelpOverlay" style="position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(2,6,23,0.94);backdrop-filter:blur(20px);z-index:99999 !important;display:none;flex-direction:column;overflow:hidden;">
+  <div style="display:flex;flex-direction:column;height:100%;max-width:780px;width:100%;margin:0 auto;padding:0;">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 24px;border-bottom:1px solid rgba(255,255,255,0.06);flex-shrink:0;background:rgba(2,6,23,0.6);">
+      <div style="display:flex;align-items:center;gap:14px;">
+        <div style="width:32px;height:32px;border-radius:8px;background:linear-gradient(135deg,#00d4ff,#0ea5e9);display:flex;align-items:center;justify-content:center;color:#003642;">
+          <span class="material-icons" style="font-size:16px;">school</span>
+        </div>
+        <div>
+          <span style="color:#f1f5f9;font-size:15px;font-weight:700;font-family:'Inter',sans-serif;letter-spacing:0.02em;">Help &amp; Learning Center</span>
+          <span style="color:#475569;font-size:10px;text-transform:uppercase;letter-spacing:0.15em;font-family:'Space Grotesk',sans-serif;font-weight:500;margin-left:8px;">Tutorials · Docs · Support</span>
+        </div>
+      </div>
+      <button onclick="vmHelpCenter.close()" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.08);color:#94a3b8;font-size:18px;cursor:pointer;width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;transition:all 0.2s;">&times;</button>
+    </div>
+    <div style="display:flex;gap:4px;padding:12px 24px;border-bottom:1px solid rgba(255,255,255,0.06);flex-shrink:0;flex-wrap:wrap;">
+      <button type="button" class="vm-help-tab active" data-tab="tutorials" onclick="vmHelpCenter.tab('tutorials')" style="background:rgba(0,212,255,0.12);border:1px solid rgba(0,212,255,0.3);color:#00d4ff;border-radius:999px;padding:7px 16px;cursor:pointer;font-size:11px;font-weight:700;font-family:'Inter',sans-serif;letter-spacing:0.03em;">Tutorials</button>
+      <button type="button" class="vm-help-tab" data-tab="docs" onclick="vmHelpCenter.tab('docs')" style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);color:#94a3b8;border-radius:999px;padding:7px 16px;cursor:pointer;font-size:11px;font-weight:700;font-family:'Inter',sans-serif;letter-spacing:0.03em;">Documentation</button>
+      <button type="button" class="vm-help-tab" data-tab="support" onclick="vmHelpCenter.tab('support')" style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);color:#94a3b8;border-radius:999px;padding:7px 16px;cursor:pointer;font-size:11px;font-weight:700;font-family:'Inter',sans-serif;letter-spacing:0.03em;">Contact Support</button>
+      <button type="button" class="vm-help-tab" data-tab="bug" onclick="vmHelpCenter.tab('bug')" style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);color:#94a3b8;border-radius:999px;padding:7px 16px;cursor:pointer;font-size:11px;font-weight:700;font-family:'Inter',sans-serif;letter-spacing:0.03em;">Report a Bug</button>
+      <button type="button" class="vm-help-tab" data-tab="request" onclick="vmHelpCenter.tab('request')" style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);color:#94a3b8;border-radius:999px;padding:7px 16px;cursor:pointer;font-size:11px;font-weight:700;font-family:'Inter',sans-serif;letter-spacing:0.03em;">Feature Requests</button>
+    </div>
+    <div id="vmHelpBody" style="flex:1;overflow-y:auto;padding:20px 24px;background:rgba(2,6,23,0.2);"></div>
+    <div style="padding:12px 24px;border-top:1px solid rgba(255,255,255,0.06);flex-shrink:0;color:#475569;font-size:10px;text-align:center;font-family:'Inter',sans-serif;">ValleyMind Help &amp; Learning Center</div>
+  </div>
+</div>
 
 <!-- SETTINGS OVERLAY -->
 <div id="settingsOverlay" style="position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(2,6,23,0.94);backdrop-filter:blur(20px);z-index:99999 !important;display:none;flex-direction:column;overflow:hidden;">
@@ -2236,6 +2357,11 @@
                   <textarea id="aibSpecEdit" spellcheck="false"></textarea>
                 </div>
                 <div class="aib-spec-preview" id="aibSpecPreview" style="display:none;"></div>
+                <div class="aib-model-row">
+                  <label for="aibBuildModel" class="aib-model-label"><i data-lucide="cpu" style="width:14px;height:14px;"></i> Code model</label>
+                  <select id="aibBuildModel" class="aib-model-select"></select>
+                  <span class="aib-model-hint" id="aibModelHint"></span>
+                </div>
                 <div class="aib-plan-actions">
                   <button class="aib-btn aib-btn-primary" id="aibBtnBuild" onclick="aibBuild()" disabled><i data-lucide="hammer" style="width:16px;height:16px;"></i> Build this project</button>
                   <span class="aib-note">Edit the JSON to change scope, stack, pages or features before building.</span>
@@ -2826,11 +2952,13 @@ function logSidebarState(tag) {
 
 function setAppVisible(isVisible) {
     const login = document.getElementById("loginView");
+    const signup = document.getElementById("signupView");
     const sidebar = document.getElementById("sidebar");
     const header = document.getElementById("topHeader");
     const main = document.getElementById("mainArea");
 
     if (login) login.style.display = isVisible ? "none" : "flex";
+    if (signup && isVisible) signup.style.display = "none";
     if (sidebar) sidebar.style.display = isVisible ? "flex" : "none";
     if (header) header.style.display = isVisible ? "flex" : "none";
     if (main) main.style.display = isVisible ? "flex" : "none";
@@ -4811,6 +4939,7 @@ function openStudio() {
     setTimeout(function () { overlay.classList.add("open"); }, 60);
     // Open on the dashboard home, not the raw pipeline.
     studioShowDashboard();
+    if (typeof vmGuideMaybeShow === "function") vmGuideMaybeShow("studio");
 }
 
 // ── Workspace switcher (unified creative suite, no page reload) ──────────
@@ -4829,6 +4958,7 @@ function vmWsGo(ws) {
         if (typeof rtRender === "function") rtRender();
     }
     if (ws === "website" && typeof aibOnShow === "function") aibOnShow();
+    if (ws === "website" && typeof vmGuideMaybeShow === "function") vmGuideMaybeShow("website");
 }
 
 function closeStudio() {
@@ -4933,6 +5063,11 @@ function studioTab(tab) {
     var views = document.querySelectorAll("#studioDashBody .studio-view");
     for (var j = 0; j < views.length; j++) {
         views[j].classList.toggle("active", views[j].id === id);
+    }
+    if (typeof vmGuideMaybeShow === "function") {
+        if (tab === "templates") vmGuideMaybeShow("templates");
+        if (tab === "assets") vmGuideMaybeShow("assets");
+        if (tab === "projects") vmGuideMaybeShow("projects");
     }
 }
 
@@ -5080,6 +5215,11 @@ function studioFeature(id) {
     if (!f) return;
     if (f.ready && f.action) f.action();
     else studioShowComingSoon(f);
+    if (typeof vmGuideMaybeShow === "function") {
+        if (id === "autocut" || id === "ai-generator" || id === "ai-video-generator") {
+            vmGuideMaybeShow("video");
+        }
+    }
 }
 
 function studioUseTemplate(t) {
@@ -7716,6 +7856,10 @@ async function checkSession() {
 
             setAppVisible(true);
             logSidebarState("checkSession-authed");
+            if (typeof vmGuideMaybeShow === "function") {
+                // First-time onboarding: show the Chat guide once per browser.
+                setTimeout(function () { vmGuideMaybeShow("chat"); }, 500);
+            }
             var status = document.getElementById("statusText");
             if (status) status.textContent = "Memory Online";
             var email = data.email || "";
@@ -7906,6 +8050,7 @@ async function handleGoogleLogin(response) {
     var credential = response.credential;
     if (!credential) return;
     var error = document.getElementById("loginError");
+    if (getElementVisible(document.getElementById("signupView"))) error = document.getElementById("signupError");
     if (error) error.textContent = "Signing in with Google...";
     try {
         var res = await apiFetch("/api/auth/google", {
@@ -7924,6 +8069,187 @@ async function handleGoogleLogin(response) {
         if (error) error.textContent = err.message || "Google sign-in failed";
     }
 }
+
+// ── Sign Up ──────────────────────────────────────────────────────────────
+
+function getElementVisible(el) {
+    return el && el.style.display !== "none";
+}
+
+function showSignup() {
+    var signup = document.getElementById("signupView");
+    var login = document.getElementById("loginView");
+    if (signup) signup.style.display = "flex";
+    if (login) login.style.display = "none";
+    var err = document.getElementById("signupError");
+    if (err) err.textContent = "";
+}
+
+function showLoginView() {
+    var signup = document.getElementById("signupView");
+    var login = document.getElementById("loginView");
+    if (signup) signup.style.display = "none";
+    if (login) login.style.display = "flex";
+    renderGoogleButton();
+}
+
+// Lightweight Terms / Privacy modals (text-only, keep it self-contained).
+function _vmPolicyModal(title, bodyHtml) {
+    var wrap = document.createElement("div");
+    wrap.style.cssText = "position:fixed;inset:0;z-index:99998;background:rgba(2,6,23,0.7);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;padding:20px;";
+    wrap.onclick = function (e) { if (e.target === wrap) wrap.remove(); };
+    var card = document.createElement("div");
+    card.style.cssText = "width:min(560px,100%);max-height:82vh;overflow-y:auto;background:rgba(14,20,23,0.99);border:1px solid rgba(0,212,255,0.24);border-radius:16px;padding:26px;color:#94a3b8;font-family:'Inter',sans-serif;font-size:13px;line-height:1.7;";
+    card.innerHTML =
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">' +
+        '<h2 style="color:#00d4ff;font-size:14px;font-weight:800;text-transform:uppercase;letter-spacing:0.15em;font-family:\'Space Grotesk\',sans-serif;margin:0;">' + title + '</h2>' +
+        '<button type="button" style="background:transparent;border:none;color:#94a3b8;cursor:pointer;font-size:20px;" onclick="this.closest(\'div\').parentNode.remove()">&times;</button></div>' +
+        bodyHtml;
+    wrap.appendChild(card);
+    document.body.appendChild(wrap);
+}
+
+function openTerms() {
+    _vmPolicyModal("Terms of Service",
+        '<p>By creating an account you agree to use ValleyMind AI for lawful purposes only.</p>' +
+        '<p>You are responsible for the content you generate. Do not use the platform to create illegal, harmful or misleading material.</p>' +
+        '<p>We may update these terms from time to time. Continued use after changes means you accept them.</p>');
+}
+
+function openPrivacy() {
+    _vmPolicyModal("Privacy Policy",
+        '<p>ValleyMind AI stores the account information you provide: name, username, email, password (hashed) and profile picture.</p>' +
+        '<p>Your chats and memory are kept privately for your personalization. We never sell your data.</p>' +
+        '<p>You can export or delete your data at any time from Settings &rarr; Privacy &amp; Export Data.</p>');
+}
+
+// Downscale a chosen avatar image to 256px before it is uploaded, so account
+// records stay small and fast.
+function handleSignupPhoto(input) {
+    var file = input && input.files && input.files[0];
+    input.value = "";
+    if (!file) return;
+    if (!/^image\/(png|jpe?g|gif|webp)$/i.test(file.type)) {
+        var err = document.getElementById("signupError");
+        if (err) err.textContent = "Please choose a PNG, JPG, GIF or WebP image.";
+        return;
+    }
+    var reader = new FileReader();
+    reader.onload = function (e) {
+        var img = new Image();
+        img.onload = function () {
+            var size = 256;
+            var canvas = document.createElement("canvas");
+            canvas.width = size; canvas.height = size;
+            var ctx = canvas.getContext("2d");
+            var dim = Math.min(img.width, img.height);
+            ctx.drawImage(img, (img.width - dim) / 2, (img.height - dim) / 2, dim, dim, 0, 0, size, size);
+            var dataUrl = canvas.toDataURL("image/jpeg", 0.85);
+            var preview = document.getElementById("signupPhotoPreview");
+            var placeholder = document.getElementById("signupPhotoPlaceholder");
+            if (preview) { preview.src = dataUrl; preview.style.display = "block"; }
+            if (placeholder) placeholder.style.display = "none";
+            window._signupPhoto = dataUrl;
+        };
+        img.onerror = function () {
+            var err = document.getElementById("signupError");
+            if (err) err.textContent = "Could not read that image.";
+        };
+        img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+}
+
+async function signup(event) {
+    event.preventDefault();
+    var error = document.getElementById("signupError");
+    if (error) error.textContent = "";
+
+    var fullName = document.getElementById("signupFullName").value.trim();
+    var username = document.getElementById("signupUsername").value.trim();
+    var email = document.getElementById("signupEmail").value.trim();
+    var password = document.getElementById("signupPassword").value;
+    var confirmPassword = document.getElementById("signupConfirmPassword").value;
+    var agreeTerms = document.getElementById("signupTerms").checked;
+    var agreePrivacy = document.getElementById("signupPrivacy").checked;
+
+    if (!fullName) return setSignupError("Please enter your full name.");
+    if (!/^[a-zA-Z0-9_.-]{3,24}$/.test(username)) return setSignupError("Username must be 3-24 characters using letters, numbers, dots, dashes or underscores.");
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return setSignupError("Please enter a valid email address.");
+    if (password.length < 4) return setSignupError("Password must be at least 4 characters.");
+    if (password !== confirmPassword) return setSignupError("Passwords do not match.");
+    if (!agreeTerms) return setSignupError("Please agree to the Terms of Service to continue.");
+    if (!agreePrivacy) return setSignupError("Please confirm you have read the Privacy Policy.");
+
+    var btn = document.getElementById("signupSubmitBtn");
+    if (btn) { btn.disabled = true; btn.textContent = "Creating account..."; }
+    try {
+        var res = await apiFetch("/auth/register", {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                full_name: fullName,
+                username: username,
+                email: email,
+                password: password,
+                confirm_password: confirmPassword,
+                picture: window._signupPhoto || "",
+                agree_terms: agreeTerms,
+                read_privacy: agreePrivacy
+            }),
+            timeoutMs: 45000
+        });
+        var data = await res.json();
+        if (!res.ok || data.status !== "success") {
+            throw new Error(data.message || "Could not create account");
+        }
+
+        setAuthToken(data.session_token || "");
+        // First-run flag: show the Chat guide the moment the dashboard loads.
+        try { sessionStorage.setItem("vm_first_run", "1"); } catch (_) {}
+        var authenticated = await checkSession();
+        if (!authenticated) throw new Error("Session validation failed");
+        return; // dashboard is live
+    } catch (err) {
+        setSignupError(err.message || "Sign-up failed");
+    } finally {
+        if (btn) { btn.disabled = false; btn.textContent = "Create Account"; }
+    }
+}
+
+function setSignupError(msg) {
+    var error = document.getElementById("signupError");
+    if (error) error.textContent = msg;
+}
+
+// Wire up the sign-up form + view toggles once the DOM is ready.
+document.addEventListener("DOMContentLoaded", function () {
+    var signupForm = document.getElementById("signupForm");
+    if (signupForm) signupForm.addEventListener("submit", signup);
+    var to1 = document.getElementById("signupToggleLink");
+    if (to1) to1.addEventListener("click", function (e) { e.preventDefault(); showSignup(); });
+    var to2 = document.getElementById("signupLoginToggleLink");
+    if (to2) to2.addEventListener("click", function (e) { e.preventDefault(); showLoginView(); });
+    var photo = document.getElementById("signupPhotoInput");
+    if (photo) photo.addEventListener("change", function () { handleSignupPhoto(this); });
+    var gbtn = document.getElementById("signupGoogleBtn");
+    if (gbtn) gbtn.addEventListener("click", function () {
+        if (typeof google !== "undefined" && google.accounts && google.accounts.id) {
+            if (!gbtn._gsiBound) {
+                google.accounts.id.initialize({
+                    client_id: "113174109452-59fddouc2oumonhh2mrqv7sapc4retq2.apps.googleusercontent.com",
+                    callback: handleGoogleLogin,
+                    auto_prompt: false,
+                    itp_support: true
+                });
+                gbtn._gsiBound = true;
+            }
+            google.accounts.id.prompt();
+        }
+    });
+});
+
 
 async function logout() {
     await apiFetch("/auth/logout", {
@@ -8355,14 +8681,51 @@ function aibReset() {
     aibLoadProjects();
 }
 
+// Curated coder line-up. Real OpenCode ids stay server-side (`value`); the UI
+// only ever shows Valley-branded names so provider identities never leak.
+// `ling` is the default (fast + reliable within the server build timeout).
+var AIB_DEFAULT_MODEL = "ling-3.0-flash-free";
+var AIB_MODELS = [
+    { id: "ling-3.0-flash-free", label: "Valley 2.1 Fast", hint: "Fast and reliable — recommended for most projects." },
+    { id: "nemotron-3-ultra-free", label: "Valley 2.1 Balanced", hint: "A little slower, slightly richer output." },
+    { id: "big-pickle", label: "Valley 2.2 Pro", hint: "Highest quality but slow — best for small projects; large builds can exceed the server time limit." },
+];
+
 function aibLoadStatus() {
     apiFetch("/api/ai-builder/status", { timeoutMs: 20000 }).then(function (r) { return r.json(); })
         .then(function (j) {
-            if (j && j.status === "success" && j.configured) {
-                var note = document.getElementById("aibModelNote");
-                if (note) note.textContent = "Build model: " + (j.build_model || "") + " · Free to use";
-            }
+            if (!j || j.status !== "success" || !j.configured) return;
+            aibPopulateModels(j.models || []);
+            var note = document.getElementById("aibModelNote");
+            if (note) note.textContent = "Powered by ValleyMind AI · Free to use";
         }).catch(function () {});
+}
+
+function aibPopulateModels(available) {
+    var sel = document.getElementById("aibBuildModel");
+    if (!sel) return;
+    var avail = available || [];
+    // Only offer curated models the server actually reports as available.
+    var offer = AIB_MODELS.filter(function (m) { return avail.indexOf(m.id) !== -1; });
+    if (!offer.length) offer = AIB_MODELS.slice();  // fallback if the list call failed
+    sel.innerHTML = "";
+    offer.forEach(function (m) {
+        var opt = document.createElement("option");
+        opt.value = m.id;
+        opt.textContent = m.label;
+        if (m.id === AIB_DEFAULT_MODEL) opt.selected = true;
+        sel.appendChild(opt);
+    });
+    aibUpdateModelHint();
+    sel.onchange = aibUpdateModelHint;
+}
+
+function aibUpdateModelHint() {
+    var sel = document.getElementById("aibBuildModel");
+    var hint = document.getElementById("aibModelHint");
+    if (!sel || !hint) return;
+    var m = AIB_MODELS.filter(function (x) { return x.id === sel.value; })[0];
+    hint.textContent = m ? m.hint : "";
 }
 
 function aibLoaderHtml() {
@@ -8585,7 +8948,9 @@ function aibBuild() {
         var pre = document.getElementById("aibBuildLivePre");
         if (pre) pre.innerHTML = aibHighlight(liveCode);
     }
-    aibStream("/api/ai-builder/build", { spec: spec }, function (evt) {
+    var modelSel = document.getElementById("aibBuildModel");
+    var chosenModel = modelSel ? modelSel.value : "";
+    aibStream("/api/ai-builder/build", { spec: spec, model: chosenModel }, function (evt) {
         if (evt.type === "status" || evt.type === "heartbeat") {
             statusEl.textContent = evt.message || "Working…";
         } else if (evt.type === "manifest") {
@@ -8609,6 +8974,9 @@ function aibBuild() {
             if (typeof studioRefreshIcons === "function") studioRefreshIcons();
         } else if (evt.type === "file_error") {
             addLog('<span class="aib-log-err">' + studioIcon("x-circle", 13) + ' ' + esc(evt.path) + ' — ' + esc(evt.message) + '</span>');
+            if (typeof studioRefreshIcons === "function") studioRefreshIcons();
+        } else if (evt.type === "file_skipped") {
+            addLog('<span class="aib-log-skip">' + studioIcon("minus-circle", 13) + ' ' + esc(evt.path) + ' — ' + esc(evt.message || "skipped") + '</span>');
             if (typeof studioRefreshIcons === "function") studioRefreshIcons();
         } else if (evt.type === "project") {
             aibState.pid = evt.project.id;
@@ -8988,6 +9356,7 @@ function generateImagesTool() {
         modal.style.pointerEvents = "auto"; modal.style.transform = "translate(-50%,-50%) scale(1)";
     }
     setTimeout(function () { if (prompt) prompt.focus(); }, 200);
+    if (typeof vmGuideMaybeShow === "function") vmGuideMaybeShow("image");
 }
 
 function closeImageGenModal() {

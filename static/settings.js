@@ -2,20 +2,25 @@
 
 var SETTINGS_SECTIONS = [
   { id: "account",       label: "Account" },
-  { id: "memory",        label: "Memory" },
-  { id: "projects",      label: "Projects" },
-  { id: "creator",       label: "Creator Profile" },
+  { id: "interests",     label: "Interests & Goals" },
   { id: "preferences",   label: "AI Preferences" },
+  { id: "memory",        label: "Memory" },
+  { id: "accessibility", label: "Accessibility" },
   { id: "appearance",    label: "Appearance" },
+  { id: "language",      label: "Language & Region" },
   { id: "notifications", label: "Notifications" },
+  { id: "privacy",       label: "Privacy & Data" },
+  { id: "security",      label: "Security" },
+  { id: "connected",     label: "Connected Accounts" },
+  { id: "creator",       label: "Creator Profile" },
+  { id: "projects",      label: "Projects" },
   { id: "knowledge",     label: "Knowledge Base" },
   { id: "media",         label: "Media Library" },
-  { id: "storage",       label: "Storage" },
-  { id: "billing",       label: "Billing" },
-  { id: "privacy",       label: "Privacy & Security" },
-  { id: "language",      label: "Language & Region" },
+  { id: "storage",       label: "Data & Storage" },
+  { id: "billing",       label: "Subscription" },
   { id: "integrations",  label: "Integrations" },
   { id: "extensions",    label: "Extensions" },
+  { id: "tutorials",     label: "Tutorials & Help" },
   { id: "usage",         label: "Usage" },
 ];
 
@@ -54,6 +59,7 @@ function renderSettingsContent(id) {
   container.innerHTML = "";
   switch (id) {
     case "account":       renderAccountSection(container);       break;
+    case "interests":     renderInterestsSection(container);     break;
     case "memory":        renderMemorySection(container);        break;
     case "projects":      renderProjectsSection(container);      break;
     case "creator":       renderCreatorSection(container);       break;
@@ -65,9 +71,13 @@ function renderSettingsContent(id) {
     case "storage":       renderStorageSection(container);       break;
     case "billing":       renderBillingSection(container);       break;
     case "privacy":       renderPrivacySection(container);       break;
+    case "security":      renderSecuritySection(container);      break;
+    case "connected":     renderConnectedSection(container);     break;
+    case "accessibility": renderAccessibilitySection(container); break;
     case "language":      renderLanguageSection(container);      break;
     case "integrations":  renderIntegrationsSection(container);  break;
     case "extensions":    renderExtensionsSection(container);    break;
+    case "tutorials":     renderTutorialsSection(container);     break;
     case "usage":         renderUsageSection(container);         break;
   }
 }
@@ -173,14 +183,26 @@ function renderAccountSection(container) {
     if (d.status !== "success") return;
     var p = d.profile || {};
     var email = p.email || "user@valleymind.ai";
-    var name = p.username || email.split("@")[0] || "User";
+    var name = p.username || p.name || email.split("@")[0] || "User";
+    var fullName = p.full_name || "";
+    var avatar = p.avatar || "";
+    var avatarHtml = avatar
+      ? '<div style="width:64px;height:64px;border-radius:50%;overflow:hidden;border:2px solid rgba(0,212,255,0.4);flex-shrink:0;background:#0f172a;"><img src="' + avatar + '" alt="" style="width:100%;height:100%;object-fit:cover;display:block;" onerror="this.parentNode.innerHTML=\'<div style=&quot;width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:#00d4ff;font-weight:700;font-size:26px;font-family:Space Grotesk,sans-serif;&quot;>' + (email[0] || "U").toUpperCase() + '</div>\'"></div>'
+      : '<div style="width:64px;height:64px;border-radius:50%;background:linear-gradient(135deg,#22d3ee,#0ea5e9);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:26px;font-family:\'Space Grotesk\',sans-serif;flex-shrink:0;">' + (email[0] || "U").toUpperCase() + '</div>';
     container.innerHTML =
       _SH.sectionHeader("Account", "Manage your ValleyMind identity and security") +
-      _SH.card("Profile", '<div style="display:flex;align-items:center;gap:16px;">' +
-        '<div style="width:52px;height:52px;border-radius:50%;background:linear-gradient(135deg,#22d3ee,#0ea5e9);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:22px;font-family:\'Space Grotesk\',sans-serif;flex-shrink:0;">' + (email[0] || "U").toUpperCase() + '</div>' +
-        '<div style="flex:1;"><p style="color:#f1f5f9;font-size:16px;font-weight:600;margin:0;font-family:\'Inter\',sans-serif;">' + name + '</p>' +
-        '<p style="color:#64748b;font-size:12px;margin:2px 0 0;font-family:\'Inter\',sans-serif;">' + email + '</p></div></div>') +
-      _SH.card("Username", _SH.input("Choose a display name", "settingsUsername", "text", name) + '<div style="margin-top:8px;">' + _SH.btn("Update Profile", "updateProfile()", "rgba(14,165,233,0.8)") + _SH.statusSpan("settingsProfileStatus") + '</div>') +
+      _SH.card("Profile Photo", '<div style="display:flex;align-items:center;gap:18px;">' +
+        '<div style="position:relative;" onclick="document.getElementById(\'settingsAvatarInput\').click()" title="Change photo" style="cursor:pointer;">' +
+          avatarHtml +
+          '<div style="position:absolute;right:-2px;bottom:-2px;width:24px;height:24px;border-radius:50%;background:#00d4ff;color:#003642;display:flex;align-items:center;justify-content:center;font-size:13px;border:2px solid #0f172a;">&#9998;</div>' +
+        '</div>' +
+        '<input type="file" id="settingsAvatarInput" accept="image/*" style="display:none;" onchange="settingsAvatarUpload(this)">' +
+        '<div style="flex:1;"><p style="color:#e2e8f0;font-size:13px;font-weight:600;margin:0 0 2px;font-family:\'Inter\',sans-serif;">' + name + '</p>' +
+        '<p style="color:#64748b;font-size:12px;margin:0 0 8px;font-family:\'Inter\',sans-serif;">' + email + '</p>' +
+        '<span style="font-size:11px;color:#64748b;">Click the photo to change it.</span><span id="settingsAvatarStatus" style="margin-left:8px;font-size:11px;color:#22c55e;"></span></div></div>') +
+      _SH.card("Name & Username", '<p style="color:#94a3b8;font-size:10px;margin:0 0 4px;">Full Name</p>' + _SH.input("Your full name", "settingsFullName", "text", fullName) +
+        '<div style="height:8px;"></div><p style="color:#94a3b8;font-size:10px;margin:0 0 4px;">Username</p>' + _SH.input("Choose a display name", "settingsUsername", "text", name) +
+        '<div style="margin-top:10px;">' + _SH.btn("Update Profile", "updateProfile()", "rgba(14,165,233,0.8)") + _SH.statusSpan("settingsProfileStatus") + '</div>') +
       _SH.card("Email", '<p style="color:#64748b;font-size:12px;margin:0 0 8px;font-family:\'Inter\',sans-serif;">' + email + '</p><p style="color:#475569;font-size:11px;margin:0;font-family:\'Inter\',sans-serif;">Email cannot be changed at this time.</p>') +
       _SH.card("Password", _SH.input("Current password", "settingsOldPass", "password") + '<div style="height:8px;"></div>' + _SH.input("New password", "settingsNewPass", "password") + '<div style="height:10px;"></div>' + _SH.btn("Update Password", "settingsChangePassword()", "rgba(14,165,233,0.8)") + _SH.statusSpan("settingsPassStatus")) +
       _SH.card("Two-Factor Authentication", '<div style="display:flex;align-items:center;justify-content:space-between;"><div><span style="color:#e2e8f0;font-size:13px;font-family:\'Inter\',sans-serif;">Two-Factor Authentication</span><p style="color:#64748b;font-size:11px;margin:2px 0 0;font-family:\'Inter\',sans-serif;">Add an extra layer of security</p></div>' + _SH.toggle("settings2FA", false) + '</div>') +
@@ -191,6 +213,42 @@ function renderAccountSection(container) {
   }).catch(function () {
     container.innerHTML = _SH.sectionHeader("Account") + '<p style="color:#64748b;">Could not load profile.</p>';
   });
+}
+
+function settingsAvatarUpload(input) {
+  var file = input.files && input.files[0];
+  input.value = "";
+  if (!file) return;
+  var status = document.getElementById("settingsAvatarStatus");
+  if (status) status.textContent = "Reading…";
+  var reader = new FileReader();
+  reader.onload = function (e) {
+    var img = new Image();
+    img.onload = function () {
+      var MAX = 256;
+      var scale = Math.min(1, MAX / Math.max(img.width, img.height));
+      var w = Math.max(1, Math.round(img.width * scale));
+      var h = Math.max(1, Math.round(img.height * scale));
+      var canvas = document.createElement("canvas");
+      canvas.width = w; canvas.height = h;
+      canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+      var dataUrl = canvas.toDataURL("image/jpeg", 0.85);
+      if (status) status.textContent = "Uploading…";
+      apiFetch("/api/settings/profile", {
+        method: "PUT", credentials: "include",
+        headers: authHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ picture: dataUrl })
+      }).then(function (r) { return r.json(); }).then(function (d) {
+        _showSaved();
+        if (status) status.textContent = d.status === "success" ? "Photo updated!" : "Failed";
+        setTimeout(function () { if (status) status.textContent = ""; }, 2500);
+        var sidebarAvatar = document.getElementById("sidebarAvatarLetter");
+        if (sidebarAvatar && dataUrl) sidebarAvatar.style.backgroundImage = "url('" + dataUrl + "')";
+      }).catch(function () { if (status) status.textContent = "Connection error"; });
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
 }
 
 function settingsChangePassword() {
@@ -211,20 +269,236 @@ function settingsChangePassword() {
 
 function updateProfile() {
   var username = _getVal("settingsUsername");
+  var fullName = _getVal("settingsFullName");
+  var payload = {};
+  if (username) payload.username = username;
+  if (fullName) payload.full_name = fullName;
   apiFetch("/api/settings/profile", {
     method: "PUT", credentials: "include",
     headers: authHeaders({ "Content-Type": "application/json" }),
-    body: JSON.stringify({ username: username })
+    body: JSON.stringify(payload)
   }).then(function (r) { return r.json(); }).then(function (d) {
     var el = document.getElementById("settingsProfileStatus");
-    if (el) el.textContent = d.status === "success" ? "Profile updated!" : "Error";
+    if (el) el.textContent = d.status === "success" ? "Profile updated!" : (d.message || "Error");
     if (d.status === "success") {
       _showSaved();
       var sidebarName = document.getElementById("sidebarUserName");
-      if (sidebarName) sidebarName.textContent = username || sidebarName.textContent;
+      if (sidebarName) sidebarName.textContent = fullName || username || sidebarName.textContent;
     }
     setTimeout(function () { if (el) el.textContent = ""; }, 2500);
   }).catch(function () { var el = document.getElementById("settingsProfileStatus"); if (el) el.textContent = "Connection error"; });
+}
+
+// ══════════════════════════════════════════════════════════════
+// INTERESTS & GOALS
+// ══════════════════════════════════════════════════════════════
+
+var INTEREST_OPTIONS = [
+  "Technology", "AI & Machine Learning", "Programming", "Design", "Video Editing", "Photography",
+  "Music & Audio", "Gaming", "Business & Startups", "Marketing", "Education", "Science",
+  "Health & Fitness", "Travel", "Finance", "News & Politics", "Fashion", "Sports", "Art & Creativity",
+  "Movies & TV", "Books & Reading", "Podcasts", "Space", "Psychology",
+];
+
+function renderInterestsSection(container) {
+  container.innerHTML = _SH.sectionHeader("Interests & Goals", "Tell ValleyMind what you care about — it personalizes recommendations, suggestions and answers") + '<p style="color:#64748b;">Loading...</p>';
+  settingsApiGet("interests").then(function (d) {
+    var data = d.data || {};
+    _interestTags = data.tags || [];
+    _interestGoals = data.goals || [];
+    var tags = data.tags || [];
+    var goals = data.goals || [];
+    var chips = INTEREST_OPTIONS.map(function (opt) {
+      var active = tags.indexOf(opt) !== -1;
+      return '<span onclick="toggleInterest(\'' + opt.replace(/'/g, "\\'") + '\')" id="int_' + opt.replace(/[^a-zA-Z0-9]/g, "_") + '" style="display:inline-block;background:' + (active ? "rgba(0,212,255,0.15)" : "rgba(255,255,255,0.04)") + ';color:' + (active ? "#00d4ff" : "#64748b") + ';border:1px solid ' + (active ? "rgba(0,212,255,0.3)" : "rgba(255,255,255,0.08)") + ';border-radius:999px;padding:6px 14px;font-size:12px;cursor:pointer;transition:all 0.15s;font-family:\'Inter\',sans-serif;">' + opt + '</span>';
+    }).join("");
+    container.innerHTML = _SH.sectionHeader("Interests & Goals", "Tell ValleyMind what you care about — it personalizes recommendations, suggestions and answers") +
+      _SH.card("Interests", '<div style="display:flex;flex-wrap:wrap;gap:8px;">' + chips + '</div>' +
+        '<div style="height:10px;"></div>' + _SH.input("Add another interest…", "newInterestInput") +
+        '<div style="margin-top:8px;">' + _SH.btn("Add Interest", "addInterest()") + '</div>') +
+      _SH.card("Goals", '<p style="color:#94a3b8;font-size:10px;margin:0 0 6px;">Your goals</p>' +
+        (goals.length ? goals.map(function (g, i) {
+          return '<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:rgba(15,23,42,0.5);border-radius:8px;margin-bottom:6px;"><span style="color:#00d4ff;">&#9830;</span><span style="color:#e2e8f0;font-size:13px;flex:1;">' + g + '</span><button onclick="removeGoal(' + i + ')" style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:13px;">&times;</button></div>';
+        }).join("") : '<p style="color:#475569;font-size:12px;">No goals yet. Add a goal below.</p>') +
+        '<div style="height:8px;"></div>' + _SH.input("Add a goal…", "newGoalInput") +
+        '<div style="margin-top:8px;">' + _SH.btn("Add Goal", "addGoal()") + '</div>') +
+      '<div style="margin-top:4px;">' + _SH.btn("Save Interests & Goals", "saveInterests()", "rgba(0,212,255,0.8)") + _SH.statusSpan("interestsStatus") + '</div>';
+  }).catch(function () { container.innerHTML = _SH.sectionHeader("Interests & Goals") + '<p style="color:#64748b;">Could not load interests.</p>'; });
+}
+
+var _interestTags = [];
+var _interestGoals = [];
+
+function toggleInterest(opt) {
+  var id = "int_" + opt.replace(/[^a-zA-Z0-9]/g, "_");
+  var el = document.getElementById(id);
+  if (!el) return;
+  var idx = _interestTags.indexOf(opt);
+  if (idx === -1) {
+    _interestTags.push(opt);
+    el.style.background = "rgba(0,212,255,0.15)"; el.style.color = "#00d4ff"; el.style.borderColor = "rgba(0,212,255,0.3)";
+  } else {
+    _interestTags.splice(idx, 1);
+    el.style.background = "rgba(255,255,255,0.04)"; el.style.color = "#64748b"; el.style.borderColor = "rgba(255,255,255,0.08)";
+  }
+}
+
+function addInterest() {
+  var val = _getVal("newInterestInput").trim();
+  if (!val || _interestTags.indexOf(val) !== -1) return;
+  _interestTags.push(val);
+  renderSettingsContent("interests");
+}
+
+function addGoal() {
+  var val = _getVal("newGoalInput").trim();
+  if (!val) return;
+  _interestGoals.push(val);
+  renderSettingsContent("interests");
+}
+
+function removeGoal(i) {
+  _interestGoals.splice(i, 1);
+  renderSettingsContent("interests");
+}
+
+function saveInterests() {
+  _saveSettingsAndShow("interests", { tags: _interestTags, goals: _interestGoals }, "interestsStatus");
+}
+
+// ══════════════════════════════════════════════════════════════
+// ACCESSIBILITY
+// ══════════════════════════════════════════════════════════════
+
+function renderAccessibilitySection(container) {
+  container.innerHTML = _SH.sectionHeader("Accessibility", "Make ValleyMind work the way you need it to");
+  settingsApiGet("accessibility").then(function (d) {
+    var data = d.data || {};
+    container.innerHTML = _SH.sectionHeader("Accessibility", "Make ValleyMind work the way you need it to") +
+      _SH.card("Display & Motion", '<div style="display:flex;flex-direction:column;">' +
+        _SH.row("Reduce Animations", _SH.toggle("accReducedMotion", data.reduced_motion === true), "Minimize motion for focus and comfort") +
+        _SH.row("High Contrast", _SH.toggle("accHighContrast", data.high_contrast === true), "Stronger contrast for easier reading") +
+        _SH.row("Larger Fonts", _SH.toggle("accLargeFonts", data.large_fonts === true), "Default to a larger font size") +
+        _SH.row("Screen Reader Optimized", _SH.toggle("accScreenReader", data.screen_reader === true), "Announce important state changes") + '</div>') +
+      _SH.card("Interaction", '<div style="display:flex;flex-direction:column;">' +
+        _SH.row("Keyboard Shortcuts", _SH.toggle("accKeyboard", data.keyboard_shortcuts !== false), "Enable all keyboard shortcuts") +
+        _SH.row("Sticky Buttons", _SH.toggle("accSticky", data.sticky_buttons === true), "Keep action buttons always visible") + '</div>') +
+      _SH.card("Text & Reading", '<div style="display:flex;gap:10px;"><div style="flex:1;"><p style="color:#94a3b8;font-size:10px;margin:0 0 4px;">Line Spacing</p>' + _SH.select(["Tight", "Normal", "Relaxed", "Wide"], "accLineSpacing", data.line_spacing) + '</div><div style="flex:1;"><p style="color:#94a3b8;font-size:10px;margin:0 0 4px;">Contrast Theme</p>' + _SH.select(["Standard", "High", "Amoled", "Sepia"], "accContrastTheme", data.contrast_theme) + '</div></div>') +
+      '<div style="margin-top:4px;">' + _SH.btn("Save Accessibility Settings", "saveAccessibility()", "rgba(0,212,255,0.8)") + _SH.statusSpan("accStatus") + '</div>';
+  }).catch(function () { container.innerHTML = _SH.sectionHeader("Accessibility") + '<p style="color:#64748b;">Could not load accessibility settings.</p>'; });
+}
+
+function saveAccessibility() {
+  _saveSettingsAndShow("accessibility", {
+    reduced_motion: _getChecked("accReducedMotion"), high_contrast: _getChecked("accHighContrast"),
+    large_fonts: _getChecked("accLargeFonts"), screen_reader: _getChecked("accScreenReader"),
+    keyboard_shortcuts: _getChecked("accKeyboard"), sticky_buttons: _getChecked("accSticky"),
+    line_spacing: _getVal("accLineSpacing"), contrast_theme: _getVal("accContrastTheme"),
+  }, "accStatus");
+}
+
+// ══════════════════════════════════════════════════════════════
+// SECURITY
+// ══════════════════════════════════════════════════════════════
+
+function renderSecuritySection(container) {
+  container.innerHTML = _SH.sectionHeader("Security", "Manage your account security") +
+    _SH.card("Change Password", _SH.input("Current password", "secOldPass", "password") + '<div style="height:8px;"></div>' + _SH.input("New password", "secNewPass", "password") + '<div style="height:8px;"></div>' + _SH.input("Confirm new password", "secNewPass2", "password") + '<div style="height:10px;"></div>' + _SH.btn("Update Password", "securityChangePassword()", "rgba(0,212,255,0.8)") + _SH.statusSpan("secPassStatus")) +
+    _SH.card("Two-Factor Authentication", '<div style="display:flex;flex-direction:column;">' +
+      _SH.row("Two-Factor Authentication", _SH.toggle("sec2FA", false), "Add an extra layer of security to your account") +
+      _SH.row("Require Re-login After Inactivity", _SH.toggle("secRelogin", true), "Ask for your password after 30 minutes of inactivity") + '</div>') +
+    _SH.card("Sessions", '<div style="display:flex;align-items:center;gap:12px;padding:8px 12px;background:rgba(15,23,42,0.5);border-radius:8px;"><div style="flex:1;"><span style="color:#e2e8f0;font-size:13px;">Current Device</span><p style="color:#64748b;font-size:10px;margin:1px 0 0;">Active now</p></div><span style="color:#22c55e;font-size:10px;">Current</span></div>' +
+      '<div style="margin-top:10px;">' + _SH.btn("Sign Out of Other Sessions", "secSignOutOthers()") + _SH.statusSpan("secSessionStatus") + '</div>') +
+    _SH.card("Danger Zone", '<p style="color:#ef4444;font-size:11px;margin:0 0 10px;">Permanently delete your account and all data. This cannot be undone.</p>' + _SH.btn("Delete Account", "confirmDeleteAccount()", "rgba(239,68,68,0.9)"));
+}
+
+function securityChangePassword() {
+  var oldPass = _getVal("secOldPass");
+  var newPass = _getVal("secNewPass");
+  var confirmPass = _getVal("secNewPass2");
+  var status = document.getElementById("secPassStatus");
+  if (!oldPass || !newPass) { if (status) status.textContent = "Fill in both fields."; return; }
+  if (newPass.length < 4) { if (status) status.textContent = "Password must be 4+ characters."; return; }
+  if (newPass !== confirmPass) { if (status) status.textContent = "New passwords do not match."; return; }
+  apiFetch("/auth/change-password", {
+    method: "POST", credentials: "include",
+    headers: authHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify({ current_password: oldPass, new_password: newPass })
+  }).then(function (r) { return r.json(); }).then(function (d) {
+    if (status) status.textContent = d.status === "success" ? "Password updated!" : d.message || "Failed.";
+    if (d.status === "success") {
+      _showSaved();
+      ["secOldPass", "secNewPass", "secNewPass2"].forEach(function (id) { var el = document.getElementById(id); if (el) el.value = ""; });
+    }
+  }).catch(function () { if (status) status.textContent = "Connection error."; });
+}
+
+function secSignOutOthers() {
+  var status = document.getElementById("secSessionStatus");
+  if (status) status.textContent = "Signing out other sessions…";
+  apiFetch("/auth/signout-others", { method: "POST", credentials: "include", headers: authHeaders() })
+    .then(function (r) { return r.json(); }).then(function (d) {
+      if (status) status.textContent = d.status === "success" ? "Other sessions signed out." : (d.message || "Failed.");
+    }).catch(function () { if (status) status.textContent = "Connection error."; });
+}
+
+// ══════════════════════════════════════════════════════════════
+// CONNECTED ACCOUNTS
+// ══════════════════════════════════════════════════════════════
+
+function renderConnectedSection(container) {
+  container.innerHTML = _SH.sectionHeader("Connected Accounts", "Link accounts to sign in faster and sync content");
+  apiFetch("/api/settings/profile", { credentials: "include", headers: authHeaders() }).then(function (r) { return r.json(); }).then(function (d) {
+    var p = d.profile || {};
+    var authMethod = p.auth_method || "";
+    var googleConnected = authMethod === "google";
+    var accountRow = function (name, connected, initials, color) {
+      return '<div style="display:flex;align-items:center;gap:12px;padding:12px 14px;background:rgba(15,23,42,0.5);border-radius:8px;margin-bottom:6px;">' +
+        '<div style="width:34px;height:34px;border-radius:50%;background:' + color + ';display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:13px;flex-shrink:0;">' + initials + '</div>' +
+        '<div style="flex:1;"><span style="color:#e2e8f0;font-size:13px;font-family:\'Inter\',sans-serif;">' + name + '</span>' +
+        '<p style="color:#64748b;font-size:10px;margin:1px 0 0;font-family:\'Inter\',sans-serif;">' + (connected ? "Connected" : "Not connected") + '</p></div>' +
+        (connected
+          ? '<span style="color:#22c55e;font-size:10px;font-family:\'Inter\',sans-serif;">✓ Linked</span>'
+          : _SH.btn("Connect", "showComingSoon('Connect " + name + "')")) + '</div>';
+    };
+    container.innerHTML = _SH.sectionHeader("Connected Accounts", "Link accounts to sign in faster and sync content") +
+      _SH.card("Sign-in Methods", accountRow("Google", googleConnected, "G", "#4285F4") + accountRow("GitHub", false, "GH", "#24292E") + accountRow("Apple", false, "", "#333")) +
+      _SH.card("Synced Services", '<p style="color:#64748b;font-size:12px;margin:0;">Google Drive, Dropbox, OneDrive, and more integrations are available under Integrations. Cross-account sync is coming soon.</p>');
+  }).catch(function () {
+    container.innerHTML = _SH.sectionHeader("Connected Accounts") + '<p style="color:#64748b;">Could not load connected accounts.</p>';
+  });
+}
+
+// ══════════════════════════════════════════════════════════════
+// TUTORIALS & HELP
+// ══════════════════════════════════════════════════════════════
+
+function renderTutorialsSection(container) {
+  var guideList = (window.VM_GUIDES || []).map(function (g) {
+    var seen = window.vmGuideSeen ? vmGuideSeen(g.key) : false;
+    return '<div style="display:flex;align-items:center;gap:12px;padding:12px 14px;background:rgba(15,23,42,0.5);border:1px solid rgba(255,255,255,0.06);border-radius:10px;margin-bottom:6px;">' +
+      '<div style="width:34px;height:34px;border-radius:10px;background:rgba(0,212,255,0.1);display:flex;align-items:center;justify-content:center;color:#00d4ff;flex-shrink:0;"><span class="material-icons" style="font-size:17px;">' + (g.icon || "info") + '</span></div>' +
+      '<div style="flex:1;min-width:0;"><span style="color:#e2e8f0;font-size:13px;font-weight:600;display:block;font-family:\'Inter\',sans-serif;">' + g.title + '</span>' +
+      '<span style="color:' + (seen ? "#22c55e" : "#64748b") + ';font-size:11px;">' + (seen ? "Completed" : "Not watched yet") + '</span></div>' +
+      '<button onclick="vmGuideForce(\'' + g.key + '\');vmHelpCenter.close()" style="border:1px solid rgba(0,212,255,0.35);background:rgba(0,212,255,0.1);color:#00d4ff;border-radius:8px;padding:6px 12px;cursor:pointer;font-size:11px;font-weight:700;font-family:\'Inter\',sans-serif;">Replay</button>' +
+      '</div>';
+  }).join("");
+  container.innerHTML = _SH.sectionHeader("Tutorials & Help", "Replay walkthroughs or open the Help & Learning Center") +
+    _SH.card("Feature Walkthroughs", guideList) +
+    _SH.card("Actions", '<div style="display:flex;flex-wrap:wrap;gap:8px;">' +
+      _SH.btn("Open Help & Learning Center", "vmHelpCenter.open();closeSettings()", "rgba(0,212,255,0.8)") +
+      _SH.btn("Replay Chat Guide", "vmGuideForce('chat')", "rgba(0,212,255,0.8)") +
+      _SH.btn("Replay Studio Guide", "vmGuideForce('studio')") +
+      _SH.btn("Reset All Tutorials", "resetTutorials()", "rgba(239,68,68,0.15)") + _SH.statusSpan("tutorialStatus") + '</div>') +
+    _SH.card("How It Works", '<p style="color:#94a3b8;font-size:12px;line-height:1.6;margin:0;font-family:\'Inter\',sans-serif;">Each feature shows a short introduction the first time you open it. Once you\'ve seen a walkthrough it won\'t repeat — you can replay any of them here at any time.</p>');
+}
+
+function resetTutorials() {
+  var status = document.getElementById("tutorialStatus");
+  if (!confirm("Reset all tutorials? Every feature walkthrough will show again the next time you open it.")) return;
+  if (window.vmGuideReset) vmGuideReset();
+  if (status) { status.textContent = "Tutorials reset — they'll show again as you explore."; setTimeout(function () { status.textContent = ""; }, 3500); }
+  renderSettingsContent("tutorials");
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -786,14 +1060,34 @@ function confirmClearMemory() {
 }
 
 function confirmLogout() { if (confirm("Are you sure you want to log out?")) { logout(); } }
-function confirmDeleteAccount() { if (confirm("Permanently delete your account?")) { showComingSoon("Account Deletion"); } }
+function confirmDeleteAccount() {
+  if (!confirm("Permanently delete your account? All your data — settings, memory, chats, projects and media — will be removed. This cannot be undone.")) return;
+  if (!confirm("Are you absolutely sure? This action is final and cannot be reversed.")) return;
+  apiFetch("/api/settings/account", { method: "DELETE", credentials: "include", headers: authHeaders() })
+    .then(function (r) { return r.json(); }).then(function (d) {
+      if (d.status === "success") {
+        clearAuthToken();
+        location.reload();
+      } else {
+        alert(d.message || "Could not delete account.");
+      }
+    }).catch(function () { alert("Connection error. Your account was not deleted."); });
+}
 
 function exportMyData() {
   Promise.all([
+    apiFetch("/api/settings/profile", { credentials: "include", headers: authHeaders() }).then(function (r) { return r.json(); }),
     apiFetch("/api/settings/memory-fields", { credentials: "include", headers: authHeaders() }).then(function (r) { return r.json(); }),
     apiFetch("/api/settings/projects", { credentials: "include", headers: authHeaders() }).then(function (r) { return r.json(); }),
+    apiFetch("/api/settings/usage", { credentials: "include", headers: authHeaders() }).then(function (r) { return r.json(); }),
   ]).then(function (results) {
-    var data = { memory: results[0].fields || {}, projects: results[1].projects || [] };
+    var data = {
+      exported_at: new Date().toISOString(),
+      profile: (results[0] && results[0].profile) || {},
+      memory: (results[1] && results[1].fields) || {},
+      projects: (results[2] && results[2].projects) || [],
+      usage: (results[3] && results[3].usage) || {},
+    };
     var blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
     var url = URL.createObjectURL(blob);
     var a = document.createElement("a"); a.href = url; a.download = "valleymind-export.json"; a.click();

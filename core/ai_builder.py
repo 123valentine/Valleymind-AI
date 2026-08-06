@@ -45,12 +45,18 @@ def base_url() -> str:
     return os.getenv("OPENCODE_BASE_URL", ZEN_BASE_URL).strip().rstrip("/")
 
 
+# Default to a fast, NON-reasoning free model. deepseek-v4-flash-free is a
+# chain-of-thought model that emits everything as reasoning_content and spends
+# its whole token budget "thinking" — at the manifest step (small budget) it
+# returned zero answer content and the build died. ling-3.0-flash-free returns
+# clean JSON directly (finish_reason=stop) in ~16s, so both planning and the
+# multi-file build stay well under the gunicorn timeout.
 def plan_model() -> str:
-    return os.getenv("OPENCODE_PLAN_MODEL", "deepseek-v4-flash-free").strip()
+    return os.getenv("OPENCODE_PLAN_MODEL", "ling-3.0-flash-free").strip()
 
 
 def build_model() -> str:
-    return os.getenv("OPENCODE_BUILD_MODEL", "deepseek-v4-flash-free").strip()
+    return os.getenv("OPENCODE_BUILD_MODEL", "ling-3.0-flash-free").strip()
 
 
 def configured() -> bool:
@@ -191,6 +197,52 @@ def _extract_json(text: str):
     return None
 
 
+def _accumulate(model, messages, max_tokens, temperature, on_delta=None):
+    """Stream a completion, returning (content, reasoning, finish_reason).
+
+    Both channels are returned so callers can fall back to ``reasoning`` when a
+    reasoning model emits its answer there (or when the content channel is
+    truncated). ``on_delta`` receives each content chunk as it arrives.
+    """
+    content, reasoning, finish = [], [], None
+    for ev in chat_stream(model, messages, max_tokens=max_tokens, temperature=temperature):
+        chunk = ev.get("content") or ""
+        if chunk:
+            content.append(chunk)
+            if on_delta:
+                on_delta(chunk)
+        thought = ev.get("reasoning") or ""
+        if thought:
+            reasoning.append(thought)
+        if ev.get("finish"):
+            finish = ev.get("finish")
+    return "".join(content), "".join(reasoning), finish
+
+
+def _stream_json(model, messages, max_tokens, temperature, on_delta=None):
+    """Stream a JSON-returning completion, resilient to reasoning models.
+
+    Tries the content channel, then the reasoning channel. If the model ran out
+    of budget mid-thought (finish_reason == "length") with nothing parseable, it
+    asks once more for the final JSON only, with extra head-room. Returns the
+    parsed value (dict/list) or None.
+    """
+    content, reasoning, finish = _accumulate(model, messages, max_tokens, temperature, on_delta)
+    parsed = _extract_json(content)
+    if parsed is None:
+        parsed = _extract_json(reasoning)
+    if parsed is None and finish == "length":
+        followup = list(messages) + [
+            {"role": "assistant", "content": (content or reasoning)[-1500:]},
+            {"role": "user", "content": "Output ONLY the final JSON now — no reasoning, no explanation, no markdown fences."},
+        ]
+        content2, reasoning2, _ = _accumulate(model, followup, max(max_tokens, 8000), temperature)
+        parsed = _extract_json(content2)
+        if parsed is None:
+            parsed = _extract_json(reasoning2)
+    return parsed
+
+
 # ── Prompt templates ────────────────────────────────────────────────────────
 
 CLARIFY_SYSTEM = (
@@ -241,6 +293,9 @@ MANIFEST_SYSTEM = (
     "Rules:\n"
     "- 8 to 45 files. Every path unique.\n"
     '- Never include "node_modules", ".git", build artifacts, or ".env" with secrets; include ".env.example" instead.\n'
+    "- Only text-based source, config and documentation files. Do NOT include binary "
+    "assets (favicon.ico, .png/.jpg/.gif images, fonts, audio, video, archives) — "
+    "those are added manually, not generated.\n"
     "- Stick to the stack recommended in the spec.\n"
     "- No markdown fences, no extra text."
 )
@@ -417,16 +472,26 @@ def clarify_generator(model: str, message: str, project_type: str):
         {"role": "user", "content": f"Project type: {project_type}\n\nWhat the user wants to build:\n{message}"},
     ]
     buf = ""
+    reasoning_buf = ""
+    finish = None
     try:
-        for ev in chat_stream(model, messages, max_tokens=2000, temperature=0.3):
+        for ev in chat_stream(model, messages, max_tokens=3000, temperature=0.3):
             content = ev.get("content") or ""
             if content:
                 buf += content
                 yield {"type": "delta", "text": content}
+            reasoning_buf += ev.get("reasoning") or ""
+            if ev.get("finish"):
+                finish = ev.get("finish")
     except Exception as exc:
         yield {"type": "error", "message": _user_facing_error(exc)}
         return
-    parsed = _extract_json(buf)
+    parsed = _extract_json(buf) or _extract_json(reasoning_buf)
+    if parsed is None and finish == "length":
+        try:
+            parsed = _stream_json(model, messages, max_tokens=8000, temperature=0.3)
+        except Exception:
+            parsed = None
     questions = []
     if isinstance(parsed, dict):
         qs = parsed.get("questions")
@@ -450,16 +515,26 @@ def plan_generator(model: str, message: str, project_type: str, answers=None):
         )},
     ]
     buf = ""
+    reasoning_buf = ""
+    finish = None
     try:
         for ev in chat_stream(model, messages, max_tokens=12000, temperature=0.4):
             content = ev.get("content") or ""
             if content:
                 buf += content
                 yield {"type": "delta", "text": content}
+            reasoning_buf += ev.get("reasoning") or ""
+            if ev.get("finish"):
+                finish = ev.get("finish")
     except Exception as exc:
         yield {"type": "error", "message": _user_facing_error(exc)}
         return
-    spec = _extract_json(buf)
+    spec = _extract_json(buf) or _extract_json(reasoning_buf)
+    if not isinstance(spec, dict) and finish == "length":
+        try:
+            spec = _stream_json(model, messages, max_tokens=16000, temperature=0.4)
+        except Exception:
+            spec = None
     if not isinstance(spec, dict):
         yield {"type": "error", "message": "The model returned an unreadable plan. Please try again."}
         return
@@ -529,10 +604,7 @@ def _manifest_for(spec_text: str, model: str) -> list:
         {"role": "system", "content": MANIFEST_SYSTEM},
         {"role": "user", "content": f"Project specification:\n{spec_text}"},
     ]
-    buf = ""
-    for ev in chat_stream(model, messages, max_tokens=4000, temperature=0.2):
-        buf += ev.get("content") or ""
-    parsed = _extract_json(buf)
+    parsed = _stream_json(model, messages, max_tokens=6000, temperature=0.2)
     if not isinstance(parsed, list):
         raise RuntimeError("Could not design a file structure for this project")
     cleaned = []
@@ -551,8 +623,25 @@ def _manifest_for(spec_text: str, model: str) -> list:
     return cleaned
 
 
-def build_generator(user_id: str, spec):
-    """Yield SSE event dicts that drive the full build lifecycle."""
+# Binary assets a text LLM cannot produce. SVG is deliberately excluded — it is
+# XML markup the model can write. .env is excluded too (spec uses .env.example).
+_BINARY_ASSET_RE = re.compile(
+    r"\.(ico|png|jpe?g|gif|webp|bmp|tiff?|woff2?|ttf|eot|otf|mp3|mp4|m4a|wav|ogg|pdf|zip|gz|tar|jar|exe|dll|so|dylib|wasm)$",
+    re.IGNORECASE,
+)
+
+
+def _is_binary_asset(path: str) -> bool:
+    return bool(_BINARY_ASSET_RE.search(path or ""))
+
+
+def build_generator(user_id: str, spec, model=None):
+    """Yield SSE event dicts that drive the full build lifecycle.
+
+    ``model`` optionally overrides the build model (chosen in the UI dropdown);
+    it must already be validated by the caller. Falls back to build_model().
+    """
+    use_model = (model or "").strip() or build_model()
     proj = None
     meta = {}
     try:
@@ -567,7 +656,7 @@ def build_generator(user_id: str, spec):
         yield {"type": "status", "message": "Setting up the project workspace..."}
 
         yield {"type": "status", "message": "Designing the project architecture..."}
-        manifest_res = _thread_call(lambda: _manifest_for(spec_text, build_model()))
+        manifest_res = _thread_call(lambda: _manifest_for(spec_text, use_model))
         while not manifest_res["done"]:
             yield {"type": "heartbeat", "message": "Designing the project architecture..."}
             time.sleep(10)
@@ -578,11 +667,19 @@ def build_generator(user_id: str, spec):
 
         total = len(manifest)
         done_files = 0
+        skipped_files = []
         for index, path in enumerate(manifest):
             yield {"type": "file_start", "path": path, "index": index, "total": total}
+            # A text model can't emit binary assets (favicon.ico, images, fonts).
+            # Skip them so one binary entry can't sink the whole build.
+            if _is_binary_asset(path):
+                skipped_files.append(path)
+                yield {"type": "file_skipped", "path": path, "index": index, "total": total,
+                       "message": "Binary asset — add this file manually"}
+                continue
             collected = []
             try:
-                for chunk in _gen_file_content(build_model(), spec_text, path, manifest):
+                for chunk in _gen_file_content(use_model, spec_text, path, manifest):
                     collected.append(chunk)
                     yield {"type": "chunk", "text": chunk, "path": path, "index": index, "total": total}
                 content = "".join(collected)
@@ -592,20 +689,27 @@ def build_generator(user_id: str, spec):
             except GeneratorExit:
                 raise
             except Exception as exc:
+                # One bad file must not discard the whole project — log it and
+                # keep going. Only a build with ZERO usable files is a failure.
+                skipped_files.append(path)
                 yield {"type": "file_error", "path": path, "index": index, "total": total, "message": _user_facing_error(exc)}
-                raise RuntimeError(f"Failed to generate {path}: {_user_facing_error(exc)}")
+                continue
             done_files += 1
             yield {"type": "file_done", "path": path, "index": index, "total": total, "completed": done_files}
+
+        if done_files == 0:
+            raise RuntimeError("No files could be generated for this project")
 
         meta = {
             "id": pid,
             "name": (spec.get("project_name") if isinstance(spec, dict) else "") or pid,
             "spec": spec,
             "created_at": datetime.now(timezone.utc).isoformat(),
-            "model": build_model(),
-            "build_model": build_model(),
-            "status": "complete",
+            "model": use_model,
+            "build_model": use_model,
+            "status": "complete" if not skipped_files else "partial",
             "file_count": done_files,
+            "skipped_files": skipped_files,
         }
         save_project_meta(proj, meta)
         tree = build_tree(proj)

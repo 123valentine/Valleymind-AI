@@ -1076,6 +1076,144 @@ def google_auth():
     })
 
 
+# ── Registration ───────────────────────────────────────────────
+
+_USERNAME_RE = re.compile(r"^[a-zA-Z0-9_.-]{3,24}$")
+
+
+def _normalize_username(value: str) -> str:
+    """Return a canonical username (trimmed, lowercased) or empty string."""
+    return str(value or "").strip().lower()
+
+
+def _username_taken(users: dict, username: str, exclude_email: str = "") -> bool:
+    """Check whether a username is already in use by another account."""
+    uname = _normalize_username(username)
+    if not uname:
+        return False
+    for email, record in users.items():
+        if exclude_email and str(email or "").lower() == str(exclude_email or "").lower():
+            continue
+        if _normalize_username(record.get("username")) == uname:
+            return True
+        # Legacy accounts named via the old 'name' field are not handles, so
+        # only treat exact matches on the explicit username column as taken.
+    return False
+
+
+@app.route("/auth/register", methods=["POST"])
+@app.route("/api/auth/register", methods=["POST"])
+def register():
+    data = request.get_json(silent=True) or {}
+    full_name = str(data.get("full_name") or data.get("name") or "").strip()
+    username = _normalize_username(data.get("username"))
+    email = str(data.get("email") or "").strip().lower()
+    password = str(data.get("password") or "")
+    confirm_password = str(data.get("confirm_password") or data.get("confirmPassword") or "")
+    picture = str(data.get("picture") or "").strip()
+    agree_terms = bool(data.get("agree_terms"))
+    read_privacy = bool(data.get("read_privacy"))
+
+    # ── Validation ──────────────────────────────────────────────
+    if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email):
+        return jsonify({"status": "error", "message": "A valid email address is required"}), 400
+    if not full_name:
+        return jsonify({"status": "error", "message": "Full name is required"}), 400
+    if len(full_name) > 120:
+        return jsonify({"status": "error", "message": "Full name is too long"}), 400
+    if not username or not _USERNAME_RE.match(username):
+        return jsonify({"status": "error", "message": "Username must be 3-24 characters using letters, numbers, dots, dashes or underscores"}), 400
+    if not password or len(password) < 4:
+        return jsonify({"status": "error", "message": "Password must be at least 4 characters"}), 400
+    if password != confirm_password:
+        return jsonify({"status": "error", "message": "Passwords do not match"}), 400
+    if not agree_terms:
+        return jsonify({"status": "error", "message": "You must agree to the Terms of Service to continue"}), 400
+    if not read_privacy:
+        return jsonify({"status": "error", "message": "You must confirm you have read the Privacy Policy to continue"}), 400
+    if picture and not picture.startswith("data:image/"):
+        return jsonify({"status": "error", "message": "Profile picture must be a valid image"}), 400
+    if picture and len(picture) > 2_000_000:
+        return jsonify({"status": "error", "message": "Profile picture is too large"}), 400
+
+    user_id = _safe_user_id(email)
+    is_creator = _is_creator(email)
+
+    with _users_lock:
+        users = _load_users()
+        if email in users:
+            return jsonify({"status": "error", "message": "An account with that email already exists"}), 409
+        if _username_taken(users, username):
+            return jsonify({"status": "error", "message": "That username is already taken — try another"}), 409
+
+        record = {
+            "user_id": user_id,
+            "name": full_name,
+            "username": username,
+            "email": email,
+            "picture": picture or "",
+            "password_hash": generate_password_hash(password),
+            "auth_method": "email",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "security_question": DEFAULT_SECURITY_QUESTION,
+            "security_answer_hash": generate_password_hash(DEFAULT_SECURITY_ANSWER),
+            "email_verified": False,
+        }
+        if is_creator:
+            record["identity_name"] = CREATOR_NAME
+            record["title"] = CREATOR_TITLE
+        users[email] = record
+        _save_users(users)
+
+    # ── Auto sign-in (mirrors /auth/login) ──────────────────────
+    session.clear()
+    session.permanent = True
+    session["user_id"] = user_id
+    session["email"] = email
+    session["is_creator"] = is_creator
+    session["user"] = {"id": user_id, "email": email, "is_creator": is_creator}
+    if is_creator:
+        session["user"]["identity_name"] = CREATOR_NAME
+        session["user"]["title"] = CREATOR_TITLE
+
+    token = secrets.token_urlsafe(32)
+    _set_auth_token(token, {"user_id": user_id, "email": email, "is_creator": is_creator})
+
+    marcus = load_marcus(user_id)
+    if marcus:
+        try:
+            marcus.memory.initialize_user_name(full_name)
+            marcus.memory.remember_preference("username", username)
+            marcus.memory.remember_fact(
+                "fact",
+                f"User's full name is {full_name}",
+                full_name,
+                confidence=0.95,
+            )
+            marcus.memory.reload()
+        except Exception as exc:
+            print(f"[WARN] Failed to initialize memory for new user {email}: {exc}")
+        if is_creator:
+            try:
+                marcus.memory.set_creator_identity(CREATOR_NAME, CREATOR_TITLE)
+            except Exception as exc:
+                print(f"[WARN] Failed to set creator identity in memory: {exc}")
+
+    return jsonify({
+        "status": "success",
+        "authenticated": True,
+        "email": email,
+        "username": username,
+        "name": full_name,
+        "picture": picture,
+        "user_id": user_id,
+        "character": "marcus",
+        "session_token": token,
+        "is_creator": is_creator,
+        "first_time": True,
+    }), 201
+
+
 @app.route("/logout", methods=["POST"])
 @app.route("/auth/logout", methods=["POST"])
 def logout():
@@ -2180,6 +2318,8 @@ def api_settings(section):
         "account", "memory", "projects", "creator", "preferences",
         "appearance", "notifications", "knowledge", "billing",
         "privacy", "language", "integrations", "extensions",
+        "interests", "goals", "accessibility", "security",
+        "connected", "tutorials", "help",
     }
     if section not in allowed:
         return jsonify({"status": "error", "message": "Unknown section"}), 400
@@ -2190,17 +2330,52 @@ def api_settings(section):
     if not isinstance(body, dict):
         return jsonify({"status": "error", "message": "Body must be a JSON object"}), 400
     _put_section_settings(user_id, section, body)
-    # Language must actually change replies, so persist it where the brain reads.
-    if section == "language":
-        lang = str(body.get("language") or "").strip()
+    # Personalization must actually change the brain, so every saved section is
+    # mirrored into long-term memory as preferences the assistant can read.
+    _mirror_settings_to_memory(user_id, section, body)
+    return jsonify({"status": "success", "section": section, "message": "Saved"})
+
+
+def _mirror_settings_to_memory(user_id: str, section: str, body: dict):
+    """Persist relevant settings into the user's long-term memory so the brain
+    can personalise recommendations and replies. This is the single choke point
+    through which every Settings save reaches Marcus memory."""
+    try:
         marcus = load_marcus(user_id)
-        if marcus:
-            try:
+        if not marcus:
+            return
+        if section == "language":
+            lang = str(body.get("language") or "").strip()
+            if lang:
                 marcus.memory.long_term["reply_language"] = lang
                 marcus.memory.save_memory()
-            except Exception as exc:
-                print(f"[SETTINGS] could not persist reply language: {exc}")
-    return jsonify({"status": "success", "section": section, "message": "Saved"})
+        elif section == "interests":
+            tags = body.get("tags", body.get("interests"))
+            if isinstance(tags, list):
+                tags_text = ", ".join(str(t).strip() for t in tags if str(t).strip())
+                if tags_text:
+                    marcus.memory.remember_preference("interests", tags_text)
+            elif isinstance(tags, str) and tags.strip():
+                marcus.memory.remember_preference("interests", tags.strip())
+            goals = body.get("goals")
+            if isinstance(goals, list):
+                goals_text = ", ".join(str(g).strip() for g in goals if str(g).strip())
+                if goals_text:
+                    marcus.memory.remember_preference("goals", goals_text)
+        elif section == "goals":
+            for key, val in body.items():
+                if isinstance(val, str) and val.strip():
+                    marcus.memory.remember_preference(key, val.strip())
+        elif section in ("preferences", "appearance", "notifications", "accessibility", "creator"):
+            for key, val in body.items():
+                if val is None or val == "":
+                    continue
+                text = str(val)
+                if isinstance(val, list):
+                    text = ", ".join(str(i) for i in val)
+                marcus.memory.remember_preference(f"{section}_{key}", text[:2000])
+    except Exception as exc:
+        print(f"[SETTINGS] could not mirror {section} into memory: {exc}")
 
 
 # ── User profile endpoint ──────────────────────────────────────
@@ -2216,27 +2391,95 @@ def api_settings_profile():
         users = _load_users()
         user = users.get(email, {})
     if request.method == "GET":
+        display_name = user.get("name") or user.get("username") or (email.split("@")[0] if email else "")
         return jsonify({
             "status": "success",
             "profile": {
-                "username": user.get("name", email.split("@")[0] if email else ""),
+                "full_name": user.get("name", ""),
+                "username": user.get("username", display_name),
+                "name": display_name,
                 "email": email,
                 "avatar": user.get("picture", ""),
+                "auth_method": user.get("auth_method", ""),
                 "is_creator": user.get("is_creator", False),
                 "created_at": user.get("created_at", ""),
             }
         })
     body = request.get_json(silent=True) or {}
-    username = str(body.get("username") or "").strip()
+    full_name = str(body.get("full_name") or "").strip()
+    username = _normalize_username(body.get("username"))
     with _users_lock:
         users = _load_users()
         if email in users:
+            if full_name:
+                users[email]["name"] = full_name[:120]
             if username:
-                users[email]["name"] = username
+                if not _USERNAME_RE.match(username):
+                    return jsonify({"status": "error", "message": "Username must be 3-24 characters using letters, numbers, dots, dashes or underscores"}), 400
+                if _username_taken(users, username, exclude_email=email):
+                    return jsonify({"status": "error", "message": "That username is already taken"}), 409
+                users[email]["username"] = username
             if "picture" in body:
                 users[email]["picture"] = str(body["picture"]).strip()
             _save_users(users)
+        # Keep Marcus memory in sync so the brain refers to the user correctly.
+        marcus = load_marcus(user_id)
+        if marcus:
+            try:
+                if full_name:
+                    marcus.memory.initialize_user_name(full_name)
+                if username:
+                    marcus.memory.remember_preference("username", username)
+            except Exception as exc:
+                print(f"[WARN] Failed to sync profile into memory: {exc}")
     return jsonify({"status": "success", "message": "Profile updated"})
+
+
+# ── Account deletion (GDPR-style full wipe) ────────────────────
+
+@app.route("/api/settings/account", methods=["DELETE"])
+def api_settings_delete_account():
+    user_id, error = _require_login()
+    if error:
+        return error
+    auth = _current_auth()
+    email = str(auth.get("email") or "").strip()
+
+    # Remove the auth record from the users store.
+    with _users_lock:
+        users = _load_users()
+        if email in users:
+            users.pop(email, None)
+            _save_users(users)
+
+    # Drop the user's settings, sessions and long-term memory directories.
+    try:
+        import shutil
+        for target in (
+            _SETTINGS_DIR / _safe_user_id(user_id),
+            PROJECT_ROOT / "memory_data" / "users" / str(user_id),
+        ):
+            if target.exists():
+                shutil.rmtree(target, ignore_errors=True)
+    except Exception as exc:
+        print(f"[ERROR] Failed to remove user data on delete: {exc}")
+
+    # Remove stored bearer tokens + chat/session records for this user.
+    coll = auth_tokens_collection()
+    if coll is not None:
+        try:
+            coll.delete_many({"user_id": user_id})
+        except Exception as exc:
+            print(f"[ERROR] Failed to purge auth tokens: {exc}")
+    chats = chats_collection()
+    if chats is not None:
+        try:
+            chats.delete_many({"user_id": user_id})
+        except Exception as exc:
+            print(f"[ERROR] Failed to purge chat records: {exc}")
+
+    session.clear()
+    return jsonify({"status": "success", "message": "Your account has been deleted"})
 
 
 # ── Memory fields API (long-term memory) ───────────────────────
@@ -3961,7 +4204,11 @@ def ai_builder_build():
         return jsonify({"status": "error", "message": "An approved project spec is required"}), 400
     if not ai_builder.configured():
         return jsonify({"status": "error", "message": "AI Builder is not configured on the server"}), 503
-    return _ai_builder_sse(ai_builder.build_generator(user_id, spec))
+    # Optional model override from the UI dropdown; ignore anything not on the
+    # live model list so a bad value can't break the build.
+    requested_model = str(data.get("model") or "").strip()
+    model = requested_model if requested_model in set(ai_builder.available_models()) else None
+    return _ai_builder_sse(ai_builder.build_generator(user_id, spec, model=model))
 
 
 @app.route("/api/ai-builder/projects", methods=["GET"])
