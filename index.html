@@ -3306,6 +3306,9 @@ function toggleMessageContextMenu(e, msgIndex) {
 
     menu.dataset.activeMsgIndex = msgIndex;
     menu.classList.add("open");
+    // Remember which assistant message this menu was opened for, so the actions
+    // (listen / email / report / details) can read that message's text.
+    menu._sourceWrap = (e.target && e.target.closest) ? e.target.closest(".assistant-message") : null;
 
     const x = e.clientX;
     const y = e.clientY;
@@ -3337,21 +3340,111 @@ function closeMessageContextMenu() {
 }
 
 function handleMessageContextAction(action) {
+    var menu = document.getElementById("messageContextMenu");
+    var wrap = menu ? menu._sourceWrap : null;
+    var bubble = wrap ? wrap.querySelector(".bubble") : null;
+    var text = bubble ? bubble.textContent.trim() : "";
     closeMessageContextMenu();
     switch (action) {
         case "listen":
-            showComingSoon("Text-to-Speech Engine");
+            var pb = wrap ? wrap.querySelector(".playback-ctrl") : null;
+            if (pb) toggleVoicePlayback(pb);
+            else if (text) browserSpeak(text);
             break;
         case "email":
-            showComingSoon("Draft in Email");
+            draftResponseEmail(text);
             break;
         case "details":
-            showComingSoon("Response details");
+            showResponseDetails(wrap);
             break;
         case "report":
-            showComingSoon("Report issue");
+            reportResponseIssue(text);
             break;
     }
+}
+
+// Open the user's mail client with the response prefilled as a draft.
+function draftResponseEmail(text) {
+    if (!text) return;
+    var body = text.slice(0, 1500) + (text.length > 1500 ? "\n\n…(truncated)" : "") + "\n\n— via ValleyMind AI";
+    window.location.href = "mailto:?subject=" + encodeURIComponent("ValleyMind AI — response") +
+        "&body=" + encodeURIComponent(body);
+}
+
+// Report a bad response — routed to the same /suggestions feedback channel.
+function reportResponseIssue(text) {
+    var note = window.prompt("What's wrong with this response? A short note helps us fix it.");
+    if (note === null) return;                       // cancelled
+    note = (note || "").trim();
+    if (!note) return;
+    var payload = "[Report issue] " + note + "\n\n--- response ---\n" + String(text || "").slice(0, 600);
+    apiFetch("/suggestions", {
+        method: "POST",
+        headers: authHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ text: payload })
+    }).then(function (r) { return r.json(); }).then(function (j) {
+        if (j && j.status === "success") _vmToast("Thanks — your report was sent.");
+        else _vmToast((j && j.message) || "Could not send the report.");
+    }).catch(function () { _vmToast("Could not send the report."); });
+}
+
+function showResponseDetails(wrap) {
+    var persona = (typeof currentPersona !== "undefined" && currentPersona) ? currentPersona : "assistant";
+    var chars = 0;
+    if (wrap) { var b = wrap.querySelector(".bubble"); chars = b ? b.textContent.trim().length : 0; }
+    _vmToast("Assistant: " + persona + " · " + chars + " chars · Engine: ValleyMind AI");
+}
+
+// Re-run the most recent prompt and stream a fresh response.
+function regenerateResponse(btn) {
+    if (typeof isThinking !== "undefined" && isThinking) return;
+    var text = window._lastUserText || "";
+    if (!text) { _vmToast("Nothing to regenerate yet."); return; }
+    var input = document.getElementById("chatInput");
+    if (!input) return;
+    input.value = text;
+    if (typeof autoGrowInput === "function") autoGrowInput();
+    window.send();
+}
+
+// Share a single response — native share sheet where available, else clipboard.
+function shareMessageText(btn) {
+    var wrapper = btn.closest(".assistant-message");
+    var bubble = wrapper ? wrapper.querySelector(".bubble") : null;
+    var text = bubble ? bubble.textContent.trim() : "";
+    if (!text) return;
+    if (navigator.share) { navigator.share({ title: "ValleyMind AI", text: text }).catch(function () {}); return; }
+    var setIcon = function (name, color) {
+        var icon = btn.querySelector("i");
+        if (icon) { icon.setAttribute("data-lucide", name); icon.style.color = color || ""; }
+        if (typeof lucide !== "undefined" && lucide.createIcons) lucide.createIcons();
+    };
+    navigator.clipboard.writeText(text).then(function () {
+        setIcon("check", "#00ff88");
+        _vmToast("Response copied to clipboard.");
+        setTimeout(function () { setIcon("share-2", ""); }, 1500);
+    }).catch(function () { _vmToast("Clipboard is unavailable."); });
+}
+
+// Lightweight confirmation toast (falls back to vmNotify, then alert).
+function _vmToast(msg) {
+    try {
+        if (typeof window.vmNotify === "function") { window.vmNotify("ValleyMind", msg); return; }
+    } catch (e) {}
+    var t = document.getElementById("_vmToastEl");
+    if (!t) {
+        t = document.createElement("div");
+        t.id = "_vmToastEl";
+        t.style.cssText = "position:fixed;left:50%;bottom:28px;transform:translateX(-50%);z-index:100001;" +
+            "background:rgba(10,20,30,0.96);color:#e2e8f0;border:1px solid rgba(0,212,255,0.3);" +
+            "border-radius:10px;padding:10px 16px;font-size:13px;box-shadow:0 12px 40px rgba(0,0,0,0.6);" +
+            "opacity:0;transition:opacity 0.2s;pointer-events:none;max-width:80vw;text-align:center;";
+        document.body.appendChild(t);
+    }
+    t.textContent = msg;
+    t.style.opacity = "1";
+    clearTimeout(t._hideTimer);
+    t._hideTimer = setTimeout(function () { t.style.opacity = "0"; }, 2600);
 }
 
 function copyMessageText(btn) {
@@ -3427,44 +3520,58 @@ function copyUserMessageText(btn) {
     });
 }
 
+// Server-TTS playback: browser speechSynthesis is silent on many devices (no
+// voices / autoplay policy), which is why "play aloud" appeared broken. We now
+// use the same server voice the Round Table uses, and only fall back to the
+// browser engine if the server call fails.
+var _msgAudio = null;
+var _msgAudioBtn = null;
+
+function _voiceIcon(btn, name) {
+    var icon = btn.querySelector('i');
+    if (icon) icon.setAttribute('data-lucide', name);
+    if (typeof lucide !== 'undefined' && lucide.createIcons) lucide.createIcons();
+}
+
+function _stopMsgAudio() {
+    try { if (_msgAudio) { _msgAudio.pause(); _msgAudio.onended = null; _msgAudio.onerror = null; } } catch (e) {}
+    try { if (window.speechSynthesis) window.speechSynthesis.cancel(); } catch (e) {}
+    if (_msgAudioBtn) _voiceIcon(_msgAudioBtn, 'play');
+    _msgAudio = null;
+    _msgAudioBtn = null;
+}
+
 window.toggleVoicePlayback = function (btn) {
-    const icon = btn.querySelector('i');
-    const isPlaying = btn.dataset.playing === 'true';
+    // Clicking the button that is currently playing stops it.
+    if (_msgAudioBtn === btn && _msgAudio && !_msgAudio.paused) { _stopMsgAudio(); return; }
+    _stopMsgAudio();
 
-    if (isPlaying && window.speechSynthesis.speaking) {
-        window.speechSynthesis.pause();
-        btn.dataset.playing = 'false';
-        if (icon) icon.setAttribute('data-lucide', 'play');
-        if (typeof lucide !== 'undefined' && lucide.createIcons) lucide.createIcons();
-        return;
-    }
-
-    if (window.speechSynthesis.paused) {
-        window.speechSynthesis.resume();
-        btn.dataset.playing = 'true';
-        if (icon) icon.setAttribute('data-lucide', 'pause');
-        if (typeof lucide !== 'undefined' && lucide.createIcons) lucide.createIcons();
-        return;
-    }
-
-    const wrapper = btn.closest('.assistant-message');
-    const bubble = wrapper ? wrapper.querySelector('.bubble') : null;
-    const text = bubble ? bubble.textContent : '';
+    var wrapper = btn.closest('.assistant-message');
+    var bubble = wrapper ? wrapper.querySelector('.bubble') : null;
+    var text = bubble ? bubble.textContent.trim() : '';
     if (!text) return;
 
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = 1.0;
-    utterance.pitch = 0.85;
-    utterance.onend = function () {
-        btn.dataset.playing = 'false';
-        if (icon) icon.setAttribute('data-lucide', 'play');
-        if (typeof lucide !== 'undefined' && lucide.createIcons) lucide.createIcons();
-    };
-    window.speechSynthesis.speak(utterance);
-    btn.dataset.playing = 'true';
-    if (icon) icon.setAttribute('data-lucide', 'pause');
-    if (typeof lucide !== 'undefined' && lucide.createIcons) lucide.createIcons();
+    _voiceIcon(btn, 'loader-2');
+    _msgAudioBtn = btn;
+    var persona = (typeof currentPersona !== 'undefined' && currentPersona) ? currentPersona : 'marcus';
+
+    apiFetch('/api/tts', {
+        method: 'POST',
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ text: text.slice(0, 1500), persona: persona })
+    }).then(function (r) { return r.json(); }).then(function (j) {
+        if (j && j.status === 'success' && j.url) {
+            _msgAudio = new Audio(j.url);
+            _msgAudio.onended = function () { _voiceIcon(btn, 'play'); _msgAudio = null; _msgAudioBtn = null; };
+            _msgAudio.onerror = function () { _voiceIcon(btn, 'play'); _msgAudio = null; _msgAudioBtn = null; browserSpeak(text); };
+            _voiceIcon(btn, 'pause');
+            _msgAudio.play().catch(function () { _voiceIcon(btn, 'play'); browserSpeak(text); });
+        } else {
+            _voiceIcon(btn, 'play'); _msgAudioBtn = null; browserSpeak(text);
+        }
+    }).catch(function () {
+        _voiceIcon(btn, 'play'); _msgAudioBtn = null; browserSpeak(text);
+    });
 };
 
 document.addEventListener("click", function (e) {
@@ -3778,13 +3885,13 @@ function addMessage(text, type = "ai", imageData, mediaUrl, videoUrl) {
         const regenBtn = document.createElement("button");
         regenBtn.innerHTML = '<i data-lucide="refresh-cw" style="width:15px;height:15px;"></i>';
         regenBtn.title = "Regenerate";
-        regenBtn.onclick = function () { showComingSoon('Regenerate response'); };
+        regenBtn.onclick = function () { regenerateResponse(this); };
         toolbar.appendChild(regenBtn);
 
         const shareBtn = document.createElement("button");
         shareBtn.innerHTML = '<i data-lucide="share-2" style="width:15px;height:15px;"></i>';
         shareBtn.title = "Share";
-        shareBtn.onclick = function () { showComingSoon('Share response'); };
+        shareBtn.onclick = function () { shareMessageText(this); };
         toolbar.appendChild(shareBtn);
 
         const playbackBtn = document.createElement("button");
@@ -8460,6 +8567,7 @@ window.send = async function () {
 
     var streamError = null;
     var lastSentMessage = text;
+    if (text) window._lastUserText = text;   // remembered for Regenerate
     try {
         var body = { message: text || "(image attached)", persona: currentPersona };
         if (currentChatId) body.chat_id = currentChatId;
