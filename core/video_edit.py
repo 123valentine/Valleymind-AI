@@ -563,6 +563,22 @@ def run_sticker_apply(user_id: str, source: str, sticker_url: str, *,
         stf = os.path.join(work, "sticker.png")
         if not _download_to(sticker_url, stf):
             return {"error": "could not fetch the sticker"}
+        # Normalize the sticker to a flat RGBA PNG first frame. WhatsApp .webp
+        # stickers are often ANIMATED, which ffmpeg's overlay filter cannot decode
+        # ("Invalid data found when processing input"). Flattening the first frame
+        # keeps alpha and lets the proven PNG overlay path handle any sticker
+        # format (webp/gif/png). Best-effort: if it's already a usable PNG this is
+        # a harmless re-save; if PIL can't read it, the overlay errors cleanly.
+        try:
+            from PIL import Image
+            with Image.open(stf) as _sticker_img:
+                try:
+                    _sticker_img.seek(0)
+                except (EOFError, ValueError):
+                    pass
+                _sticker_img.convert("RGBA").save(stf, "PNG")
+        except Exception as _norm_exc:
+            print(f"[STICKER] normalize skipped for {sticker_url}: {_norm_exc}")
         beat()
         out = os.path.join(work, "out.mp4")
         ok, err = overlay_sticker(srcfile, stf, out, position=position)
