@@ -1350,7 +1350,85 @@
   body.sidebar-collapsed #topHeader { left:0 !important; }
   body.sidebar-collapsed #mainArea { margin-left:0 !important; }
   body.sidebar-collapsed .mobile-toggle { display:flex !important; }
-  #loginView { min-height:100vh; display:flex; align-items:center; justify-content:center; padding:24px; }
+  #authScreen { min-height:100vh; display:flex; align-items:center; justify-content:center; padding:24px 16px; overflow-y:auto; box-sizing:border-box; }
+  .vm-auth-card {
+    width:min(430px,100%); box-sizing:border-box;
+    background:linear-gradient(180deg, rgba(15,23,42,0.94), rgba(8,13,24,0.96));
+    border:1px solid rgba(255,255,255,0.08);
+    border-radius:22px;
+    box-shadow:0 24px 70px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.05);
+    padding:28px 26px 22px;
+    max-height:calc(100vh - 48px);
+    overflow-y:auto;
+    scrollbar-width:thin;
+  }
+  .vm-auth-head { display:flex; flex-direction:column; align-items:center; gap:6px; margin-bottom:18px; }
+  .vm-auth-head img { width:200px; height:auto; object-fit:contain; max-width:80%; }
+  .vm-auth-subtitle { color:#64748b; font-size:10px; text-transform:uppercase; letter-spacing:0.18em; font-family:'Space Grotesk',sans-serif; margin:0; text-align:center; }
+  .vm-auth-tabs {
+    position:relative; display:flex; background:rgba(255,255,255,0.04);
+    border:1px solid rgba(255,255,255,0.06); border-radius:12px; padding:4px; gap:4px; margin-bottom:18px;
+  }
+  .vm-auth-slider {
+    position:absolute; top:4px; left:4px; width:calc(50% - 4px); height:calc(100% - 8px);
+    background:linear-gradient(135deg, rgba(0,212,255,0.18), rgba(14,165,233,0.14));
+    border:1px solid rgba(0,212,255,0.32); border-radius:9px;
+    transition:transform 0.3s cubic-bezier(0.4,0,0.2,1);
+  }
+  .vm-auth-tabs.tab-login .vm-auth-slider { transform:translateX(100%); }
+  .vm-auth-tab {
+    position:relative; z-index:1; flex:1; padding:9px 10px; border:none; background:transparent;
+    color:#64748b; font-size:12px; font-weight:700; font-family:'Space Grotesk',sans-serif;
+    text-transform:uppercase; letter-spacing:0.09em; cursor:pointer; border-radius:9px;
+    transition:color 0.25s ease;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .vm-auth-tab.active { color:#00d4ff; }
+  .vm-auth-panel { display:none; }
+  .vm-auth-panel.active { display:flex; flex-direction:column; animation:vmAuthIn 0.32s cubic-bezier(0.4,0,0.2,1); }
+  @keyframes vmAuthIn { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:translateY(0); } }
+  .vm-auth-input {
+    width:100%; background:#0f172a; border:1px solid rgba(255,255,255,0.09); border-radius:12px;
+    padding:12px 14px; color:#e2e8f0; font-size:14px; outline:none; box-sizing:border-box;
+    font-family:'Inter',sans-serif; transition:border-color 0.2s, box-shadow 0.2s, background 0.2s;
+    -webkit-appearance:none; appearance:none;
+  }
+  .vm-auth-input::placeholder { color:#475569; }
+  .vm-auth-input:focus { border-color:rgba(0,212,255,0.5); box-shadow:0 0 0 3px rgba(0,212,255,0.12); background:#111b2e; }
+  .vm-auth-btn {
+    width:100%; border:none; border-radius:12px; background:linear-gradient(135deg,#00d4ff,#0ea5e9);
+    color:#003642; font-weight:800; padding:13px 16px; cursor:pointer;
+    text-transform:uppercase; letter-spacing:0.12em; font-family:'Space Grotesk',sans-serif; font-size:13px;
+    transition:transform 0.15s ease, box-shadow 0.2s ease, filter 0.2s ease;
+    box-shadow:0 8px 24px rgba(0,212,255,0.22); min-height:46px;
+  }
+  .vm-auth-btn:hover { filter:brightness(1.08); box-shadow:0 10px 30px rgba(0,212,255,0.32); transform:translateY(-1px); }
+  .vm-auth-btn:active { transform:translateY(0) scale(0.99); }
+  .vm-auth-btn:disabled { opacity:0.6; cursor:default; filter:none; transform:none; box-shadow:none; }
+  .vm-auth-divider { display:flex; align-items:center; gap:12px; margin:12px 0 4px; color:#475569; }
+  .vm-auth-divider::before, .vm-auth-divider::after { content:""; flex:1; height:1px; background:rgba(255,255,255,0.08); }
+  .vm-auth-link { color:#00d4ff; text-decoration:none; font-weight:600; cursor:pointer; }
+  .vm-auth-link:hover { text-decoration:underline; }
+  .vm-auth-foot { text-align:center; margin:12px 0 0; font-size:0.82rem; color:#64748b; font-family:'Inter',sans-serif; line-height:1.5; }
+  .vm-auth-soc { display:flex; gap:8px; }
+  .vm-auth-soc button {
+    flex:1; display:flex; align-items:center; justify-content:center; gap:8px; background:#0f172a;
+    border:1px solid rgba(255,255,255,0.09); border-radius:12px; padding:11px 8px; cursor:pointer;
+    font-family:'Space Grotesk',sans-serif; font-size:12px; color:#e2e8f0; min-height:44px;
+    transition:border-color 0.15s, background 0.15s;
+  }
+  .vm-auth-soc button:hover:not(:disabled) { border-color:rgba(0,212,255,0.3); background:rgba(255,255,255,0.04); }
+  .vm-auth-soc button:disabled { cursor:not-allowed; opacity:0.45; }
+  .vm-auth-row { display:flex; align-items:center; justify-content:space-between; gap:10px; margin:2px 0 6px; flex-wrap:wrap; }
+  .vm-auth-check { display:flex; align-items:center; gap:8px; color:#94a3b8; font-size:12px; font-family:'Inter',sans-serif; cursor:pointer; -webkit-tap-highlight-color:transparent; }
+  .vm-auth-check input { accent-color:#00d4ff; width:15px; height:15px; cursor:pointer; flex-shrink:0; }
+  .vm-auth-error { min-height:18px; color:#ff6b7a; font-size:12px; font-family:'Inter',sans-serif; text-align:center; }
+  .vm-auth-photo { position:relative; width:84px; height:84px; border-radius:50%; background:#0f172a; border:2px dashed rgba(0,212,255,0.35); display:flex; align-items:center; justify-content:center; overflow:hidden; cursor:pointer; transition:border-color 0.2s; flex-shrink:0; }
+  .vm-auth-photo:hover { border-color:#00d4ff; }
+  .vm-auth-photo-badge { position:absolute; right:0; bottom:0; width:24px; height:24px; border-radius:50%; background:#00d4ff; color:#003642; display:flex; align-items:center; justify-content:center; font-size:13px; border:2px solid #0f172a; }
+  .vm-auth-split { display:flex; gap:10px; flex-wrap:wrap; }
+  .vm-auth-split .vm-auth-field { flex:1; min-width:150px; }
+  .vm-auth-label { color:#94a3b8; font-size:10px; margin:0 0 4px; font-family:'Space Grotesk',sans-serif; letter-spacing:0.06em; }
   .hist-dots { opacity:0; transition:opacity 0.15s; }
   .hist-item:hover .hist-dots { opacity:1; }
   /* Sidebar session loading states */
@@ -1567,120 +1645,157 @@
   </div>
 </div>
 
-<!-- LOGIN -->
-<section id="loginView">
-  <form id="loginForm" class="glass-panel" style="width:min(420px,100%);border-radius:16px;padding:28px;display:flex;flex-direction:column;gap:16px;">
-    <div style="display:flex;flex-direction:column;align-items:center;gap:8px;">
-      <img src="/static/valleymind-logo.png" alt="Valleymind-AI Logo" style="width:220px;height:auto;object-fit:contain;">
-      <p class="text-slate-400 text-[10px] uppercase tracking-[0.2em] mt-1">Login Required</p>
-    </div>
-    <input id="loginEmail" type="email" autocomplete="email" placeholder="Email" required
-      style="background:#1a1f2e;border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:12px 14px;color:white;outline:none;">
-    <input id="loginPassword" type="password" autocomplete="current-password" placeholder="Password" required
-      style="background:#1a1f2e;border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:12px 14px;color:white;outline:none;">
-    <button type="submit" class="glow-button"
-      style="border:none;border-radius:12px;background:#00d4ff;color:#003642;font-weight:800;padding:12px 16px;cursor:pointer;text-transform:uppercase;letter-spacing:0.12em;font-family:'Space Grotesk',sans-serif;">
-      Login
-    </button>
-    <div style="display:flex;align-items:center;gap:12px;margin:4px 0;">
-      <div style="flex:1;height:1px;background:rgba(255,255,255,0.08);"></div>
-      <span style="color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:0.1em;">or</span>
-      <div style="flex:1;height:1px;background:rgba(255,255,255,0.08);"></div>
-    </div>
-    <button id="googleSignInBtn" type="button" style="display:flex;align-items:center;gap:12px;width:100%;background:#1a1f2e;border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:12px 14px;cursor:pointer;outline:none;font-family:'Space Grotesk',sans-serif;font-size:14px;transition:border-color 0.15s;">
-      <span style="display:flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:50%;background:#4285F4;flex-shrink:0;">
-        <span style="color:white;font-weight:700;font-size:15px;line-height:1;">G</span>
-      </span>
-      <span>
-        <span style="color:white;">Sign in with </span>
-        <span style="color:#4285F4;font-weight:600;">Google</span>
-      </span>
-    </button>
-    <a href="#" id="forgotPasswordLink" style="font-size:0.85rem;margin-top:10px;display:block;color:#00d4ff;text-align:center;text-decoration:none;cursor:pointer;">Forgot Password?</a>
-    <p id="loginError" style="min-height:18px;color:#ff6b7a;font-size:12px;"></p>
-    <!-- Link back to the public marketing site (the other half of the site<->app loop). -->
-    <a href="https://valley-mind-website-o3l8.onrender.com" rel="noopener" style="font-size:0.8rem;display:block;color:#64748b;text-align:center;text-decoration:none;">&larr; Back to the ValleyMind website</a>
-  </form>
-  <!-- New-account entry point. The login system itself is untouched. -->
-  <p style="text-align:center;margin:14px 0 0;font-size:0.85rem;color:#64748b;font-family:'Inter',sans-serif;">
-    Don't have an account? <a href="#" id="signupToggleLink" style="color:#00d4ff;text-decoration:none;font-weight:600;cursor:pointer;">Create one</a>
-  </p>
-</section>
+<!-- AUTH (unified Sign Up | Login card) -->
+<section id="authScreen">
+  <div class="glass-panel vm-auth-card">
 
-<!-- SIGN UP -->
-<section id="signupView" style="min-height:100vh;display:none;align-items:center;justify-content:center;padding:24px;">
-  <form id="signupForm" class="glass-panel" style="width:min(440px,100%);border-radius:16px;padding:28px;display:flex;flex-direction:column;gap:12px;max-height:96vh;overflow-y:auto;">
-    <div style="display:flex;flex-direction:column;align-items:center;gap:8px;">
-      <img src="/static/valleymind-logo.png" alt="Valleymind-AI Logo" style="width:200px;height:auto;object-fit:contain;">
-      <p class="text-slate-400 text-[10px] uppercase tracking-[0.2em] mt-1">Create your free account</p>
+    <!-- Brand header -->
+    <div class="vm-auth-head">
+      <img src="/static/valleymind-logo.png" alt="Valleymind-AI Logo">
+      <p class="vm-auth-subtitle">Your AI-powered creative workspace</p>
     </div>
 
-    <!-- Profile picture (optional) -->
-    <div style="display:flex;flex-direction:column;align-items:center;gap:8px;margin-bottom:2px;">
-      <div style="position:relative;width:84px;height:84px;border-radius:50%;background:#1a1f2e;border:2px solid rgba(0,212,255,0.3);display:flex;align-items:center;justify-content:center;overflow:hidden;cursor:pointer;" onclick="document.getElementById('signupPhotoInput').click()" title="Add a profile picture (optional)">
-        <img id="signupPhotoPreview" src="" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:none;">
-        <span class="material-icons" id="signupPhotoPlaceholder" style="color:#475569;font-size:34px;">add_a_photo</span>
+    <!-- Sign Up / Log In tabs -->
+    <div id="authTabs" class="vm-auth-tabs" role="tablist">
+      <span class="vm-auth-slider" aria-hidden="true"></span>
+      <button type="button" id="authTabSignup" class="vm-auth-tab active" data-tab="signup" role="tab" aria-selected="true" onclick="setAuthTab('signup')">Sign Up</button>
+      <button type="button" id="authTabLogin" class="vm-auth-tab" data-tab="login" role="tab" aria-selected="false" onclick="setAuthTab('login')">Log In</button>
+    </div>
+
+    <div class="vm-auth-panels">
+
+      <!-- SIGN UP PANEL -->
+      <div id="signupView" class="vm-auth-panel active" role="tabpanel" aria-labelledby="authTabSignup">
+        <form id="signupForm" novalidate>
+          <!-- Profile picture (optional) -->
+          <div style="display:flex;flex-direction:column;align-items:center;gap:8px;margin-bottom:14px;">
+            <div class="vm-auth-photo" onclick="document.getElementById('signupPhotoInput').click()" title="Add a profile picture (optional)">
+              <img id="signupPhotoPreview" src="" alt="" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:none;">
+              <span class="material-icons" id="signupPhotoPlaceholder" style="color:#475569;font-size:34px;">add_a_photo</span>
+              <span class="vm-auth-photo-badge">&#9998;</span>
+            </div>
+            <button type="button" onclick="document.getElementById('signupPhotoInput').click()" style="background:none;border:none;color:#00d4ff;font-size:11px;cursor:pointer;font-family:'Inter',sans-serif;">Add profile picture (optional)</button>
+            <input type="file" id="signupPhotoInput" accept="image/*" style="display:none;">
+          </div>
+
+          <div class="vm-auth-split" style="margin-bottom:10px;">
+            <div class="vm-auth-field">
+              <p class="vm-auth-label">Full Name</p>
+              <input id="signupFullName" type="text" autocomplete="name" placeholder="Your full name" required class="vm-auth-input">
+            </div>
+            <div class="vm-auth-field">
+              <p class="vm-auth-label">Username</p>
+              <input id="signupUsername" type="text" autocomplete="username" placeholder="Username (unique)" required class="vm-auth-input">
+            </div>
+          </div>
+
+          <div style="margin-bottom:10px;">
+            <p class="vm-auth-label">Email Address</p>
+            <input id="signupEmail" type="email" autocomplete="email" placeholder="you@example.com" required class="vm-auth-input">
+          </div>
+
+          <div class="vm-auth-split" style="margin-bottom:12px;">
+            <div class="vm-auth-field">
+              <p class="vm-auth-label">Password</p>
+              <input id="signupPassword" type="password" autocomplete="new-password" placeholder="Min. 4 characters" required class="vm-auth-input">
+            </div>
+            <div class="vm-auth-field">
+              <p class="vm-auth-label">Confirm Password</p>
+              <input id="signupConfirmPassword" type="password" autocomplete="new-password" placeholder="Repeat password" required class="vm-auth-input">
+            </div>
+          </div>
+
+          <!-- Legal consents -->
+          <div style="display:flex;flex-direction:column;gap:8px;margin:2px 0 12px;">
+            <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;">
+              <input id="signupTerms" type="checkbox" style="margin-top:3px;accent-color:#00d4ff;">
+              <span style="color:#94a3b8;font-size:12px;font-family:'Inter',sans-serif;line-height:1.4;">I agree to the <a href="#" onclick="openTerms();return false;" style="color:#00d4ff;text-decoration:none;">Terms of Service</a></span>
+            </label>
+            <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;">
+              <input id="signupPrivacy" type="checkbox" style="margin-top:3px;accent-color:#00d4ff;">
+              <span style="color:#94a3b8;font-size:12px;font-family:'Inter',sans-serif;line-height:1.4;">I have read the <a href="#" onclick="openPrivacy();return false;" style="color:#00d4ff;text-decoration:none;">Privacy Policy</a></span>
+            </label>
+          </div>
+
+          <button type="submit" id="signupSubmitBtn" class="vm-auth-btn">
+            Create Account
+          </button>
+
+          <div class="vm-auth-divider"><span style="font-size:11px;text-transform:uppercase;letter-spacing:0.1em;">or continue with</span></div>
+
+          <div class="vm-auth-soc">
+            <button type="button" id="signupGoogleBtn">
+              <span style="display:flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:#4285F4;color:white;font-weight:700;font-size:12px;line-height:1;flex-shrink:0;">G</span>
+              <span>Google</span>
+            </button>
+            <button type="button" title="GitHub sign-in is coming soon" disabled>
+              <span style="display:flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:#24292F;color:white;font-weight:700;font-size:12px;line-height:1;flex-shrink:0;">G</span>
+              <span>GitHub</span>
+            </button>
+            <button type="button" title="Apple sign-in is coming soon" disabled>
+              <span style="display:flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:#A2AAAD;color:#000;font-weight:700;font-size:12px;line-height:1;flex-shrink:0;">A</span>
+              <span>Apple</span>
+            </button>
+          </div>
+
+          <p id="signupError" class="vm-auth-error"></p>
+
+          <p class="vm-auth-foot">
+            Already have an account? <a href="#" id="signupLoginToggleLink" class="vm-auth-link">Log In</a>
+          </p>
+        </form>
       </div>
-      <button type="button" onclick="document.getElementById('signupPhotoInput').click()" style="background:none;border:none;color:#00d4ff;font-size:11px;cursor:pointer;font-family:'Inter',sans-serif;">Add profile picture (optional)</button>
-      <input type="file" id="signupPhotoInput" accept="image/*" style="display:none;">
+
+      <!-- LOGIN PANEL -->
+      <div id="loginView" class="vm-auth-panel" role="tabpanel" aria-labelledby="authTabLogin">
+        <form id="loginForm">
+          <div style="margin-bottom:10px;">
+            <p class="vm-auth-label">Email Address</p>
+            <input id="loginEmail" type="email" autocomplete="email" placeholder="you@example.com" required class="vm-auth-input">
+          </div>
+
+          <div style="margin-bottom:8px;">
+            <p class="vm-auth-label">Password</p>
+            <input id="loginPassword" type="password" autocomplete="current-password" placeholder="Your password" required class="vm-auth-input">
+          </div>
+
+          <div class="vm-auth-row">
+            <label class="vm-auth-check">
+              <input id="loginRemember" type="checkbox">
+              Remember me
+            </label>
+            <a href="#" id="forgotPasswordLink" class="vm-auth-link" style="font-size:12px;">Forgot Password?</a>
+          </div>
+
+          <button type="submit" id="loginSubmitBtn" class="vm-auth-btn">
+            Log In
+          </button>
+
+          <div class="vm-auth-divider"><span style="font-size:11px;text-transform:uppercase;letter-spacing:0.1em;">or</span></div>
+
+          <button id="googleSignInBtn" type="button" style="display:flex;align-items:center;justify-content:center;gap:12px;width:100%;background:#0f172a;border:1px solid rgba(255,255,255,0.09);border-radius:12px;padding:11px 14px;cursor:pointer;outline:none;font-family:'Space Grotesk',sans-serif;font-size:13px;min-height:44px;transition:border-color 0.15s, background 0.15s;">
+            <span style="display:flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:50%;background:#4285F4;flex-shrink:0;">
+              <span style="color:white;font-weight:700;font-size:15px;line-height:1;">G</span>
+            </span>
+            <span>
+              <span style="color:#e2e8f0;">Sign in with </span>
+              <span style="color:#4285F4;font-weight:600;">Google</span>
+            </span>
+          </button>
+
+          <p id="loginError" class="vm-auth-error"></p>
+
+          <p class="vm-auth-foot">
+            Don't have an account? <a href="#" id="signupToggleLink" class="vm-auth-link">Create Account</a>
+          </p>
+
+          <!-- Link back to the public marketing site (the other half of the site<->app loop). -->
+          <a href="https://valley-mind-website-o3l8.onrender.com" rel="noopener" style="font-size:0.8rem;display:block;color:#64748b;text-align:center;text-decoration:none;margin-top:10px;">&larr; Back to the ValleyMind website</a>
+        </form>
+      </div>
+
     </div>
-
-    <input id="signupFullName" type="text" autocomplete="name" placeholder="Full name" required
-      style="background:#1a1f2e;border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:12px 14px;color:white;outline:none;">
-    <input id="signupUsername" type="text" autocomplete="username" placeholder="Username (unique)" required
-      style="background:#1a1f2e;border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:12px 14px;color:white;outline:none;">
-    <input id="signupEmail" type="email" autocomplete="email" placeholder="Email address" required
-      style="background:#1a1f2e;border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:12px 14px;color:white;outline:none;">
-    <div style="display:flex;gap:10px;">
-      <input id="signupPassword" type="password" autocomplete="new-password" placeholder="Password" required
-        style="flex:1;background:#1a1f2e;border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:12px 14px;color:white;outline:none;min-width:0;">
-      <input id="signupConfirmPassword" type="password" autocomplete="new-password" placeholder="Confirm password" required
-        style="flex:1;background:#1a1f2e;border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:12px 14px;color:white;outline:none;min-width:0;">
-    </div>
-
-    <!-- Legal consents -->
-    <div style="display:flex;flex-direction:column;gap:8px;margin:2px 0;">
-      <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;">
-        <input id="signupTerms" type="checkbox" style="margin-top:3px;accent-color:#00d4ff;">
-        <span style="color:#94a3b8;font-size:12px;font-family:'Inter',sans-serif;line-height:1.4;">I agree to the <a href="#" onclick="openTerms();return false;" style="color:#00d4ff;text-decoration:none;">Terms of Service</a></span>
-      </label>
-      <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;">
-        <input id="signupPrivacy" type="checkbox" style="margin-top:3px;accent-color:#00d4ff;">
-        <span style="color:#94a3b8;font-size:12px;font-family:'Inter',sans-serif;line-height:1.4;">I have read the <a href="#" onclick="openPrivacy();return false;" style="color:#00d4ff;text-decoration:none;">Privacy Policy</a></span>
-      </label>
-    </div>
-
-    <button type="submit" id="signupSubmitBtn" class="glow-button"
-      style="border:none;border-radius:12px;background:#00d4ff;color:#003642;font-weight:800;padding:12px 16px;cursor:pointer;text-transform:uppercase;letter-spacing:0.12em;font-family:'Space Grotesk',sans-serif;">
-      Create Account
-    </button>
-
-    <div style="display:flex;align-items:center;gap:12px;margin:2px 0;">
-      <div style="flex:1;height:1px;background:rgba(255,255,255,0.08);"></div>
-      <span style="color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:0.1em;">or continue with</span>
-      <div style="flex:1;height:1px;background:rgba(255,255,255,0.08);"></div>
-    </div>
-
-    <div style="display:flex;gap:8px;">
-      <button type="button" id="signupGoogleBtn" style="flex:1;display:flex;align-items:center;justify-content:center;gap:8px;background:#1a1f2e;border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:10px 8px;cursor:pointer;font-family:'Space Grotesk',sans-serif;font-size:12px;transition:border-color 0.15s;">
-        <span style="display:flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:#4285F4;color:white;font-weight:700;font-size:12px;line-height:1;">G</span>
-        <span style="color:white;">Google</span>
-      </button>
-      <button type="button" title="GitHub sign-in is coming soon" disabled style="flex:1;display:flex;align-items:center;justify-content:center;gap:8px;background:#1a1f2e;border:1px solid rgba(255,255,255,0.06);border-radius:12px;padding:10px 8px;cursor:not-allowed;opacity:0.45;font-family:'Space Grotesk',sans-serif;font-size:12px;">
-        <span style="display:flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:#24292F;color:white;font-weight:700;font-size:12px;line-height:1;">G</span>
-        <span style="color:#94a3b8;">GitHub</span>
-      </button>
-      <button type="button" title="Apple sign-in is coming soon" disabled style="flex:1;display:flex;align-items:center;justify-content:center;gap:8px;background:#1a1f2e;border:1px solid rgba(255,255,255,0.06);border-radius:12px;padding:10px 8px;cursor:not-allowed;opacity:0.45;font-family:'Space Grotesk',sans-serif;font-size:12px;">
-        <span style="display:flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:#A2AAAD;color:#000;font-weight:700;font-size:12px;line-height:1;">A</span>
-        <span style="color:#94a3b8;">Apple</span>
-      </button>
-    </div>
-
-    <p style="text-align:center;margin:4px 0 0;font-size:0.85rem;color:#64748b;font-family:'Inter',sans-serif;">
-      Already have an account? <a href="#" id="signupLoginToggleLink" style="color:#00d4ff;text-decoration:none;font-weight:600;cursor:pointer;">Login</a>
-    </p>
-    <p id="signupError" style="min-height:18px;color:#ff6b7a;font-size:12px;text-align:center;"></p>
-  </form>
+  </div>
 </section>
 
 <!-- RECOVERY MODAL -->
@@ -2951,14 +3066,16 @@ function logSidebarState(tag) {
 }
 
 function setAppVisible(isVisible) {
-    const login = document.getElementById("loginView");
-    const signup = document.getElementById("signupView");
+    const auth = document.getElementById("authScreen");
     const sidebar = document.getElementById("sidebar");
     const header = document.getElementById("topHeader");
     const main = document.getElementById("mainArea");
 
-    if (login) login.style.display = isVisible ? "none" : "flex";
-    if (signup && isVisible) signup.style.display = "none";
+    if (auth) auth.style.display = isVisible ? "none" : "flex";
+    if (!isVisible) {
+        // Sign Up is the primary entry point for first-time visitors.
+        setAuthTab("signup");
+    }
     if (sidebar) sidebar.style.display = isVisible ? "flex" : "none";
     if (header) header.style.display = isVisible ? "flex" : "none";
     if (main) main.style.display = isVisible ? "flex" : "none";
@@ -7820,9 +7937,9 @@ async function checkSession() {
             applyVideoGenAvailability();
 
             var splash = document.getElementById("brandSplashScreen");
-            var login = document.getElementById("loginView");
+            var authScreen = document.getElementById("authScreen");
             if (splash) {
-                if (login) login.style.display = "none";
+                if (authScreen) authScreen.style.display = "none";
                 splash.style.display = "flex";
                 splash.style.opacity = "1";
             }
@@ -7887,9 +8004,11 @@ async function checkSession() {
             setAppVisible(false);
             var splashErr = document.getElementById("brandSplashScreen");
             if (splashErr) splashErr.style.display = "none";
-            var loginErr = document.getElementById("loginView");
-            if (loginErr) loginErr.style.display = "flex";
-            var error = document.getElementById("loginError");
+            var authErr = document.getElementById("authScreen");
+            if (authErr) { authErr.style.display = "flex"; setAuthTab("signup"); }
+            var error = getElementVisible(document.getElementById("signupView"))
+                ? document.getElementById("signupError")
+                : document.getElementById("loginError");
             if (error) error.textContent = err.message || "Backend unavailable";
             renderGoogleButton();
             logSidebarState("checkSession-error");
@@ -8076,22 +8195,30 @@ function getElementVisible(el) {
     return el && el.style.display !== "none";
 }
 
-function showSignup() {
-    var signup = document.getElementById("signupView");
+// Switch between the Sign Up and Log In panels (single card, no page reload).
+// Form data already typed is preserved because both forms stay in the DOM.
+function setAuthTab(tab) {
+    var isLogin = tab === "login";
     var login = document.getElementById("loginView");
-    if (signup) signup.style.display = "flex";
-    if (login) login.style.display = "none";
-    var err = document.getElementById("signupError");
+    var signup = document.getElementById("signupView");
+    var tabs = document.getElementById("authTabs");
+    var tabSignup = document.getElementById("authTabSignup");
+    var tabLogin = document.getElementById("authTabLogin");
+
+    if (tabs) tabs.classList.toggle("tab-login", isLogin);
+    if (tabSignup) { tabSignup.classList.toggle("active", !isLogin); tabSignup.setAttribute("aria-selected", String(!isLogin)); }
+    if (tabLogin) { tabLogin.classList.toggle("active", isLogin); tabLogin.setAttribute("aria-selected", String(isLogin)); }
+    if (signup) { signup.style.display = isLogin ? "none" : ""; signup.classList.toggle("active", !isLogin); }
+    if (login) { login.style.display = isLogin ? "" : "none"; login.classList.toggle("active", isLogin); }
+
+    // Clear the visible panel's error when switching.
+    var err = isLogin ? document.getElementById("loginError") : document.getElementById("signupError");
     if (err) err.textContent = "";
+    if (isLogin && typeof renderGoogleButton === "function") renderGoogleButton();
 }
 
-function showLoginView() {
-    var signup = document.getElementById("signupView");
-    var login = document.getElementById("loginView");
-    if (signup) signup.style.display = "none";
-    if (login) login.style.display = "flex";
-    renderGoogleButton();
-}
+function showSignup() { setAuthTab("signup"); }
+function showLoginView() { setAuthTab("login"); }
 
 // Lightweight Terms / Privacy modals (text-only, keep it self-contained).
 function _vmPolicyModal(title, bodyHtml) {
@@ -9253,6 +9380,29 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const form = document.getElementById("loginForm");
     if (form) form.addEventListener("submit", login);
+
+    // Remember Me — purely client-side convenience; auth logic is untouched.
+    (function () {
+        var emailInput = document.getElementById("loginEmail");
+        var remember = document.getElementById("loginRemember");
+        var saved = null;
+        try { saved = localStorage.getItem("vm_remember_email"); } catch (e) { saved = null; }
+        if (saved && emailInput) {
+            emailInput.value = saved;
+            if (remember) remember.checked = true;
+        }
+        if (form && emailInput && remember) {
+            form.addEventListener("submit", function () {
+                try {
+                    if (remember.checked && emailInput.value.trim()) {
+                        localStorage.setItem("vm_remember_email", emailInput.value.trim());
+                    } else {
+                        localStorage.removeItem("vm_remember_email");
+                    }
+                } catch (e) { /* non-fatal */ }
+            });
+        }
+    })();
 
     const input = document.getElementById("chatInput");
     if (input) {
