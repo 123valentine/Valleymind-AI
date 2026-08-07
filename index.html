@@ -8095,6 +8095,7 @@ async function checkSession() {
                 if (avatarEl) avatarEl.textContent = email[0].toUpperCase();
                 if (badgeEl) badgeEl.textContent = data.is_creator ? "Founder & Creator" : "Active User";
             }
+            if (data.is_creator) { try { vmInitCreatorDashboard(); } catch (e) {} }
 
             if (splash) {
                 // Brief show: matches the 2s logo intro, then fades out
@@ -8919,6 +8920,98 @@ function aibReset() {
 // Curated coder line-up. Real OpenCode ids stay server-side (`value`); the UI
 // only ever shows Valley-branded names so provider identities never leak.
 // `ling` is the default (fast + reliable within the server build timeout).
+// ── Creator Dashboard (owner-only) ───────────────────────────────────────────
+var _vmDashTimer = null;
+
+function vmInitCreatorDashboard() {
+    if (document.getElementById("vmDashBtn")) return;
+    var btn = document.createElement("button");
+    btn.id = "vmDashBtn";
+    btn.title = "Creator Dashboard (Ctrl+Shift+D)";
+    btn.textContent = "📊";
+    btn.style.cssText = "position:fixed;right:18px;bottom:18px;z-index:99998;width:46px;height:46px;border-radius:50%;border:1px solid rgba(0,212,255,0.4);background:rgba(10,20,30,0.92);color:#00d4ff;font-size:20px;cursor:pointer;box-shadow:0 8px 26px rgba(0,0,0,0.5);";
+    btn.onclick = openCreatorDashboard;
+    document.body.appendChild(btn);
+    document.addEventListener("keydown", function (e) {
+        if (e.ctrlKey && e.shiftKey && (e.key === "D" || e.key === "d")) { e.preventDefault(); openCreatorDashboard(); }
+    });
+}
+
+function openCreatorDashboard() {
+    var ov = document.getElementById("vmDashOverlay");
+    if (!ov) {
+        ov = document.createElement("div");
+        ov.id = "vmDashOverlay";
+        ov.style.cssText = "position:fixed;inset:0;z-index:99999;background:rgba(2,6,12,0.94);backdrop-filter:blur(6px);overflow:auto;padding:24px;";
+        ov.innerHTML = '<div style="max-width:1100px;margin:0 auto;">' +
+            '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;">' +
+            '<h2 style="color:#e2e8f0;margin:0;font-size:20px;">Creator Dashboard</h2>' +
+            '<div><span id="vmDashUpdated" style="color:#64748b;font-size:12px;margin-right:12px;"></span>' +
+            '<button onclick="closeCreatorDashboard()" style="background:rgba(255,45,70,0.15);color:#f87171;border:1px solid rgba(255,45,70,0.3);border-radius:8px;padding:6px 14px;cursor:pointer;">Close</button></div></div>' +
+            '<div id="vmDashBody" style="color:#cbd5e1;">Loading…</div></div>';
+        document.body.appendChild(ov);
+    }
+    ov.style.display = "block";
+    vmDashRefresh();
+    if (_vmDashTimer) clearInterval(_vmDashTimer);
+    _vmDashTimer = setInterval(vmDashRefresh, 10000);
+}
+
+function closeCreatorDashboard() {
+    var ov = document.getElementById("vmDashOverlay");
+    if (ov) ov.style.display = "none";
+    if (_vmDashTimer) { clearInterval(_vmDashTimer); _vmDashTimer = null; }
+}
+
+function vmDashRefresh() {
+    apiFetch("/api/creator/dashboard", { timeoutMs: 20000 }).then(function (r) { return r.json(); })
+        .then(function (j) {
+            var body = document.getElementById("vmDashBody");
+            if (!body) return;
+            if (!j || j.status !== "success") { body.innerHTML = '<p style="color:#f87171;">' + esc((j && j.message) || "Unavailable") + '</p>'; return; }
+            vmDashRender(j);
+        }).catch(function (e) { var b = document.getElementById("vmDashBody"); if (b) b.textContent = "Error: " + (e.message || e); });
+}
+
+function vmDashRender(d) {
+    function val(x) { return x == null ? "—" : String(x); }
+    function card(title, rows) {
+        var h = '<div style="background:rgba(15,23,42,0.7);border:1px solid rgba(148,163,184,0.15);border-radius:12px;padding:14px 16px;">' +
+            '<h3 style="margin:0 0 10px;color:#94a3b8;font-size:12px;text-transform:uppercase;letter-spacing:.06em;">' + esc(title) + '</h3>';
+        rows.forEach(function (r) {
+            h += '<div style="display:flex;justify-content:space-between;padding:3px 0;font-size:13px;"><span style="color:#94a3b8;">' + esc(r[0]) + '</span><span style="color:#e2e8f0;font-weight:600;">' + esc(val(r[1])) + '</span></div>';
+        });
+        return h + '</div>';
+    }
+    var live = d.live || {}, u = d.users || {}, c = d.chats || {}, us = d.usage || {}, b = d.builders || {}, bs = b.stats || {}, sys = d.system || {};
+    var grid = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px;">';
+    grid += card("Live now", [["Online users", live.online_users], ["Active builder sessions", live.active_builder_sessions], ["Active chats", live.active_chats]]);
+    grid += card("Users", [["Total registered", u.total], ["New today", u.new_today], ["Active (24h)", u.active_24h]]);
+    grid += card("AI usage", [["Chats total", c.total], ["Chats today", c.today], ["Images generated", us.images], ["Videos generated", us.videos], ["Video analyses", us.analyses]]);
+    grid += card("Builder stats", [["Successful builds", bs.completed], ["Failed builds", bs.failed], ["Automatic failovers", bs.failovers], ["Avg build time (s)", bs.avg_build_seconds], ["Most-used", bs.most_used_builder]]);
+    grid += card("System", [["CPU %", sys.cpu_percent], ["Memory %", sys.memory_percent], ["Memory (MB)", (sys.memory_used_mb != null ? sys.memory_used_mb + " / " + sys.memory_total_mb : null)], ["DB storage (MB)", sys.db_storage_mb], ["Database", sys.database], ["R2 storage", sys.storage_r2], ["Active jobs", sys.active_jobs]]);
+    grid += '</div>';
+    var health = b.health || {};
+    var hrows = Object.keys(health).map(function (k) {
+        var r = health[k];
+        return '<tr><td style="padding:4px 8px;color:#e2e8f0;">' + esc(r.label) + '</td>' +
+            '<td style="padding:4px 8px;color:' + (r.available ? "#4ade80" : "#f87171") + ';">' + (r.available ? "available" : "cooldown " + r.cooldown_s + "s") + '</td>' +
+            '<td style="padding:4px 8px;">' + (r.success_rate == null ? "—" : Math.round(r.success_rate * 100) + "%") + '</td>' +
+            '<td style="padding:4px 8px;">' + (r.avg_ms == null ? "—" : r.avg_ms + "ms") + '</td>' +
+            '<td style="padding:4px 8px;">' + (r.builds_completed || 0) + '</td>' +
+            '<td style="padding:4px 8px;">' + (r.timeouts || 0) + '</td></tr>';
+    }).join("");
+    var htable = '<h3 style="color:#94a3b8;font-size:12px;text-transform:uppercase;letter-spacing:.06em;margin:20px 0 8px;">Builder health</h3>' +
+        '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12.5px;color:#cbd5e1;">' +
+        '<tr style="color:#64748b;text-align:left;"><th style="padding:4px 8px;">Builder</th><th style="padding:4px 8px;">Status</th><th style="padding:4px 8px;">Success</th><th style="padding:4px 8px;">Avg</th><th style="padding:4px 8px;">Builds</th><th style="padding:4px 8px;">Timeouts</th></tr>' +
+        hrows + '</table></div>';
+    var unmapped = b.unmapped_free || [];
+    var un = unmapped.length ? '<p style="color:#fbbf24;font-size:12px;margin-top:14px;">New free models detected (unmapped): ' + esc(unmapped.join(", ")) + '</p>' : '';
+    document.getElementById("vmDashBody").innerHTML = grid + htable + un;
+    var upd = document.getElementById("vmDashUpdated");
+    if (upd) upd.textContent = "Updated " + new Date().toLocaleTimeString();
+}
+
 // Builder selector is fully server-driven: the browser only receives branded
 // "ValleyMind Builder X.0" options. The underlying provider model ids stay on
 // the server and are revealed only in creator Developer Mode.

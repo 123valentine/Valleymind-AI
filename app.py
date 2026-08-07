@@ -4241,6 +4241,128 @@ def ai_builder_health():
     })
 
 
+@app.route("/api/creator/dashboard", methods=["GET"])
+def creator_dashboard():
+    """Creator-only analytics: live users, daily stats, AI usage, builder stats
+    and system health. Every section degrades gracefully to null if unavailable."""
+    user_id, error = _require_login()
+    if error:
+        return error
+    if not _is_creator(_current_auth().get("email", "")):
+        return jsonify({"status": "error", "message": "Not authorized"}), 403
+
+    now = datetime.now(timezone.utc)
+    today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    online_cut = now - timedelta(minutes=10)
+    day_cut = now - timedelta(hours=24)
+
+    def _count(coll, q):
+        try:
+            return coll.count_documents(q) if coll is not None else None
+        except Exception:
+            return None
+
+    users, chats = users_collection(), chats_collection()
+
+    # Live + user counts
+    online_users = None
+    active_24h = None
+    try:
+        if chats is not None:
+            online_users = len(chats.distinct("user_id", {"last_activity": {"$gte": online_cut}}))
+            active_24h = len(chats.distinct("user_id", {"last_activity": {"$gte": day_cut}}))
+    except Exception:
+        pass
+    users_block = {
+        "total": _count(users, {}),
+        "new_today": _count(users, {"created_at": {"$gte": today}}),
+        "active_24h": active_24h,
+    }
+    chats_block = {
+        "total": _count(chats, {}),
+        "today": _count(chats, {"created_at": {"$gte": today}}),
+        "active_now": _count(chats, {"last_activity": {"$gte": online_cut}}),
+    }
+
+    # AI usage — summed across per-user usage docs
+    usage_block = {"images": None, "videos": None, "analyses": None}
+    try:
+        uc = usage_collection()
+        if uc is not None:
+            agg = list(uc.aggregate([{"$group": {"_id": None,
+                "images": {"$sum": "$images"}, "videos": {"$sum": "$videos"},
+                "analyses": {"$sum": "$analyses"}}}]))
+            if agg:
+                usage_block = {k: int(agg[0].get(k, 0) or 0) for k in ("images", "videos", "analyses")}
+    except Exception:
+        pass
+
+    # Builder stats + per-tier health
+    builder_stats = ai_builder.build_stats_snapshot()
+    builder_stats["active_sessions"] = ai_builder.active_builds()
+
+    # System health (psutil optional; DB/R2/jobs best-effort)
+    system = {}
+    try:
+        import psutil
+        vm = psutil.virtual_memory()
+        system.update({
+            "cpu_percent": psutil.cpu_percent(interval=0.2),
+            "memory_percent": vm.percent,
+            "memory_used_mb": round(vm.used / 1e6),
+            "memory_total_mb": round(vm.total / 1e6),
+            "disk_percent": psutil.disk_usage(os.getcwd()).percent,
+        })
+    except Exception as exc:
+        system["metrics"] = "unavailable (" + str(exc)[:50] + ")"
+    try:
+        db = get_db()
+        if db is not None:
+            db.command("ping")
+            system["database"] = "up"
+            try:
+                st = db.command("dbStats")
+                system["db_storage_mb"] = round((st.get("dataSize", 0) + st.get("indexSize", 0)) / 1e6, 1)
+            except Exception:
+                pass
+        else:
+            system["database"] = "ephemeral fallback (no MONGODB_URI)"
+    except Exception:
+        system["database"] = "down"
+    try:
+        from core import r2_storage
+        system["storage_r2"] = "up" if r2_storage.available() else "unavailable"
+    except Exception:
+        system["storage_r2"] = "unknown"
+    try:
+        from core.db import studio_jobs_collection
+        jc = studio_jobs_collection()
+        if jc is not None:
+            system["active_jobs"] = jc.count_documents(
+                {"status": {"$in": ["running", "processing", "queued", "pending", "in_progress"]}})
+    except Exception:
+        pass
+
+    return jsonify({
+        "status": "success",
+        "generated_at": now.isoformat(),
+        "live": {
+            "online_users": online_users,
+            "active_builder_sessions": ai_builder.active_builds(),
+            "active_chats": chats_block["active_now"],
+        },
+        "users": users_block,
+        "chats": chats_block,
+        "usage": usage_block,
+        "builders": {
+            "stats": builder_stats,
+            "health": ai_builder.health_snapshot(),
+            "unmapped_free": ai_builder.unmapped_free_models(),
+        },
+        "system": system,
+    })
+
+
 @app.route("/api/ai-builder/projects", methods=["GET"])
 def ai_builder_projects():
     user_id, error = _require_login()

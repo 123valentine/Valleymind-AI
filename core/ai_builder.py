@@ -804,6 +804,46 @@ def _manifest_for(spec_text: str, model: str) -> list:
     return cleaned
 
 
+# Aggregate build + live-session stats for the Creator Dashboard.
+_ACTIVE_BUILDS = 0
+_BUILD_STATS = {"completed": 0, "failed": 0, "failovers": 0, "total_seconds": 0.0}
+
+
+def _active_inc():
+    global _ACTIVE_BUILDS
+    with _HEALTH_LOCK:
+        _ACTIVE_BUILDS += 1
+
+
+def _active_dec():
+    global _ACTIVE_BUILDS
+    with _HEALTH_LOCK:
+        _ACTIVE_BUILDS = max(0, _ACTIVE_BUILDS - 1)
+
+
+def active_builds() -> int:
+    return _ACTIVE_BUILDS
+
+
+def _record_build_result(ok, seconds, failovers):
+    with _HEALTH_LOCK:
+        _BUILD_STATS["completed" if ok else "failed"] += 1
+        _BUILD_STATS["failovers"] += int(failovers or 0)
+        if ok:
+            _BUILD_STATS["total_seconds"] += max(0.0, seconds)
+
+
+def build_stats_snapshot() -> dict:
+    with _HEALTH_LOCK:
+        s = dict(_BUILD_STATS)
+    completed = s["completed"]
+    s["avg_build_seconds"] = round(s["total_seconds"] / completed) if completed else None
+    hs = health_snapshot()
+    most = max(hs.values(), key=lambda r: r["builds_completed"], default=None)
+    s["most_used_builder"] = most["label"] if (most and most["builds_completed"]) else None
+    return s
+
+
 # Binary assets a text LLM cannot produce. SVG is deliberately excluded — it is
 # XML markup the model can write. .env is excluded too (spec uses .env.example).
 _BINARY_ASSET_RE = re.compile(
@@ -831,6 +871,8 @@ def build_generator(user_id: str, spec, builder_id=None, model=None):
     failover_count = 0
     proj = None
     meta = {}
+    _active_inc()
+    _build_t0 = time.time()
     try:
         spec = spec or {}
         root = projects_root(user_id)
@@ -935,6 +977,7 @@ def build_generator(user_id: str, spec, builder_id=None, model=None):
         save_project_meta(proj, meta)
         tree = build_tree(proj)
         yield {"type": "project", "project": {"id": pid, "meta": meta, "tree": tree}}
+        _record_build_result(True, time.time() - _build_t0, failover_count)
         yield {"type": "done"}
     except GeneratorExit:
         if proj is not None:
@@ -951,4 +994,7 @@ def build_generator(user_id: str, spec, builder_id=None, model=None):
                 save_project_meta(proj, meta)
             except Exception:
                 pass
+        _record_build_result(False, time.time() - _build_t0, failover_count)
         yield {"type": "error", "message": _user_facing_error(exc)}
+    finally:
+        _active_dec()
