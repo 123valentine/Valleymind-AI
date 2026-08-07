@@ -4214,17 +4214,31 @@ def ai_builder_build():
         return jsonify({"status": "error", "message": "An approved project spec is required"}), 400
     if not ai_builder.configured():
         return jsonify({"status": "error", "message": "AI Builder is not configured on the server"}), 503
-    # The UI sends a branded builder id (e.g. "vmb5"); resolve it to the real
-    # model server-side so provider names never travel to the browser. A raw
-    # `model` is honored only for the creator (Developer Mode power use).
+    # The UI sends a branded builder id (e.g. "vmb5"); the build engine resolves
+    # it and, on provider failure, fails over across the ranked tiers on its own.
+    # A raw `model` override is honored only for the creator (Developer Mode).
     builder_id = str(data.get("builder") or "").strip()
-    if builder_id:
-        model = ai_builder.resolve_builder_model(builder_id)
-    else:
-        raw = str(data.get("model") or "").strip()
-        is_creator = _is_creator(_current_auth().get("email", ""))
-        model = raw if (is_creator and raw in set(ai_builder.available_models())) else None
-    return _ai_builder_sse(ai_builder.build_generator(user_id, spec, model=model))
+    raw = str(data.get("model") or "").strip()
+    is_creator = _is_creator(_current_auth().get("email", ""))
+    override = raw if (is_creator and raw in set(ai_builder.available_models())) else None
+    return _ai_builder_sse(
+        ai_builder.build_generator(user_id, spec, builder_id=builder_id, model=override))
+
+
+@app.route("/api/ai-builder/health", methods=["GET"])
+def ai_builder_health():
+    """Live Builder-model health (availability, success rate, latency, failovers).
+    Creator-only — foundation for the Creator Dashboard + notifications."""
+    user_id, error = _require_login()
+    if error:
+        return error
+    if not _is_creator(_current_auth().get("email", "")):
+        return jsonify({"status": "error", "message": "Not authorized"}), 403
+    return jsonify({
+        "status": "success",
+        "health": ai_builder.health_snapshot(),
+        "unmapped_free": ai_builder.unmapped_free_models(),
+    })
 
 
 @app.route("/api/ai-builder/projects", methods=["GET"])

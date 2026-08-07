@@ -9208,6 +9208,11 @@ function aibBuild() {
     aibStream("/api/ai-builder/build", { spec: spec, builder: chosenBuilder }, function (evt) {
         if (evt.type === "status" || evt.type === "heartbeat") {
             statusEl.textContent = evt.message || "Working…";
+        } else if (evt.type === "failover") {
+            // Automatic model failover — surface it, don't stop the build.
+            statusEl.textContent = evt.message || "Switching builder…";
+            addLog('<span class="aib-log-skip">' + studioIcon("refresh-cw", 13) + ' ' + esc(evt.message || "Switched builder automatically") + '</span>');
+            if (typeof studioRefreshIcons === "function") studioRefreshIcons();
         } else if (evt.type === "manifest") {
             total = (evt.files || []).length;
             countEl.textContent = "0/" + total;

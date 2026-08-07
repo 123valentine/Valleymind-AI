@@ -112,6 +112,99 @@ def unmapped_free_models() -> list:
     return [m for m in available_models() if m.endswith("-free") and m not in mapped]
 
 
+# ── Health monitoring + failover ordering ────────────────────────────────────
+_HEALTH = {}                    # model id -> live stats
+_HEALTH_LOCK = threading.Lock()
+_COOLDOWN_SECONDS = 120         # how long a failing model is skipped for
+
+
+def _health_row(model):
+    row = _HEALTH.get(model)
+    if row is None:
+        row = {"calls": 0, "ok": 0, "fail": 0, "timeouts": 0, "builds": 0,
+               "total_ms": 0.0, "cooldown_until": 0.0, "last_error": "", "last_ok": 0.0}
+        _HEALTH[model] = row
+    return row
+
+
+def record_success(model, ms):
+    with _HEALTH_LOCK:
+        r = _health_row(model)
+        r["calls"] += 1; r["ok"] += 1; r["total_ms"] += max(0.0, ms)
+        r["last_ok"] = time.time(); r["cooldown_until"] = 0.0
+
+
+def record_failure(model, exc):
+    with _HEALTH_LOCK:
+        r = _health_row(model)
+        r["calls"] += 1; r["fail"] += 1
+        if isinstance(exc, BuilderModelError) and exc.kind == "timeout":
+            r["timeouts"] += 1
+        r["last_error"] = str(exc)[:200]
+        if _should_failover(exc):                       # unstable -> cool it down
+            r["cooldown_until"] = time.time() + _COOLDOWN_SECONDS
+
+
+def record_build_completed(model):
+    with _HEALTH_LOCK:
+        _health_row(model)["builds"] += 1
+
+
+def is_available(model) -> bool:
+    return time.time() >= _HEALTH.get(model, {}).get("cooldown_until", 0.0)
+
+
+def health_snapshot() -> dict:
+    """Per-tier health for the creator dashboard / notifications."""
+    out = {}
+    now = time.time()
+    with _HEALTH_LOCK:
+        for t in BUILDER_TIERS:
+            m = t["model"]; r = _HEALTH.get(m, {})
+            calls, ok = r.get("calls", 0), r.get("ok", 0)
+            out[t["id"]] = {
+                "label": t["label"], "model": m,
+                "available": now >= r.get("cooldown_until", 0.0),
+                "cooldown_s": max(0, int(r.get("cooldown_until", 0.0) - now)),
+                "calls": calls, "success": ok, "failures": r.get("fail", 0),
+                "timeouts": r.get("timeouts", 0),
+                "success_rate": round(ok / calls, 3) if calls else None,
+                "avg_ms": round(r.get("total_ms", 0.0) / ok) if ok else None,
+                "builds_completed": r.get("builds", 0),
+                "last_error": r.get("last_error", ""),
+            }
+    return out
+
+
+def _rank(tier) -> int:
+    try:
+        return BUILDER_TIERS.index(tier)      # later in the list = higher tier
+    except ValueError:
+        return -1
+
+
+def build_candidates(builder_id=None, model=None) -> list:
+    """Ordered tiers to attempt for a build: the user's selection first, then the
+    remaining tiers by rank (best first), with unavailable models pushed last.
+    Only models the API currently lists are included."""
+    avail_api = set(available_models())
+    tiers = [t for t in BUILDER_TIERS if (not avail_api or t["model"] in avail_api)] or list(BUILDER_TIERS)
+    sel = _tier_by_id(builder_id)
+    if model and not sel:                     # creator raw-model override
+        sel = {"id": "custom", "label": "Custom model", "model": model, "note": ""}
+    rest = sorted(
+        [t for t in tiers if not sel or t["model"] != sel["model"]],
+        key=lambda t: (0 if is_available(t["model"]) else 1, -_rank(t)),
+    )
+    ordered = ([sel] if sel else []) + rest
+    seen, out = set(), []
+    for t in ordered:
+        if t["model"] in seen:
+            continue
+        seen.add(t["model"]); out.append(t)
+    return out
+
+
 def configured() -> bool:
     return bool(api_key())
 
@@ -154,15 +247,41 @@ def available_models() -> list:
     return list(_models_cache["models"])
 
 
+class BuilderModelError(RuntimeError):
+    """A model call failed. ``retryable`` marks provider/availability failures
+    (5xx, 429, timeout, connection) that should trigger automatic failover to
+    the next Builder model — vs. hard errors (bad key/credits/request)."""
+
+    def __init__(self, message, status=None, retryable=False, kind=None):
+        super().__init__(message)
+        self.status = status
+        self.retryable = retryable
+        self.kind = kind or ("http" if status else "error")
+
+
+# 5xx + rate-limit + transient statuses -> failover; 4xx (auth/credits/bad req) -> hard fail.
+_RETRYABLE_STATUS = {408, 409, 425, 429, 500, 502, 503, 504}
+
+
+def _should_failover(exc) -> bool:
+    """Whether an exception means 'try the next Builder model'. Covers provider
+    errors AND a model that returns no usable output (junk/empty)."""
+    if isinstance(exc, BuilderModelError):
+        return exc.retryable
+    msg = str(exc).lower()
+    return any(s in msg for s in ("could not design", "no output", "empty file",
+                                  "unreadable", "temporarily unavailable"))
+
+
 def chat_stream(model: str, messages: list, max_tokens: int = 8192, temperature: float = 0.3):
     """Stream a chat completion from the OpenCode API.
 
     Yields dicts: {"content": str, "reasoning": str, "finish": str|None}.
-    Raises RuntimeError on HTTP errors or missing key.
+    Raises BuilderModelError (with a retryable flag) on HTTP/transport errors.
     """
     key = api_key()
     if not key:
-        raise RuntimeError("OPENCODE_API_KEY is not configured")
+        raise BuilderModelError("OPENCODE_API_KEY is not configured", retryable=False)
     payload = {
         "model": model,
         "messages": messages,
@@ -170,41 +289,50 @@ def chat_stream(model: str, messages: list, max_tokens: int = 8192, temperature:
         "max_tokens": max_tokens,
         "temperature": temperature,
     }
-    with httpx.stream(
-        "POST",
-        f"{base_url()}/chat/completions",
-        headers=_auth_headers(),
-        json=payload,
-        timeout=(30.0, 900.0),
-    ) as resp:
-        if resp.status_code != 200:
-            body = ""
-            try:
-                body = resp.read().decode("utf-8", "replace")[:500]
-            except Exception:
-                pass
-            raise RuntimeError(f"OpenCode API HTTP {resp.status_code}: {body}")
-        for raw_line in resp.iter_lines():
-            line = str(raw_line or "").strip()
-            if not line.startswith("data:"):
-                continue
-            data = line[5:].strip()
-            if not data or data == "[DONE]":
-                continue
-            try:
-                obj = json.loads(data)
-            except Exception:
-                continue
-            choices = obj.get("choices") or []
-            if not choices:
-                continue
-            choice = choices[0] or {}
-            delta = choice.get("delta") or {}
-            yield {
-                "content": delta.get("content") or "",
-                "reasoning": delta.get("reasoning_content") or "",
-                "finish": choice.get("finish_reason"),
-            }
+    try:
+        with httpx.stream(
+            "POST",
+            f"{base_url()}/chat/completions",
+            headers=_auth_headers(),
+            json=payload,
+            timeout=(30.0, 900.0),
+        ) as resp:
+            if resp.status_code != 200:
+                body = ""
+                try:
+                    body = resp.read().decode("utf-8", "replace")[:500]
+                except Exception:
+                    pass
+                raise BuilderModelError(
+                    f"OpenCode API HTTP {resp.status_code}: {body}",
+                    status=resp.status_code,
+                    retryable=resp.status_code in _RETRYABLE_STATUS,
+                )
+            for raw_line in resp.iter_lines():
+                line = str(raw_line or "").strip()
+                if not line.startswith("data:"):
+                    continue
+                data = line[5:].strip()
+                if not data or data == "[DONE]":
+                    continue
+                try:
+                    obj = json.loads(data)
+                except Exception:
+                    continue
+                choices = obj.get("choices") or []
+                if not choices:
+                    continue
+                choice = choices[0] or {}
+                delta = choice.get("delta") or {}
+                yield {
+                    "content": delta.get("content") or "",
+                    "reasoning": delta.get("reasoning_content") or "",
+                    "finish": choice.get("finish_reason"),
+                }
+    except httpx.TimeoutException as exc:
+        raise BuilderModelError(f"OpenCode API timeout: {exc}", retryable=True, kind="timeout")
+    except httpx.RequestError as exc:
+        raise BuilderModelError(f"OpenCode API connection error: {exc}", retryable=True, kind="connection")
 
 
 def _extract_json(text: str):
@@ -688,13 +816,19 @@ def _is_binary_asset(path: str) -> bool:
     return bool(_BINARY_ASSET_RE.search(path or ""))
 
 
-def build_generator(user_id: str, spec, model=None):
+def build_generator(user_id: str, spec, builder_id=None, model=None):
     """Yield SSE event dicts that drive the full build lifecycle.
 
-    ``model`` optionally overrides the build model (chosen in the UI dropdown);
-    it must already be validated by the caller. Falls back to build_model().
+    Self-healing: if the active Builder model hits a provider error (5xx / 429 /
+    timeout / connection) or returns no usable output, the build automatically
+    fails over to the next-highest-ranked available Builder model and continues —
+    the user never has to retry. ``builder_id`` is the branded selection; ``model``
+    is an optional raw override (creator dev mode).
     """
-    use_model = (model or "").strip() or build_model()
+    candidates = build_candidates(builder_id, model) or [
+        {"id": "vmb", "label": "ValleyMind Builder", "model": build_model(), "note": ""}]
+    active = 0
+    failover_count = 0
     proj = None
     meta = {}
     try:
@@ -708,14 +842,29 @@ def build_generator(user_id: str, spec, model=None):
 
         yield {"type": "status", "message": "Setting up the project workspace..."}
 
-        yield {"type": "status", "message": "Designing the project architecture..."}
-        manifest_res = _thread_call(lambda: _manifest_for(spec_text, use_model))
-        while not manifest_res["done"]:
-            yield {"type": "heartbeat", "message": "Designing the project architecture..."}
-            time.sleep(10)
-        if manifest_res["error"]:
-            raise RuntimeError(_user_facing_error(manifest_res["error"]))
-        manifest = manifest_res["value"]
+        # ── Architecture (file manifest) with automatic failover ──
+        manifest = None
+        while manifest is None:
+            tier = candidates[active]
+            yield {"type": "status", "message": "Designing the architecture with " + tier["label"] + "..."}
+            t0 = time.time()
+            res = _thread_call(lambda m=tier["model"]: _manifest_for(spec_text, m))
+            while not res["done"]:
+                yield {"type": "heartbeat", "message": "Designing the architecture..."}
+                time.sleep(10)
+            if res["error"]:
+                exc = res["error"]
+                record_failure(tier["model"], exc)
+                if _should_failover(exc) and active + 1 < len(candidates):
+                    active += 1
+                    failover_count += 1
+                    yield {"type": "failover", "message": tier["label"]
+                           + " is temporarily unavailable. Switched automatically to "
+                           + candidates[active]["label"] + "."}
+                    continue
+                raise RuntimeError(_user_facing_error(exc))
+            record_success(tier["model"], (time.time() - t0) * 1000)
+            manifest = res["value"]
         yield {"type": "manifest", "files": manifest}
 
         total = len(manifest)
@@ -730,39 +879,58 @@ def build_generator(user_id: str, spec, model=None):
                 yield {"type": "file_skipped", "path": path, "index": index, "total": total,
                        "message": "Binary asset — add this file manually"}
                 continue
-            collected = []
-            try:
-                for chunk in _gen_file_content(use_model, spec_text, path, manifest):
-                    collected.append(chunk)
-                    yield {"type": "chunk", "text": chunk, "path": path, "index": index, "total": total}
-                content = "".join(collected)
-                if not content.strip():
-                    raise RuntimeError("Model produced an empty file for " + path)
-                save_project_file(proj, path, content)
-            except GeneratorExit:
-                raise
-            except Exception as exc:
-                # One bad file must not discard the whole project — log it and
-                # keep going. Only a build with ZERO usable files is a failure.
-                skipped_files.append(path)
-                yield {"type": "file_error", "path": path, "index": index, "total": total, "message": _user_facing_error(exc)}
-                continue
-            done_files += 1
-            yield {"type": "file_done", "path": path, "index": index, "total": total, "completed": done_files}
+            saved = False
+            while not saved:
+                tier = candidates[active]
+                collected = []
+                t0 = time.time()
+                try:
+                    for chunk in _gen_file_content(tier["model"], spec_text, path, manifest):
+                        collected.append(chunk)
+                        yield {"type": "chunk", "text": chunk, "path": path, "index": index, "total": total}
+                    content = "".join(collected)
+                    if not content.strip():
+                        raise BuilderModelError("Model produced an empty file for " + path, retryable=True)
+                    save_project_file(proj, path, content)
+                    record_success(tier["model"], (time.time() - t0) * 1000)
+                    saved = True
+                except GeneratorExit:
+                    raise
+                except Exception as exc:
+                    record_failure(tier["model"], exc)
+                    if _should_failover(exc) and active + 1 < len(candidates):
+                        active += 1
+                        failover_count += 1
+                        yield {"type": "failover", "message": tier["label"]
+                               + " is temporarily unavailable. Switched automatically to "
+                               + candidates[active]["label"] + "."}
+                        yield {"type": "file_start", "path": path, "index": index, "total": total}
+                        continue   # retry this file on the new model
+                    # non-retryable or all models exhausted -> skip file, keep building
+                    skipped_files.append(path)
+                    yield {"type": "file_error", "path": path, "index": index, "total": total, "message": _user_facing_error(exc)}
+                    break
+            if saved:
+                done_files += 1
+                yield {"type": "file_done", "path": path, "index": index, "total": total, "completed": done_files}
 
         if done_files == 0:
             raise RuntimeError("No files could be generated for this project")
 
+        used = candidates[active]
+        record_build_completed(used["model"])
         meta = {
             "id": pid,
             "name": (spec.get("project_name") if isinstance(spec, dict) else "") or pid,
             "spec": spec,
             "created_at": datetime.now(timezone.utc).isoformat(),
-            "model": use_model,
-            "build_model": use_model,
+            "model": used["model"],
+            "build_model": used["model"],
+            "builder_label": used["label"],
             "status": "complete" if not skipped_files else "partial",
             "file_count": done_files,
             "skipped_files": skipped_files,
+            "failovers": failover_count,
         }
         save_project_meta(proj, meta)
         tree = build_tree(proj)
