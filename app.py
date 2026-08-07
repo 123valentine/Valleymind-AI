@@ -4151,13 +4151,23 @@ def ai_builder_status():
     user_id, error = _require_login()
     if error:
         return error
-    return jsonify({
+    # Developer Mode reveals the real provider model ids. It is gated to the
+    # creator account so normal users can NEVER see provider names — the UI only
+    # shows ValleyMind Builder branding.
+    is_creator = _is_creator(_current_auth().get("email", ""))
+    dev = is_creator and str(request.args.get("dev", "")).strip().lower() in ("1", "true", "yes")
+    resp = {
         "status": "success",
         "configured": ai_builder.configured(),
-        "plan_model": ai_builder.plan_model() if ai_builder.configured() else "",
-        "build_model": ai_builder.build_model() if ai_builder.configured() else "",
-        "models": ai_builder.available_models(),
-    })
+        "is_creator": is_creator,
+        "builders": ai_builder.builder_options(dev=dev) if ai_builder.configured() else [],
+        "default_builder": ai_builder.DEFAULT_BUILDER_ID,
+        "dev": dev,
+    }
+    if dev:
+        resp["models"] = ai_builder.available_models()
+        resp["unmapped_free"] = ai_builder.unmapped_free_models()
+    return jsonify(resp)
 
 
 @app.route("/api/ai-builder/clarify", methods=["POST"])
@@ -4204,10 +4214,16 @@ def ai_builder_build():
         return jsonify({"status": "error", "message": "An approved project spec is required"}), 400
     if not ai_builder.configured():
         return jsonify({"status": "error", "message": "AI Builder is not configured on the server"}), 503
-    # Optional model override from the UI dropdown; ignore anything not on the
-    # live model list so a bad value can't break the build.
-    requested_model = str(data.get("model") or "").strip()
-    model = requested_model if requested_model in set(ai_builder.available_models()) else None
+    # The UI sends a branded builder id (e.g. "vmb5"); resolve it to the real
+    # model server-side so provider names never travel to the browser. A raw
+    # `model` is honored only for the creator (Developer Mode power use).
+    builder_id = str(data.get("builder") or "").strip()
+    if builder_id:
+        model = ai_builder.resolve_builder_model(builder_id)
+    else:
+        raw = str(data.get("model") or "").strip()
+        is_creator = _is_creator(_current_auth().get("email", ""))
+        model = raw if (is_creator and raw in set(ai_builder.available_models())) else None
     return _ai_builder_sse(ai_builder.build_generator(user_id, spec, model=model))
 
 

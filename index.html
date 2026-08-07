@@ -2473,7 +2473,7 @@
                 </div>
                 <div class="aib-spec-preview" id="aibSpecPreview" style="display:none;"></div>
                 <div class="aib-model-row">
-                  <label for="aibBuildModel" class="aib-model-label"><i data-lucide="cpu" style="width:14px;height:14px;"></i> Code model</label>
+                  <label for="aibBuildModel" class="aib-model-label"><i data-lucide="cpu" style="width:14px;height:14px;"></i> Builder</label>
                   <select id="aibBuildModel" class="aib-model-select"></select>
                   <span class="aib-model-hint" id="aibModelHint"></span>
                 </div>
@@ -8919,36 +8919,36 @@ function aibReset() {
 // Curated coder line-up. Real OpenCode ids stay server-side (`value`); the UI
 // only ever shows Valley-branded names so provider identities never leak.
 // `ling` is the default (fast + reliable within the server build timeout).
-var AIB_DEFAULT_MODEL = "ling-3.0-flash-free";
-var AIB_MODELS = [
-    { id: "ling-3.0-flash-free", label: "Valley 2.1 Fast", hint: "Fast and reliable — recommended for most projects." },
-    { id: "nemotron-3-ultra-free", label: "Valley 2.1 Balanced", hint: "A little slower, slightly richer output." },
-    { id: "big-pickle", label: "Valley 2.2 Pro", hint: "Highest quality but slow — best for small projects; large builds can exceed the server time limit." },
-];
+// Builder selector is fully server-driven: the browser only receives branded
+// "ValleyMind Builder X.0" options. The underlying provider model ids stay on
+// the server and are revealed only in creator Developer Mode.
+var AIB_BUILDERS = [];
+
+function aibDevOn() { try { return localStorage.getItem("vmDevMode") === "1"; } catch (e) { return false; } }
 
 function aibLoadStatus() {
-    apiFetch("/api/ai-builder/status", { timeoutMs: 20000 }).then(function (r) { return r.json(); })
+    var url = "/api/ai-builder/status" + (aibDevOn() ? "?dev=1" : "");
+    apiFetch(url, { timeoutMs: 20000 }).then(function (r) { return r.json(); })
         .then(function (j) {
             if (!j || j.status !== "success" || !j.configured) return;
-            aibPopulateModels(j.models || []);
+            AIB_BUILDERS = j.builders || [];
+            aibPopulateBuilders(j.default_builder || "");
+            aibRenderDevToggle(!!j.is_creator);
             var note = document.getElementById("aibModelNote");
             if (note) note.textContent = "Powered by ValleyMind AI · Free to use";
         }).catch(function () {});
 }
 
-function aibPopulateModels(available) {
+function aibPopulateBuilders(defaultId) {
     var sel = document.getElementById("aibBuildModel");
     if (!sel) return;
-    var avail = available || [];
-    // Only offer curated models the server actually reports as available.
-    var offer = AIB_MODELS.filter(function (m) { return avail.indexOf(m.id) !== -1; });
-    if (!offer.length) offer = AIB_MODELS.slice();  // fallback if the list call failed
     sel.innerHTML = "";
-    offer.forEach(function (m) {
+    AIB_BUILDERS.forEach(function (b) {
         var opt = document.createElement("option");
-        opt.value = m.id;
-        opt.textContent = m.label;
-        if (m.id === AIB_DEFAULT_MODEL) opt.selected = true;
+        opt.value = b.id;   // opaque branded id (e.g. "vmb5")
+        // b.model is present only in Developer Mode.
+        opt.textContent = b.label + (b.model ? "  ·  " + b.model : "");
+        if (b["default"] || b.id === defaultId) opt.selected = true;
         sel.appendChild(opt);
     });
     aibUpdateModelHint();
@@ -8959,8 +8959,28 @@ function aibUpdateModelHint() {
     var sel = document.getElementById("aibBuildModel");
     var hint = document.getElementById("aibModelHint");
     if (!sel || !hint) return;
-    var m = AIB_MODELS.filter(function (x) { return x.id === sel.value; })[0];
-    hint.textContent = m ? m.hint : "";
+    var b = AIB_BUILDERS.filter(function (x) { return x.id === sel.value; })[0];
+    hint.textContent = b ? (b.note || "") : "";
+}
+
+// Developer Mode toggle — only rendered for the creator account; flips the
+// localStorage flag and reloads the list so provider ids show/hide.
+function aibRenderDevToggle(isCreator) {
+    var existing = document.getElementById("aibDevToggle");
+    if (!isCreator) { if (existing) existing.remove(); return; }
+    if (existing) { existing.textContent = aibDevOn() ? "Developer mode: on" : "Developer mode"; return; }
+    var row = document.querySelector(".aib-model-row");
+    if (!row) return;
+    var a = document.createElement("a");
+    a.id = "aibDevToggle";
+    a.href = "javascript:void(0)";
+    a.style.cssText = "font-size:11px;color:#64748b;text-decoration:underline;cursor:pointer;flex-basis:100%;";
+    a.textContent = aibDevOn() ? "Developer mode: on" : "Developer mode";
+    a.onclick = function () {
+        try { localStorage.setItem("vmDevMode", aibDevOn() ? "0" : "1"); } catch (e) {}
+        aibLoadStatus();
+    };
+    row.appendChild(a);
 }
 
 function aibLoaderHtml() {
@@ -9184,8 +9204,8 @@ function aibBuild() {
         if (pre) pre.innerHTML = aibHighlight(liveCode);
     }
     var modelSel = document.getElementById("aibBuildModel");
-    var chosenModel = modelSel ? modelSel.value : "";
-    aibStream("/api/ai-builder/build", { spec: spec, model: chosenModel }, function (evt) {
+    var chosenBuilder = modelSel ? modelSel.value : "";   // branded id, e.g. "vmb5"
+    aibStream("/api/ai-builder/build", { spec: spec, builder: chosenBuilder }, function (evt) {
         if (evt.type === "status" || evt.type === "heartbeat") {
             statusEl.textContent = evt.message || "Working…";
         } else if (evt.type === "manifest") {

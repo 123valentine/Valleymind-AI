@@ -59,6 +59,59 @@ def build_model() -> str:
     return os.getenv("OPENCODE_BUILD_MODEL", "ling-3.0-flash-free").strip()
 
 
+# ── Branded builder tiers ────────────────────────────────────────────────────
+# The UI shows ONLY the ValleyMind Builder branding. The real OpenCode model ids
+# below never reach the browser unless Developer Mode is on (creator-gated). Add
+# or re-rank tiers here — no UI change is required, the dropdown is server-driven.
+# Ranked by builder performance (reliable completion first, then output quality),
+# measured against the manifest+file build task. vmb5 is the flagship default.
+BUILDER_TIERS = [
+    {"id": "vmb1", "label": "ValleyMind Builder 1.0", "model": "mimo-v2.5-free",        "note": "Quick drafts and small projects."},
+    {"id": "vmb2", "label": "ValleyMind Builder 2.0", "model": "longcat-2.0-free",      "note": "Everyday building."},
+    {"id": "vmb3", "label": "ValleyMind Builder 3.0", "model": "nemotron-3-ultra-free", "note": "Balanced quality and speed."},
+    {"id": "vmb4", "label": "ValleyMind Builder 4.0", "model": "big-pickle",            "note": "Richest output — slower; best for smaller projects."},
+    {"id": "vmb5", "label": "ValleyMind Builder 5.0", "model": "ling-3.0-flash-free",   "note": "Fastest and most reliable. Recommended."},
+]
+DEFAULT_BUILDER_ID = os.getenv("OPENCODE_DEFAULT_BUILDER", "vmb5").strip() or "vmb5"
+
+
+def _tier_by_id(bid):
+    for t in BUILDER_TIERS:
+        if t["id"] == bid:
+            return t
+    return None
+
+
+def builder_options(dev: bool = False) -> list:
+    """Branded builder options for the UI. The real `model` id is included ONLY
+    when dev is True (Developer Mode). Tiers whose model isn't live are dropped."""
+    avail = set(available_models())
+    tiers = [t for t in BUILDER_TIERS if (not avail or t["model"] in avail)] or list(BUILDER_TIERS)
+    opts = []
+    for t in tiers:
+        o = {"id": t["id"], "label": t["label"], "note": t["note"],
+             "default": t["id"] == DEFAULT_BUILDER_ID}
+        if dev:
+            o["model"] = t["model"]
+        opts.append(o)
+    if opts and not any(o["default"] for o in opts):
+        opts[-1]["default"] = True   # keep a default even if the flagship is offline
+    return opts
+
+
+def resolve_builder_model(builder_id: str) -> str:
+    """Map a branded builder id -> the real model id (default tier if unknown)."""
+    t = _tier_by_id((builder_id or "").strip()) or _tier_by_id(DEFAULT_BUILDER_ID)
+    return t["model"] if t else build_model()
+
+
+def unmapped_free_models() -> list:
+    """Live free models not yet mapped to a builder tier — surfaced (dev only) so
+    new models can be benchmarked and promoted into the ranking over time."""
+    mapped = {t["model"] for t in BUILDER_TIERS}
+    return [m for m in available_models() if m.endswith("-free") and m not in mapped]
+
+
 def configured() -> bool:
     return bool(api_key())
 
