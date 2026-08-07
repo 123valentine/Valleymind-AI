@@ -84,9 +84,14 @@ def _tier_by_id(bid):
 
 def builder_options(dev: bool = False) -> list:
     """Branded builder options for the UI. The real `model` id is included ONLY
-    when dev is True (Developer Mode). Tiers whose model isn't live are dropped."""
+    when dev is True (Developer Mode). Tiers whose model isn't live are dropped,
+    and Builders currently in a health cooldown are hidden automatically — they
+    reappear on their own once healthy again (no code change needed)."""
     avail = set(available_models())
     tiers = [t for t in BUILDER_TIERS if (not avail or t["model"] in avail)] or list(BUILDER_TIERS)
+    # Hide temporarily-unhealthy Builders; keep the list non-empty as a fallback.
+    healthy = [t for t in tiers if is_available(t["model"])]
+    tiers = healthy or tiers
     opts = []
     for t in tiers:
         o = {"id": t["id"], "label": t["label"], "note": t["note"],
@@ -214,17 +219,29 @@ def _auth_headers() -> dict:
 
 
 def _user_facing_error(exc) -> str:
+    """Map any Builder/model error to a friendly, provider-agnostic message.
+    NEVER leaks raw provider output, status bodies, provider names or keys — the
+    full technical error is kept only in the (creator-only) health metrics."""
     msg = str(exc) or repr(exc)
-    msg = re.sub(r"sk-[A-Za-z0-9_\-]+", "sk-***", msg)
-    if "not configured" in msg:
-        return "The OpenCode API key is not configured on the server (OPENCODE_API_KEY)."
-    if "401" in msg or "Unauthorized" in msg or "invalid_api_key" in msg:
-        return "The OpenCode API rejected the server key (401). Check OPENCODE_API_KEY."
-    if "402" in msg or "CreditsError" in msg or "No payment method" in msg:
-        return "The OpenCode account has no credits/payment method for that model. Configure OPENCODE_PLAN_MODEL/OPENCODE_BUILD_MODEL to a free or funded model."
-    if "429" in msg:
-        return "The OpenCode API is rate-limited right now. Wait a moment and try again."
-    return f"OpenCode API error: {msg[:300]}"
+    low = msg.lower()
+    status = getattr(exc, "status", None)
+    kind = getattr(exc, "kind", None)
+    if status == 429 or kind == "rate_limit" or "429" in msg:
+        return "The AI Builders are busy right now — ValleyMind is automatically retrying."
+    if status in (500, 502, 503, 504) or kind in ("timeout", "connection") \
+            or any(s in low for s in ("503", "502", "500", "504", "timeout", "unavailable",
+                                      "upstream request failed", "server_error", "connection")):
+        return ("One of our AI Builders is temporarily unavailable. ValleyMind is automatically "
+                "switching to another available Builder.")
+    if status == 402 or "creditserror" in low or "no payment method" in low or "402" in msg:
+        return "The AI Builder is temporarily over capacity. Please try again shortly."
+    if status == 401 or "unauthorized" in low or "invalid_api_key" in low or "not configured" in low or "401" in msg:
+        return "The AI Builder is having a temporary configuration issue on our side. Please try again shortly."
+    if "could not design" in low:
+        return "The Builder couldn't plan this project just now. Please try Regenerate."
+    if any(s in low for s in ("no files", "no output", "empty")):
+        return "The Builders were unavailable, so nothing could be generated. Please try again in a moment."
+    return "The AI Builder ran into a temporary problem. Please try again."
 
 
 # ── OpenCode Zen chat client ────────────────────────────────────────────────
@@ -272,6 +289,12 @@ def _should_failover(exc) -> bool:
     msg = str(exc).lower()
     return any(s in msg for s in ("could not design", "no output", "empty file",
                                   "unreadable", "temporarily unavailable"))
+
+
+def _is_provider_down(exc) -> bool:
+    """A provider/availability failure (5xx, 429, timeout, connection) — as opposed
+    to a per-file content problem (empty/junk). Used to decide pause-vs-skip."""
+    return isinstance(exc, BuilderModelError) and exc.retryable and exc.kind != "empty"
 
 
 def chat_stream(model: str, messages: list, max_tokens: int = 8192, temperature: float = 0.3):
@@ -925,8 +948,7 @@ def _generate_files(proj, spec_text, manifest, candidates, ctx):
             tier = candidates[ctx["active"]]
             attempt = 0
             last_exc = None
-            last_is_rate = False
-            while True:                            # try this model, backing off on rate limits
+            while True:                            # try this model, backing off on provider errors
                 collected = []
                 t0 = time.time()
                 try:
@@ -935,7 +957,8 @@ def _generate_files(proj, spec_text, manifest, candidates, ctx):
                         yield {"type": "chunk", "text": chunk, "path": path, "index": index, "total": total}
                     content = "".join(collected)
                     if not content.strip():
-                        raise BuilderModelError("Model produced an empty file for " + path, retryable=True)
+                        raise BuilderModelError("Model produced an empty file for " + path,
+                                                retryable=True, kind="empty")
                     save_project_file(proj, path, content)
                     record_success(tier["model"], (time.time() - t0) * 1000)
                     outcome = "saved"
@@ -945,13 +968,15 @@ def _generate_files(proj, spec_text, manifest, candidates, ctx):
                 except Exception as exc:
                     record_failure(tier["model"], exc)
                     last_exc = exc
-                    last_is_rate = isinstance(exc, BuilderModelError) and exc.kind == "rate_limit"
-                    if last_is_rate and attempt < _RATE_MAX_RETRIES:
+                    # Retry the SAME Builder with exponential backoff for provider
+                    # errors (5xx / 429 / timeout / connection) before failing over.
+                    if _is_provider_down(exc) and attempt < _RATE_MAX_RETRIES:
                         wait = _backoff_seconds(attempt, getattr(exc, "retry_after", None))
                         attempt += 1
                         ctx["pace"] = min(10.0, max(ctx["pace"], 1.0) * 1.5)   # adaptive slow-down
-                        yield {"type": "status", "message": tier["label"]
-                               + " hit a rate limit — waiting " + str(wait) + "s (retry "
+                        reason = "is busy" if getattr(exc, "kind", "") == "rate_limit" else "is temporarily unavailable"
+                        yield {"type": "status", "message": tier["label"] + " " + reason
+                               + " — retrying in " + str(wait) + "s (attempt "
                                + str(attempt) + "/" + str(_RATE_MAX_RETRIES) + ")..."}
                         yield {"type": "file_start", "path": path, "index": index, "total": total}
                         time.sleep(wait)
@@ -969,16 +994,17 @@ def _generate_files(proj, spec_text, manifest, candidates, ctx):
                        + candidates[ctx["active"]]["label"] + "."}
                 yield {"type": "file_start", "path": path, "index": index, "total": total}
                 continue                             # retry file on the next model
-            if last_is_rate:
-                # Every model is rate-limited — pause instead of failing. Completed
-                # files are on disk and the plan is checkpointed, so the build resumes.
+            if _is_provider_down(last_exc):
+                # Every Builder is unavailable (busy/down) — pause instead of failing.
+                # Completed files are on disk and the plan is checkpointed, so it resumes.
                 ctx["paused"] = True
                 _checkpoint(proj, {"status": "paused", "manifest": manifest,
                                    "file_count": ctx["done_files"]})
                 yield {"type": "paused", "completed": ctx["done_files"], "total": total,
                        "project_id": proj.name,
-                       "message": "All Builder models are rate-limited right now. Your progress is saved ("
-                       + str(ctx["done_files"]) + "/" + str(total) + " files) — resume in a minute to finish."}
+                       "message": "All AI Builders are currently busy. Your project has been safely paused ("
+                       + str(ctx["done_files"]) + "/" + str(total) + " files done) and can be resumed once "
+                       "capacity becomes available."}
                 return
             ctx["skipped_files"].append(path)
             yield {"type": "file_error", "path": path, "index": index, "total": total,

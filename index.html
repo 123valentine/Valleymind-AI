@@ -943,9 +943,8 @@
     flex-shrink:0; border-bottom:1px solid rgba(255,255,255,0.07);
     background:linear-gradient(90deg, rgba(0,212,255,0.05), transparent); }
   .aib-topbar-title { display:flex; align-items:center; gap:12px; min-width:0; }
-  .aib-logo { width:34px; height:34px; flex-shrink:0; border-radius:10px; display:flex; align-items:center; justify-content:center;
-    color:#00d4ff; background:linear-gradient(135deg, rgba(0,212,255,0.18), rgba(14,165,233,0.1));
-    border:1px solid rgba(0,212,255,0.35); box-shadow:0 0 16px rgba(0,212,255,0.15); }
+  .aib-logo { width:34px; height:34px; flex-shrink:0; display:flex; align-items:center; justify-content:center;
+    color:#00d4ff; background:none; border:none; box-shadow:none; }
   .aib-topbar-title h3 { margin:0; color:#f1f5f9; font-family:'Space Grotesk',sans-serif; font-weight:800; font-size:15px; letter-spacing:0.02em; }
   .aib-topbar-title p { margin:1px 0 0; color:#64748b; font-size:11.5px; }
   .aib-topbar-actions { display:flex; gap:8px; flex-shrink:0; }
@@ -2512,6 +2511,7 @@
               <div class="aib-card-actions">
                 <button class="aib-btn aib-btn-ghost aib-btn-sm" id="aibBtnFiles" onclick="aibShow('files')"><i data-lucide="folder-open" style="width:14px;height:14px;"></i> Files</button>
                 <button class="aib-btn aib-btn-ghost aib-btn-sm" id="aibBtnPreview" onclick="aibShow('preview')"><i data-lucide="eye" style="width:14px;height:14px;"></i> Preview</button>
+                <button class="aib-btn aib-btn-ghost aib-btn-sm" onclick="aibRegenerate()"><i data-lucide="refresh-cw" style="width:14px;height:14px;"></i> Regenerate</button>
                 <button class="aib-btn aib-btn-primary aib-btn-sm" onclick="aibDownload()"><i data-lucide="download" style="width:14px;height:14px;"></i> Download .zip</button>
               </div>
             </div>
@@ -9296,6 +9296,22 @@ function aibResumePid(pid) {
     aibResume();
 }
 
+// Regenerate: rebuild the current project from scratch, reusing the existing
+// requirements (spec) and the current Builder selection.
+function aibRegenerate() {
+    var editEl = document.getElementById("aibSpecEdit");
+    var specText = (editEl && editEl.value.trim()) || (aibState.specText || "").trim();
+    var spec = null;
+    try { spec = JSON.parse(specText); } catch (e) { spec = null; }
+    if (!spec || typeof spec !== "object") {
+        alert("There's no project to regenerate yet — please start a new project.");
+        return;
+    }
+    aibState.pid = null;                       // a fresh build, not a resume
+    var modelSel = document.getElementById("aibBuildModel");
+    aibRunStream("/api/ai-builder/build", { spec: spec, builder: modelSel ? modelSel.value : "" });
+}
+
 // Shared streaming runner for both build and resume.
 function aibRunStream(url, body) {
     aibGo("build");
@@ -9371,9 +9387,11 @@ function aibRunStream(url, body) {
             statusEl.textContent = "Build complete — " + fileCount + " files generated";
         } else if (evt.type === "error") {
             addLog('<span class="aib-log-err">' + esc(evt.message || "Error") + '</span>');
+            addLog('<button onclick="aibRegenerate()" class="aib-btn aib-btn-primary aib-btn-sm" style="margin-top:8px;">Try again</button>');
             document.getElementById("aibBuildStatus").textContent = "Failed";
             document.getElementById("aibBuildStatus").className = "aib-badge";
             statusEl.textContent = "Build stopped";
+            if (typeof studioRefreshIcons === "function") studioRefreshIcons();
         }
     }).catch(function (e) {
         addLog('<span class="aib-log-err">' + esc(e.message || "Error") + '</span>');
