@@ -8988,7 +8988,7 @@ function vmDashRender(d) {
     grid += card("Live now", [["Online users", live.online_users], ["Active builder sessions", live.active_builder_sessions], ["Active chats", live.active_chats]]);
     grid += card("Users", [["Total registered", u.total], ["New today", u.new_today], ["Active (24h)", u.active_24h]]);
     grid += card("AI usage", [["Chats total", c.total], ["Chats today", c.today], ["Images generated", us.images], ["Videos generated", us.videos], ["Video analyses", us.analyses]]);
-    grid += card("Builder stats", [["Successful builds", bs.completed], ["Failed builds", bs.failed], ["Automatic failovers", bs.failovers], ["Avg build time (s)", bs.avg_build_seconds], ["Most-used", bs.most_used_builder]]);
+    grid += card("Builder stats", [["Successful builds", bs.completed], ["Resumed builds", bs.resumed], ["Paused builds", bs.paused], ["Failed builds", bs.failed], ["Automatic failovers", bs.failovers], ["Avg build time (s)", bs.avg_build_seconds], ["Most-used", bs.most_used_builder]]);
     grid += card("System", [["CPU %", sys.cpu_percent], ["Memory %", sys.memory_percent], ["Memory (MB)", (sys.memory_used_mb != null ? sys.memory_used_mb + " / " + sys.memory_total_mb : null)], ["DB storage (MB)", sys.db_storage_mb], ["Database", sys.database], ["R2 storage", sys.storage_r2], ["Active jobs", sys.active_jobs]]);
     grid += '</div>';
     var health = b.health || {};
@@ -9276,6 +9276,28 @@ function aibBuild() {
     if (!spec || typeof spec !== "object") { alert("The spec must be a JSON object."); return; }
     aibState.pid = null;
     document.getElementById("aibBtnBuild").disabled = true;
+    var modelSel = document.getElementById("aibBuildModel");
+    var chosenBuilder = modelSel ? modelSel.value : "";   // branded id, e.g. "vmb5"
+    aibRunStream("/api/ai-builder/build", { spec: spec, builder: chosenBuilder });
+}
+
+// Resume a rate-limit-paused (or interrupted) build from the last completed file.
+function aibResume() {
+    if (!aibState.pid) { alert("Nothing to resume yet."); return; }
+    var modelSel = document.getElementById("aibBuildModel");
+    var chosenBuilder = modelSel ? modelSel.value : "";
+    aibRunStream("/api/ai-builder/projects/" + encodeURIComponent(aibState.pid) + "/resume", { builder: chosenBuilder });
+}
+
+// Resume a specific paused project from the projects list.
+function aibResumePid(pid) {
+    if (!pid) return;
+    aibState.pid = pid;
+    aibResume();
+}
+
+// Shared streaming runner for both build and resume.
+function aibRunStream(url, body) {
     aibGo("build");
     aibResetBuildUI();
     var fileCount = 0, total = 0;
@@ -9296,9 +9318,7 @@ function aibBuild() {
         var pre = document.getElementById("aibBuildLivePre");
         if (pre) pre.innerHTML = aibHighlight(liveCode);
     }
-    var modelSel = document.getElementById("aibBuildModel");
-    var chosenBuilder = modelSel ? modelSel.value : "";   // branded id, e.g. "vmb5"
-    aibStream("/api/ai-builder/build", { spec: spec, builder: chosenBuilder }, function (evt) {
+    aibStream(url, body, function (evt) {
         if (evt.type === "status" || evt.type === "heartbeat") {
             statusEl.textContent = evt.message || "Working…";
         } else if (evt.type === "failover") {
@@ -9319,17 +9339,28 @@ function aibBuild() {
             liveDirty = true;
             paintLive();
         } else if (evt.type === "file_done") {
-            fileCount++;
+            // Use the backend-authoritative count so Resume continues from the
+            // checkpoint instead of restarting the progress bar at 0.
+            fileCount = (typeof evt.completed === "number") ? evt.completed : (fileCount + 1);
             var pct = total ? Math.round((fileCount / total) * 100) : 0;
             barEl.style.width = pct + "%";
             countEl.textContent = fileCount + "/" + total;
-            addLog('<span class="aib-log-ok">' + studioIcon("check", 13) + ' ' + esc(evt.path) + '</span>');
+            addLog('<span class="aib-log-ok">' + studioIcon("check", 13) + ' ' + esc(evt.path) + (evt.resumed ? ' (already built)' : '') + '</span>');
             if (typeof studioRefreshIcons === "function") studioRefreshIcons();
         } else if (evt.type === "file_error") {
             addLog('<span class="aib-log-err">' + studioIcon("x-circle", 13) + ' ' + esc(evt.path) + ' — ' + esc(evt.message) + '</span>');
             if (typeof studioRefreshIcons === "function") studioRefreshIcons();
         } else if (evt.type === "file_skipped") {
             addLog('<span class="aib-log-skip">' + studioIcon("minus-circle", 13) + ' ' + esc(evt.path) + ' — ' + esc(evt.message || "skipped") + '</span>');
+            if (typeof studioRefreshIcons === "function") studioRefreshIcons();
+        } else if (evt.type === "paused") {
+            // Rate-limited across all models — progress saved, offer Resume.
+            aibState.pid = evt.project_id || aibState.pid;
+            document.getElementById("aibBuildStatus").textContent = "Paused";
+            document.getElementById("aibBuildStatus").className = "aib-badge";
+            statusEl.textContent = evt.message || "Build paused — rate limited";
+            addLog('<span class="aib-log-skip">' + studioIcon("pause-circle", 13) + ' ' + esc(evt.message || "Paused (rate limited)") + '</span>');
+            addLog('<button onclick="aibResume()" class="aib-btn aib-btn-primary aib-btn-sm" style="margin-top:8px;">Resume build</button>');
             if (typeof studioRefreshIcons === "function") studioRefreshIcons();
         } else if (evt.type === "project") {
             aibState.pid = evt.project.id;
@@ -9513,6 +9544,7 @@ function aibLoadProjects() {
                     '<div class="aib-proj-meta"><span>' + esc(p.status || "") + '</span><span>' + (p.file_count || 0) + ' files</span>' + (created ? '<span>' + esc(created) + '</span>' : '') + '</div>' +
                     '</div><span class="aib-badge">' + esc(p.status || "") + '</span></div>' +
                     '<div class="aib-proj-actions">' +
+                    (p.status === "paused" ? '<button class="aib-btn aib-btn-primary" onclick="aibResumePid(\'' + p.id + '\')">' + studioIcon("play", 13) + ' Resume</button>' : '') +
                     '<button class="aib-btn aib-btn-ghost" onclick="aibOpenProject(\'' + p.id + '\')">' + studioIcon("folder-open", 13) + ' Open</button>' +
                     '<button class="aib-btn aib-btn-ghost" onclick="aibDownloadPid(\'' + p.id + '\')">' + studioIcon("download", 13) + ' Download</button>' +
                     '<button class="aib-btn aib-btn-ghost" title="Delete project" onclick="aibDelete(\'' + p.id + '\')">' + studioIcon("trash-2", 13) + '</button>' +

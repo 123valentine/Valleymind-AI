@@ -252,11 +252,12 @@ class BuilderModelError(RuntimeError):
     (5xx, 429, timeout, connection) that should trigger automatic failover to
     the next Builder model — vs. hard errors (bad key/credits/request)."""
 
-    def __init__(self, message, status=None, retryable=False, kind=None):
+    def __init__(self, message, status=None, retryable=False, kind=None, retry_after=None):
         super().__init__(message)
         self.status = status
         self.retryable = retryable
-        self.kind = kind or ("http" if status else "error")
+        self.kind = kind or ("rate_limit" if status == 429 else ("http" if status else "error"))
+        self.retry_after = retry_after
 
 
 # 5xx + rate-limit + transient statuses -> failover; 4xx (auth/credits/bad req) -> hard fail.
@@ -307,6 +308,7 @@ def chat_stream(model: str, messages: list, max_tokens: int = 8192, temperature:
                     f"OpenCode API HTTP {resp.status_code}: {body}",
                     status=resp.status_code,
                     retryable=resp.status_code in _RETRYABLE_STATUS,
+                    retry_after=resp.headers.get("retry-after"),
                 )
             for raw_line in resp.iter_lines():
                 line = str(raw_line or "").strip()
@@ -806,7 +808,7 @@ def _manifest_for(spec_text: str, model: str) -> list:
 
 # Aggregate build + live-session stats for the Creator Dashboard.
 _ACTIVE_BUILDS = 0
-_BUILD_STATS = {"completed": 0, "failed": 0, "failovers": 0, "total_seconds": 0.0}
+_BUILD_STATS = {"completed": 0, "failed": 0, "paused": 0, "resumed": 0, "failovers": 0, "total_seconds": 0.0}
 
 
 def _active_inc():
@@ -825,12 +827,19 @@ def active_builds() -> int:
     return _ACTIVE_BUILDS
 
 
-def _record_build_result(ok, seconds, failovers):
+def _record_build_result(ok, seconds, failovers, paused=False, resumed=False):
     with _HEALTH_LOCK:
-        _BUILD_STATS["completed" if ok else "failed"] += 1
         _BUILD_STATS["failovers"] += int(failovers or 0)
+        if paused:
+            _BUILD_STATS["paused"] += 1          # paused != failed (it's resumable)
+            return
         if ok:
+            _BUILD_STATS["completed"] += 1
             _BUILD_STATS["total_seconds"] += max(0.0, seconds)
+            if resumed:
+                _BUILD_STATS["resumed"] += 1     # completed via Resume
+        else:
+            _BUILD_STATS["failed"] += 1
 
 
 def build_stats_snapshot() -> dict:
@@ -854,6 +863,133 @@ _BINARY_ASSET_RE = re.compile(
 
 def _is_binary_asset(path: str) -> bool:
     return bool(_BINARY_ASSET_RE.search(path or ""))
+
+
+# ── Rate-limit backoff, pacing + checkpointing ──────────────────────────────
+_RATE_MAX_RETRIES = int(os.getenv("OPENCODE_RATE_MAX_RETRIES", "4") or 4)
+_BACKOFF_CAP = 60
+_PACE_SECONDS = float(os.getenv("OPENCODE_PACE_SECONDS", "0") or 0)
+
+
+def _backoff_seconds(attempt, retry_after=None):
+    if retry_after is not None:
+        try:
+            return min(_BACKOFF_CAP, max(1, int(float(retry_after))))
+        except Exception:
+            pass
+    return min(_BACKOFF_CAP, 2 ** (attempt + 1))   # 2, 4, 8, 16, 32, 60
+
+
+def _checkpoint(proj, updates):
+    """Crash-safe: merge progress into project.json so nothing is lost on a
+    rate-limit pause or interruption — this is what makes a build resumable."""
+    try:
+        meta = project_meta(proj) or {}
+        meta.update(updates)
+        save_project_meta(proj, meta)
+        return meta
+    except Exception:
+        return {}
+
+
+def _generate_files(proj, spec_text, manifest, candidates, ctx):
+    """Stream-generate every manifest file not already on disk. Per file it does:
+    failover across models, exponential backoff on rate limits (retrying the same
+    model, honoring Retry-After), adaptive pacing, and periodic checkpointing.
+    Mutates ``ctx`` and yields SSE events. If every model is rate-limited it sets
+    ctx['paused'] and stops — the project is resumable from the last file."""
+    total = len(manifest)
+    for index, path in enumerate(manifest):
+        # Resume: skip files already written on a previous attempt.
+        try:
+            done_path = _safe_target(proj, path)
+        except Exception:
+            done_path = None
+        if done_path is not None and done_path.exists() and done_path.stat().st_size > 0:
+            ctx["done_files"] += 1
+            yield {"type": "file_done", "path": path, "index": index, "total": total,
+                   "completed": ctx["done_files"], "resumed": True}
+            continue
+
+        yield {"type": "file_start", "path": path, "index": index, "total": total}
+        if _is_binary_asset(path):
+            ctx["skipped_files"].append(path)
+            yield {"type": "file_skipped", "path": path, "index": index, "total": total,
+                   "message": "Binary asset — add this file manually"}
+            continue
+        if ctx["pace"] > 0:
+            time.sleep(ctx["pace"])               # proactive throttle to avoid rate limits
+
+        outcome = None                             # "saved" | "skipped"
+        while outcome is None:
+            tier = candidates[ctx["active"]]
+            attempt = 0
+            last_exc = None
+            last_is_rate = False
+            while True:                            # try this model, backing off on rate limits
+                collected = []
+                t0 = time.time()
+                try:
+                    for chunk in _gen_file_content(tier["model"], spec_text, path, manifest):
+                        collected.append(chunk)
+                        yield {"type": "chunk", "text": chunk, "path": path, "index": index, "total": total}
+                    content = "".join(collected)
+                    if not content.strip():
+                        raise BuilderModelError("Model produced an empty file for " + path, retryable=True)
+                    save_project_file(proj, path, content)
+                    record_success(tier["model"], (time.time() - t0) * 1000)
+                    outcome = "saved"
+                    break
+                except GeneratorExit:
+                    raise
+                except Exception as exc:
+                    record_failure(tier["model"], exc)
+                    last_exc = exc
+                    last_is_rate = isinstance(exc, BuilderModelError) and exc.kind == "rate_limit"
+                    if last_is_rate and attempt < _RATE_MAX_RETRIES:
+                        wait = _backoff_seconds(attempt, getattr(exc, "retry_after", None))
+                        attempt += 1
+                        ctx["pace"] = min(10.0, max(ctx["pace"], 1.0) * 1.5)   # adaptive slow-down
+                        yield {"type": "status", "message": tier["label"]
+                               + " hit a rate limit — waiting " + str(wait) + "s (retry "
+                               + str(attempt) + "/" + str(_RATE_MAX_RETRIES) + ")..."}
+                        yield {"type": "file_start", "path": path, "index": index, "total": total}
+                        time.sleep(wait)
+                        continue                    # retry the same model
+                    break                            # give up on this model
+
+            if outcome == "saved":
+                break
+
+            if _should_failover(last_exc) and ctx["active"] + 1 < len(candidates):
+                ctx["active"] += 1
+                ctx["failover_count"] += 1
+                yield {"type": "failover", "message": tier["label"]
+                       + " is temporarily unavailable. Switched automatically to "
+                       + candidates[ctx["active"]]["label"] + "."}
+                yield {"type": "file_start", "path": path, "index": index, "total": total}
+                continue                             # retry file on the next model
+            if last_is_rate:
+                # Every model is rate-limited — pause instead of failing. Completed
+                # files are on disk and the plan is checkpointed, so the build resumes.
+                ctx["paused"] = True
+                _checkpoint(proj, {"status": "paused", "manifest": manifest,
+                                   "file_count": ctx["done_files"]})
+                yield {"type": "paused", "completed": ctx["done_files"], "total": total,
+                       "project_id": proj.name,
+                       "message": "All Builder models are rate-limited right now. Your progress is saved ("
+                       + str(ctx["done_files"]) + "/" + str(total) + " files) — resume in a minute to finish."}
+                return
+            ctx["skipped_files"].append(path)
+            yield {"type": "file_error", "path": path, "index": index, "total": total,
+                   "message": _user_facing_error(last_exc)}
+            outcome = "skipped"
+
+        if outcome == "saved":
+            ctx["done_files"] += 1
+            yield {"type": "file_done", "path": path, "index": index, "total": total, "completed": ctx["done_files"]}
+            if ctx["done_files"] % 3 == 0:           # periodic checkpoint
+                _checkpoint(proj, {"status": "building", "manifest": manifest, "file_count": ctx["done_files"]})
 
 
 def build_generator(user_id: str, spec, builder_id=None, model=None):
@@ -909,57 +1045,31 @@ def build_generator(user_id: str, spec, builder_id=None, model=None):
             manifest = res["value"]
         yield {"type": "manifest", "files": manifest}
 
-        total = len(manifest)
-        done_files = 0
-        skipped_files = []
-        for index, path in enumerate(manifest):
-            yield {"type": "file_start", "path": path, "index": index, "total": total}
-            # A text model can't emit binary assets (favicon.ico, images, fonts).
-            # Skip them so one binary entry can't sink the whole build.
-            if _is_binary_asset(path):
-                skipped_files.append(path)
-                yield {"type": "file_skipped", "path": path, "index": index, "total": total,
-                       "message": "Binary asset — add this file manually"}
-                continue
-            saved = False
-            while not saved:
-                tier = candidates[active]
-                collected = []
-                t0 = time.time()
-                try:
-                    for chunk in _gen_file_content(tier["model"], spec_text, path, manifest):
-                        collected.append(chunk)
-                        yield {"type": "chunk", "text": chunk, "path": path, "index": index, "total": total}
-                    content = "".join(collected)
-                    if not content.strip():
-                        raise BuilderModelError("Model produced an empty file for " + path, retryable=True)
-                    save_project_file(proj, path, content)
-                    record_success(tier["model"], (time.time() - t0) * 1000)
-                    saved = True
-                except GeneratorExit:
-                    raise
-                except Exception as exc:
-                    record_failure(tier["model"], exc)
-                    if _should_failover(exc) and active + 1 < len(candidates):
-                        active += 1
-                        failover_count += 1
-                        yield {"type": "failover", "message": tier["label"]
-                               + " is temporarily unavailable. Switched automatically to "
-                               + candidates[active]["label"] + "."}
-                        yield {"type": "file_start", "path": path, "index": index, "total": total}
-                        continue   # retry this file on the new model
-                    # non-retryable or all models exhausted -> skip file, keep building
-                    skipped_files.append(path)
-                    yield {"type": "file_error", "path": path, "index": index, "total": total, "message": _user_facing_error(exc)}
-                    break
-            if saved:
-                done_files += 1
-                yield {"type": "file_done", "path": path, "index": index, "total": total, "completed": done_files}
+        # Checkpoint the plan immediately so a rate-limit pause is resumable.
+        _checkpoint(proj, {
+            "id": pid,
+            "name": (spec.get("project_name") if isinstance(spec, dict) else "") or pid,
+            "spec": spec,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "manifest": manifest,
+            "status": "building",
+            "file_count": 0,
+        })
 
-        if done_files == 0:
+        ctx = {"active": active, "failover_count": failover_count, "done_files": 0,
+               "skipped_files": [], "paused": False, "pace": _PACE_SECONDS}
+        for ev in _generate_files(proj, spec_text, manifest, candidates, ctx):
+            yield ev
+        failover_count = ctx["failover_count"]
+
+        if ctx["paused"]:
+            # Paused on a rate limit — already emitted + checkpointed; resumable.
+            _record_build_result(False, time.time() - _build_t0, failover_count, paused=True)
+            return
+        if ctx["done_files"] == 0:
             raise RuntimeError("No files could be generated for this project")
 
-        used = candidates[active]
+        used = candidates[ctx["active"]]
         record_build_completed(used["model"])
         meta = {
             "id": pid,
@@ -969,9 +1079,10 @@ def build_generator(user_id: str, spec, builder_id=None, model=None):
             "model": used["model"],
             "build_model": used["model"],
             "builder_label": used["label"],
-            "status": "complete" if not skipped_files else "partial",
-            "file_count": done_files,
-            "skipped_files": skipped_files,
+            "manifest": manifest,
+            "status": "complete" if not ctx["skipped_files"] else "partial",
+            "file_count": ctx["done_files"],
+            "skipped_files": ctx["skipped_files"],
             "failovers": failover_count,
         }
         save_project_meta(proj, meta)
@@ -995,6 +1106,61 @@ def build_generator(user_id: str, spec, builder_id=None, model=None):
             except Exception:
                 pass
         _record_build_result(False, time.time() - _build_t0, failover_count)
+        yield {"type": "error", "message": _user_facing_error(exc)}
+    finally:
+        _active_dec()
+
+
+def resume_generator(user_id: str, pid: str, builder_id=None, model=None):
+    """Resume an interrupted or rate-limit-paused build: regenerate only the
+    files still missing from disk, using the same failover + backoff engine.
+    Idempotent — can be called repeatedly until the project is complete."""
+    proj = resolve_project(user_id, pid)
+    if proj is None:
+        yield {"type": "error", "message": "Project not found."}
+        return
+    meta = project_meta(proj) or {}
+    manifest = meta.get("manifest")
+    if not isinstance(manifest, list) or not manifest:
+        yield {"type": "error", "message": "This project has no saved plan to resume — please rebuild it."}
+        return
+    spec = meta.get("spec") or {}
+    spec_text = _render_spec(spec)
+    candidates = build_candidates(builder_id, model) or [
+        {"id": "vmb", "label": "ValleyMind Builder", "model": build_model(), "note": ""}]
+    ctx = {"active": 0, "failover_count": 0, "done_files": 0,
+           "skipped_files": [], "paused": False, "pace": _PACE_SECONDS}
+    _active_inc()
+    _build_t0 = time.time()
+    try:
+        yield {"type": "status", "message": "Resuming your build..."}
+        yield {"type": "manifest", "files": manifest}
+        for ev in _generate_files(proj, spec_text, manifest, candidates, ctx):
+            yield ev
+        if ctx["paused"]:
+            _record_build_result(False, time.time() - _build_t0, ctx["failover_count"], paused=True)
+            return
+        if ctx["done_files"] == 0:
+            _record_build_result(False, time.time() - _build_t0, ctx["failover_count"])
+            yield {"type": "error", "message": "No files could be generated."}
+            return
+        used = candidates[ctx["active"]]
+        record_build_completed(used["model"])
+        meta.update({
+            "model": used["model"], "build_model": used["model"], "builder_label": used["label"],
+            "status": "complete" if not ctx["skipped_files"] else "partial",
+            "file_count": ctx["done_files"], "skipped_files": ctx["skipped_files"],
+            "failovers": int(meta.get("failovers", 0) or 0) + ctx["failover_count"],
+        })
+        save_project_meta(proj, meta)
+        tree = build_tree(proj)
+        yield {"type": "project", "project": {"id": pid, "meta": meta, "tree": tree}}
+        _record_build_result(True, time.time() - _build_t0, ctx["failover_count"], resumed=True)
+        yield {"type": "done"}
+    except GeneratorExit:
+        raise
+    except Exception as exc:
+        _record_build_result(False, time.time() - _build_t0, ctx["failover_count"])
         yield {"type": "error", "message": _user_facing_error(exc)}
     finally:
         _active_dec()

@@ -4225,6 +4225,21 @@ def ai_builder_build():
         ai_builder.build_generator(user_id, spec, builder_id=builder_id, model=override))
 
 
+@app.route("/api/ai-builder/projects/<pid>/resume", methods=["POST"])
+def ai_builder_resume(pid):
+    """Resume a paused/interrupted build — regenerates only the missing files."""
+    user_id, error = _require_login()
+    if error:
+        return error
+    if not ai_builder.configured():
+        return jsonify({"status": "error", "message": "AI Builder is not configured on the server"}), 503
+    if ai_builder.resolve_project(user_id, pid) is None:
+        return jsonify({"status": "error", "message": "Project not found"}), 404
+    data = request.get_json(silent=True) or {}
+    builder_id = str(data.get("builder") or "").strip()
+    return _ai_builder_sse(ai_builder.resume_generator(user_id, pid, builder_id=builder_id))
+
+
 @app.route("/api/ai-builder/health", methods=["GET"])
 def ai_builder_health():
     """Live Builder-model health (availability, success rate, latency, failovers).
