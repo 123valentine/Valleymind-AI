@@ -2630,6 +2630,12 @@
     </div>
   </div>
   <audio id="rtPlayer" preload="auto" style="display:none;"></audio>
+  <!-- One persistent, gesture-unlocked player for chat persona playback (see
+       unlockPersonaAudio). A fresh new Audio() per reply is never unlocked, so
+       mobile/strict browsers blocked .play() and the code fell back to the
+       device's own voice — the bug that made Marcus sound female on one device
+       and male on another. -->
+  <audio id="personaPlayer" preload="auto" style="display:none;"></audio>
   </div>
   </div><!-- /Round Table workspace panel -->
 </div><!-- /Studio overlay -->
@@ -3523,7 +3529,6 @@ function copyUserMessageText(btn) {
 // voices / autoplay policy), which is why "play aloud" appeared broken. We now
 // use the same server voice the Round Table uses, and only fall back to the
 // browser engine if the server call fails.
-var _msgAudio = null;
 var _msgAudioBtn = null;
 
 function _voiceIcon(btn, name) {
@@ -3533,17 +3538,19 @@ function _voiceIcon(btn, name) {
 }
 
 function _stopMsgAudio() {
-    try { if (_msgAudio) { _msgAudio.pause(); _msgAudio.onended = null; _msgAudio.onerror = null; } } catch (e) {}
+    var el = getPersonaPlayer();
+    try { if (el) { el.pause(); el.onended = null; el.onerror = null; } } catch (e) {}
     try { if (window.speechSynthesis) window.speechSynthesis.cancel(); } catch (e) {}
     if (_msgAudioBtn) _voiceIcon(_msgAudioBtn, 'play');
-    _msgAudio = null;
     _msgAudioBtn = null;
 }
 
 window.toggleVoicePlayback = function (btn) {
+    var el = getPersonaPlayer();
     // Clicking the button that is currently playing stops it.
-    if (_msgAudioBtn === btn && _msgAudio && !_msgAudio.paused) { _stopMsgAudio(); return; }
+    if (_msgAudioBtn === btn && el && !el.paused) { _stopMsgAudio(); return; }
     _stopMsgAudio();
+    unlockPersonaAudio();
 
     var wrapper = btn.closest('.assistant-message');
     var bubble = wrapper ? wrapper.querySelector('.bubble') : null;
@@ -3556,16 +3563,20 @@ window.toggleVoicePlayback = function (btn) {
 
     apiFetch('/api/tts', {
         method: 'POST',
+        credentials: 'include',
         headers: authHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ text: text.slice(0, 1500), persona: persona })
     }).then(function (r) { return r.json(); }).then(function (j) {
-        if (j && j.status === 'success' && j.url) {
-            _msgAudio = new Audio(j.url);
-            _msgAudio.onended = function () { _voiceIcon(btn, 'play'); _msgAudio = null; _msgAudioBtn = null; };
-            _msgAudio.onerror = function () { _voiceIcon(btn, 'play'); _msgAudio = null; _msgAudioBtn = null; browserSpeak(text); };
+        // Play the assigned Qwen voice through the persistent, unlocked element.
+        if (j && j.status === 'success' && j.engine === 'qwen_tts' && j.url) {
+            var pl = getPersonaPlayer();
+            pl.onended = function () { _voiceIcon(btn, 'play'); _msgAudioBtn = null; };
+            pl.onerror = function () { _voiceIcon(btn, 'play'); _msgAudioBtn = null; };
+            pl.src = j.url;
             _voiceIcon(btn, 'pause');
-            _msgAudio.play().catch(function () { _voiceIcon(btn, 'play'); browserSpeak(text); });
+            pl.play().catch(function () { _voiceIcon(btn, 'play'); _msgAudioBtn = null; });
         } else {
+            // Server has no Qwen audio to give — last-resort device voice.
             _voiceIcon(btn, 'play'); _msgAudioBtn = null; browserSpeak(text);
         }
     }).catch(function () {
@@ -4425,12 +4436,49 @@ async function playMarcusVoice(text, voice) {
     browserSpeak(text);
 }
 
+// ONE persistent, gesture-unlocked <audio> element for ALL chat persona playback
+// (auto-spoken voice replies + the message "play aloud" button). Browsers block
+// HTMLMediaElement.play() that isn't tied to a recent user gesture. A voice reply
+// plays seconds after the mic tap (after speech-to-text, the SSE stream, and a
+// second /api/tts fetch), so a fresh `new Audio()` was always rejected on mobile
+// and the code fell back to the device's own speechSynthesis voice — which is why
+// Marcus sounded female on one device and male on another. We unlock this single
+// element on the first user gesture (any tap/key) and reuse it, exactly like the
+// Round Table does, so the assigned Qwen voice actually plays everywhere.
+var _personaPlayer = null;
+var _personaAudioUnlocked = false;
+
+function getPersonaPlayer() {
+    if (!_personaPlayer) _personaPlayer = document.getElementById("personaPlayer");
+    return _personaPlayer;
+}
+
+function unlockPersonaAudio() {
+    var el = getPersonaPlayer();
+    if (!el || _personaAudioUnlocked) return;
+    try {
+        // A 44-byte silent WAV; playing it inside a gesture unlocks the element.
+        el.src = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=";
+        var p = el.play();
+        if (p && p.then) p.then(function () { try { el.pause(); el.currentTime = 0; } catch (e) {} }).catch(function () {});
+    } catch (e) {}
+    _personaAudioUnlocked = true;
+}
+
+// Unlock on the very first user interaction anywhere on the page, so by the time
+// any reply is ready the element is already allowed to play.
+["pointerdown", "touchstart", "keydown", "click"].forEach(function (evt) {
+    document.addEventListener(evt, unlockPersonaAudio, { passive: true, capture: true });
+});
+
 // Play a persona's reply in their fixed, server-generated Qwen voice (identical
-// on every device). Falls back to browser speechSynthesis when the server can't
-// synthesise — unconfigured, over the budget cap, or offline.
-var _personaAudio = null;
+// on every device). Only when the SERVER genuinely can't synthesise (Qwen
+// unconfigured, over the budget cap, or offline) do we fall back to the device
+// voice — never on a mere play() rejection, which is what used to hijack the
+// voice with the browser default.
 async function speakPersona(text, persona) {
     if (!text) return;
+    unlockPersonaAudio();
     try {
         var res = await apiFetch("/api/tts", {
             method: "POST",
@@ -4442,13 +4490,25 @@ async function speakPersona(text, persona) {
         var data = await res.json();
         if (data && data.engine === "qwen_tts" && data.url) {
             if (window.speechSynthesis) window.speechSynthesis.cancel();
-            if (_personaAudio) { try { _personaAudio.pause(); } catch (e) {} }
-            _personaAudio = new Audio(data.url);
-            _personaAudio.play().catch(function () { browserSpeak(text); });
+            var el = getPersonaPlayer();
+            if (el) {
+                try { el.pause(); } catch (e) {}
+                el.onended = null; el.onerror = null;   // drop any stale play-button handler
+                el.src = data.url;
+                var pr = el.play();
+                // Stay silent (never a wrong-gender device voice) if the unlocked
+                // element is somehow still blocked; the reply text is already shown.
+                if (pr && pr.catch) pr.catch(function (err) {
+                    console.warn("[TTS] persona audio blocked:", err && err.name);
+                });
+            }
             return;
         }
-    } catch (e) { /* fall through to browser speech */ }
-    browserSpeak(text);
+        // Server has no Qwen audio to give — last-resort device voice.
+        browserSpeak(text);
+    } catch (e) {
+        browserSpeak(text);
+    }
 }
 
 function quickSend(button) {
@@ -4665,6 +4725,9 @@ function toggleVoice() {
         alert("Voice input isn't supported in this browser. Chrome, Edge, or Android Chrome work best.");
         return;
     }
+    // Unlock playback on this tap so the reply plays its assigned Qwen voice
+    // rather than being blocked (and falling back to the device's own voice).
+    unlockPersonaAudio();
     if (_listening) { stopListening(); return; }
     startListening();
 }
