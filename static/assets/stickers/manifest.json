@@ -264,10 +264,6 @@
   "name": "download 4"
  },
  {
-  "file": "sticker_0067.png",
-  "name": "download 4"
- },
- {
   "file": "sticker_0068.png",
   "name": "download 4"
  },
@@ -394,10 +390,6 @@
  {
   "file": "sticker_0099.png",
   "name": "file 0000000056d86246b2c0c00962987513"
- },
- {
-  "file": "sticker_0100.png",
-  "name": "file 00000000982c720a854fe27ba64a8599 1"
  },
  {
   "file": "sticker_0101.png",
@@ -624,10 +616,6 @@
   "name": "pngtree-gold-floral-ornament-elegant-corner-png-image 16002604"
  },
  {
-  "file": "sticker_0157.png",
-  "name": "Screenshot 2026-07-27 185455"
- },
- {
   "file": "sticker_0158.png",
   "name": "Screenshot 2026-07-27 185522"
  },
@@ -700,10 +688,6 @@
   "name": "Screenshot 20250703-131716 1"
  },
  {
-  "file": "sticker_0176.png",
-  "name": "Screenshot 20250703-132909"
- },
- {
   "file": "sticker_0177.png",
   "name": "Screenshot 20250725-123911"
  },
@@ -744,14 +728,6 @@
   "name": "Screenshot 20260123-110108"
  },
  {
-  "file": "sticker_0187.png",
-  "name": "Screenshot 20260523-200603 1"
- },
- {
-  "file": "sticker_0188.png",
-  "name": "Screenshot 20260523-200609 1"
- },
- {
   "file": "sticker_0189.png",
   "name": "Screenshot 20260523-200614 1"
  },
@@ -762,10 +738,6 @@
  {
   "file": "sticker_0191.png",
   "name": "Screenshot 20260523-200628 1"
- },
- {
-  "file": "sticker_0192.png",
-  "name": "Screenshot 20260523-200634 1"
  },
  {
   "file": "sticker_0193.png",
@@ -782,10 +754,6 @@
  {
   "file": "sticker_0196.png",
   "name": "Screenshot 20260523-200657 1"
- },
- {
-  "file": "sticker_0197.png",
-  "name": "Screenshot 20260523-200704 1"
  },
  {
   "file": "sticker_0198.png",
@@ -908,7 +876,7 @@
   "name": "6f651370-3d9e-4662-b060-936073ce046c 1"
  },
  {
-  "file": "STK-20260705-WA0028.webp",
+  "file": "STK-20260705-WA0028.png",
   "name": "STK-20260705-WA0028"
  },
  {
@@ -916,11 +884,11 @@
   "name": "STK-20260705-WA0044"
  },
  {
-  "file": "STK-20260705-WA0046.webp",
+  "file": "STK-20260705-WA0046.png",
   "name": "STK-20260705-WA0046"
  },
  {
-  "file": "STK-20260706-WA0000.webp",
+  "file": "STK-20260706-WA0000.png",
   "name": "STK-20260706-WA0000"
  },
  {
@@ -928,11 +896,11 @@
   "name": "STK-20260706-WA0008"
  },
  {
-  "file": "STK-20260706-WA0011.webp",
+  "file": "STK-20260706-WA0011.png",
   "name": "STK-20260706-WA0011"
  },
  {
-  "file": "STK-20260706-WA0019.webp",
+  "file": "STK-20260706-WA0019.png",
   "name": "STK-20260706-WA0019"
  },
  {
@@ -952,7 +920,7 @@
   "name": "STK-20260706-WA0062"
  },
  {
-  "file": "STK-20260707-WA0000.webp",
+  "file": "STK-20260707-WA0000.png",
   "name": "STK-20260707-WA0000"
  },
  {
@@ -988,7 +956,7 @@
   "name": "STK-20260709-WA0006"
  },
  {
-  "file": "STK-20260710-WA0061.webp",
+  "file": "STK-20260710-WA0061.png",
   "name": "STK-20260710-WA0061"
  },
  {
@@ -1000,7 +968,7 @@
   "name": "STK-20260711-WA0004"
  },
  {
-  "file": "STK-20260711-WA0007.webp",
+  "file": "STK-20260711-WA0007.png",
   "name": "STK-20260711-WA0007"
  },
  {
@@ -1016,11 +984,11 @@
   "name": "STK-20260711-WA0055"
  },
  {
-  "file": "STK-20260711-WA0056.webp",
+  "file": "STK-20260711-WA0056.png",
   "name": "STK-20260711-WA0056"
  },
  {
-  "file": "STK-20260711-WA0057.webp",
+  "file": "STK-20260711-WA0057.png",
   "name": "STK-20260711-WA0057"
  },
  {
@@ -1028,11 +996,11 @@
   "name": "STK-20260711-WA0058"
  },
  {
-  "file": "STK-20260711-WA0059.webp",
+  "file": "STK-20260711-WA0059.png",
   "name": "STK-20260711-WA0059"
  },
  {
-  "file": "STK-20260711-WA0060.webp",
+  "file": "STK-20260711-WA0060.png",
   "name": "STK-20260711-WA0060"
  },
  {
@@ -1048,7 +1016,7 @@
   "name": "STK-20260711-WA0063"
  },
  {
-  "file": "STK-20260714-WA0003.webp",
+  "file": "STK-20260714-WA0003.png",
   "name": "STK-20260714-WA0003"
  },
  {
@@ -1060,7 +1028,7 @@
   "name": "STK-20260714-WA0023"
  },
  {
-  "file": "STK-20260714-WA0024.webp",
+  "file": "STK-20260714-WA0024.png",
   "name": "STK-20260714-WA0024"
  },
  {
@@ -1080,7 +1048,7 @@
   "name": "STK-20260716-WA0003"
  },
  {
-  "file": "STK-20260716-WA0014.webp",
+  "file": "STK-20260716-WA0014.png",
   "name": "STK-20260716-WA0014"
  },
  {
@@ -1092,11 +1060,11 @@
   "name": "STK-20260718-WA0008"
  },
  {
-  "file": "STK-20260718-WA0012.webp",
+  "file": "STK-20260718-WA0012.png",
   "name": "STK-20260718-WA0012"
  },
  {
-  "file": "STK-20260718-WA0013.webp",
+  "file": "STK-20260718-WA0013.png",
   "name": "STK-20260718-WA0013"
  },
  {
@@ -1104,15 +1072,15 @@
   "name": "STK-20260718-WA0015"
  },
  {
-  "file": "STK-20260719-WA0000.webp",
+  "file": "STK-20260719-WA0000.png",
   "name": "STK-20260719-WA0000"
  },
  {
-  "file": "STK-20260719-WA0001.webp",
+  "file": "STK-20260719-WA0001.png",
   "name": "STK-20260719-WA0001"
  },
  {
-  "file": "STK-20260719-WA0002.webp",
+  "file": "STK-20260719-WA0002.png",
   "name": "STK-20260719-WA0002"
  },
  {
@@ -1132,7 +1100,7 @@
   "name": "STK-20260719-WA0012"
  },
  {
-  "file": "STK-20260719-WA0013.webp",
+  "file": "STK-20260719-WA0013.png",
   "name": "STK-20260719-WA0013"
  },
  {
@@ -1140,19 +1108,19 @@
   "name": "STK-20260719-WA0017"
  },
  {
-  "file": "STK-20260719-WA0020.webp",
+  "file": "STK-20260719-WA0020.png",
   "name": "STK-20260719-WA0020"
  },
  {
-  "file": "STK-20260719-WA0021.webp",
+  "file": "STK-20260719-WA0021.png",
   "name": "STK-20260719-WA0021"
  },
  {
-  "file": "STK-20260719-WA0022.webp",
+  "file": "STK-20260719-WA0022.png",
   "name": "STK-20260719-WA0022"
  },
  {
-  "file": "STK-20260719-WA0125.webp",
+  "file": "STK-20260719-WA0125.png",
   "name": "STK-20260719-WA0125"
  },
  {
@@ -1160,19 +1128,19 @@
   "name": "STK-20260720-WA0016"
  },
  {
-  "file": "STK-20260720-WA0041.webp",
+  "file": "STK-20260720-WA0041.png",
   "name": "STK-20260720-WA0041"
  },
  {
-  "file": "STK-20260720-WA0042.webp",
+  "file": "STK-20260720-WA0042.png",
   "name": "STK-20260720-WA0042"
  },
  {
-  "file": "STK-20260720-WA0043.webp",
+  "file": "STK-20260720-WA0043.png",
   "name": "STK-20260720-WA0043"
  },
  {
-  "file": "STK-20260720-WA0049.webp",
+  "file": "STK-20260720-WA0049.png",
   "name": "STK-20260720-WA0049"
  },
  {
@@ -1180,7 +1148,7 @@
   "name": "STK-20260721-WA0012"
  },
  {
-  "file": "STK-20260721-WA0032.webp",
+  "file": "STK-20260721-WA0032.png",
   "name": "STK-20260721-WA0032"
  },
  {
@@ -1196,15 +1164,11 @@
   "name": "STK-20260722-WA0001"
  },
  {
-  "file": "STK-20260722-WA0002.webp",
-  "name": "STK-20260722-WA0002"
- },
- {
   "file": "STK-20260722-WA0003.webp",
   "name": "STK-20260722-WA0003"
  },
  {
-  "file": "STK-20260722-WA0004.webp",
+  "file": "STK-20260722-WA0004.png",
   "name": "STK-20260722-WA0004"
  },
  {
@@ -1212,7 +1176,7 @@
   "name": "STK-20260722-WA0005"
  },
  {
-  "file": "STK-20260722-WA0006.webp",
+  "file": "STK-20260722-WA0006.png",
   "name": "STK-20260722-WA0006"
  },
  {
@@ -1228,11 +1192,11 @@
   "name": "STK-20260722-WA0009"
  },
  {
-  "file": "STK-20260722-WA0011.webp",
+  "file": "STK-20260722-WA0011.png",
   "name": "STK-20260722-WA0011"
  },
  {
-  "file": "STK-20260722-WA0012.webp",
+  "file": "STK-20260722-WA0012.png",
   "name": "STK-20260722-WA0012"
  },
  {
@@ -1244,11 +1208,11 @@
   "name": "STK-20260723-WA0011"
  },
  {
-  "file": "STK-20260724-WA0002.webp",
+  "file": "STK-20260724-WA0002.png",
   "name": "STK-20260724-WA0002"
  },
  {
-  "file": "STK-20260724-WA0042.webp",
+  "file": "STK-20260724-WA0042.png",
   "name": "STK-20260724-WA0042"
  },
  {
@@ -1260,15 +1224,15 @@
   "name": "STK-20260726-WA0012"
  },
  {
-  "file": "STK-20260726-WA0031.webp",
+  "file": "STK-20260726-WA0031.png",
   "name": "STK-20260726-WA0031"
  },
  {
-  "file": "STK-20260726-WA0033.webp",
+  "file": "STK-20260726-WA0033.png",
   "name": "STK-20260726-WA0033"
  },
  {
-  "file": "STK-20260726-WA0034.webp",
+  "file": "STK-20260726-WA0034.png",
   "name": "STK-20260726-WA0034"
  },
  {
@@ -1280,11 +1244,11 @@
   "name": "STK-20260727-WA0013"
  },
  {
-  "file": "STK-20260727-WA0014.webp",
+  "file": "STK-20260727-WA0014.png",
   "name": "STK-20260727-WA0014"
  },
  {
-  "file": "STK-20260727-WA0015.webp",
+  "file": "STK-20260727-WA0015.png",
   "name": "STK-20260727-WA0015"
  },
  {
@@ -1292,7 +1256,7 @@
   "name": "STK-20260727-WA0018"
  },
  {
-  "file": "STK-20260729-WA0102.webp",
+  "file": "STK-20260729-WA0102.png",
   "name": "STK-20260729-WA0102"
  },
  {
@@ -1300,7 +1264,7 @@
   "name": "STK-20260730-WA0072"
  },
  {
-  "file": "STK-20260730-WA0075.webp",
+  "file": "STK-20260730-WA0075.png",
   "name": "STK-20260730-WA0075"
  },
  {
@@ -1316,15 +1280,15 @@
   "name": "STK-20260731-WA0070"
  },
  {
-  "file": "STK-20260731-WA0071.webp",
+  "file": "STK-20260731-WA0071.png",
   "name": "STK-20260731-WA0071"
  },
  {
-  "file": "STK-20260731-WA0072.webp",
+  "file": "STK-20260731-WA0072.png",
   "name": "STK-20260731-WA0072"
  },
  {
-  "file": "STK-20260801-WA0021.webp",
+  "file": "STK-20260801-WA0021.png",
   "name": "STK-20260801-WA0021"
  },
  {
@@ -1332,7 +1296,7 @@
   "name": "STK-20260802-WA0002"
  },
  {
-  "file": "STK-20260802-WA0004.webp",
+  "file": "STK-20260802-WA0004.png",
   "name": "STK-20260802-WA0004"
  },
  {
@@ -1340,11 +1304,11 @@
   "name": "STK-20260802-WA0005"
  },
  {
-  "file": "STK-20260802-WA0006.webp",
+  "file": "STK-20260802-WA0006.png",
   "name": "STK-20260802-WA0006"
  },
  {
-  "file": "STK-20260802-WA0019.webp",
+  "file": "STK-20260802-WA0019.png",
   "name": "STK-20260802-WA0019"
  },
  {
@@ -1352,15 +1316,15 @@
   "name": "STK-20260802-WA0020"
  },
  {
-  "file": "STK-20260803-WA0002.webp",
+  "file": "STK-20260803-WA0002.png",
   "name": "STK-20260803-WA0002"
  },
  {
-  "file": "STK-20260803-WA0022.webp",
+  "file": "STK-20260803-WA0022.png",
   "name": "STK-20260803-WA0022"
  },
  {
-  "file": "STK-20260803-WA0023.webp",
+  "file": "STK-20260803-WA0023.png",
   "name": "STK-20260803-WA0023"
  },
  {
@@ -1372,11 +1336,11 @@
   "name": "STK-20260803-WA0025"
  },
  {
-  "file": "STK-20260803-WA0026.webp",
+  "file": "STK-20260803-WA0026.png",
   "name": "STK-20260803-WA0026"
  },
  {
-  "file": "STK-20260803-WA0027.webp",
+  "file": "STK-20260803-WA0027.png",
   "name": "STK-20260803-WA0027"
  },
  {
@@ -1384,7 +1348,7 @@
   "name": "STK-20260803-WA0028"
  },
  {
-  "file": "STK-20260803-WA0029.webp",
+  "file": "STK-20260803-WA0029.png",
   "name": "STK-20260803-WA0029"
  },
  {
@@ -1392,11 +1356,11 @@
   "name": "STK-20260803-WA0030"
  },
  {
-  "file": "STK-20260803-WA0031.webp",
+  "file": "STK-20260803-WA0031.png",
   "name": "STK-20260803-WA0031"
  },
  {
-  "file": "STK-20260803-WA0032.webp",
+  "file": "STK-20260803-WA0032.png",
   "name": "STK-20260803-WA0032"
  },
  {
@@ -1404,23 +1368,19 @@
   "name": "STK-20260803-WA0033"
  },
  {
-  "file": "STK-20260803-WA0034.webp",
+  "file": "STK-20260803-WA0034.png",
   "name": "STK-20260803-WA0034"
  },
  {
-  "file": "STK-20260803-WA0035.webp",
+  "file": "STK-20260803-WA0035.png",
   "name": "STK-20260803-WA0035"
- },
- {
-  "file": "STK-20260803-WA0036.webp",
-  "name": "STK-20260803-WA0036"
  },
  {
   "file": "STK-20260803-WA0037.webp",
   "name": "STK-20260803-WA0037"
  },
  {
-  "file": "STK-20260803-WA0038.webp",
+  "file": "STK-20260803-WA0038.png",
   "name": "STK-20260803-WA0038"
  },
  {
@@ -1428,15 +1388,15 @@
   "name": "STK-20260803-WA0039"
  },
  {
-  "file": "STK-20260803-WA0040.webp",
+  "file": "STK-20260803-WA0040.png",
   "name": "STK-20260803-WA0040"
  },
  {
-  "file": "STK-20260803-WA0041.webp",
+  "file": "STK-20260803-WA0041.png",
   "name": "STK-20260803-WA0041"
  },
  {
-  "file": "STK-20260803-WA0042.webp",
+  "file": "STK-20260803-WA0042.png",
   "name": "STK-20260803-WA0042"
  },
  {
@@ -1444,7 +1404,7 @@
   "name": "STK-20260803-WA0043"
  },
  {
-  "file": "STK-20260803-WA0044.webp",
+  "file": "STK-20260803-WA0044.png",
   "name": "STK-20260803-WA0044"
  },
  {
@@ -1454,10 +1414,6 @@
  {
   "file": "STK-20260803-WA0046.webp",
   "name": "STK-20260803-WA0046"
- },
- {
-  "file": "STK-20260803-WA0047.webp",
-  "name": "STK-20260803-WA0047"
  },
  {
   "file": "STK-20260803-WA0048.webp",
@@ -1480,19 +1436,19 @@
   "name": "STK-20260803-WA0052"
  },
  {
-  "file": "STK-20260803-WA0053.webp",
+  "file": "STK-20260803-WA0053.png",
   "name": "STK-20260803-WA0053"
  },
  {
-  "file": "STK-20260803-WA0054.webp",
+  "file": "STK-20260803-WA0054.png",
   "name": "STK-20260803-WA0054"
  },
  {
-  "file": "STK-20260803-WA0055.webp",
+  "file": "STK-20260803-WA0055.png",
   "name": "STK-20260803-WA0055"
  },
  {
-  "file": "STK-20260803-WA0056.webp",
+  "file": "STK-20260803-WA0056.png",
   "name": "STK-20260803-WA0056"
  },
  {
@@ -1504,11 +1460,11 @@
   "name": "STK-20260803-WA0058"
  },
  {
-  "file": "STK-20260803-WA0059.webp",
+  "file": "STK-20260803-WA0059.png",
   "name": "STK-20260803-WA0059"
  },
  {
-  "file": "STK-20260803-WA0060.webp",
+  "file": "STK-20260803-WA0060.png",
   "name": "STK-20260803-WA0060"
  },
  {
@@ -1532,7 +1488,7 @@
   "name": "STK-20260803-WA0065"
  },
  {
-  "file": "STK-20260803-WA0066.webp",
+  "file": "STK-20260803-WA0066.png",
   "name": "STK-20260803-WA0066"
  },
  {
@@ -1540,15 +1496,15 @@
   "name": "STK-20260803-WA0067"
  },
  {
-  "file": "STK-20260803-WA0068.webp",
+  "file": "STK-20260803-WA0068.png",
   "name": "STK-20260803-WA0068"
  },
  {
-  "file": "STK-20260803-WA0069.webp",
+  "file": "STK-20260803-WA0069.png",
   "name": "STK-20260803-WA0069"
  },
  {
-  "file": "STK-20260803-WA0070.webp",
+  "file": "STK-20260803-WA0070.png",
   "name": "STK-20260803-WA0070"
  },
  {
@@ -1556,7 +1512,7 @@
   "name": "STK-20260803-WA0071"
  },
  {
-  "file": "STK-20260803-WA0072.webp",
+  "file": "STK-20260803-WA0072.png",
   "name": "STK-20260803-WA0072"
  },
  {
@@ -1564,7 +1520,7 @@
   "name": "STK-20260803-WA0073"
  },
  {
-  "file": "STK-20260803-WA0075.webp",
+  "file": "STK-20260803-WA0075.png",
   "name": "STK-20260803-WA0075"
  },
  {
@@ -1572,11 +1528,7 @@
   "name": "STK-20260803-WA0076"
  },
  {
-  "file": "STK-20260803-WA0077.webp",
-  "name": "STK-20260803-WA0077"
- },
- {
-  "file": "STK-20260803-WA0078.webp",
+  "file": "STK-20260803-WA0078.png",
   "name": "STK-20260803-WA0078"
  },
  {
@@ -1584,19 +1536,15 @@
   "name": "STK-20260803-WA0079"
  },
  {
-  "file": "STK-20260803-WA0080.webp",
-  "name": "STK-20260803-WA0080"
- },
- {
   "file": "STK-20260803-WA0081.webp",
   "name": "STK-20260803-WA0081"
  },
  {
-  "file": "STK-20260803-WA0082.webp",
+  "file": "STK-20260803-WA0082.png",
   "name": "STK-20260803-WA0082"
  },
  {
-  "file": "STK-20260803-WA0083.webp",
+  "file": "STK-20260803-WA0083.png",
   "name": "STK-20260803-WA0083"
  },
  {
@@ -1604,15 +1552,15 @@
   "name": "STK-20260803-WA0084"
  },
  {
-  "file": "STK-20260803-WA0085.webp",
+  "file": "STK-20260803-WA0085.png",
   "name": "STK-20260803-WA0085"
  },
  {
-  "file": "STK-20260803-WA0086.webp",
+  "file": "STK-20260803-WA0086.png",
   "name": "STK-20260803-WA0086"
  },
  {
-  "file": "STK-20260803-WA0087.webp",
+  "file": "STK-20260803-WA0087.png",
   "name": "STK-20260803-WA0087"
  },
  {
@@ -1620,11 +1568,11 @@
   "name": "STK-20260803-WA0088"
  },
  {
-  "file": "STK-20260803-WA0090.webp",
+  "file": "STK-20260803-WA0090.png",
   "name": "STK-20260803-WA0090"
  },
  {
-  "file": "STK-20260803-WA0091.webp",
+  "file": "STK-20260803-WA0091.png",
   "name": "STK-20260803-WA0091"
  },
  {
@@ -1640,11 +1588,11 @@
   "name": "STK-20260803-WA0094"
  },
  {
-  "file": "STK-20260803-WA0095.webp",
+  "file": "STK-20260803-WA0095.png",
   "name": "STK-20260803-WA0095"
  },
  {
-  "file": "STK-20260803-WA0096.webp",
+  "file": "STK-20260803-WA0096.png",
   "name": "STK-20260803-WA0096"
  },
  {
@@ -1652,7 +1600,7 @@
   "name": "STK-20260803-WA0097"
  },
  {
-  "file": "STK-20260803-WA0098.webp",
+  "file": "STK-20260803-WA0098.png",
   "name": "STK-20260803-WA0098"
  },
  {
@@ -1664,11 +1612,11 @@
   "name": "STK-20260803-WA0100"
  },
  {
-  "file": "STK-20260803-WA0101.webp",
+  "file": "STK-20260803-WA0101.png",
   "name": "STK-20260803-WA0101"
  },
  {
-  "file": "STK-20260803-WA0102.webp",
+  "file": "STK-20260803-WA0102.png",
   "name": "STK-20260803-WA0102"
  },
  {
@@ -1676,35 +1624,31 @@
   "name": "STK-20260803-WA0103"
  },
  {
-  "file": "STK-20260803-WA0104.webp",
+  "file": "STK-20260803-WA0104.png",
   "name": "STK-20260803-WA0104"
  },
  {
-  "file": "STK-20260803-WA0105.webp",
-  "name": "STK-20260803-WA0105"
- },
- {
-  "file": "STK-20260803-WA0106.webp",
+  "file": "STK-20260803-WA0106.png",
   "name": "STK-20260803-WA0106"
  },
  {
-  "file": "STK-20260803-WA0107.webp",
+  "file": "STK-20260803-WA0107.png",
   "name": "STK-20260803-WA0107"
  },
  {
-  "file": "STK-20260803-WA0108.webp",
+  "file": "STK-20260803-WA0108.png",
   "name": "STK-20260803-WA0108"
  },
  {
-  "file": "STK-20260803-WA0109.webp",
+  "file": "STK-20260803-WA0109.png",
   "name": "STK-20260803-WA0109"
  },
  {
-  "file": "STK-20260803-WA0110.webp",
+  "file": "STK-20260803-WA0110.png",
   "name": "STK-20260803-WA0110"
  },
  {
-  "file": "STK-20260803-WA0111.webp",
+  "file": "STK-20260803-WA0111.png",
   "name": "STK-20260803-WA0111"
  },
  {
@@ -1716,7 +1660,7 @@
   "name": "STK-20260803-WA0113"
  },
  {
-  "file": "STK-20260803-WA0114.webp",
+  "file": "STK-20260803-WA0114.png",
   "name": "STK-20260803-WA0114"
  },
  {
@@ -1732,15 +1676,11 @@
   "name": "STK-20260804-WA0019"
  },
  {
-  "file": "STK-20260804-WA0020.webp",
-  "name": "STK-20260804-WA0020"
- },
- {
-  "file": "STK-20260804-WA0021.webp",
+  "file": "STK-20260804-WA0021.png",
   "name": "STK-20260804-WA0021"
  },
  {
-  "file": "STK-20260804-WA0022.webp",
+  "file": "STK-20260804-WA0022.png",
   "name": "STK-20260804-WA0022"
  },
  {
@@ -1748,15 +1688,11 @@
   "name": "STK-20260804-WA0023"
  },
  {
-  "file": "STK-20260804-WA0024.webp",
+  "file": "STK-20260804-WA0024.png",
   "name": "STK-20260804-WA0024"
  },
  {
-  "file": "STK-20260804-WA0025.webp",
-  "name": "STK-20260804-WA0025"
- },
- {
-  "file": "STK-20260804-WA0026.webp",
+  "file": "STK-20260804-WA0026.png",
   "name": "STK-20260804-WA0026"
  },
  {
@@ -1764,11 +1700,11 @@
   "name": "STK-20260804-WA0027"
  },
  {
-  "file": "STK-20260804-WA0028.webp",
+  "file": "STK-20260804-WA0028.png",
   "name": "STK-20260804-WA0028"
  },
  {
-  "file": "STK-20260804-WA0029.webp",
+  "file": "STK-20260804-WA0029.png",
   "name": "STK-20260804-WA0029"
  },
  {
@@ -1776,27 +1712,23 @@
   "name": "STK-20260804-WA0030"
  },
  {
-  "file": "STK-20260804-WA0031.webp",
+  "file": "STK-20260804-WA0031.png",
   "name": "STK-20260804-WA0031"
  },
  {
-  "file": "STK-20260804-WA0032.webp",
+  "file": "STK-20260804-WA0032.png",
   "name": "STK-20260804-WA0032"
  },
  {
-  "file": "STK-20260804-WA0033.webp",
-  "name": "STK-20260804-WA0033"
- },
- {
-  "file": "STK-20260804-WA0034.webp",
+  "file": "STK-20260804-WA0034.png",
   "name": "STK-20260804-WA0034"
  },
  {
-  "file": "STK-20260804-WA0035.webp",
+  "file": "STK-20260804-WA0035.png",
   "name": "STK-20260804-WA0035"
  },
  {
-  "file": "STK-20260804-WA0036.webp",
+  "file": "STK-20260804-WA0036.png",
   "name": "STK-20260804-WA0036"
  },
  {
@@ -1804,7 +1736,7 @@
   "name": "STK-20260804-WA0037"
  },
  {
-  "file": "STK-20260804-WA0038.webp",
+  "file": "STK-20260804-WA0038.png",
   "name": "STK-20260804-WA0038"
  },
  {
@@ -1812,27 +1744,27 @@
   "name": "STK-20260804-WA0039"
  },
  {
-  "file": "STK-20260804-WA0040.webp",
+  "file": "STK-20260804-WA0040.png",
   "name": "STK-20260804-WA0040"
  },
  {
-  "file": "STK-20260804-WA0041.webp",
+  "file": "STK-20260804-WA0041.png",
   "name": "STK-20260804-WA0041"
  },
  {
-  "file": "STK-20260804-WA0042.webp",
+  "file": "STK-20260804-WA0042.png",
   "name": "STK-20260804-WA0042"
  },
  {
-  "file": "STK-20260804-WA0043.webp",
+  "file": "STK-20260804-WA0043.png",
   "name": "STK-20260804-WA0043"
  },
  {
-  "file": "STK-20260804-WA0044.webp",
+  "file": "STK-20260804-WA0044.png",
   "name": "STK-20260804-WA0044"
  },
  {
-  "file": "STK-20260804-WA0045.webp",
+  "file": "STK-20260804-WA0045.png",
   "name": "STK-20260804-WA0045"
  },
  {
@@ -1840,11 +1772,11 @@
   "name": "STK-20260804-WA0046"
  },
  {
-  "file": "STK-20260804-WA0047.webp",
+  "file": "STK-20260804-WA0047.png",
   "name": "STK-20260804-WA0047"
  },
  {
-  "file": "STK-20260804-WA0048.webp",
+  "file": "STK-20260804-WA0048.png",
   "name": "STK-20260804-WA0048"
  },
  {
@@ -1852,19 +1784,15 @@
   "name": "STK-20260804-WA0049"
  },
  {
-  "file": "STK-20260804-WA0050.webp",
+  "file": "STK-20260804-WA0050.png",
   "name": "STK-20260804-WA0050"
  },
  {
-  "file": "STK-20260804-WA0051.webp",
-  "name": "STK-20260804-WA0051"
- },
- {
-  "file": "STK-20260804-WA0052.webp",
+  "file": "STK-20260804-WA0052.png",
   "name": "STK-20260804-WA0052"
  },
  {
-  "file": "STK-20260804-WA0053.webp",
+  "file": "STK-20260804-WA0053.png",
   "name": "STK-20260804-WA0053"
  },
  {
@@ -1880,23 +1808,19 @@
   "name": "STK-20260804-WA0056"
  },
  {
-  "file": "STK-20260804-WA0057.webp",
-  "name": "STK-20260804-WA0057"
- },
- {
   "file": "STK-20260804-WA0058.webp",
   "name": "STK-20260804-WA0058"
  },
  {
-  "file": "STK-20260804-WA0059.webp",
+  "file": "STK-20260804-WA0059.png",
   "name": "STK-20260804-WA0059"
  },
  {
-  "file": "STK-20260804-WA0060.webp",
+  "file": "STK-20260804-WA0060.png",
   "name": "STK-20260804-WA0060"
  },
  {
-  "file": "STK-20260804-WA0061.webp",
+  "file": "STK-20260804-WA0061.png",
   "name": "STK-20260804-WA0061"
  },
  {
@@ -1904,15 +1828,11 @@
   "name": "STK-20260804-WA0062"
  },
  {
-  "file": "STK-20260804-WA0063.webp",
-  "name": "STK-20260804-WA0063"
- },
- {
   "file": "STK-20260804-WA0092.webp",
   "name": "STK-20260804-WA0092"
  },
  {
-  "file": "STK-20260804-WA0111.webp",
+  "file": "STK-20260804-WA0111.png",
   "name": "STK-20260804-WA0111"
  },
  {
@@ -1928,7 +1848,7 @@
   "name": "STK-20260804-WA0115"
  },
  {
-  "file": "STK-20260804-WA0135.webp",
+  "file": "STK-20260804-WA0135.png",
   "name": "STK-20260804-WA0135"
  },
  {
@@ -1936,15 +1856,15 @@
   "name": "STK-20260804-WA0136"
  },
  {
-  "file": "STK-20260804-WA0137.webp",
+  "file": "STK-20260804-WA0137.png",
   "name": "STK-20260804-WA0137"
  },
  {
-  "file": "STK-20260804-WA0138.webp",
+  "file": "STK-20260804-WA0138.png",
   "name": "STK-20260804-WA0138"
  },
  {
-  "file": "STK-20260804-WA0139.webp",
+  "file": "STK-20260804-WA0139.png",
   "name": "STK-20260804-WA0139"
  },
  {
