@@ -45,34 +45,39 @@ def base_url() -> str:
     return os.getenv("OPENCODE_BASE_URL", ZEN_BASE_URL).strip().rstrip("/")
 
 
-# Default to a fast, NON-reasoning free model. deepseek-v4-flash-free is a
-# chain-of-thought model that emits everything as reasoning_content and spends
-# its whole token budget "thinking" — at the manifest step (small budget) it
-# returned zero answer content and the build died. ling-3.0-flash-free returns
-# clean JSON directly (finish_reason=stop) in ~16s, so both planning and the
-# multi-file build stay well under the gunicorn timeout.
+# Planning (clarify + plan) has no automatic failover, so it uses a fast,
+# NON-reasoning free model. deepseek-v4-flash-free and hy3-free are chain-of-
+# thought models that emit everything as reasoning_content and spend their whole
+# token budget "thinking" — at the manifest step (small budget) they returned
+# zero answer content and the build died. nemotron-3.5-lightning-free and
+# laguna-s-2.1-free return clean JSON directly (finish_reason=stop), so planning
+# stays well under the gunicorn timeout. Build generation uses the big-pickle
+# flagship with automatic failover to these free models (see BUILDER_TIERS).
 def plan_model() -> str:
-    return os.getenv("OPENCODE_PLAN_MODEL", "ling-3.0-flash-free").strip()
+    return os.getenv("OPENCODE_PLAN_MODEL", "nemotron-3.5-lightning-free").strip()
 
 
 def build_model() -> str:
-    return os.getenv("OPENCODE_BUILD_MODEL", "ling-3.0-flash-free").strip()
+    return os.getenv("OPENCODE_BUILD_MODEL", "nemotron-3.5-lightning-free").strip()
 
 
 # ── Branded builder tiers ────────────────────────────────────────────────────
 # The UI shows ONLY the ValleyMind Builder branding. The real OpenCode model ids
 # below never reach the browser unless Developer Mode is on (creator-gated). Add
 # or re-rank tiers here — no UI change is required, the dropdown is server-driven.
-# Ranked by builder performance (reliable completion first, then output quality),
-# measured against the manifest+file build task. vmb5 is the flagship default.
+# vmb4 (big-pickle) is the flagship default: it is the exact model used by the
+# OpenCode coding agent that builds ValleyMind itself, so Builder output matches
+# the session's quality. big-pickle shares the account's free-tier usage quota
+# (HTTP 429 FreeUsageLimitError when it is exhausted), so the tiers below it are
+# automatic fallbacks that keep every build running.
 BUILDER_TIERS = [
     {"id": "vmb1", "label": "ValleyMind Builder 1.0", "model": "mimo-v2.5-free",        "note": "Quick drafts and small projects."},
-    {"id": "vmb2", "label": "ValleyMind Builder 2.0", "model": "longcat-2.0-free",      "note": "Everyday building."},
+    {"id": "vmb2", "label": "ValleyMind Builder 2.0", "model": "laguna-s-2.1-free",     "note": "Everyday building."},
     {"id": "vmb3", "label": "ValleyMind Builder 3.0", "model": "nemotron-3-ultra-free", "note": "Balanced quality and speed."},
-    {"id": "vmb4", "label": "ValleyMind Builder 4.0", "model": "big-pickle",            "note": "Richest output — slower; best for smaller projects."},
-    {"id": "vmb5", "label": "ValleyMind Builder 5.0", "model": "ling-3.0-flash-free",   "note": "Fastest and most reliable. Recommended."},
+    {"id": "vmb4", "label": "ValleyMind Builder 4.0", "model": "big-pickle",            "note": "Flagship — the model powering ValleyMind Studio."},
+    {"id": "vmb5", "label": "ValleyMind Builder 5.0", "model": "nemotron-3.5-lightning-free", "note": "Fast, reliable fallback for high demand."},
 ]
-DEFAULT_BUILDER_ID = os.getenv("OPENCODE_DEFAULT_BUILDER", "vmb5").strip() or "vmb5"
+DEFAULT_BUILDER_ID = os.getenv("OPENCODE_DEFAULT_BUILDER", "vmb4").strip() or "vmb4"
 
 
 def _tier_by_id(bid):
@@ -197,6 +202,8 @@ def build_candidates(builder_id=None, model=None) -> list:
     sel = _tier_by_id(builder_id)
     if model and not sel:                     # creator raw-model override
         sel = {"id": "custom", "label": "Custom model", "model": model, "note": ""}
+    if not sel:                               # default to the flagship builder
+        sel = _tier_by_id(DEFAULT_BUILDER_ID)
     rest = sorted(
         [t for t in tiers if not sel or t["model"] != sel["model"]],
         key=lambda t: (0 if is_available(t["model"]) else 1, -_rank(t)),
@@ -521,6 +528,98 @@ FILE_SYSTEM = (
 
 # ── Project storage ─────────────────────────────────────────────────────────
 
+# ── Builder chat attachments (describe / clarify / plan) ────────────────────
+# Attachments are transient: an image is passed to the model as a multimodal
+# part (data URL), a text file is inlined (bounded). NOTHING is written to the
+# database or project disk — no Mongo bloat, no leaked user files.
+MAX_ATTACHMENTS = 4
+ALLOWED_IMAGE_MIME = {"image/png", "image/jpeg", "image/gif", "image/webp"}
+MAX_IMAGE_BYTES = 5 * 1024 * 1024
+MAX_TEXT_CHARS = 200 * 1024
+
+
+def validate_attachments(attachments) -> tuple:
+    """Validate a client-supplied attachments list.
+
+    Returns (clean_list, error_message). Each clean item is
+      {"name": str, "type": "image"|"text", ...}
+    where image items carry ``data_url`` and text items carry ``content``.
+    Any invalid attachment rejects the whole request (400).
+    """
+    if not attachments:
+        return [], ""
+    if not isinstance(attachments, list) or len(attachments) > MAX_ATTACHMENTS:
+        return [], "Attach at most " + str(MAX_ATTACHMENTS) + " files."
+    clean = []
+    for idx, att in enumerate(attachments):
+        if not isinstance(att, dict):
+            return [], "Invalid attachment entry."
+        name = str(att.get("name") or "file_" + str(idx)).strip()[:120] or "file"
+        kind = str(att.get("type") or "").strip().lower()
+        mime = str(att.get("mime") or "").strip().lower()
+        if kind == "image":
+            if mime not in ALLOWED_IMAGE_MIME:
+                return [], "Images must be PNG, JPEG, GIF or WebP."
+            data_url = str(att.get("data_url") or "").strip()
+            if not data_url.startswith("data:") or "," not in data_url:
+                return [], "Image attachment is missing its data payload."
+            raw_size = len(data_url.split(",", 1)[1]) * 3 // 4   # approx base64 -> bytes
+            if raw_size > MAX_IMAGE_BYTES:
+                return [], "Image is too large (max 5 MB)."
+            clean.append({"name": name, "type": "image", "mime": mime, "data_url": data_url})
+        elif kind == "text":
+            content = str(att.get("content") or "")
+            if len(content.encode("utf-8")) > MAX_TEXT_CHARS:
+                return [], "Text file is too large (max 200 KB)."
+            clean.append({"name": name, "type": "text", "mime": mime or "text/plain", "content": content})
+        else:
+            return [], "Only image and text files can be attached."
+    return clean, ""
+
+
+def _user_message_with_attachments(message: str, attachments) -> object:
+    """Build the chat user message: a plain string when there are no attachments,
+    otherwise an OpenAI-style multimodal content list (image_url parts for images,
+    inline text parts for text files)."""
+    if not attachments:
+        return message
+    parts = [{"type": "text", "text": message}]
+    for att in attachments:
+        if att["type"] == "image":
+            parts.append({"type": "image_url", "image_url": {"url": att["data_url"]}})
+        else:
+            snippet = att["content"][:MAX_TEXT_CHARS]
+            parts.append({"type": "text",
+                          "text": f"[Attached file: {att['name']}]\n{snippet}"})
+    return parts
+
+
+def _strip_image_parts(exc, messages):
+    """Some free models reject multimodal image parts (HTTP 400). When that
+    happens and the request contained an image, rebuild the messages with the
+    images dropped but text files preserved — so attachments never break a build.
+    Returns the stripped message list, or None when there is nothing to retry."""
+    if not isinstance(exc, BuilderModelError) or exc.status != 400:
+        return None
+    has_image = False
+    for m in messages:
+        content = m.get("content")
+        if isinstance(content, list):
+            has_image = any(p.get("type") == "image_url" for p in content)
+            if has_image:
+                break
+    if not has_image:
+        return None
+    stripped = []
+    for m in messages:
+        content = m.get("content")
+        if isinstance(content, list):
+            kept = [p for p in content if p.get("type") != "image_url"]
+            content = kept or [{"type": "text", "text": "(image attachment omitted)"}]
+        stripped.append({"role": m.get("role"), "content": content})
+    return stripped
+
+
 def projects_root(user_id: str) -> Path:
     return Path(PROJECTS_ROOT_TEMPLATE.replace("{user_id}", user_id))
 
@@ -671,11 +770,14 @@ DEFAULT_QUESTIONS = [
 ]
 
 
-def clarify_generator(model: str, message: str, project_type: str):
+def clarify_generator(model: str, message: str, project_type: str, attachments=None):
     yield {"type": "status", "message": "Analyzing your request and preparing clarifying questions..."}
+    user_content = _user_message_with_attachments(
+        f"Project type: {project_type}\n\nWhat the user wants to build:\n{message}",
+        attachments or [])
     messages = [
         {"role": "system", "content": CLARIFY_SYSTEM},
-        {"role": "user", "content": f"Project type: {project_type}\n\nWhat the user wants to build:\n{message}"},
+        {"role": "user", "content": user_content},
     ]
     buf = ""
     reasoning_buf = ""
@@ -690,8 +792,26 @@ def clarify_generator(model: str, message: str, project_type: str):
             if ev.get("finish"):
                 finish = ev.get("finish")
     except Exception as exc:
-        yield {"type": "error", "message": _user_facing_error(exc)}
-        return
+        # Some free models reject image parts (400). Drop images, keep the text.
+        stripped = _strip_image_parts(exc, messages)
+        if stripped is not None:
+            messages = stripped
+            buf, reasoning_buf, finish = "", "", None
+            try:
+                for ev in chat_stream(model, messages, max_tokens=3000, temperature=0.3):
+                    content = ev.get("content") or ""
+                    if content:
+                        buf += content
+                        yield {"type": "delta", "text": content}
+                    reasoning_buf += ev.get("reasoning") or ""
+                    if ev.get("finish"):
+                        finish = ev.get("finish")
+            except Exception as exc2:
+                yield {"type": "error", "message": _user_facing_error(exc2)}
+                return
+        else:
+            yield {"type": "error", "message": _user_facing_error(exc)}
+            return
     parsed = _extract_json(buf) or _extract_json(reasoning_buf)
     if parsed is None and finish == "length":
         try:
@@ -710,15 +830,16 @@ def clarify_generator(model: str, message: str, project_type: str):
     yield {"type": "result", "questions": questions, "fallback": False}
 
 
-def plan_generator(model: str, message: str, project_type: str, answers=None):
+def plan_generator(model: str, message: str, project_type: str, answers=None, attachments=None):
     yield {"type": "status", "message": "Crafting your project specification (this can take up to a minute)..."}
+    user_content = _user_message_with_attachments(
+        (f"Project type: {project_type}\n\n"
+         f"What the user wants to build:\n{message}\n\n"
+         f"Answers to clarifying questions:\n{_format_answers(answers)}"),
+        attachments or [])
     messages = [
         {"role": "system", "content": PLAN_SYSTEM},
-        {"role": "user", "content": (
-            f"Project type: {project_type}\n\n"
-            f"What the user wants to build:\n{message}\n\n"
-            f"Answers to clarifying questions:\n{_format_answers(answers)}"
-        )},
+        {"role": "user", "content": user_content},
     ]
     buf = ""
     reasoning_buf = ""
@@ -733,8 +854,25 @@ def plan_generator(model: str, message: str, project_type: str, answers=None):
             if ev.get("finish"):
                 finish = ev.get("finish")
     except Exception as exc:
-        yield {"type": "error", "message": _user_facing_error(exc)}
-        return
+        stripped = _strip_image_parts(exc, messages)
+        if stripped is not None:
+            messages = stripped
+            buf, reasoning_buf, finish = "", "", None
+            try:
+                for ev in chat_stream(model, messages, max_tokens=12000, temperature=0.4):
+                    content = ev.get("content") or ""
+                    if content:
+                        buf += content
+                        yield {"type": "delta", "text": content}
+                    reasoning_buf += ev.get("reasoning") or ""
+                    if ev.get("finish"):
+                        finish = ev.get("finish")
+            except Exception as exc2:
+                yield {"type": "error", "message": _user_facing_error(exc2)}
+                return
+        else:
+            yield {"type": "error", "message": _user_facing_error(exc)}
+            return
     spec = _extract_json(buf) or _extract_json(reasoning_buf)
     if not isinstance(spec, dict) and finish == "length":
         try:

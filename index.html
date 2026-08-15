@@ -1037,6 +1037,10 @@
   .aib-q-opt.active { color:#04222b; background:linear-gradient(135deg,#00d4ff,#0ea5e9); border-color:transparent;
     box-shadow:0 2px 12px rgba(0,212,255,0.3); }
   .aib-model-row { margin-top:16px; display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  .aib-attach-row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:10px; }
+  .aib-attach-chips { display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
+  .aib-attach-chip { display:inline-flex; align-items:center; gap:6px; background:rgba(0,212,255,0.08); border:1px solid rgba(0,212,255,0.25); color:#00d4ff; border-radius:999px; padding:3px 10px; font-size:11px; max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .aib-attach-chip b { cursor:pointer; color:#f87171; font-size:13px; line-height:1; }
   .aib-model-label { display:inline-flex; align-items:center; gap:6px; color:#94a3b8; font-size:12px; font-weight:600; }
   .aib-model-select { background:#0f172a; color:#e2e8f0; border:1px solid rgba(0,212,255,0.25); border-radius:8px; padding:6px 10px; font-size:12.5px; outline:none; cursor:pointer; max-width:220px; }
   .aib-model-select:focus { border-color:rgba(0,212,255,0.55); }
@@ -1608,6 +1612,21 @@
   font-family: 'Segoe UI Symbol', 'Apple Color Emoji', 'Noto Color Emoji', 'Arial Unicode MS', sans-serif !important;
   font-size: 24px !important;
 }
+
+  /* Email-verification banner sits below the top header, beside the sidebar.
+     It follows the same responsive rules as #topHeader / #mainArea. */
+  body.sidebar-collapsed #verifyBanner { left:0 !important; }
+  @media(max-width:768px){ #verifyBanner { left:0 !important; } }
+
+  #vmAuthToast {
+    position:fixed; top:20px; left:50%; transform:translateX(-50%); z-index:400;
+    max-width:min(520px,calc(100vw - 32px)); text-align:center;
+    background:rgba(14,20,23,0.97); border:1px solid rgba(0,212,255,0.3); border-radius:12px;
+    padding:10px 18px; color:#e2e8f0; font-size:13px; font-family:'Inter',sans-serif;
+    box-shadow:0 10px 30px rgba(0,0,0,0.4);
+    opacity:0; visibility:hidden; transition:opacity 0.2s, visibility 0.2s;
+  }
+  #vmAuthToast.show { opacity:1; visibility:visible; }
 </style>
 </head>
 <body class="text-on-background font-body-md overflow-hidden">
@@ -1695,7 +1714,7 @@
           <div class="vm-auth-split" style="margin-bottom:12px;">
             <div class="vm-auth-field">
               <p class="vm-auth-label">Password</p>
-              <input id="signupPassword" type="password" autocomplete="new-password" placeholder="Min. 4 characters" required class="vm-auth-input">
+              <input id="signupPassword" type="password" autocomplete="new-password" placeholder="Min. 8 characters" required class="vm-auth-input">
             </div>
             <div class="vm-auth-field">
               <p class="vm-auth-label">Confirm Password</p>
@@ -1806,21 +1825,55 @@
     </button>
   </div>
 
-  <!-- Phase 1: Email -->
+  <!-- Phase 1: Email (request a reset link) -->
   <div id="recoveryPhase1" style="display:flex;flex-direction:column;gap:12px;">
-    <input id="recoveryEmail" type="email" placeholder="Enter your email" style="width:100%;background:#1a1f2e;border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:12px 14px;color:white;outline:none;font-size:14px;box-sizing:border-box;">
-    <button onclick="verifyEmail()" style="width:100%;border:none;border-radius:12px;background:#00d4ff;color:#003642;font-weight:800;padding:12px 16px;cursor:pointer;text-transform:uppercase;letter-spacing:0.1em;font-family:'Space Grotesk',sans-serif;font-size:13px;">Verify Email</button>
+    <input id="recoveryEmail" type="email" autocomplete="email" placeholder="Enter your email" style="width:100%;background:#1a1f2e;border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:12px 14px;color:white;outline:none;font-size:14px;box-sizing:border-box;">
+    <button onclick="verifyEmail()" style="width:100%;border:none;border-radius:12px;background:#00d4ff;color:#003642;font-weight:800;padding:12px 16px;cursor:pointer;text-transform:uppercase;letter-spacing:0.1em;font-family:'Space Grotesk',sans-serif;font-size:13px;">Send Reset Link</button>
     <p id="recoveryError" style="min-height:18px;color:#ff6b7a;font-size:12px;"></p>
   </div>
 
-  <!-- Phase 2: Security question + new password -->
+  <!-- Phase 2: Reset link sent (generic confirmation, never reveals account existence) -->
   <div id="recoveryPhase2" style="display:none;flex-direction:column;gap:12px;">
-    <p id="recoveryQuestion" style="color:#94a3b8;font-size:13px;margin:0;padding:10px 12px;background:#1a1f2e;border-radius:10px;border:1px solid rgba(255,255,255,0.06);"></p>
-    <input id="recoveryAnswer" type="text" placeholder="Your secret answer" style="width:100%;background:#1a1f2e;border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:12px 14px;color:white;outline:none;font-size:14px;box-sizing:border-box;">
-    <input id="recoveryNewPassword" type="password" placeholder="New password" style="width:100%;background:#1a1f2e;border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:12px 14px;color:white;outline:none;font-size:14px;box-sizing:border-box;">
+    <p id="recoverySentMsg" style="color:#94a3b8;font-size:13px;margin:0;padding:10px 12px;background:#1a1f2e;border-radius:10px;border:1px solid rgba(255,255,255,0.06);">If an account exists for that email, a reset link has been sent. Check your inbox (and spam) and open the link to continue.</p>
+    <button onclick="closeRecovery()" style="width:100%;border:none;border-radius:12px;background:#00d4ff;color:#003642;font-weight:800;padding:12px 16px;cursor:pointer;text-transform:uppercase;letter-spacing:0.1em;font-family:'Space Grotesk',sans-serif;font-size:13px;">Done</button>
+  </div>
+
+  <!-- Phase 3: New password (opened from the emailed reset link) -->
+  <div id="recoveryPhase3" style="display:none;flex-direction:column;gap:12px;">
+    <p style="color:#94a3b8;font-size:13px;margin:0;">Choose a new password for your account.</p>
+    <input id="recoveryNewPassword" type="password" autocomplete="new-password" placeholder="New password (min. 8 characters)" style="width:100%;background:#1a1f2e;border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:12px 14px;color:white;outline:none;font-size:14px;box-sizing:border-box;">
+    <input id="recoveryConfirmPassword" type="password" autocomplete="new-password" placeholder="Confirm new password" style="width:100%;background:#1a1f2e;border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:12px 14px;color:white;outline:none;font-size:14px;box-sizing:border-box;">
     <button onclick="resetPassword()" style="width:100%;border:none;border-radius:12px;background:#00d4ff;color:#003642;font-weight:800;padding:12px 16px;cursor:pointer;text-transform:uppercase;letter-spacing:0.1em;font-family:'Space Grotesk',sans-serif;font-size:13px;">Reset Password</button>
     <p id="resetError" style="min-height:18px;color:#ff6b7a;font-size:12px;"></p>
     <p id="resetSuccess" style="min-height:18px;color:#00ff88;font-size:12px;display:none;"></p>
+  </div>
+</div>
+
+<!-- VERIFY EMAIL MODAL (6-digit code entered by the signed-in user) -->
+<div id="verifyOverlay" onclick="closeVerifyModal()" style="position:fixed;inset:0;z-index:200;background:rgba(0,0,0,0.5);backdrop-filter:blur(4px);opacity:0;visibility:hidden;pointer-events:none;transition:opacity 0.2s ease,visibility 0.2s ease;"></div>
+<div id="verifyModal" role="dialog" aria-modal="true" style="position:fixed;left:50%;top:50%;transform:translate(-50%,-46%) scale(0.98);z-index:210;width:min(400px,calc(100vw - 32px));background:rgba(14,20,23,0.98);border:1px solid rgba(0,212,255,0.24);border-radius:16px;padding:24px;box-shadow:0 20px 60px rgba(0,0,0,0.5);opacity:0;visibility:hidden;pointer-events:none;transition:opacity 0.2s ease,transform 0.2s ease,visibility 0.2s ease;">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+    <h2 style="color:#00d4ff;font-size:14px;font-weight:800;text-transform:uppercase;letter-spacing:0.15em;font-family:'Space Grotesk',sans-serif;margin:0;">Verify Your Email</h2>
+    <button onclick="closeVerifyModal()" style="background:transparent;border:none;color:#94a3b8;cursor:pointer;padding:4px;border-radius:8px;display:flex;">
+      <span class="material-icons" style="font-size:20px;">close</span>
+    </button>
+  </div>
+  <div style="display:flex;flex-direction:column;gap:12px;">
+    <p style="color:#94a3b8;font-size:13px;margin:0;">Enter the 6-digit code we emailed to <span id="verifyModalEmailAddr" style="color:#e2e8f0;"></span>. The code and link expire in 30 minutes.</p>
+    <input id="verifyCode" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="6-digit code" style="width:100%;background:#1a1f2e;border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:12px 14px;color:white;outline:none;font-size:16px;letter-spacing:0.3em;text-align:center;box-sizing:border-box;">
+    <button onclick="submitVerifyCode()" style="width:100%;border:none;border-radius:12px;background:#00d4ff;color:#003642;font-weight:800;padding:12px 16px;cursor:pointer;text-transform:uppercase;letter-spacing:0.1em;font-family:'Space Grotesk',sans-serif;font-size:13px;">Verify Email</button>
+    <button id="resendVerifyBtn" onclick="resendVerification()" style="width:100%;background:transparent;border:none;color:#00d4ff;cursor:pointer;font-size:12px;font-family:'Inter',sans-serif;padding:4px;">Didn't get it? Resend code</button>
+    <p id="verifyError" style="min-height:18px;color:#ff6b7a;font-size:12px;"></p>
+    <p id="verifySuccess" style="min-height:18px;color:#00ff88;font-size:12px;display:none;"></p>
+  </div>
+</div>
+
+<!-- VERIFY EMAIL BANNER (shown in-app while the account is unverified) -->
+<div id="verifyBanner" style="display:none;position:fixed;top:64px;right:0;left:280px;z-index:30;background:rgba(0,212,255,0.12);border-bottom:1px solid rgba(0,212,255,0.25);backdrop-filter:blur(12px);padding:8px 24px;align-items:center;justify-content:space-between;gap:12px;">
+  <p style="margin:0;color:#a5f3fc;font-size:12px;font-family:'Inter',sans-serif;line-height:1.5;">Verify your email to secure your account and unlock everything.</p>
+  <div style="display:flex;gap:10px;flex-shrink:0;">
+    <button onclick="openVerifyModal()" style="background:#00d4ff;color:#003642;border:none;border-radius:8px;padding:6px 14px;font-weight:700;font-size:12px;cursor:pointer;font-family:'Space Grotesk',sans-serif;">Verify now</button>
+    <button onclick="dismissVerifyBanner()" style="background:transparent;color:#94a3b8;border:1px solid rgba(255,255,255,0.15);border-radius:8px;padding:6px 10px;font-size:12px;cursor:pointer;font-family:'Inter',sans-serif;">Later</button>
   </div>
 </div>
 
@@ -2289,6 +2342,7 @@
     <button class="vm-ws-tab" data-ws="sketch" onclick="vmWsGo('sketch')"><i data-lucide="pencil-ruler"></i> Sketch</button>
     <button class="vm-ws-tab" data-ws="threed" onclick="vmWsGo('threed')"><i data-lucide="box"></i> 3D Studio</button>
     <button class="vm-ws-tab" data-ws="roundtable" onclick="vmWsGo('roundtable')"><i data-lucide="users"></i> Round Table</button>
+    <button class="vm-ws-tab" data-ws="analytics" id="vmWsTabAnalytics" onclick="vmWsGo('analytics')" style="display:none"><i data-lucide="bar-chart-3"></i> Analytics</button>
   </nav>
 
   <!-- ── Workspace: ValleyMind Studio — the existing Studio, unchanged ── -->
@@ -2419,6 +2473,12 @@
               <button type="button" class="aib-type" data-type="saas" onclick="aibSelectType(this)"><i data-lucide="rocket" style="width:14px;height:14px;"></i> SaaS</button>
             </div>
             <textarea id="aibDesc" class="aib-textarea" rows="5" spellcheck="false" placeholder="Example: A subscription SaaS that lets content creators publish a paid newsletter — landing page, member portal, Stripe checkout, admin dashboard and a REST API."></textarea>
+            <div class="aib-attach-row" id="aibAttachRow">
+              <button type="button" class="aib-btn aib-btn-ghost aib-btn-sm" onclick="aibOpenAttach()" title="Attach files (images or .txt/.md)"><i data-lucide="paperclip" style="width:14px;height:14px;"></i> Attach</button>
+              <input type="file" id="aibAttachInput" accept=".png,.jpg,.jpeg,.gif,.webp,.txt,.md" multiple style="display:none;" onchange="aibHandleAttachFiles(this)">
+              <button type="button" class="aib-btn aib-btn-ghost aib-btn-sm" id="aibMicBtn" onclick="aibMicTap()" title="Describe by voice"><i data-lucide="mic" style="width:14px;height:14px;"></i> Mic</button>
+              <span class="aib-attach-chips" id="aibAttachChips"></span>
+            </div>
             <div class="aib-hero-actions">
               <button class="aib-btn aib-btn-primary" id="aibBtnStart" onclick="aibStart()"><i data-lucide="sparkles" style="width:16px;height:16px;"></i> Start building</button>
               <span class="aib-note" id="aibModelNote"></span>
@@ -2638,6 +2698,10 @@
   <audio id="personaPlayer" preload="auto" style="display:none;"></audio>
   </div>
   </div><!-- /Round Table workspace panel -->
+
+  <div class="vm-ws-panel" data-ws-panel="analytics" id="vmWsPanelAnalytics">
+    <div id="studioAnalyticsView"></div>
+  </div>
 </div><!-- /Studio overlay -->
 
 <!-- MASSIVE EDITING -->
@@ -3354,7 +3418,6 @@ function handleMessageContextAction(action) {
         case "listen":
             var pb = wrap ? wrap.querySelector(".playback-ctrl") : null;
             if (pb) toggleVoicePlayback(pb);
-            else if (text) browserSpeak(text);
             break;
         case "email":
             draftResponseEmail(text);
@@ -3576,11 +3639,12 @@ window.toggleVoicePlayback = function (btn) {
             _voiceIcon(btn, 'pause');
             pl.play().catch(function () { _voiceIcon(btn, 'play'); _msgAudioBtn = null; });
         } else {
-            // Server has no Qwen audio to give — last-resort device voice.
-            _voiceIcon(btn, 'play'); _msgAudioBtn = null; browserSpeak(text);
+            // No Qwen audio from the server — stay silent rather than use the
+            // device's native voice (which broke persona gender on some devices).
+            _voiceIcon(btn, 'play'); _msgAudioBtn = null;
         }
     }).catch(function () {
-        _voiceIcon(btn, 'play'); _msgAudioBtn = null; browserSpeak(text);
+        _voiceIcon(btn, 'play'); _msgAudioBtn = null;
     });
 };
 
@@ -4504,10 +4568,11 @@ async function speakPersona(text, persona) {
             }
             return;
         }
-        // Server has no Qwen audio to give — last-resort device voice.
-        browserSpeak(text);
+        // Server has no Qwen audio to give — stay silent rather than fall back to
+        // the device's native voice, which is what made Marcus sound female on
+        // some devices (the assigned Qwen voice is gender-correct everywhere).
     } catch (e) {
-        browserSpeak(text);
+        // Same: never substitute the browser's voice for a persona.
     }
 }
 
@@ -5245,6 +5310,7 @@ function vmWsGo(ws) {
     }
     if (ws === "website" && typeof aibOnShow === "function") aibOnShow();
     if (ws === "website" && typeof vmGuideMaybeShow === "function") vmGuideMaybeShow("website");
+    if (ws === "analytics" && _vmIsCreator && typeof vmDashRefresh === "function") vmDashRefresh();
 }
 
 function closeStudio() {
@@ -8149,6 +8215,7 @@ async function checkSession() {
             var status = document.getElementById("statusText");
             if (status) status.textContent = "Memory Online";
             var email = data.email || "";
+            _vmEmail = email || "";
             if (email) {
                 var nameEl = document.getElementById("sidebarUserName");
                 var avatarEl = document.getElementById("sidebarAvatarLetter");
@@ -8157,7 +8224,17 @@ async function checkSession() {
                 if (avatarEl) avatarEl.textContent = email[0].toUpperCase();
                 if (badgeEl) badgeEl.textContent = data.is_creator ? "Founder & Creator" : "Active User";
             }
-            if (data.is_creator) { try { vmInitCreatorDashboard(); } catch (e) {} }
+            _vmIsCreator = !!data.is_creator;
+            var analyticsTab = document.getElementById("vmWsTabAnalytics");
+            if (analyticsTab) analyticsTab.style.display = _vmIsCreator ? "" : "none";
+            if (!_vmIsCreator && document.getElementById("vmWsPanelAnalytics")) {
+                document.getElementById("vmWsPanelAnalytics").classList.remove("active");
+            }
+
+            // Email/password accounts start unverified until the emailed code or
+            // magic link is used. Show the verify banner (dismissible) when the
+            // session reports an unverified account.
+            showVerifyBanner(data.email_verified === false);
 
             if (splash) {
                 // Brief show: matches the 2s logo intro, then fades out
@@ -8192,15 +8269,22 @@ async function checkSession() {
     return authCheckPromise;
 }
 
+function showRecoveryPhase(n) {
+    ["recoveryPhase1", "recoveryPhase2", "recoveryPhase3"].forEach(function (id) {
+        var el = document.getElementById(id);
+        if (el) el.style.display = (id === "recoveryPhase" + n) ? "flex" : "none";
+    });
+}
+
 function openRecovery() {
-    document.getElementById("recoveryPhase1").style.display = "flex";
-    document.getElementById("recoveryPhase2").style.display = "none";
+    window._vmResetToken = "";
+    showRecoveryPhase(1);
     document.getElementById("recoveryError").textContent = "";
     document.getElementById("resetError").textContent = "";
     document.getElementById("resetSuccess").style.display = "none";
     document.getElementById("recoveryEmail").value = "";
-    document.getElementById("recoveryAnswer").value = "";
     document.getElementById("recoveryNewPassword").value = "";
+    document.getElementById("recoveryConfirmPassword").value = "";
     document.getElementById("recoveryOverlay").style.opacity = "1";
     document.getElementById("recoveryOverlay").style.visibility = "visible";
     document.getElementById("recoveryOverlay").style.pointerEvents = "auto";
@@ -8222,6 +8306,9 @@ function closeRecovery() {
     modal.style.transform = "translate(-50%,-46%) scale(0.98)";
 }
 
+// Step 1 of the email-based reset: request a reset link. The server always
+// returns the same generic confirmation, so this can never reveal whether an
+// account exists — we show that message verbatim and move on.
 async function verifyEmail() {
     var email = document.getElementById("recoveryEmail").value.trim();
     var errorEl = document.getElementById("recoveryError");
@@ -8235,34 +8322,34 @@ async function verifyEmail() {
         });
         var data = await res.json();
         if (data.status !== "success") {
-            errorEl.textContent = data.message || "Email not found.";
+            errorEl.textContent = data.message || "Please try again.";
             return;
         }
-        document.getElementById("recoveryQuestion").textContent = data.question;
-        document.getElementById("recoveryPhase1").style.display = "none";
-        document.getElementById("recoveryPhase2").style.display = "flex";
-        document.getElementById("recoveryEmail").dataset.verifiedEmail = email;
+        showRecoveryPhase(2);
     } catch (err) {
         errorEl.textContent = err.message || "Connection error.";
     }
 }
 
+// Step 2 of the email-based reset: swap the emailed single-use token for a new
+// password. The backend accepts ONLY { token, new_password } — no security
+// question path exists anymore.
 async function resetPassword() {
-    var email = document.getElementById("recoveryEmail").dataset.verifiedEmail;
-    var answer = document.getElementById("recoveryAnswer").value.trim();
+    var token = window._vmResetToken || "";
     var newPassword = document.getElementById("recoveryNewPassword").value;
+    var confirmPassword = document.getElementById("recoveryConfirmPassword").value;
     var errorEl = document.getElementById("resetError");
     var successEl = document.getElementById("resetSuccess");
     errorEl.textContent = "";
     successEl.style.display = "none";
-    if (!email) { errorEl.textContent = "Please verify your email first."; return; }
-    if (!answer) { errorEl.textContent = "Enter your secret answer."; return; }
-    if (!newPassword || newPassword.length < 4) { errorEl.textContent = "Password must be at least 4 characters."; return; }
+    if (!token) { errorEl.textContent = "This reset link is missing its token. Please request a new link."; return; }
+    if (!newPassword || newPassword.length < 8) { errorEl.textContent = "Password must be at least 8 characters."; return; }
+    if (newPassword !== confirmPassword) { errorEl.textContent = "Passwords do not match."; return; }
     try {
         var res = await apiFetch("/api/auth/reset-password", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ email: email, answer: answer, new_password: newPassword })
+            body: JSON.stringify({ token: token, new_password: newPassword })
         });
         var data = await res.json();
         if (data.status !== "success") {
@@ -8270,10 +8357,14 @@ async function resetPassword() {
             return;
         }
         successEl.style.display = "block";
-        successEl.textContent = "Password reset successful! You may now log in.";
-        document.getElementById("recoveryAnswer").value = "";
+        successEl.textContent = data.message || "Password reset successful!";
+        window._vmResetToken = "";
         document.getElementById("recoveryNewPassword").value = "";
-        setTimeout(function () { closeRecovery(); }, 2500);
+        document.getElementById("recoveryConfirmPassword").value = "";
+        setTimeout(function () {
+            closeRecovery();
+            if (typeof setAuthTab === "function") setAuthTab("login");
+        }, 1800);
     } catch (err) {
         errorEl.textContent = err.message || "Connection error.";
     }
@@ -8283,6 +8374,165 @@ document.addEventListener("DOMContentLoaded", function () {
     var forgotLink = document.getElementById("forgotPasswordLink");
     if (forgotLink) forgotLink.addEventListener("click", function (e) { e.preventDefault(); openRecovery(); });
 });
+
+// ── Email verification (6-digit code entered by the signed-in user) ──────────
+var _vmVerifyEmail = "";
+var _vmEmail = "";
+
+function openVerifyModal(email) {
+    _vmVerifyEmail = email || _vmEmail || "";
+    var addr = document.getElementById("verifyModalEmailAddr");
+    if (addr) addr.textContent = _vmVerifyEmail || "your email";
+    var codeEl = document.getElementById("verifyCode");
+    if (codeEl) codeEl.value = "";
+    var err = document.getElementById("verifyError");
+    if (err) err.textContent = "";
+    var ok = document.getElementById("verifySuccess");
+    if (ok) ok.style.display = "none";
+    document.getElementById("verifyOverlay").style.opacity = "1";
+    document.getElementById("verifyOverlay").style.visibility = "visible";
+    document.getElementById("verifyOverlay").style.pointerEvents = "auto";
+    var modal = document.getElementById("verifyModal");
+    modal.style.opacity = "1";
+    modal.style.visibility = "visible";
+    modal.style.pointerEvents = "auto";
+    modal.style.transform = "translate(-50%,-50%) scale(1)";
+    setTimeout(function () { if (codeEl) codeEl.focus(); }, 120);
+}
+
+function closeVerifyModal() {
+    document.getElementById("verifyOverlay").style.opacity = "0";
+    document.getElementById("verifyOverlay").style.visibility = "hidden";
+    document.getElementById("verifyOverlay").style.pointerEvents = "none";
+    var modal = document.getElementById("verifyModal");
+    modal.style.opacity = "0";
+    modal.style.visibility = "hidden";
+    modal.style.pointerEvents = "none";
+    modal.style.transform = "translate(-50%,-46%) scale(0.98)";
+}
+
+async function submitVerifyCode() {
+    var codeEl = document.getElementById("verifyCode");
+    var code = (codeEl ? codeEl.value : "").trim();
+    var errorEl = document.getElementById("verifyError");
+    var successEl = document.getElementById("verifySuccess");
+    if (errorEl) errorEl.textContent = "";
+    if (successEl) successEl.style.display = "none";
+    if (!/^\d{6}$/.test(code)) { if (errorEl) errorEl.textContent = "Enter the 6-digit code from your email."; return; }
+    try {
+        var res = await apiFetch("/api/auth/verify-email", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", ...authHeaders() },
+            body: JSON.stringify({ code: code })
+        });
+        var data = await res.json();
+        if (data.status !== "success") {
+            if (errorEl) errorEl.textContent = data.message || "That code is incorrect.";
+            return;
+        }
+        if (successEl) { successEl.style.display = "block"; successEl.textContent = data.message || "Your email is verified!"; }
+        hideVerifyBanner();
+        setTimeout(closeVerifyModal, 1400);
+    } catch (err) {
+        if (errorEl) errorEl.textContent = err.message || "Connection error.";
+    }
+}
+
+async function resendVerification() {
+    var errorEl = document.getElementById("verifyError");
+    var successEl = document.getElementById("verifySuccess");
+    if (errorEl) errorEl.textContent = "";
+    if (successEl) successEl.style.display = "none";
+    var btn = document.getElementById("resendVerifyBtn");
+    if (btn) { btn.disabled = true; btn.textContent = "Sending..."; }
+    try {
+        var res = await apiFetch("/api/auth/resend-verification", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", ...authHeaders() },
+            body: JSON.stringify({})
+        });
+        var data = await res.json();
+        if (data.status !== "success") {
+            if (errorEl) errorEl.textContent = data.message || "Please try again shortly.";
+            return;
+        }
+        if (successEl) { successEl.style.display = "block"; successEl.textContent = data.message || "Verification email sent — check your inbox."; }
+    } catch (err) {
+        if (errorEl) errorEl.textContent = err.message || "Connection error.";
+    } finally {
+        if (btn) { btn.disabled = false; btn.textContent = "Didn't get it? Resend code"; }
+    }
+}
+
+function showVerifyBanner(show) {
+    var banner = document.getElementById("verifyBanner");
+    if (!banner) return;
+    if (!show || window._vmVerifyDismissed) { banner.style.display = "none"; return; }
+    banner.style.display = "flex";
+}
+
+function hideVerifyBanner() {
+    var banner = document.getElementById("verifyBanner");
+    if (banner) banner.style.display = "none";
+}
+
+function dismissVerifyBanner() {
+    window._vmVerifyDismissed = true;
+    hideVerifyBanner();
+}
+
+// ── Verify / reset deep-link handling ────────────────────────────────────────
+function vmAuthToast(message, ok) {
+    var el = document.getElementById("vmAuthToast");
+    if (!el) {
+        el = document.createElement("div");
+        el.id = "vmAuthToast";
+        el.setAttribute("role", "status");
+        el.setAttribute("aria-live", "polite");
+        document.body.appendChild(el);
+    }
+    el.textContent = message;
+    el.style.borderColor = ok ? "rgba(0,255,136,0.35)" : "rgba(255,107,122,0.35)";
+    el.style.color = ok ? "#86efac" : "#ffb4bd";
+    el.classList.add("show");
+    clearTimeout(window._vmAuthToastTimer);
+    window._vmAuthToastTimer = setTimeout(function () { el.classList.remove("show"); }, 6000);
+}
+
+// The magic-link flow redirects to /?verify=success|invalid|expired. Show one
+// toast, then clean the query string so a refresh doesn't re-toast.
+function handleVerifyRedirect() {
+    try {
+        var params = new URLSearchParams(window.location.search);
+        var status = params.get("verify") || "";
+        if (!status) return;
+        if (status === "success") vmAuthToast("Your email is verified. Welcome to ValleyMind AI!", true);
+        else if (status === "expired") vmAuthToast("This verification link has expired. Sign in and request a new one.", false);
+        else vmAuthToast("This verification link is invalid or has already been used.", false);
+        params.delete("verify");
+        var qs = params.toString();
+        history.replaceState(null, "", window.location.pathname + (qs ? "?" + qs : ""));
+    } catch (e) { /* non-fatal */ }
+}
+
+// The reset email links to /reset-password?token=... (served by the SPA
+// catch-all). When the app loads on that page we open the recovery modal at the
+// token phase, prefilled with the token.
+function handleResetLink() {
+    try {
+        var path = (window.location.pathname || "").replace(/\/+$/, "").toLowerCase();
+        if (path.indexOf("reset-password") === -1) return;
+        var params = new URLSearchParams(window.location.search);
+        var token = params.get("token") || "";
+        if (!token) { vmAuthToast("This reset link is missing its token. Please request a new link.", false); return; }
+        openRecovery();
+        window._vmResetToken = token;
+        showRecoveryPhase(3);
+        params.delete("token");
+        var qs = params.toString();
+        history.replaceState(null, "", window.location.pathname + (qs ? "?" + qs : ""));
+    } catch (e) { /* non-fatal */ }
+}
 
 async function login(event) {
     event.preventDefault();
@@ -8473,7 +8723,7 @@ async function signup(event) {
     if (!fullName) return setSignupError("Please enter your full name.");
     if (!/^[a-zA-Z0-9_.-]{3,24}$/.test(username)) return setSignupError("Username must be 3-24 characters using letters, numbers, dots, dashes or underscores.");
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return setSignupError("Please enter a valid email address.");
-    if (password.length < 4) return setSignupError("Password must be at least 4 characters.");
+    if (password.length < 8) return setSignupError("Password must be at least 8 characters.");
     if (password !== confirmPassword) return setSignupError("Passwords do not match.");
     if (!agreeTerms) return setSignupError("Please agree to the Terms of Service to continue.");
     if (!agreePrivacy) return setSignupError("Please confirm you have read the Privacy Policy.");
@@ -8507,6 +8757,11 @@ async function signup(event) {
         try { sessionStorage.setItem("vm_first_run", "1"); } catch (_) {}
         var authenticated = await checkSession();
         if (!authenticated) throw new Error("Session validation failed");
+        // New accounts start unverified — surface the 6-digit-code modal right
+        // away so the user can finish verification in one step.
+        if (data.needs_verification) {
+            setTimeout(function () { openVerifyModal(data.email || ""); }, 800);
+        }
         return; // dashboard is live
     } catch (err) {
         setSignupError(err.message || "Sign-up failed");
@@ -8961,10 +9216,78 @@ function aibGo(view) {
 function aibOnShow() {
     aibLoadStatus();
     aibLoadProjects();
+    aibRestoreDraft();
+    var descEl = document.getElementById("aibDesc");
+    if (descEl && !descEl._draftBound) {
+        descEl._draftBound = true;
+        descEl.addEventListener("input", function () { aibSaveDraft(); });
+    }
+    var specEl = document.getElementById("aibSpecEdit");
+    if (specEl && !specEl._draftBound) {
+        specEl._draftBound = true;
+        specEl.addEventListener("input", function () { aibSaveDraft(); });
+    }
+}
+
+// Draft persistence (sessionStorage): survives navigating away / reloading the
+// page in the same tab, so an in-progress describe/answer/spec is never lost.
+function aibSaveDraft() {
+    try {
+        var descEl = document.getElementById("aibDesc");
+        var specEl = document.getElementById("aibSpecEdit");
+        var desc = descEl ? descEl.value : "";
+        var spec = specEl ? specEl.value : "";
+        if (!desc && !spec && !aibState.specText) { try { sessionStorage.removeItem("vm_aib_draft"); } catch (e) {} return; }
+        sessionStorage.setItem("vm_aib_draft", JSON.stringify({
+            type: aibState.type || "website",
+            desc: desc || aibState.desc,
+            answers: aibState.answers || {},
+            questions: aibState.questions || [],
+            specText: spec || aibState.specText || ""
+        }));
+    } catch (e) {}
+}
+
+function aibRestoreDraft() {
+    var raw;
+    try { raw = sessionStorage.getItem("vm_aib_draft"); } catch (e) { return; }
+    if (!raw) return;
+    var d;
+    try { d = JSON.parse(raw); } catch (e) { return; }
+    if (!d || (!d.desc && !d.specText)) return;
+    var hasPlan = !!(d.specText || (d.questions && d.questions.length));
+    if (hasPlan) {
+        aibState.type = d.type || "website";
+        aibState.desc = d.desc || "";
+        aibState.answers = d.answers || {};
+        aibState.questions = d.questions || [];
+        aibState.specText = d.specText || "";
+        var brief = document.getElementById("aibBrief");
+        if (brief) brief.textContent = aibState.desc;
+        aibRenderQuestions(aibState.questions);
+        document.getElementById("aibSpecWrap").style.display = "";
+        document.getElementById("aibPlanActions").style.display = "none";
+        var editEl = document.getElementById("aibSpecEdit");
+        if (editEl) editEl.value = aibState.specText;
+        if (aibState.specText) aibRenderSpecPreview(aibState.specText);
+        var statusEl = document.getElementById("aibClarifyStatus");
+        if (statusEl) statusEl.innerHTML = "";
+        if (aibState.specText) { var buildBtn = document.getElementById("aibBtnBuild"); if (buildBtn) buildBtn.disabled = false; }
+        aibGo("plan");
+    } else {
+        aibState.type = d.type || "website";
+        var descEl = document.getElementById("aibDesc");
+        if (descEl) descEl.value = d.desc || "";
+        document.querySelectorAll(".aib-type").forEach(function (b) {
+            b.classList.toggle("active", b.getAttribute("data-type") === aibState.type);
+        });
+    }
 }
 
 function aibReset() {
     aibState = { type: aibState.type, desc: "", questions: [], answers: {}, specText: "", pid: null, resultMode: "files", previewPath: "/", prevStack: [] };
+    aibAttachFiles = [];
+    aibRenderAttachChips();
     var desc = document.getElementById("aibDesc");
     if (desc) desc.value = "";
     var q = document.getElementById("aibQuestions");
@@ -8975,6 +9298,7 @@ function aibReset() {
     document.getElementById("aibSpecEdit").value = "";
     document.getElementById("aibBtnBuild").disabled = true;
     document.getElementById("aibBtnStart").disabled = false;
+    try { sessionStorage.removeItem("vm_aib_draft"); } catch (e) {}
     aibGo("home");
     aibLoadProjects();
 }
@@ -8982,57 +9306,39 @@ function aibReset() {
 // Curated coder line-up. Real OpenCode ids stay server-side (`value`); the UI
 // only ever shows Valley-branded names so provider identities never leak.
 // `ling` is the default (fast + reliable within the server build timeout).
-// ── Creator Dashboard (owner-only) ───────────────────────────────────────────
+// ── Creator Analytics (owner-only, lives in the Studio "Analytics" workspace) ─
+var _vmIsCreator = false;
 var _vmDashTimer = null;
 
-function vmInitCreatorDashboard() {
-    if (document.getElementById("vmDashBtn")) return;
-    var btn = document.createElement("button");
-    btn.id = "vmDashBtn";
-    btn.title = "Creator Dashboard (Ctrl+Shift+D)";
-    btn.textContent = "📊";
-    btn.style.cssText = "position:fixed;right:18px;bottom:18px;z-index:99998;width:46px;height:46px;border-radius:50%;border:1px solid rgba(0,212,255,0.4);background:rgba(10,20,30,0.92);color:#00d4ff;font-size:20px;cursor:pointer;box-shadow:0 8px 26px rgba(0,0,0,0.5);";
-    btn.onclick = openCreatorDashboard;
-    document.body.appendChild(btn);
-    document.addEventListener("keydown", function (e) {
-        if (e.ctrlKey && e.shiftKey && (e.key === "D" || e.key === "d")) { e.preventDefault(); openCreatorDashboard(); }
-    });
-}
-
-function openCreatorDashboard() {
-    var ov = document.getElementById("vmDashOverlay");
-    if (!ov) {
-        ov = document.createElement("div");
-        ov.id = "vmDashOverlay";
-        ov.style.cssText = "position:fixed;inset:0;z-index:99999;background:rgba(2,6,12,0.94);backdrop-filter:blur(6px);overflow:auto;padding:24px;";
-        ov.innerHTML = '<div style="max-width:1100px;margin:0 auto;">' +
-            '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;">' +
-            '<h2 style="color:#e2e8f0;margin:0;font-size:20px;">Creator Dashboard</h2>' +
-            '<div><span id="vmDashUpdated" style="color:#64748b;font-size:12px;margin-right:12px;"></span>' +
-            '<button onclick="closeCreatorDashboard()" style="background:rgba(255,45,70,0.15);color:#f87171;border:1px solid rgba(255,45,70,0.3);border-radius:8px;padding:6px 14px;cursor:pointer;">Close</button></div></div>' +
-            '<div id="vmDashBody" style="color:#cbd5e1;">Loading…</div></div>';
-        document.body.appendChild(ov);
-    }
-    ov.style.display = "block";
+function vmShowAnalytics() {
+    vmWsGo("analytics");
+    var tab = document.getElementById("vmWsTabAnalytics");
+    if (tab) tab.classList.add("active");
     vmDashRefresh();
-    if (_vmDashTimer) clearInterval(_vmDashTimer);
-    _vmDashTimer = setInterval(vmDashRefresh, 10000);
-}
-
-function closeCreatorDashboard() {
-    var ov = document.getElementById("vmDashOverlay");
-    if (ov) ov.style.display = "none";
-    if (_vmDashTimer) { clearInterval(_vmDashTimer); _vmDashTimer = null; }
 }
 
 function vmDashRefresh() {
+    if (!_vmIsCreator) return;
     apiFetch("/api/creator/dashboard", { timeoutMs: 20000 }).then(function (r) { return r.json(); })
         .then(function (j) {
-            var body = document.getElementById("vmDashBody");
+            var body = document.getElementById("studioAnalyticsView");
             if (!body) return;
             if (!j || j.status !== "success") { body.innerHTML = '<p style="color:#f87171;">' + esc((j && j.message) || "Unavailable") + '</p>'; return; }
             vmDashRender(j);
-        }).catch(function (e) { var b = document.getElementById("vmDashBody"); if (b) b.textContent = "Error: " + (e.message || e); });
+        }).catch(function (e) { var b = document.getElementById("studioAnalyticsView"); if (b) b.textContent = "Error: " + (e.message || e); });
+}
+
+function vmSetVideoQuota(limit) {
+    if (!_vmIsCreator) return;
+    apiFetch("/api/video/quota", {
+        method: "POST",
+        credentials: "include",
+        headers: authHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ limit: limit })
+    }).then(function (r) { return r.json(); }).then(function (j) {
+        if (j && j.status === "success") vmDashRefresh();
+        else alert((j && j.message) || "Could not update quota.");
+    }).catch(function (e) { alert("Error: " + (e.message || e)); });
 }
 
 function vmDashRender(d) {
@@ -9069,9 +9375,32 @@ function vmDashRender(d) {
         hrows + '</table></div>';
     var unmapped = b.unmapped_free || [];
     var un = unmapped.length ? '<p style="color:#fbbf24;font-size:12px;margin-top:14px;">New free models detected (unmapped): ' + esc(unmapped.join(", ")) + '</p>' : '';
-    document.getElementById("vmDashBody").innerHTML = grid + htable + un;
-    var upd = document.getElementById("vmDashUpdated");
-    if (upd) upd.textContent = "Updated " + new Date().toLocaleTimeString();
+    document.getElementById("studioAnalyticsView").innerHTML =
+        '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">' +
+        '<h2 style="color:#e2e8f0;margin:0;font-size:18px;">Creator Analytics</h2>' +
+        '<span style="color:#64748b;font-size:12px;">Updated ' + new Date().toLocaleTimeString() + '</span></div>' +
+        grid + htable + un + '<div id="vmQuotaBlock"></div>';
+    vmDashQuota();
+}
+
+function vmDashQuota() {
+    var block = document.getElementById("vmQuotaBlock");
+    if (!block || !_vmIsCreator) return;
+    apiFetch("/api/video/quota", { timeoutMs: 10000 }).then(function (r) { return r.json(); })
+        .then(function (j) {
+            if (!j || j.status !== "success") return;
+            var opts = [50, 100, 200].map(function (n) {
+                if (n > j.env_max) return "";
+                var active = n === j.active_limit;
+                return '<button onclick="vmSetVideoQuota(' + n + ')" style="margin-right:8px;padding:6px 14px;border-radius:8px;cursor:pointer;border:1px solid ' + (active ? "rgba(0,212,255,0.7)" : "rgba(148,163,184,0.3)") + ';background:' + (active ? "rgba(0,212,255,0.15)" : "rgba(255,255,255,0.04)") + ';color:' + (active ? "#00d4ff" : "#94a3b8") + ';">' + n + '</button>';
+            }).filter(Boolean).join("");
+            block.innerHTML =
+                '<div style="background:rgba(15,23,42,0.7);border:1px solid rgba(148,163,184,0.15);border-radius:12px;padding:14px 16px;margin-top:20px;">' +
+                '<h3 style="margin:0 0 10px;color:#94a3b8;font-size:12px;text-transform:uppercase;letter-spacing:.06em;">Video generation quota</h3>' +
+                '<div style="font-size:13px;color:#e2e8f0;margin-bottom:10px;">Active limit: <b>' + j.active_limit + '</b> videos &nbsp;·&nbsp; Max (env): ' + j.env_max + '</div>' +
+                '<div style="font-size:12px;color:#64748b;margin-bottom:10px;">Paid users may generate up to this many videos. Your own account always keeps the full env max.</div>' +
+                opts + '</div>';
+        }).catch(function () {});
 }
 
 // Builder selector is fully server-driven: the browser only receives branded
@@ -9101,13 +9430,18 @@ function aibPopulateBuilders(defaultId) {
     AIB_BUILDERS.forEach(function (b) {
         var opt = document.createElement("option");
         opt.value = b.id;   // opaque branded id (e.g. "vmb5")
-        // b.model is present only in Developer Mode.
-        opt.textContent = b.label + (b.model ? "  ·  " + b.model : "");
+        // Short display label ("VMB 4.0"); the full label stays on the server.
+        opt.textContent = aibShortLabel(b.label) + (b.model ? "  ·  " + b.model : "");
         if (b["default"] || b.id === defaultId) opt.selected = true;
         sel.appendChild(opt);
     });
     aibUpdateModelHint();
     sel.onchange = aibUpdateModelHint;
+}
+
+function aibShortLabel(label) {
+    var m = String(label || "").match(/ValleyMind Builder\s*(.+)$/i);
+    return m ? "VMB " + m[1].trim() : String(label || "");
 }
 
 function aibUpdateModelHint() {
@@ -9150,6 +9484,92 @@ function aibSelectType(el) {
     aibState.type = el.getAttribute("data-type") || "website";
 }
 
+var aibAttachFiles = [];
+
+function aibOpenAttach() {
+    var inp = document.getElementById("aibAttachInput");
+    if (inp) inp.click();
+}
+
+function aibHandleAttachFiles(input) {
+    if (!input || !input.files) return;
+    var files = Array.prototype.slice.call(input.files || []);
+    var issues = [];
+    files.forEach(function (file) {
+        if (aibAttachFiles.length >= 4) { issues.push("Attach at most 4 files."); return; }
+        var name = file.name || "file";
+        var isImg = /^image\/(png|jpe?g|gif|webp)$/.test(file.type || "");
+        var isTxt = /\.(txt|md)$/i.test(name) || /^text\//.test(file.type || "");
+        if (!isImg && !isTxt) { issues.push(name + ": only images or .txt/.md."); return; }
+        if (isImg) {
+            if (file.size > 5 * 1024 * 1024) { issues.push(name + ": images max 5 MB."); return; }
+            var reader = new FileReader();
+            reader.onload = function () {
+                aibAttachFiles.push({ name: name, type: "image", mime: file.type, data_url: String(reader.result) });
+                aibRenderAttachChips();
+            };
+            reader.onerror = function () { issues.push(name + ": could not read."); };
+            reader.readAsDataURL(file);
+        } else {
+            if (file.size > 200 * 1024) { issues.push(name + ": text files max 200 KB."); return; }
+            var tr = new FileReader();
+            tr.onload = function () {
+                aibAttachFiles.push({ name: name, type: "text", mime: file.type || "text/plain", content: String(tr.result).slice(0, 200 * 1024) });
+                aibRenderAttachChips();
+            };
+            tr.onerror = function () { issues.push(name + ": could not read."); };
+            tr.readAsText(file);
+        }
+    });
+    if (issues.length) alert(issues.join("\n"));
+    input.value = "";
+    aibRenderAttachChips();
+}
+
+function aibRemoveAttach(idx) {
+    if (idx >= 0 && idx < aibAttachFiles.length) aibAttachFiles.splice(idx, 1);
+    aibRenderAttachChips();
+}
+
+function aibRenderAttachChips() {
+    var chips = document.getElementById("aibAttachChips");
+    if (!chips) return;
+    chips.innerHTML = "";
+    aibAttachFiles.forEach(function (a, i) {
+        var c = document.createElement("span");
+        c.className = "aib-attach-chip";
+        c.textContent = (a.type === "image" ? "🖼 " : "📄 ") + a.name;
+        var x = document.createElement("b");
+        x.textContent = " ×";
+        x.title = "Remove";
+        x.onclick = function () { aibRemoveAttach(i); };
+        c.appendChild(x);
+        chips.appendChild(c);
+    });
+}
+
+var _aibSR = null;
+var _aibMicOn = false;
+function aibMicTap() {
+    var btn = document.getElementById("aibMicBtn");
+    var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) { alert("Voice input is not supported in this browser."); return; }
+    if (_aibMicOn) { try { _aibSR.stop(); } catch (e) {} _aibMicOn = false; if (btn) btn.classList.remove("active"); return; }
+    _aibSR = new SR();
+    _aibSR.lang = "en-US";
+    _aibSR.interimResults = false;
+    _aibSR.onstart = function () { _aibMicOn = true; if (btn) { btn.classList.add("active"); btn.textContent = "Listening…"; } };
+    _aibSR.onend = function () { _aibMicOn = false; if (btn) { btn.classList.remove("active"); btn.textContent = "Mic"; } };
+    _aibSR.onerror = function () { _aibMicOn = false; if (btn) { btn.classList.remove("active"); btn.textContent = "Mic"; } };
+    _aibSR.onresult = function (evt) {
+        var txt = "";
+        for (var i = 0; i < evt.results.length; i++) txt += evt.results[i][0].transcript;
+        var desc = document.getElementById("aibDesc");
+        if (desc && txt) desc.value = (desc.value ? desc.value + " " : "") + txt.trim();
+    };
+    try { _aibSR.start(); } catch (e) {}
+}
+
 function aibStart() {
     var descEl = document.getElementById("aibDesc");
     var desc = (descEl && descEl.value || "").trim();
@@ -9168,6 +9588,7 @@ function aibStart() {
     document.getElementById("aibBrief").textContent = desc;
     document.getElementById("aibBtnStart").disabled = true;
     aibGo("plan");
+    aibSaveDraft();
     aibClarify();
 }
 
@@ -9213,13 +9634,14 @@ function aibClarify() {
     statusEl.innerHTML = '<span class="aib-thinking">Analyzing your request…</span>';
     document.getElementById("aibQuestions").innerHTML = "";
     document.getElementById("aibPlanActions").style.display = "none";
-    aibStream("/api/ai-builder/clarify", { message: aibState.desc, project_type: aibState.type }, function (evt) {
+    aibStream("/api/ai-builder/clarify", { message: aibState.desc, project_type: aibState.type, attachments: aibAttachFiles }, function (evt) {
         if (evt.type === "status") {
             statusEl.innerHTML = '<span class="aib-thinking">' + esc(evt.message) + '</span>';
         } else if (evt.type === "result") {
             aibState.questions = evt.questions || [];
             aibRenderQuestions(aibState.questions);
             statusEl.innerHTML = "";
+            aibSaveDraft();
             if (aibState.questions.length) {
                 document.getElementById("aibPlanActions").style.display = "";
             } else {
@@ -9256,6 +9678,7 @@ function aibPickOpt(btn) {
     btn.parentElement.querySelectorAll(".aib-q-opt").forEach(function (o) { o.classList.remove("active"); });
     btn.classList.add("active");
     aibState.answers[qid] = btn.getAttribute("data-opt");
+    aibSaveDraft();
 }
 
 function aibGeneratePlan() {
@@ -9269,7 +9692,7 @@ function aibGeneratePlan() {
     editEl.disabled = true;
     var deltaAcc = "";
     var lastPaint = 0;
-    aibStream("/api/ai-builder/plan", { message: aibState.desc, project_type: aibState.type, answers: aibState.answers }, function (evt) {
+    aibStream("/api/ai-builder/plan", { message: aibState.desc, project_type: aibState.type, answers: aibState.answers, attachments: aibAttachFiles }, function (evt) {
         if (evt.type === "status") {
             statusEl.innerHTML = '<span class="aib-thinking">' + esc(evt.message) + '</span>';
         } else if (evt.type === "delta") {
@@ -9283,6 +9706,7 @@ function aibGeneratePlan() {
             document.getElementById("aibSpecStatus").textContent = "Ready to edit";
             document.getElementById("aibBtnBuild").disabled = false;
             statusEl.innerHTML = "";
+            aibSaveDraft();
         } else if (evt.type === "error") {
             statusEl.innerHTML = '<span style="color:#f87171">' + esc(evt.message || "Error") + '</span>';
         }
@@ -9709,6 +10133,11 @@ function aibPreviewNavBack() {
 
 document.addEventListener("DOMContentLoaded", () => {
     setAppVisible(false);
+    // Deep links from transactional emails: /?verify=... (magic-link result)
+    // and /reset-password?token=... (reset link). Run before checkSession so a
+    // visitor with no session still gets the reset flow.
+    handleVerifyRedirect();
+    handleResetLink();
     checkSession();
     if (typeof lucide !== "undefined" && lucide.createIcons) {
         lucide.createIcons();
@@ -9769,7 +10198,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         if (event.ctrlKey && event.shiftKey && event.key === "D") {
             event.preventDefault();
-            if (typeof openDeveloperMode === "function") openDeveloperMode();
+            if (_vmIsCreator && typeof openDeveloperMode === "function") openDeveloperMode();
         }
     });
 

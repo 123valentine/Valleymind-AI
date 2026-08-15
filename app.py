@@ -80,6 +80,7 @@ app.config["MAX_CONTENT_LENGTH"] = int(_max_upload_mb * 1024 * 1024) + (2 * 1024
 _cache_marcus_by_user = {}
 _auth_tokens = {}
 _suggestion_times = {}
+_auth_attempt_times = {}   # {(ip, endpoint): [datetime]} — auth brute-force guard
 _marcus_lock = Lock()
 _users_lock = Lock()
 _users_file = PROJECT_ROOT / "memory_data" / "auth_users.json"
@@ -339,8 +340,91 @@ CREATOR_EMAIL = "egbujievalentine@gmail.com"
 CREATOR_NAME = "Egbujie Valentine (K)"
 CREATOR_TITLE = "Founder and Head of Valley Mind-AI"
 
-DEFAULT_SECURITY_QUESTION = "What is your creator code project?"
-DEFAULT_SECURITY_ANSWER = "valley mind-ai"
+# ── Password-reset tokens, email, and auth rate limiting ─────────────────────
+# Reset is email-based and token-only: a fresh, single-use, time-limited token
+# emailed to the account owner. There is deliberately NO security-question or
+# any other reset path — the old shared-answer scheme was an account-takeover
+# hole (every account had the same answer) and has been removed entirely.
+
+MIN_PASSWORD_LEN = 8
+RESET_TOKEN_TTL = timedelta(minutes=30)
+# Transactional email challenges (verification + OTP). Only hashes are stored;
+# see core/auth_codes.py and core/email_service.py.
+VERIFY_TTL = timedelta(minutes=30)
+OTP_TTL = timedelta(minutes=10)
+EMAIL_RESEND_COOLDOWN = 60   # seconds between resends per account (anti-spam)
+MAX_CODE_ATTEMPTS = 5
+
+SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com").strip()
+try:
+    SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+except (TypeError, ValueError):
+    SMTP_PORT = 587
+SMTP_USER = os.getenv("SMTP_USER", "").strip()
+SMTP_PASS = os.getenv("SMTP_PASS", "").strip()
+MAIL_FROM = os.getenv("MAIL_FROM", "").strip() or SMTP_USER
+APP_BASE_URL = (
+    os.getenv("APP_BASE_URL", "").strip()
+    or os.getenv("SITE_URL", "").strip()
+    or "https://valleymind-ai-opms.onrender.com"
+).rstrip("/")
+
+
+def _hash_token(token: str) -> str:
+    """sha256 hex of a reset token — only the hash is ever stored."""
+    return hashlib.sha256((token or "").encode("utf-8")).hexdigest()
+
+
+def send_email(to: str, subject: str, body: str) -> bool:
+    """Best-effort plain-text email via SMTP STARTTLS. Returns True if sent.
+
+    If SMTP_USER/SMTP_PASS are unset the mailer is simply skipped (no email is
+    sent) — the caller still returns its generic success message and NO other
+    reset path exists. The message body is never logged (it carries the token).
+    """
+    if not (SMTP_USER and SMTP_PASS and to):
+        print("[MAIL] SMTP not configured; skipping send")
+        return False
+    import smtplib
+    from email.message import EmailMessage
+
+    msg = EmailMessage()
+    msg["From"] = MAIL_FROM or SMTP_USER
+    msg["To"] = to
+    msg["Subject"] = subject
+    msg.set_content(body)
+    try:
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=20) as smtp:
+            smtp.starttls()
+            smtp.login(SMTP_USER, SMTP_PASS)
+            smtp.send_message(msg)
+        return True
+    except Exception as exc:
+        # Log the failure and recipient only — never the body/token.
+        print(f"[MAIL] send to {to} failed: {exc}")
+        return False
+
+
+def _client_ip() -> str:
+    fwd = request.headers.get("X-Forwarded-For", "")
+    if fwd:
+        return fwd.split(",")[0].strip()
+    return request.remote_addr or "unknown"
+
+
+def _auth_rate_limited(endpoint: str) -> bool:
+    """Max 5 requests per IP per 15 min for a given auth endpoint. In-memory
+    (single worker); True means refuse the caller with HTTP 429."""
+    now = datetime.now()
+    window_start = now - timedelta(minutes=15)
+    key = (_client_ip(), endpoint)
+    recent = [t for t in _auth_attempt_times.get(key, []) if t > window_start]
+    if len(recent) >= 5:
+        _auth_attempt_times[key] = recent
+        return True
+    recent.append(now)
+    _auth_attempt_times[key] = recent
+    return False
 
 
 def _is_creator(email: str) -> bool:
@@ -652,6 +736,7 @@ def auth_status():
     if marcus:
         _initialize_user_memory(marcus, auth.get("email", ""))
     email_auth = auth.get("email", "")
+    _user_rec = _load_users().get(email_auth) or {}
     return jsonify({
         "authenticated": True,
         "email": email_auth,
@@ -659,6 +744,7 @@ def auth_status():
         "character": "marcus",
         "memory_loaded": bool(marcus),
         "is_creator": _is_creator(email_auth),
+        "email_verified": bool(_user_rec.get("email_verified")),
         "video_generation_enabled": _video_generation_enabled(),
     })
 
@@ -913,6 +999,8 @@ def api_roundtable():
 @app.route("/login", methods=["POST"])
 @app.route("/auth/login", methods=["POST"])
 def login():
+    if _auth_rate_limited("login"):
+        return jsonify({"status": "error", "message": "Too many attempts. Please try again later."}), 429
     data = request.get_json(silent=True) or {}
     email = str(data.get("email") or "").strip().lower()
     password = str(data.get("password") or "")
@@ -940,8 +1028,6 @@ def login():
             users[email] = {
                 "user_id": user_id,
                 "password_hash": generate_password_hash(password),
-                "security_question": DEFAULT_SECURITY_QUESTION,
-                "security_answer_hash": generate_password_hash(DEFAULT_SECURITY_ANSWER),
             }
             if is_creator:
                 users[email]["identity_name"] = CREATOR_NAME
@@ -1123,8 +1209,8 @@ def register():
         return jsonify({"status": "error", "message": "Full name is too long"}), 400
     if not username or not _USERNAME_RE.match(username):
         return jsonify({"status": "error", "message": "Username must be 3-24 characters using letters, numbers, dots, dashes or underscores"}), 400
-    if not password or len(password) < 4:
-        return jsonify({"status": "error", "message": "Password must be at least 4 characters"}), 400
+    if not password or len(password) < MIN_PASSWORD_LEN:
+        return jsonify({"status": "error", "message": f"Password must be at least {MIN_PASSWORD_LEN} characters"}), 400
     if password != confirm_password:
         return jsonify({"status": "error", "message": "Passwords do not match"}), 400
     if not agree_terms:
@@ -1155,13 +1241,18 @@ def register():
             "password_hash": generate_password_hash(password),
             "auth_method": "email",
             "created_at": datetime.now(timezone.utc).isoformat(),
-            "security_question": DEFAULT_SECURITY_QUESTION,
-            "security_answer_hash": generate_password_hash(DEFAULT_SECURITY_ANSWER),
             "email_verified": False,
         }
         if is_creator:
             record["identity_name"] = CREATOR_NAME
             record["title"] = CREATOR_TITLE
+        # Email/password accounts start unverified — issue a single-use
+        # verification challenge (magic-link token + 6-digit code). Only the
+        # hashes are stored; the plaintext is returned once, to email.
+        from core import auth_codes
+        _verify_code, _verify_token = auth_codes.set_challenge(
+            record, "verify", ttl_seconds=int(VERIFY_TTL.total_seconds()),
+            with_token=True, purpose="email_verification")
         users[email] = record
         _save_users(users)
 
@@ -1199,6 +1290,17 @@ def register():
             except Exception as exc:
                 print(f"[WARN] Failed to set creator identity in memory: {exc}")
 
+    # Fire the verification email outside the lock. Delivery never blocks signup:
+    # the account is created and signed in; the UI shows a "verify your email"
+    # banner and can resend. A generic result — we don't surface provider errors.
+    try:
+        from core import email_service
+        _vlink = f"{APP_BASE_URL}/verify-email?token={_verify_token}"
+        email_service.send_verification_email(
+            email, _verify_code, _vlink, minutes=int(VERIFY_TTL.total_seconds() // 60))
+    except Exception:
+        pass
+
     return jsonify({
         "status": "success",
         "authenticated": True,
@@ -1210,6 +1312,8 @@ def register():
         "character": "marcus",
         "session_token": token,
         "is_creator": is_creator,
+        "email_verified": False,
+        "needs_verification": True,
         "first_time": True,
     }), 201
 
@@ -1230,56 +1334,103 @@ def logout():
 
 @app.route("/api/auth/forgot-password", methods=["POST"])
 def forgot_password():
+    """Step 1 of email-based reset. ALWAYS returns the same generic response so
+    it never reveals whether an account exists. If the account does exist, a
+    fresh single-use token (only its hash is stored, 30-min expiry) is emailed.
+    No account => nothing is sent; the response is identical either way."""
+    if _auth_rate_limited("forgot-password"):
+        return jsonify({"status": "error", "message": "Too many requests. Please try again later."}), 429
+
     data = request.get_json(silent=True) or {}
     email = str(data.get("email") or "").strip().lower()
+    generic = jsonify({
+        "status": "success",
+        "message": "If an account exists for that email, a reset link has been sent.",
+    })
 
     if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email):
-        return jsonify({"status": "error", "message": "Valid email is required"}), 400
+        return generic  # never reveal validity/existence
 
+    raw_token = secrets.token_urlsafe(32)
     with _users_lock:
         users = _load_users()
         user = users.get(email)
+        if user:
+            user["reset_token_hash"] = _hash_token(raw_token)
+            user["reset_token_expires"] = time.time() + RESET_TOKEN_TTL.total_seconds()
+            users[email] = user
+            _save_users(users)
 
-        if not user:
-            return jsonify({"status": "error", "message": "No account found with that email."}), 404
+    # Send outside the lock. Only email when the account exists; either way the
+    # caller sees `generic`. The raw token appears only in the link, never logged.
+    if user:
+        link = f"{APP_BASE_URL}/reset-password?token={raw_token}"
+        try:
+            from core import email_service
+            email_service.send_password_reset_email(
+                email, link, minutes=int(RESET_TOKEN_TTL.total_seconds() // 60))
+        except Exception:
+            pass  # never surface provider errors; the response is generic either way
 
-        question = user.get("security_question", DEFAULT_SECURITY_QUESTION)
-
-    return jsonify({"status": "success", "question": question})
+    return generic
 
 
 @app.route("/api/auth/reset-password", methods=["POST"])
 def reset_password():
+    """Step 2 of email-based reset. Accepts only { token, new_password }: the
+    token is sha256'd and matched against the stored hash, must be unexpired,
+    and is consumed on use. No security-question path exists anymore."""
+    if _auth_rate_limited("reset-password"):
+        return jsonify({"status": "error", "message": "Too many requests. Please try again later."}), 429
+
     data = request.get_json(silent=True) or {}
-    email = str(data.get("email") or "").strip().lower()
-    answer = str(data.get("answer") or "").strip().lower()
+    token = str(data.get("token") or "").strip()
     new_password = str(data.get("new_password") or "")
 
-    if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email):
-        return jsonify({"status": "error", "message": "Valid email is required"}), 400
-    if not answer:
-        return jsonify({"status": "error", "message": "Security answer is required."}), 400
-    if not new_password or len(new_password) < 4:
-        return jsonify({"status": "error", "message": "Password must be at least 4 characters."}), 400
+    if not token:
+        return jsonify({"status": "error", "message": "Reset token is required."}), 400
+    if not new_password or len(new_password) < MIN_PASSWORD_LEN:
+        return jsonify({"status": "error", "message": f"Password must be at least {MIN_PASSWORD_LEN} characters."}), 400
 
+    token_hash = _hash_token(token)
     with _users_lock:
         users = _load_users()
-        user = users.get(email)
+        match_email, match_user = None, None
+        for em, rec in users.items():
+            if rec.get("reset_token_hash") == token_hash:
+                match_email, match_user = em, rec
+                break
 
-        if not user:
-            return jsonify({"status": "error", "message": "No account found with that email."}), 404
+        # Same generic error for "not found" and "expired" — reveal nothing.
+        if not match_user:
+            return jsonify({"status": "error", "message": "This reset link is invalid or has expired."}), 400
 
-        stored_hash = user.get("security_answer_hash")
-        if not stored_hash:
-            return jsonify({"status": "error", "message": "Security question not set for this account."}), 400
+        expires = float(match_user.get("reset_token_expires") or 0)
+        if time.time() > expires:
+            match_user.pop("reset_token_hash", None)
+            match_user.pop("reset_token_expires", None)
+            users[match_email] = match_user
+            _save_users(users)
+            return jsonify({"status": "error", "message": "This reset link is invalid or has expired."}), 400
 
-        if not check_password_hash(stored_hash, answer):
-            return jsonify({"status": "error", "message": "Incorrect answer."}), 401
-
-        user["password_hash"] = generate_password_hash(new_password)
+        # Reuse the existing werkzeug hashing; consume the token (single use).
+        match_user["password_hash"] = generate_password_hash(new_password)
+        match_user.pop("reset_token_hash", None)
+        match_user.pop("reset_token_expires", None)
+        users[match_email] = match_user
         _save_users(users)
 
-    return jsonify({"status": "success", "message": "Password reset successfully."})
+    # Transactional security notice (best-effort; never blocks the reset).
+    try:
+        from core import email_service
+        email_service.send_security_email(
+            match_email, "Your password was reset",
+            "Your ValleyMind AI password was just reset using a password-reset link. "
+            "If this wasn't you, secure your account immediately.")
+    except Exception:
+        pass
+
+    return jsonify({"status": "success", "message": "Your password has been reset. You can now sign in."})
 
 
 @app.route("/auth/change-password", methods=["POST"])
@@ -1293,8 +1444,8 @@ def change_password():
 
     if not current_password:
         return jsonify({"status": "error", "message": "Current password required."}), 400
-    if not new_password or len(new_password) < 4:
-        return jsonify({"status": "error", "message": "New password must be at least 4 characters."}), 400
+    if not new_password or len(new_password) < MIN_PASSWORD_LEN:
+        return jsonify({"status": "error", "message": f"New password must be at least {MIN_PASSWORD_LEN} characters."}), 400
 
     auth = _current_auth()
     email = str(auth.get("email") or "").strip().lower()
@@ -1310,7 +1461,171 @@ def change_password():
         user["password_hash"] = generate_password_hash(new_password)
         _save_users(users)
 
+    try:
+        from core import email_service
+        email_service.send_security_email(
+            email, "Your password was changed",
+            "Your ValleyMind AI password was just changed from your account settings. "
+            "If this wasn't you, reset your password and contact support.")
+    except Exception:
+        pass
+
     return jsonify({"status": "success", "message": "Password changed successfully."})
+
+
+# ── Email verification & one-time codes (transactional) ─────────────────────
+
+_EMAIL_UNAVAILABLE = "We couldn't send the email right now. Please try again shortly."
+_OTP_PURPOSES = {"email_verification", "login_verification", "password_reset", "security_confirmation"}
+
+
+@app.route("/verify-email", methods=["GET"])
+def verify_email_link():
+    """Magic-link handler clicked from the verification email. Validates the
+    single-use token, marks the account verified, and redirects into the app with
+    a status the SPA can display. No login required — the token is the credential."""
+    from core import auth_codes
+    token = str(request.args.get("token") or "").strip()
+    status = "invalid"
+    if token:
+        token_hash = _hash_token(token)
+        with _users_lock:
+            users = _load_users()
+            match_email, match_rec = None, None
+            for em, rec in users.items():
+                if rec.get("verify_token_hash") == token_hash:
+                    match_email, match_rec = em, rec
+                    break
+            if match_rec:
+                if match_rec.get("email_verified"):
+                    status = "success"
+                else:
+                    ok, reason = auth_codes.check_token(match_rec, "verify", token)
+                    if ok:
+                        match_rec["email_verified"] = True
+                        match_rec["email_verified_at"] = datetime.now(timezone.utc).isoformat()
+                        status = "success"
+                    else:
+                        status = reason  # expired / invalid
+                    users[match_email] = match_rec
+                    _save_users(users)
+    return redirect(f"{APP_BASE_URL}/?verify={status}", code=302)
+
+
+@app.route("/api/auth/verify-email", methods=["POST"])
+def verify_email_code():
+    """Verify via the 6-digit code entered in the app by the signed-in user."""
+    user_id, error = _require_login()
+    if error:
+        return error
+    from core import auth_codes
+    email = str(_current_auth().get("email") or "").strip().lower()
+    code = str((request.get_json(silent=True) or {}).get("code") or "").strip()
+    if not code:
+        return jsonify({"status": "error", "message": "Verification code is required."}), 400
+    with _users_lock:
+        users = _load_users()
+        user = users.get(email)
+        if not user:
+            return jsonify({"status": "error", "message": "Account not found."}), 404
+        if user.get("email_verified"):
+            return jsonify({"status": "success", "email_verified": True, "message": "Your email is already verified."})
+        ok, reason = auth_codes.check_code(user, "verify", code, max_attempts=MAX_CODE_ATTEMPTS, purpose="email_verification")
+        if ok:
+            user["email_verified"] = True
+            user["email_verified_at"] = datetime.now(timezone.utc).isoformat()
+        users[email] = user
+        _save_users(users)
+    if ok:
+        return jsonify({"status": "success", "email_verified": True, "message": "Your email is verified."})
+    msg = {"expired": "That code has expired — request a new one.",
+           "locked": "Too many attempts — request a new code."}.get(reason, "That code is incorrect.")
+    return jsonify({"status": "error", "message": msg}), 400
+
+
+@app.route("/api/auth/resend-verification", methods=["POST"])
+def resend_verification():
+    user_id, error = _require_login()
+    if error:
+        return error
+    if _auth_rate_limited("resend-verification"):
+        return jsonify({"status": "error", "message": "Too many requests. Please try again later."}), 429
+    from core import auth_codes, email_service
+    email = str(_current_auth().get("email") or "").strip().lower()
+    with _users_lock:
+        users = _load_users()
+        user = users.get(email)
+        if not user:
+            return jsonify({"status": "error", "message": "Account not found."}), 404
+        if user.get("email_verified"):
+            return jsonify({"status": "success", "message": "Your email is already verified."})
+        if auth_codes.cooldown_active(user, "verify", EMAIL_RESEND_COOLDOWN):
+            return jsonify({"status": "error", "message": "Please wait a moment before requesting another email."}), 429
+        code, tok = auth_codes.set_challenge(user, "verify", ttl_seconds=int(VERIFY_TTL.total_seconds()),
+                                             with_token=True, purpose="email_verification")
+        users[email] = user
+        _save_users(users)
+    link = f"{APP_BASE_URL}/verify-email?token={tok}"
+    if not email_service.send_verification_email(email, code, link, minutes=int(VERIFY_TTL.total_seconds() // 60)):
+        return jsonify({"status": "error", "message": _EMAIL_UNAVAILABLE}), 503
+    return jsonify({"status": "success", "message": "Verification email sent — check your inbox."})
+
+
+@app.route("/api/auth/otp/request", methods=["POST"])
+def otp_request():
+    """Issue a reusable one-time code for a given purpose (signed-in user)."""
+    user_id, error = _require_login()
+    if error:
+        return error
+    if _auth_rate_limited("otp-request"):
+        return jsonify({"status": "error", "message": "Too many requests. Please try again later."}), 429
+    from core import auth_codes, email_service
+    email = str(_current_auth().get("email") or "").strip().lower()
+    purpose = str((request.get_json(silent=True) or {}).get("purpose") or "security_confirmation").strip()
+    if purpose not in _OTP_PURPOSES:
+        purpose = "security_confirmation"
+    with _users_lock:
+        users = _load_users()
+        user = users.get(email)
+        if not user:
+            return jsonify({"status": "error", "message": "Account not found."}), 404
+        if auth_codes.cooldown_active(user, "otp", EMAIL_RESEND_COOLDOWN):
+            return jsonify({"status": "error", "message": "Please wait a moment before requesting another code."}), 429
+        code, _ = auth_codes.set_challenge(user, "otp", ttl_seconds=int(OTP_TTL.total_seconds()), purpose=purpose)
+        users[email] = user
+        _save_users(users)
+    if not email_service.send_otp_email(email, code, purpose=purpose, minutes=int(OTP_TTL.total_seconds() // 60)):
+        return jsonify({"status": "error", "message": _EMAIL_UNAVAILABLE}), 503
+    return jsonify({"status": "success", "message": "A one-time code has been sent to your email."})
+
+
+@app.route("/api/auth/otp/verify", methods=["POST"])
+def otp_verify():
+    user_id, error = _require_login()
+    if error:
+        return error
+    if _auth_rate_limited("otp-verify"):
+        return jsonify({"status": "error", "message": "Too many requests. Please try again later."}), 429
+    from core import auth_codes
+    email = str(_current_auth().get("email") or "").strip().lower()
+    data = request.get_json(silent=True) or {}
+    code = str(data.get("code") or "").strip()
+    purpose = str(data.get("purpose") or "security_confirmation").strip()
+    if not code:
+        return jsonify({"status": "error", "message": "Code is required."}), 400
+    with _users_lock:
+        users = _load_users()
+        user = users.get(email)
+        if not user:
+            return jsonify({"status": "error", "message": "Account not found."}), 404
+        ok, reason = auth_codes.check_code(user, "otp", code, max_attempts=MAX_CODE_ATTEMPTS, purpose=purpose)
+        users[email] = user
+        _save_users(users)
+    if ok:
+        return jsonify({"status": "success", "verified": True, "purpose": purpose})
+    msg = {"expired": "That code has expired.",
+           "locked": "Too many attempts — request a new code."}.get(reason, "That code is incorrect.")
+    return jsonify({"status": "error", "message": msg}), 400
 
 
 @app.route("/chat", methods=["POST"])
@@ -2685,7 +3000,9 @@ def api_settings_usage():
 
 
 def _tier_limits() -> dict:
-    """Per-tier caps (env-overridable). Display-only for now — not enforced."""
+    """Per-tier caps (env-overridable). Paid video count is the creator-set ACTIVE
+    limit (see _video_active_limit), which is always clamped to the authoritative
+    VIDEO_GENERATION_LIMIT env maximum. Display + gate share this one source."""
     def _i(name, default):
         try:
             return int(os.getenv(name, str(default)))
@@ -2693,8 +3010,50 @@ def _tier_limits() -> dict:
             return default
     return {
         "free": {"images": _i("FREE_IMAGE_LIMIT", 30), "videos": _i("FREE_VIDEO_LIMIT", 5)},
-        "paid": {"images": _i("PAID_IMAGE_LIMIT", 1000), "videos": _i("PAID_VIDEO_LIMIT", 200)},
+        "paid": {"images": _i("PAID_IMAGE_LIMIT", 1000), "videos": _video_active_limit()},
     }
+
+
+def _video_env_max() -> int:
+    """Authoritative maximum for a paid user's video generations. The Render env
+    var VIDEO_GENERATION_LIMIT is the ceiling — the creator can only lower the
+    active limit, never raise it above this. Defaults to 200."""
+    try:
+        return max(1, int(os.getenv("VIDEO_GENERATION_LIMIT", "200") or 200))
+    except (TypeError, ValueError):
+        return 200
+
+
+def _video_active_limit() -> int:
+    """The creator-set ACTIVE video limit (50/100/200). Persisted in the app_config
+    doc so it takes effect immediately without a deploy, and clamped to the env max.
+    Falls back to the env maximum when unset or the DB is unreachable."""
+    ceiling = _video_env_max()
+    try:
+        override = int(os.getenv("_VIDEO_ACTIVE_LIMIT_OVERRIDE", "") or 0)
+        if override > 0:
+            return max(1, min(override, ceiling))
+    except (TypeError, ValueError):
+        pass
+    try:
+        coll = app_config_collection()
+        if coll is not None:
+            doc = coll.find_one({"_id": "video_config"})
+            if doc and doc.get("active_limit") is not None:
+                return max(1, min(int(doc["active_limit"]), ceiling))
+    except Exception as exc:
+        print(f"[VIDEO] active limit read failed: {exc}")
+    return ceiling
+
+
+def _video_limit_for(user_id: str) -> int:
+    """Per-user video limit. Normal paid users get the creator-set ACTIVE limit;
+    the creator's own testing always uses the full env maximum so testing quota is
+    never shared with (or capped by the settings meant for) normal users."""
+    email = _current_auth().get("email", "")
+    if _is_creator(email):
+        return _video_env_max()
+    return _video_active_limit()
 
 
 def _get_user_tier(user_id: str) -> str:
@@ -2905,6 +3264,10 @@ def dev_provider_status():
     user_id, error = _require_login()
     if error:
         return jsonify({"status": "error", "message": "Authentication required"}), 401
+    # Developer Mode is creator-only, enforced server-side: routing internals
+    # (provider names, health, metrics) must never reach normal users.
+    if not _is_creator(_current_auth().get("email", "")):
+        return jsonify({"status": "error", "message": "Not authorized"}), 403
     manager = pm.get_manager()
     return jsonify({
         "status": "success",
@@ -2918,6 +3281,9 @@ def dev_routing_log():
     user_id, error = _require_login()
     if error:
         return jsonify({"status": "error", "message": "Authentication required"}), 401
+    # Developer Mode is creator-only, enforced server-side (see provider-status).
+    if not _is_creator(_current_auth().get("email", "")):
+        return jsonify({"status": "error", "message": "Not authorized"}), 403
     manager = pm.get_manager()
     limit = request.args.get("limit", 100, type=int)
     return jsonify({
@@ -3165,7 +3531,7 @@ def api_studio_regenerate_clip(job_id, scene_number):
     if not job.get("test_mode"):
         tier = _get_user_tier(user_id)
         _, videos_used = _get_usage_counts(user_id)
-        ok, reason = sj.video_access(tier, videos_used, _tier_limits().get(tier, {}).get("videos"))
+        ok, reason = sj.video_access(tier, videos_used, _video_limit_for(user_id))
         if not ok:
             return jsonify({"status": "error", "message": reason}), 403
         afford, est, remaining = sj.can_afford(1)
@@ -3526,7 +3892,7 @@ def api_studio_estimate():
     clips = max(1, min(sj.max_clips_cap(), clips))
     tier = _get_user_tier(user_id)
     _, videos_used = _get_usage_counts(user_id)
-    video_limit = _tier_limits().get(tier, {}).get("videos")
+    video_limit = _video_limit_for(user_id)
     access_ok, access_reason = sj.video_access(tier, videos_used, video_limit)
     est = sj.estimate_cost(clips)
     paths = sj.path_costs()
@@ -3865,7 +4231,7 @@ def api_studio_run():
                 if not test_mode:
                     tier = _get_user_tier(user_id)
                     _, videos_used = _get_usage_counts(user_id)
-                    video_limit = _tier_limits().get(tier, {}).get("videos")
+                    video_limit = _video_limit_for(user_id)
                     gate_ok, gate_reason = sj.video_access(tier, videos_used, video_limit)
                 if not gate_ok:
                     yield f"data: {json.dumps({'stage': 'clips', 'status': 'denied', 'message': gate_reason})}\n\n"
@@ -4180,10 +4546,13 @@ def ai_builder_clarify():
     if not message:
         return jsonify({"status": "error", "message": "A project description is required"}), 400
     project_type = str(data.get("project_type") or "website").strip()[:40]
+    attachments, attach_err = ai_builder.validate_attachments(data.get("attachments"))
+    if attach_err:
+        return jsonify({"status": "error", "message": attach_err}), 400
     model = ai_builder.plan_model()
     if not ai_builder.configured():
         return jsonify({"status": "error", "message": "AI Builder is not configured on the server"}), 503
-    return _ai_builder_sse(ai_builder.clarify_generator(model, message, project_type))
+    return _ai_builder_sse(ai_builder.clarify_generator(model, message, project_type, attachments=attachments))
 
 
 @app.route("/api/ai-builder/plan", methods=["POST"])
@@ -4197,10 +4566,13 @@ def ai_builder_plan():
         return jsonify({"status": "error", "message": "A project description is required"}), 400
     project_type = str(data.get("project_type") or "website").strip()[:40]
     answers = data.get("answers")
+    attachments, attach_err = ai_builder.validate_attachments(data.get("attachments"))
+    if attach_err:
+        return jsonify({"status": "error", "message": attach_err}), 400
     model = ai_builder.plan_model()
     if not ai_builder.configured():
         return jsonify({"status": "error", "message": "AI Builder is not configured on the server"}), 503
-    return _ai_builder_sse(ai_builder.plan_generator(model, message, project_type, answers))
+    return _ai_builder_sse(ai_builder.plan_generator(model, message, project_type, answers, attachments=attachments))
 
 
 @app.route("/api/ai-builder/build", methods=["POST"])
@@ -4375,6 +4747,68 @@ def creator_dashboard():
             "unmapped_free": ai_builder.unmapped_free_models(),
         },
         "system": system,
+    })
+
+
+@app.route("/api/video/quota", methods=["GET"])
+def video_quota_get():
+    """Creator-only read of the ACTIVE video limit (what normal paid users get)
+    plus the authoritative env maximum. Normal users get 403 — the quota control
+    is a creator tool, and even the values are not exposed to them."""
+    user_id, error = _require_login()
+    if error:
+        return error
+    if not _is_creator(_current_auth().get("email", "")):
+        return jsonify({"status": "error", "message": "Not authorized"}), 403
+    return jsonify({
+        "status": "success",
+        "active_limit": _video_active_limit(),
+        "env_max": _video_env_max(),
+    })
+
+
+@app.route("/api/video/quota", methods=["POST"])
+def video_quota_set():
+    """Creator-only: change the ACTIVE video limit (50/100/200). Persisted in the
+    app_config doc and clamped to the VIDEO_GENERATION_LIMIT env max, so it takes
+    effect immediately and never exceeds the Render-declared ceiling."""
+    user_id, error = _require_login()
+    if error:
+        return error
+    if not _is_creator(_current_auth().get("email", "")):
+        return jsonify({"status": "error", "message": "Not authorized"}), 403
+    data = request.get_json(silent=True) or {}
+    try:
+        new_limit = int(data.get("limit") or 0)
+    except (TypeError, ValueError):
+        return jsonify({"status": "error", "message": "limit must be a number"}), 400
+    env_max = _video_env_max()
+    if new_limit not in (50, 100, 200):
+        return jsonify({"status": "error", "message": "limit must be 50, 100 or 200"}), 400
+    if new_limit > env_max:
+        return jsonify({
+            "status": "error",
+            "message": f"limit cannot exceed the environment maximum of {env_max}",
+        }), 400
+    try:
+        coll = app_config_collection()
+        if coll is not None:
+            coll.update_one(
+                {"_id": "video_config"},
+                {"$set": {"active_limit": new_limit, "updated_at": datetime.now(timezone.utc).isoformat()}},
+                upsert=True,
+            )
+        else:
+            # No Mongo (ephemeral fallback): reflect the value in-process so it
+            # still takes effect now; it resets on restart, exactly like the rest
+            # of the ephemeral fallback tier.
+            os.environ["_VIDEO_ACTIVE_LIMIT_OVERRIDE"] = str(new_limit)
+    except Exception as exc:
+        print(f"[VIDEO] active limit write failed: {exc}")
+    return jsonify({
+        "status": "success",
+        "active_limit": _video_active_limit(),
+        "env_max": env_max,
     })
 
 
