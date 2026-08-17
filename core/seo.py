@@ -42,7 +42,7 @@ from core.config import PROJECT_ROOT
 SITE_URL = (
     os.getenv("SITE_URL", "").strip().rstrip("/")
     or os.getenv("RENDER_EXTERNAL_URL", "").strip().rstrip("/")
-    or "https://valleymind-ai.onrender.com"
+    or "https://valleymind-ai-opms.onrender.com"
 )
 
 SITE_NAME = "ValleyMind AI"

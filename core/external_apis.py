@@ -22,6 +22,7 @@ _search_ctx = threading.local()
 
 def _reset_search_sources():
     _search_ctx.sources = []
+    _search_ctx.structured_results = []
 
 
 def _record_search_sources(items: list):
@@ -40,11 +41,31 @@ def _record_search_sources(items: list):
             domain = urlparse(url).netloc.replace("www.", "")
         except Exception:
             domain = ""
-        existing.append({"title": it.get("title", ""), "url": url, "domain": domain})
+        existing.append({
+            "title": it.get("title", ""),
+            "url": url,
+            "domain": domain,
+            "snippet": it.get("summary", "")[:400],
+            "published": it.get("published", ""),
+        })
+
+
+def _record_structured_results(results: list[dict]):
+    """Store structured search results alongside the basic source list."""
+    existing = getattr(_search_ctx, "structured_results", None)
+    if existing is None:
+        existing = []
+        _search_ctx.structured_results = existing
+    existing.extend(results)
 
 
 def get_last_search_sources() -> list:
     return list(getattr(_search_ctx, "sources", []) or [])
+
+
+def get_last_structured_results() -> list:
+    """Return structured results from the most recent search."""
+    return list(getattr(_search_ctx, "structured_results", []) or [])
 
 
 # "search X for Y" / "check X for Z" / "look on X for W" — directed site search.
@@ -638,6 +659,23 @@ def _search_tinyfish(query: str, site: str = "") -> str:
         for r in results[:5]
     ]
     _record_search_sources(items)
+    # Also store structured results for the Source Intelligence Layer
+    structured = []
+    for r in results[:5]:
+        url = r.get("url", "")
+        domain = ""
+        try:
+            domain = urlparse(url).netloc.replace("www.", "")
+        except Exception:
+            pass
+        structured.append({
+            "title": r.get("title", ""),
+            "url": url,
+            "domain": domain,
+            "snippet": r.get("snippet", ""),
+            "published": "",
+        })
+    _record_structured_results(structured)
     _log(f"TinyFish success: {len(items)} results")
     return _format_items("Live search results", items)
 

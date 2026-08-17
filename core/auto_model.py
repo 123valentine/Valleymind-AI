@@ -1,7 +1,7 @@
 from core.config import get_config
 
 
-FALLBACK_GROQ_MODEL = "llama-3.3-70b-versatile"
+FALLBACK_GROQ_MODEL = "openai/gpt-oss-20b"
 
 
 def get_latest_groq_model(api_key: str = "") -> str:

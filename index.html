@@ -3809,30 +3809,113 @@ function renderSourceChips(bubbleEl, sources) {
     label.textContent = "Sources";
     label.style.cssText = "font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:#64748b;width:100%;font-family:'Space Grotesk',sans-serif;";
     wrap.appendChild(label);
-    sources.slice(0, 6).forEach(function (s) {
+    sources.slice(0, 8).forEach(function (s) {
         if (!s || !s.url) return;
         var domain = s.domain || (function () { try { return new URL(s.url).hostname.replace("www.", ""); } catch (e) { return s.url; } })();
+        var displayName = s.name || domain.split(".")[0].charAt(0).toUpperCase() + domain.split(".")[0].slice(1);
         var chip = document.createElement("a");
         chip.href = s.url;
         chip.target = "_blank";
         chip.rel = "noopener noreferrer";
-        chip.title = s.title || domain;
+        chip.title = s.title || displayName;
         chip.style.cssText = "display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.08);color:#cbd5e1;font-size:11px;text-decoration:none;max-width:200px;transition:background 0.15s;";
         chip.onmouseenter = function () { chip.style.background = "rgba(0,212,255,0.12)"; };
         chip.onmouseleave = function () { chip.style.background = "rgba(255,255,255,0.05)"; };
         var fav = document.createElement("img");
-        fav.src = "https://www.google.com/s2/favicons?sz=32&domain=" + encodeURIComponent(domain);
+        fav.src = s.icon || ("https://www.google.com/s2/favicons?sz=32&domain=" + encodeURIComponent(domain));
         fav.width = 14; fav.height = 14;
         fav.style.cssText = "border-radius:3px;flex-shrink:0;";
-        fav.onerror = function () { fav.style.display = "none"; };
+        fav.onerror = function () {
+            fav.onerror = null;
+            fav.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='7' fill='none' stroke='%2364748b' stroke-width='1.5'/%3E%3Ctext x='8' y='11' text-anchor='middle' font-size='9' fill='%2364748b'%3E%E2%9C%93%3C/text%3E%3C/svg%3E";
+        };
         var txt = document.createElement("span");
-        txt.textContent = domain;
+        txt.textContent = displayName;
         txt.style.cssText = "overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
         chip.appendChild(fav);
         chip.appendChild(txt);
         wrap.appendChild(chip);
     });
     bub.appendChild(wrap);
+}
+
+function renderSourcePanel(bubbleEl, sourceMetadata, confidence) {
+    if (!bubbleEl || !Array.isArray(sourceMetadata) || !sourceMetadata.length) return;
+    var bub = bubbleEl.querySelector(".bubble") || bubbleEl;
+    if (bub.querySelector(".source-panel")) return;
+
+    var panel = document.createElement("div");
+    panel.className = "source-panel";
+    panel.style.cssText = "margin-top:12px;padding:10px 12px;border-radius:10px;background:rgba(15,23,42,0.6);border:1px solid rgba(255,255,255,0.06);font-family:'Space Grotesk',sans-serif;";
+
+    var header = document.createElement("div");
+    header.style.cssText = "display:flex;align-items:center;gap:6px;margin-bottom:8px;";
+    var hdrLabel = document.createElement("span");
+    hdrLabel.textContent = "Sources";
+    hdrLabel.style.cssText = "font-size:11px;text-transform:uppercase;letter-spacing:0.08em;color:#64748b;font-weight:600;";
+    header.appendChild(hdrLabel);
+
+    if (confidence) {
+        var confBadge = document.createElement("span");
+        var confColor = confidence === "high" ? "#22c55e" : confidence === "medium" ? "#eab308" : "#94a3b8";
+        confBadge.textContent = confidence.charAt(0).toUpperCase() + confidence.slice(1) + " confidence";
+        confBadge.style.cssText = "font-size:9px;padding:1px 6px;border-radius:99px;background:" + confColor + "20;color:" + confColor + ";border:1px solid " + confColor + "30;";
+        header.appendChild(confBadge);
+    }
+    panel.appendChild(header);
+
+    sourceMetadata.slice(0, 6).forEach(function (s) {
+        var domain = s.domain || (function () { try { return new URL(s.url).hostname.replace("www.", ""); } catch (e) { return s.url; } })();
+        var displayName = s.name || domain.split(".")[0].charAt(0).toUpperCase() + domain.split(".")[0].slice(1);
+
+        var row = document.createElement("a");
+        row.href = s.url;
+        row.target = "_blank";
+        row.rel = "noopener noreferrer";
+        row.style.cssText = "display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;text-decoration:none;color:#cbd5e1;transition:background 0.15s;margin-bottom:2px;";
+        row.onmouseenter = function () { row.style.background = "rgba(255,255,255,0.04)"; };
+        row.onmouseleave = function () { row.style.background = "transparent"; };
+
+        var fav = document.createElement("img");
+        fav.src = s.icon || ("https://www.google.com/s2/favicons?sz=32&domain=" + encodeURIComponent(domain));
+        fav.width = 16; fav.height = 16;
+        fav.style.cssText = "border-radius:3px;flex-shrink:0;";
+        fav.onerror = function () {
+            fav.onerror = null;
+            fav.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='7' fill='none' stroke='%2364748b' stroke-width='1.5'/%3E%3Ctext x='8' y='11' text-anchor='middle' font-size='9' fill='%2364748b'%3E%E2%9C%93%3C/text%3E%3C/svg%3E";
+        };
+
+        var info = document.createElement("div");
+        info.style.cssText = "flex:1;min-width:0;overflow:hidden;";
+        var nameEl = document.createElement("div");
+        nameEl.textContent = displayName;
+        nameEl.style.cssText = "font-size:12px;font-weight:500;color:#e2e8f0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;";
+        info.appendChild(nameEl);
+        if (s.title && s.title !== displayName) {
+            var titleEl = document.createElement("div");
+            titleEl.textContent = s.title;
+            titleEl.style.cssText = "font-size:10px;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:280px;";
+            info.appendChild(titleEl);
+        }
+        var domainEl = document.createElement("div");
+        domainEl.textContent = domain;
+        domainEl.style.cssText = "font-size:9px;color:#64748b;";
+        info.appendChild(domainEl);
+
+        row.appendChild(fav);
+        row.appendChild(info);
+
+        if (s.tier && s.tier <= 2) {
+            var tierBadge = document.createElement("span");
+            tierBadge.textContent = s.tier === 1 ? "Official" : "Verified";
+            tierBadge.style.cssText = "font-size:8px;padding:1px 5px;border-radius:99px;background:rgba(34,197,94,0.12);color:#22c55e;flex-shrink:0;";
+            row.appendChild(tierBadge);
+        }
+
+        panel.appendChild(row);
+    });
+
+    bub.appendChild(panel);
 }
 
 function addMessage(text, type = "ai", imageData, mediaUrl, videoUrl) {
@@ -8909,6 +8992,8 @@ window.send = async function () {
         var streamDone = false;
         var streamMeta = {};
         var streamSources = [];
+        var streamSourceMetadata = [];
+        var streamConfidence = "";
         var statusIndicator = null;
 
         while (true) {
@@ -8962,6 +9047,8 @@ window.send = async function () {
                                 statusBubble.textContent = "Preparing video generation...";
                             } else if (evt.intent === "video_progress") {
                                 statusBubble.textContent = (evt.status_message || "Generating video...");
+                            } else if (evt.intent === "searching_web") {
+                                statusBubble.textContent = "Researching…";
                             } else {
                                 statusBubble.textContent = "Searching the web...";
                             }
@@ -8978,6 +9065,34 @@ window.send = async function () {
                         }
                         document.getElementById("messages").scrollTop = document.getElementById("messages").scrollHeight;
                     }
+                    continue;
+                }
+
+                /* ---- RECOVERY STATUS — context-recovery indicator ---- */
+                if (evt.recovery_status) {
+                    var _recoveryLabels = {
+                        "searching": "Finding where we left off\u2026",
+                        "context_found": "Context restored from previous conversation",
+                        "disambiguation": "Multiple threads found\u2026"
+                    };
+                    var _recoveryText = _recoveryLabels[evt.recovery_status] || evt.recovery_status;
+                    if (statusIndicator && statusIndicator.dataset && statusIndicator.dataset.statusEl === "true") {
+                        var _rb = statusIndicator.querySelector(".bubble");
+                        if (_rb) _rb.textContent = _recoveryText;
+                    } else {
+                        removeThinkingIndicator(thinking);
+                        var _rd = document.createElement("div");
+                        _rd.className = "assistant-message";
+                        _rd.dataset.statusEl = "true";
+                        var _rb2 = document.createElement("div");
+                        _rb2.className = "bubble";
+                        _rb2.style.cssText = "color:#94a3b8;font-style:italic;";
+                        _rb2.textContent = _recoveryText;
+                        _rd.appendChild(_rb2);
+                        document.getElementById("messages").appendChild(_rd);
+                        statusIndicator = _rd;
+                    }
+                    document.getElementById("messages").scrollTop = document.getElementById("messages").scrollHeight;
                     continue;
                 }
 
@@ -9056,6 +9171,12 @@ window.send = async function () {
                     continue;
                 }
 
+                if (evt.source_metadata !== undefined && Array.isArray(evt.source_metadata) && evt.source_metadata.length) {
+                    streamSourceMetadata = evt.source_metadata;
+                    streamConfidence = evt.research_confidence || "";
+                    continue;
+                }
+
                 if (evt.token !== undefined) {
                     if (evt.token === "" || evt.token === " ") continue;
 
@@ -9115,6 +9236,8 @@ window.send = async function () {
 
         var sourcesForRender = (streamSources && streamSources.length) ? streamSources : (streamMeta.sources || []);
         if (bubbleEl && sourcesForRender.length) renderSourceChips(bubbleEl, sourcesForRender);
+
+        if (bubbleEl && streamSourceMetadata.length) renderSourcePanel(bubbleEl, streamSourceMetadata, streamConfidence);
 
         if (streamMeta.chat_id && !currentChatId) currentChatId = streamMeta.chat_id;
 

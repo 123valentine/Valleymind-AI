@@ -11,7 +11,7 @@ ValleyMind is **two repos, two deployments** that link to each other but share n
 | **Repo** | `github.com/123valentine/valley-mind-website` (branch `master`) | `github.com/123valentine/Valleymind-AI` (branch `main`) — **this repo** |
 | **Local folder** | `…/Desktop/valley mind website` (a second working dir on the dev machine) | `…/Desktop/Valleymind-AI` |
 | **Type** | Static site — plain HTML/CSS/JS, no backend, no build step | Flask app serving a single-file SPA + JSON/SSE API |
-| **Live URL** | https://valley-mind-website-o3l8.onrender.com | https://valleymind-ai.onrender.com |
+| **Live URL** | https://valley-mind-website-o3l8.onrender.com | https://valleymind-ai-opms.onrender.com (old `valleymind-ai.onrender.com` is dead) |
 | **Deploy** | Render (auto-deploys on push to `master`) | Render (`render.yaml`, `gunicorn app:app`) + a Hugging-Face Docker Space mirror (`ValentineEgbujie/valleymindai`, `Dockerfile` binds `0.0.0.0:7860`) |
 
 A custom domain `valleymind.ai` appears in the website's meta/canonical tags but is **not wired up yet** (aspirational).

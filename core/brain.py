@@ -15,10 +15,13 @@ from core.external_apis import (
     LIVE_DATA_UNAVAILABLE,
     parse_directed_search,
     get_last_search_sources,
+    get_last_structured_results,
     _reset_search_sources,
 )
+from core.source_intelligence import SourceIntelligence, EvidencePackage
 from core.memory import MemorySystem
 from core.memory_manager import MemoryManager
+from core.conversation_recovery import ConversationRecovery
 
 
 FALLBACK_RESPONSE = "I can't reach the reasoning model right now. Please try again shortly."
@@ -194,6 +197,18 @@ def _chat_prompt_for(profile) -> str:
 
 _GROQ_STARTUP_DIAGNOSTICS_DONE = False
 
+# ── Cross-conversation recovery singletons (one per user) ──────────
+_recovery_by_user: dict[str, ConversationRecovery] = {}
+_recovery_lock = threading.Lock()
+
+
+def _get_recovery(user_id: str) -> ConversationRecovery:
+    """Get or create the ConversationRecovery instance for a user."""
+    with _recovery_lock:
+        if user_id not in _recovery_by_user:
+            _recovery_by_user[user_id] = ConversationRecovery(user_id)
+        return _recovery_by_user[user_id]
+
 
 
 
@@ -282,7 +297,8 @@ def _call_groq(messages: list, model_name: str, timeout: int = 30, timeout_retri
     payload = {
         "model": model_name,
         "messages": messages,
-        "max_tokens": 1024,
+        "max_completion_tokens": 512,
+        "include_reasoning": False,
     }
 
     response = None
@@ -347,7 +363,8 @@ def _call_groq_stream(messages: list, model_name: str = "", timeout: int = 30):
     payload = {
         "model": resolved_model,
         "messages": messages,
-        "max_tokens": 1024,
+        "max_completion_tokens": 512,
+        "include_reasoning": False,
         "stream": True,
     }
 
@@ -1063,7 +1080,7 @@ class MarcusBrain:
             used += len(block)
         return "\n\n".join(blocks)
 
-    def _groq_messages(self, chat_id: str, user_message: str, image_data: str = "", live_context: str = "", expanded_query: str = "", mongo_history: list = None, global_memories: str = "", knowledge_data: str = "") -> list:
+    def _groq_messages(self, chat_id: str, user_message: str, image_data: str = "", live_context: str = "", expanded_query: str = "", mongo_history: list = None, global_memories: str = "", knowledge_data: str = "", recovered_context: str = "") -> list:
         try:
             self.memory.reload()
             long_term = self.memory.get_full_memory() or {}
@@ -1095,6 +1112,19 @@ class MarcusBrain:
         recent = history[-20:]
         if recent and recent[-1].get("role") == "user":
             recent = recent[:-1]
+
+        # ── Token-budget history truncation ──────────────────────────
+        # System prompt + evidence + recovery ≈ 3-5K tokens.  Groq free
+        # tier allows ≈ 8K input.  We cap history messages so that the
+        # total remains within budget.  With recovery context (which
+        # itself is capped at 800 tokens ≈ ~600 chars) we use a
+        # tighter budget; without it we allow a bit more history.
+        _MAX_HISTORY_WITH_RECOVERY = 8
+        _MAX_HISTORY_DEFAULT = 12
+        _max_msgs = _MAX_HISTORY_WITH_RECOVERY if recovered_context else _MAX_HISTORY_DEFAULT
+        if len(recent) > _max_msgs:
+            recent = recent[-_max_msgs:]
+
         session_lines = []
         for msg in recent[-10:]:
             role = msg.get("role", "user")
@@ -1151,6 +1181,10 @@ class MarcusBrain:
                 "If they ask about something covered here, prefer it over general knowledge."
             )
             sections.append(doc_context)
+            sections.append("")
+
+        if recovered_context:
+            sections.append(recovered_context)
             sections.append("")
 
         sections.append("=== Core Persona ===")
@@ -1268,9 +1302,9 @@ class MarcusBrain:
             messages.append({"role": "user", "content": user_message})
         return messages
 
-    def _try_llm_first(self, chat_id: str, user_message: str, image_data: str = "", live_context: str = "", mongo_history: list = None, global_memories: str = "", knowledge_data: str = "") -> dict:
+    def _try_llm_first(self, chat_id: str, user_message: str, image_data: str = "", live_context: str = "", mongo_history: list = None, global_memories: str = "", knowledge_data: str = "", recovered_context: str = "") -> dict:
         try:
-            response, meta = _call_llm_cluster(self._groq_messages(chat_id, user_message, image_data, live_context=live_context, mongo_history=mongo_history, global_memories=global_memories, knowledge_data=knowledge_data))
+            response, meta = _call_llm_cluster(self._groq_messages(chat_id, user_message, image_data, live_context=live_context, mongo_history=mongo_history, global_memories=global_memories, knowledge_data=knowledge_data, recovered_context=recovered_context))
             envelope = _parse_envelope(response)
             reply = str(envelope.get("reply") or "").strip()
             if not reply:
@@ -1353,8 +1387,8 @@ class MarcusBrain:
             "meta": meta,
         }
 
-    def _think(self, chat_id: str, user_message: str, image_data: str = "", live_context: str = "", mongo_history: list = None, global_memories: str = "", knowledge_data: str = "") -> dict:
-        llm_envelope = self._try_llm_first(chat_id, user_message, image_data, live_context=live_context, mongo_history=mongo_history, global_memories=global_memories, knowledge_data=knowledge_data)
+    def _think(self, chat_id: str, user_message: str, image_data: str = "", live_context: str = "", mongo_history: list = None, global_memories: str = "", knowledge_data: str = "", recovered_context: str = "") -> dict:
+        llm_envelope = self._try_llm_first(chat_id, user_message, image_data, live_context=live_context, mongo_history=mongo_history, global_memories=global_memories, knowledge_data=knowledge_data, recovered_context=recovered_context)
         if llm_envelope:
             return llm_envelope
         return self._envelope(
@@ -1428,6 +1462,7 @@ class MarcusBrain:
 
             live_ctx = ""
             self._pending_sources = []
+            self._pending_source_metadata = []
             directed_site, directed_query = parse_directed_search(message)
             intent = classify_live_request(message, recent_context=self._recent_context_for_routing(cid))
             if directed_site:
@@ -1449,6 +1484,21 @@ class MarcusBrain:
                     if live_ctx:
                         self._pending_sources = get_last_search_sources()
                         print(f"[SEARCH] Live context loaded - {len(live_ctx)} chars, {len(self._pending_sources)} sources")
+                        # Enrich with Source Intelligence Layer
+                        try:
+                            si = SourceIntelligence()
+                            evidence_package = si.build_evidence_package(
+                                live_ctx, self._pending_sources, message,
+                                directed_site=directed_site or "",
+                            )
+                            if evidence_package.evidence:
+                                enriched_ctx = evidence_package.to_context_string()
+                                if enriched_ctx:
+                                    live_ctx = enriched_ctx
+                                    self._pending_source_metadata = evidence_package.to_frontend_metadata()
+                                    print(f"[SOURCE INTEL] Enriched non-stream context: {len(live_ctx)} chars")
+                        except Exception as exc:
+                            print(f"[SOURCE INTEL] Non-stream enrichment failed (non-fatal): {exc}")
                     else:
                         print("[SEARCH] No live context found - proceeding with cached knowledge only")
                 except Exception as exc:
@@ -1482,7 +1532,31 @@ class MarcusBrain:
                 except Exception as exc:
                     print(f"[KNOWLEDGE] Knowledge recall failed: {exc}")
 
-            envelope = self._think(cid, message, image_data, live_context=live_ctx, mongo_history=mongo_history, global_memories=global_memories, knowledge_data=knowledge_data)
+            # ── Cross-conversation context recovery ───────────────
+            recovered_context = ""
+            try:
+                recovery = _get_recovery(self.memory.user_id)
+                current_msgs = self.memory.get_chat(cid)
+                result = recovery.resolve(
+                    message,
+                    current_chat_id=cid,
+                    current_messages=current_msgs,
+                    token_budget=800,
+                )
+                if result and result.get("needs_recovery"):
+                    recovered_context = result.get("recovered_context", "")
+                    candidates = result.get("candidates", [])
+                    if recovered_context:
+                        print(f"[CONV RECOVERY] Injected {len(recovered_context)} chars of recovered context from {len(candidates)} candidate(s)")
+                    if result.get("ambiguous"):
+                        clarification = result.get("clarification", "")
+                        if clarification:
+                            self.last_response_meta = self._metadata(False, True, "local")
+                            return clarification
+            except Exception as exc:
+                print(f"[CONV RECOVERY] Recovery failed (non-fatal): {exc}")
+
+            envelope = self._think(cid, message, image_data, live_context=live_ctx, mongo_history=mongo_history, global_memories=global_memories, knowledge_data=knowledge_data, recovered_context=recovered_context)
             self.last_response_meta = envelope.get("meta") or self._metadata(False, True, "local")
             self.last_response_meta["sources"] = list(getattr(self, "_pending_sources", []) or [])
             raw_reply = str(envelope.get("reply") or "").strip()
@@ -1553,6 +1627,17 @@ class MarcusBrain:
                 except Exception as exc:
                     print(f"[ERROR] Auto-title failed: {exc}")
 
+            # ── Early recovery detection for UI status ──────────────
+            _recovery_detected = False
+            try:
+                from core.conversation_recovery import is_continuation_request as _is_contin
+                _det = _is_contin(message, self.memory.get_chat(cid) if msg_count_before > 0 else None)
+                if _det.get("is_continuation"):
+                    _recovery_detected = True
+                    yield json.dumps({"recovery_status": "searching"})
+            except Exception:
+                pass
+
             live_ctx = ""
             self._pending_sources = []
             directed_site, directed_query = parse_directed_search(message)
@@ -1601,14 +1686,34 @@ class MarcusBrain:
                 live_ctx = search_result[0]
                 self._pending_sources = search_sources[0] or []
 
+                # ── Source Intelligence Layer: build evidence package ────
+                evidence_package = EvidencePackage(is_research_request=False)
                 if live_ctx:
                     print(f"[STREAM SEARCH] Live context loaded - {len(live_ctx)} chars, {len(self._pending_sources)} sources")
-                    if self._pending_sources:
-                        # Yield a dict (not a JSON string) so the app.py SSE
-                        # wrapper emits it as a top-level {"sources": …} event
-                        # instead of nesting it inside {"token": …}.
-                        yield {"sources": self._pending_sources}
-                else:
+                    try:
+                        si = SourceIntelligence()
+                        structured = get_last_structured_results()
+                        evidence_package = si.build_evidence_package(
+                            live_ctx, self._pending_sources, message,
+                            directed_site=directed_site or "",
+                        )
+                        if evidence_package.evidence:
+                            # Use the enriched evidence context instead of raw search text
+                            enriched_ctx = evidence_package.to_context_string()
+                            if enriched_ctx:
+                                live_ctx = enriched_ctx
+                                print(f"[SOURCE INTEL] Enriched context: {len(live_ctx)} chars, "
+                                      f"{len(evidence_package.evidence)} evidence items, "
+                                      f"confidence={evidence_package.confidence}")
+                    except Exception as exc:
+                        print(f"[SOURCE INTEL] Evidence enrichment failed (non-fatal): {exc}")
+
+                if self._pending_sources:
+                    yield {"sources": self._pending_sources}
+                if evidence_package.is_research_request and evidence_package.evidence:
+                    yield {"source_metadata": evidence_package.to_frontend_metadata(),
+                           "research_confidence": evidence_package.confidence}
+                elif not live_ctx:
                     print("[STREAM SEARCH] No live context found - proceeding with cached knowledge only")
 
             # ── Pinecone cross-session recall and knowledge fetch ─────
@@ -1639,7 +1744,40 @@ class MarcusBrain:
                 except Exception as exc:
                     print(f"[STREAM KNOWLEDGE] Knowledge recall failed: {exc}")
 
-            msgs = self._groq_messages(cid, message, image_data, live_context=live_ctx, mongo_history=mongo_history, global_memories=global_memories, knowledge_data=knowledge_data)
+            # ── Cross-conversation context recovery ───────────────
+            recovered_context = ""
+            try:
+                recovery = _get_recovery(self.memory.user_id)
+                current_msgs = self.memory.get_chat(cid)
+                result = recovery.resolve(
+                    message,
+                    current_chat_id=cid,
+                    current_messages=current_msgs,
+                    token_budget=800,
+                )
+                if result and result.get("needs_recovery"):
+                    recovered_context = result.get("recovered_context", "")
+                    candidates = result.get("candidates", [])
+                    if recovered_context:
+                        print(f"[CONV RECOVERY] Injected {len(recovered_context)} chars of recovered context from {len(candidates)} candidate(s)")
+                        if not _recovery_detected:
+                            yield json.dumps({"recovery_status": "context_found"})
+                    if result.get("ambiguous"):
+                        clarification = result.get("clarification", "")
+                        if clarification:
+                            yield json.dumps({"recovery_status": "disambiguation"})
+                            yield json.dumps({"token": ""})
+                            full_reply = clarification
+                            yield clarification
+                            try:
+                                self.memory.add_message(cid, "assistant", full_reply, timestamp)
+                            except Exception:
+                                pass
+                            return
+            except Exception as exc:
+                print(f"[CONV RECOVERY] Recovery failed (non-fatal): {exc}")
+
+            msgs = self._groq_messages(cid, message, image_data, live_context=live_ctx, mongo_history=mongo_history, global_memories=global_memories, knowledge_data=knowledge_data, recovered_context=recovered_context)
             full_reply = ""
 
             try:

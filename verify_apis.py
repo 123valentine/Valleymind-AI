@@ -97,7 +97,7 @@ print("\n--- 1. LLM PROVIDERS ---\n")
 # Groq (Primary)
 print("[Groq] ...")
 groq_key = env("GROQ_API_KEY")
-groq_model = env("GROQ_MODEL", "llama-3.3-70b-versatile")
+groq_model = env("GROQ_MODEL", "openai/gpt-oss-120b")
 groq_base = env("GROQ_BASE_URL", "https://api.groq.com").rstrip("/")
 if groq_base.endswith("/openai/v1"):
     groq_base = groq_base[:-len("/openai/v1")]
