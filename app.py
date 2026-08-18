@@ -282,10 +282,34 @@ def _current_user_id() -> str:
     return str(_current_auth().get("user_id") or "").strip()
 
 
-def _require_login():
+def _require_login_only():
+    """Require an authenticated session but do NOT check email verification.
+    Use this only for auth-related endpoints (verify, resend, OTP, etc.)
+    where the user must be able to interact before their email is verified."""
     user_id = _current_user_id()
     if not user_id:
         return "", (jsonify({"status": "error", "message": "Login required"}), 401)
+    return user_id, None
+
+
+def _require_login():
+    """Require an authenticated session AND a verified email.
+    Unverified users receive a 403 with needs_verification=true so the
+    frontend can route them to the verification screen."""
+    user_id = _current_user_id()
+    if not user_id:
+        return "", (jsonify({"status": "error", "message": "Login required"}), 401)
+    auth = _current_auth()
+    email = str(auth.get("email") or "").strip().lower()
+    if email:
+        user_rec = _load_users().get(email) or {}
+        if not user_rec.get("email_verified"):
+            return "", (jsonify({
+                "status": "error",
+                "message": "Email verification required",
+                "needs_verification": True,
+                "email": email,
+            }), 403)
     return user_id, None
 
 
@@ -1012,6 +1036,7 @@ def login():
 
     user_id = _safe_user_id(email)
     is_creator = _is_creator(email)
+    email_verified = False
     with _users_lock:
         users = _load_users()
         user = users.get(email)
@@ -1020,6 +1045,7 @@ def login():
             stored_hash = str(user.get("password_hash") or "")
             if not check_password_hash(stored_hash, password):
                 return jsonify({"status": "error", "message": "Invalid email or password"}), 401
+            email_verified = bool(user.get("email_verified"))
             if is_creator:
                 user["identity_name"] = CREATOR_NAME
                 user["title"] = CREATOR_TITLE
@@ -1062,6 +1088,8 @@ def login():
         "character": "marcus",
         "session_token": token,
         "is_creator": is_creator,
+        "email_verified": email_verified,
+        "needs_verification": not email_verified,
     })
 
 
@@ -1295,11 +1323,14 @@ def register():
     # banner and can resend. A generic result — we don't surface provider errors.
     try:
         from core import email_service
+        print(f"[EMAIL VERIFY] provider configured: {email_service.available()}")
+        print(f"[EMAIL VERIFY] attempting delivery to {email.split('@')[0]}@***")
         _vlink = f"{APP_BASE_URL}/verify-email?token={_verify_token}"
-        email_service.send_verification_email(
+        _sent = email_service.send_verification_email(
             email, _verify_code, _vlink, minutes=int(VERIFY_TTL.total_seconds() // 60))
-    except Exception:
-        pass
+        print(f"[EMAIL VERIFY] provider response: {'success' if _sent else 'failure'}")
+    except Exception as exc:
+        print(f"[EMAIL VERIFY] send failed: {type(exc).__name__}")
 
     return jsonify({
         "status": "success",
@@ -1367,10 +1398,12 @@ def forgot_password():
         link = f"{APP_BASE_URL}/reset-password?token={raw_token}"
         try:
             from core import email_service
-            email_service.send_password_reset_email(
+            print(f"[EMAIL VERIFY] password reset: provider configured: {email_service.available()}")
+            _sent = email_service.send_password_reset_email(
                 email, link, minutes=int(RESET_TOKEN_TTL.total_seconds() // 60))
-        except Exception:
-            pass  # never surface provider errors; the response is generic either way
+            print(f"[EMAIL VERIFY] password reset: provider response: {'success' if _sent else 'failure'}")
+        except Exception as exc:
+            print(f"[EMAIL VERIFY] password reset send failed: {type(exc).__name__}")
 
     return generic
 
@@ -1427,15 +1460,15 @@ def reset_password():
             match_email, "Your password was reset",
             "Your ValleyMind AI password was just reset using a password-reset link. "
             "If this wasn't you, secure your account immediately.")
-    except Exception:
-        pass
+    except Exception as exc:
+        print(f"[EMAIL VERIFY] security email (password reset) failed: {type(exc).__name__}")
 
     return jsonify({"status": "success", "message": "Your password has been reset. You can now sign in."})
 
 
 @app.route("/auth/change-password", methods=["POST"])
 def change_password():
-    user_id, error = _require_login()
+    user_id, error = _require_login_only()
     if error:
         return error
     data = request.get_json(silent=True) or {}
@@ -1467,8 +1500,8 @@ def change_password():
             email, "Your password was changed",
             "Your ValleyMind AI password was just changed from your account settings. "
             "If this wasn't you, reset your password and contact support.")
-    except Exception:
-        pass
+    except Exception as exc:
+        print(f"[EMAIL VERIFY] security email (password change) failed: {type(exc).__name__}")
 
     return jsonify({"status": "success", "message": "Password changed successfully."})
 
@@ -1515,7 +1548,7 @@ def verify_email_link():
 @app.route("/api/auth/verify-email", methods=["POST"])
 def verify_email_code():
     """Verify via the 6-digit code entered in the app by the signed-in user."""
-    user_id, error = _require_login()
+    user_id, error = _require_login_only()
     if error:
         return error
     from core import auth_codes
@@ -1545,7 +1578,7 @@ def verify_email_code():
 
 @app.route("/api/auth/resend-verification", methods=["POST"])
 def resend_verification():
-    user_id, error = _require_login()
+    user_id, error = _require_login_only()
     if error:
         return error
     if _auth_rate_limited("resend-verification"):
@@ -1566,7 +1599,11 @@ def resend_verification():
         users[email] = user
         _save_users(users)
     link = f"{APP_BASE_URL}/verify-email?token={tok}"
-    if not email_service.send_verification_email(email, code, link, minutes=int(VERIFY_TTL.total_seconds() // 60)):
+    print(f"[EMAIL VERIFY] resend: provider configured: {email_service.available()}")
+    print(f"[EMAIL VERIFY] resend: attempting delivery to {email.split('@')[0]}@***")
+    _sent = email_service.send_verification_email(email, code, link, minutes=int(VERIFY_TTL.total_seconds() // 60))
+    print(f"[EMAIL VERIFY] resend: provider response: {'success' if _sent else 'failure'}")
+    if not _sent:
         return jsonify({"status": "error", "message": _EMAIL_UNAVAILABLE}), 503
     return jsonify({"status": "success", "message": "Verification email sent — check your inbox."})
 
@@ -1574,7 +1611,7 @@ def resend_verification():
 @app.route("/api/auth/otp/request", methods=["POST"])
 def otp_request():
     """Issue a reusable one-time code for a given purpose (signed-in user)."""
-    user_id, error = _require_login()
+    user_id, error = _require_login_only()
     if error:
         return error
     if _auth_rate_limited("otp-request"):
@@ -1594,14 +1631,17 @@ def otp_request():
         code, _ = auth_codes.set_challenge(user, "otp", ttl_seconds=int(OTP_TTL.total_seconds()), purpose=purpose)
         users[email] = user
         _save_users(users)
-    if not email_service.send_otp_email(email, code, purpose=purpose, minutes=int(OTP_TTL.total_seconds() // 60)):
+    print(f"[EMAIL VERIFY] OTP request: provider configured: {email_service.available()}")
+    _sent = email_service.send_otp_email(email, code, purpose=purpose, minutes=int(OTP_TTL.total_seconds() // 60))
+    print(f"[EMAIL VERIFY] OTP request: provider response: {'success' if _sent else 'failure'}")
+    if not _sent:
         return jsonify({"status": "error", "message": _EMAIL_UNAVAILABLE}), 503
     return jsonify({"status": "success", "message": "A one-time code has been sent to your email."})
 
 
 @app.route("/api/auth/otp/verify", methods=["POST"])
 def otp_verify():
-    user_id, error = _require_login()
+    user_id, error = _require_login_only()
     if error:
         return error
     if _auth_rate_limited("otp-verify"):
@@ -5288,6 +5328,138 @@ try:
     _sj_boot.start_watchdog()
 except Exception as _exc:  # never let a watchdog hiccup stop the app from serving
     print(f"[BOOT] could not start studio assembly watchdog: {_exc}")
+
+
+# ── Startup SMTP diagnostic (runs once per process) ─────────────────────────
+# Reports whether the transactional email pipeline is configured and reachable.
+# Never logs secrets — only presence/absence flags and exception types.
+def _smtp_startup_check():
+    try:
+        from core import email_service
+        c = email_service._cfg()
+        print(f"[MAIL DEBUG] startup check: available={email_service.available()}")
+        print(f"[MAIL DEBUG] startup check: host={'set' if c['host'] else 'missing'} port={'set' if c['port'] else 'missing'}")
+        print(f"[MAIL DEBUG] startup check: user={'set' if c['user'] else 'missing'} password={'set' if c['password'] else 'missing'} sender={'set' if c['sender'] else 'missing'}")
+        if not email_service.available():
+            print("[MAIL DEBUG] startup check: SMTP NOT configured — emails will not be sent")
+            return
+        import smtplib, ssl
+        print(f"[MAIL DEBUG] startup check: connecting to {c['host']}:{c['port']}")
+        srv = smtplib.SMTP(c["host"], c["port"], timeout=15)
+        print(f"[MAIL DEBUG] startup check: connected, STARTTLS")
+        srv.starttls(context=ssl.create_default_context())
+        print(f"[MAIL DEBUG] startup check: STARTTLS OK, authenticating")
+        srv.login(c["user"], c["password"])
+        print(f"[MAIL DEBUG] startup check: authentication OK — SMTP pipeline is healthy")
+        srv.quit()
+    except smtplib.SMTPAuthenticationError as exc:
+        print(f"[MAIL DEBUG] startup check: SMTP AUTH FAILED code={exc.smtp_code} — check SMTP_USER / SMTP_PASS")
+    except Exception as exc:
+        print(f"[MAIL DEBUG] startup check: SMTP unreachable: {type(exc).__name__}: {exc}")
+
+_smtp_startup_check()
+del _smtp_startup_check
+
+
+# ── SMTP diagnostic endpoint (developer-only, protected by internal key) ─────
+# Usage: GET /internal/smtp-test?key=<SMTP_DIAG_KEY>&to=email@example.com
+# Tests SMTP connection, STARTTLS, auth, and optionally sends a test message.
+# Returns JSON with step-by-step results. Never exposes passwords or tokens.
+_SMTP_DIAG_KEY = os.getenv("SMTP_DIAG_KEY", "").strip()
+
+
+@app.route("/internal/smtp-test", methods=["GET"])
+def smtp_test_endpoint():
+    if not _SMTP_DIAG_KEY or request.args.get("key") != _SMTP_DIAG_KEY:
+        return jsonify({"status": "error", "message": "Not found"}), 404
+
+    from core import email_service
+    c = email_service._cfg()
+    results = []
+
+    def add(stage, status, detail=""):
+        results.append({"stage": stage, "status": status, "detail": detail})
+
+    add("config_available", "PASS" if email_service.available() else "FAIL")
+    add("config_host", "PASS" if c["host"] else "FAIL", "set" if c["host"] else "missing")
+    add("config_port", "PASS" if c["port"] else "FAIL", str(c["port"]) if c["port"] else "missing")
+    add("config_user", "PASS" if c["user"] else "FAIL", "set" if c["user"] else "missing")
+    add("config_password", "PASS" if c["password"] else "FAIL", "set" if c["password"] else "missing")
+    add("config_sender", "PASS" if c["sender"] else "FAIL", "set" if c["sender"] else "missing")
+
+    if not email_service.available():
+        return jsonify({"status": "error", "message": "SMTP not configured", "results": results}), 200
+
+    # Connection
+    import smtplib as _smtplib
+    import ssl as _ssl
+    try:
+        server = _smtplib.SMTP(c["host"], c["port"], timeout=30)
+        add("connection", "PASS")
+    except Exception as exc:
+        add("connection", "FAIL", f"{type(exc).__name__}: {exc}")
+        return jsonify({"status": "error", "message": "SMTP connection failed", "results": results}), 200
+
+    # STARTTLS
+    try:
+        server.starttls(context=_ssl.create_default_context())
+        add("STARTTLS", "PASS")
+    except Exception as exc:
+        add("STARTTLS", "FAIL", f"{type(exc).__name__}: {exc}")
+        try:
+            server.quit()
+        except Exception:
+            pass
+        return jsonify({"status": "error", "message": "STARTTLS failed", "results": results}), 200
+
+    # Auth
+    try:
+        server.login(c["user"], c["password"])
+        add("authentication", "PASS")
+    except _smtplib.SMTPAuthenticationError as exc:
+        add("authentication", "FAIL", f"code={exc.smtp_code}")
+        try:
+            server.quit()
+        except Exception:
+            pass
+        return jsonify({"status": "error", "message": "SMTP authentication failed", "results": results}), 200
+    except Exception as exc:
+        add("authentication", "FAIL", f"{type(exc).__name__}: {exc}")
+        try:
+            server.quit()
+        except Exception:
+            pass
+        return jsonify({"status": "error", "message": "SMTP auth failed", "results": results}), 200
+
+    # Optional send
+    to_addr = str(request.args.get("to") or "").strip()
+    if to_addr:
+        from email.mime.multipart import MIMEMultipart as _MIMEMultipart
+        from email.mime.text import MIMEText as _MIMEText
+        from email.utils import formataddr as _formataddr
+        msg = _MIMEMultipart("alternative")
+        msg["Subject"] = "ValleyMind-AI SMTP Test"
+        msg["From"] = _formataddr(("ValleyMind AI", c["sender"]))
+        msg["To"] = to_addr
+        msg.attach(_MIMEText("SMTP delivery test from ValleyMind-AI.", "plain", "utf-8"))
+        msg.attach(_MIMEText("<p>SMTP delivery test from ValleyMind-AI.</p>", "html", "utf-8"))
+        try:
+            server.sendmail(c["sender"], [to_addr], msg.as_string())
+            add("send", "PASS", f"message accepted for {to_addr.split('@')[0]}@***")
+        except _smtplib.SMTPRecipientsRefused as exc:
+            add("send", "FAIL", f"recipient refused: {list(exc.recipients.keys())}")
+        except Exception as exc:
+            add("send", "FAIL", f"{type(exc).__name__}: {exc}")
+    else:
+        add("send", "SKIP", "no recipient — add &to=email to test delivery")
+
+    try:
+        server.quit()
+    except Exception:
+        pass
+
+    ok = all(r["status"] in ("PASS", "SKIP") for r in results)
+    return jsonify({"status": "success" if ok else "error", "results": results}), 200
 
 
 if __name__ == "__main__":

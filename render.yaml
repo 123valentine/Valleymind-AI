@@ -172,7 +172,23 @@ services:
       - key: R2_BUCKET
         value: valleymind-media
 
+      # ── Transactional email (SMTP — verification, password-reset, OTP) ──
+      - key: SMTP_HOST
+        value: smtp.gmail.com
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_USER                    # Gmail address used as SMTP login
+        sync: false
+      - key: SMTP_PASS                    # Gmail app password (NOT account password)
+        sync: false
+      - key: MAIL_FROM                    # Sender address (defaults to SMTP_USER if empty)
+        sync: false
+      - key: SMTP_DIAG_KEY                # Dev-only key for /internal/smtp-test
+        sync: false
+
       # ── Auth ──────────────────────────────────────────────────────
+      - key: APP_BASE_URL                 # Canonical URL for email links / magic links
+        value: https://valleymind-ai-opms.onrender.com
       - key: GOOGLE_CLIENT_ID              # Google Sign-In
         sync: false
 

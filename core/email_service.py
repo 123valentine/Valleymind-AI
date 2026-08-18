@@ -52,7 +52,10 @@ def _send(to: str, subject: str, text_body: str, html_body: str) -> bool:
     """Low-level multipart send. Never raises; never logs secrets/codes/bodies."""
     c = _cfg()
     if not (c["user"] and c["password"] and c["sender"] and to):
-        print("[MAIL] SMTP not configured; skipping send")
+        missing = [k for k in ("user", "password", "sender") if not c[k]]
+        if not to:
+            missing.append("to")
+        print(f"[MAIL DEBUG] not configured, missing: {missing}")
         return False
 
     msg = MIMEMultipart("alternative")
@@ -64,17 +67,84 @@ def _send(to: str, subject: str, text_body: str, html_body: str) -> bool:
     msg.attach(MIMEText(text_body, "plain", "utf-8"))
     msg.attach(MIMEText(html_body, "html", "utf-8"))
 
+    host = c["host"]
+    port = c["port"]
+    print(f"[MAIL DEBUG] connecting to {host}:{port}")
     try:
-        with smtplib.SMTP(c["host"], c["port"], timeout=20) as server:
-            server.starttls(context=ssl.create_default_context())
-            server.login(c["user"], c["password"])
-            server.sendmail(c["sender"], [to], msg.as_string())
-        return True
+        server = smtplib.SMTP(host, port, timeout=30)
     except Exception as exc:
-        # Log the failure CLASS and recipient only — never the credentials, body,
-        # code, token or the raw provider message.
-        print(f"[MAIL] send to {to} failed: {type(exc).__name__}")
+        print(f"[MAIL DEBUG] connection failed: {type(exc).__name__}: {exc}")
         return False
+
+    try:
+        print(f"[MAIL DEBUG] connection established, starting STARTTLS")
+        server.starttls(context=ssl.create_default_context())
+        print(f"[MAIL DEBUG] STARTTLS completed")
+    except Exception as exc:
+        print(f"[MAIL DEBUG] STARTTLS failed: {type(exc).__name__}: {exc}")
+        try:
+            server.quit()
+        except Exception:
+            pass
+        return False
+
+    try:
+        print(f"[MAIL DEBUG] authenticating")
+        server.login(c["user"], c["password"])
+        print(f"[MAIL DEBUG] authentication completed")
+    except smtplib.SMTPAuthenticationError as exc:
+        print(f"[MAIL DEBUG] authentication failed: SMTPAuthenticationError code={exc.smtp_code} error={exc.smtp_error}")
+        try:
+            server.quit()
+        except Exception:
+            pass
+        return False
+    except Exception as exc:
+        print(f"[MAIL DEBUG] authentication failed: {type(exc).__name__}: {exc}")
+        try:
+            server.quit()
+        except Exception:
+            pass
+        return False
+
+    try:
+        print(f"[MAIL DEBUG] sending message")
+        server.sendmail(c["sender"], [to], msg.as_string())
+        print(f"[MAIL DEBUG] message submitted successfully")
+        return True
+    except smtplib.SMTPRecipientsRefused as exc:
+        print(f"[MAIL DEBUG] recipient refused: {exc.recipients}")
+        try:
+            server.quit()
+        except Exception:
+            pass
+        return False
+    except smtplib.SMTPSenderRefused as exc:
+        print(f"[MAIL DEBUG] sender refused: code={exc.smtp_code}")
+        try:
+            server.quit()
+        except Exception:
+            pass
+        return False
+    except smtplib.SMTPDataError as exc:
+        print(f"[MAIL DEBUG] data error: code={exc.smtp_code} error={exc.smtp_error}")
+        try:
+            server.quit()
+        except Exception:
+            pass
+        return False
+    except Exception as exc:
+        print(f"[MAIL DEBUG] send failed: {type(exc).__name__}: {exc}")
+        try:
+            server.quit()
+        except Exception:
+            pass
+        return False
+    finally:
+        try:
+            server.quit()
+        except Exception:
+            pass
 
 
 # ── Branded template ────────────────────────────────────────────────────────

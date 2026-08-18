@@ -1850,11 +1850,11 @@
 </div>
 
 <!-- VERIFY EMAIL MODAL (6-digit code entered by the signed-in user) -->
-<div id="verifyOverlay" onclick="closeVerifyModal()" style="position:fixed;inset:0;z-index:200;background:rgba(0,0,0,0.5);backdrop-filter:blur(4px);opacity:0;visibility:hidden;pointer-events:none;transition:opacity 0.2s ease,visibility 0.2s ease;"></div>
+<div id="verifyOverlay" style="position:fixed;inset:0;z-index:200;background:rgba(0,0,0,0.5);backdrop-filter:blur(4px);opacity:0;visibility:hidden;pointer-events:none;transition:opacity 0.2s ease,visibility 0.2s ease;"></div>
 <div id="verifyModal" role="dialog" aria-modal="true" style="position:fixed;left:50%;top:50%;transform:translate(-50%,-46%) scale(0.98);z-index:210;width:min(400px,calc(100vw - 32px));background:rgba(14,20,23,0.98);border:1px solid rgba(0,212,255,0.24);border-radius:16px;padding:24px;box-shadow:0 20px 60px rgba(0,0,0,0.5);opacity:0;visibility:hidden;pointer-events:none;transition:opacity 0.2s ease,transform 0.2s ease,visibility 0.2s ease;">
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
     <h2 style="color:#00d4ff;font-size:14px;font-weight:800;text-transform:uppercase;letter-spacing:0.15em;font-family:'Space Grotesk',sans-serif;margin:0;">Verify Your Email</h2>
-    <button onclick="closeVerifyModal()" style="background:transparent;border:none;color:#94a3b8;cursor:pointer;padding:4px;border-radius:8px;display:flex;">
+    <button id="verifyModalCloseBtn" onclick="closeVerifyModal()" style="background:transparent;border:none;color:#94a3b8;cursor:pointer;padding:4px;border-radius:8px;display:none;">
       <span class="material-icons" style="font-size:20px;">close</span>
     </button>
   </div>
@@ -3086,10 +3086,20 @@ async function apiFetch(path, options = {}) {
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), options.timeoutMs || 30000);
     try {
-        return await fetch(url, {
+        var resp = await fetch(url, {
             ...options,
             signal: controller.signal
         });
+        if (resp.status === 403 && !options._noVerifyGate) {
+            try {
+                var clone = resp.clone();
+                var body = await clone.json();
+                if (body && body.needs_verification) {
+                    openVerifyModal(body.email || _vmEmail || "", true);
+                }
+            } catch (_) {}
+        }
+        return resp;
     } catch (err) {
         console.error("[ValleyMind network]", {
             url,
@@ -8315,9 +8325,19 @@ async function checkSession() {
             }
 
             // Email/password accounts start unverified until the emailed code or
-            // magic link is used. Show the verify banner (dismissible) when the
-            // session reports an unverified account.
-            showVerifyBanner(data.email_verified === false);
+            // magic link is used. Unverified users are BLOCKED from the app by a
+            // non-dismissable verify modal overlay.
+            if (data.email_verified === false) {
+                hideVerifyBanner();
+                if (splash) {
+                    setTimeout(function () {
+                        splash.style.opacity = "0";
+                        setTimeout(function () { splash.style.display = "none"; }, 500);
+                    }, 2300);
+                }
+                setTimeout(function () { openVerifyModal(data.email || _vmEmail || "", true); }, 2500);
+                return true;
+            }
 
             if (splash) {
                 // Brief show: matches the 2s logo intro, then fades out
@@ -8461,8 +8481,10 @@ document.addEventListener("DOMContentLoaded", function () {
 // ── Email verification (6-digit code entered by the signed-in user) ──────────
 var _vmVerifyEmail = "";
 var _vmEmail = "";
+var _vmVerifyLocked = false;
 
-function openVerifyModal(email) {
+function openVerifyModal(email, locked) {
+    _vmVerifyLocked = !!locked;
     _vmVerifyEmail = email || _vmEmail || "";
     var addr = document.getElementById("verifyModalEmailAddr");
     if (addr) addr.textContent = _vmVerifyEmail || "your email";
@@ -8472,9 +8494,17 @@ function openVerifyModal(email) {
     if (err) err.textContent = "";
     var ok = document.getElementById("verifySuccess");
     if (ok) ok.style.display = "none";
-    document.getElementById("verifyOverlay").style.opacity = "1";
-    document.getElementById("verifyOverlay").style.visibility = "visible";
-    document.getElementById("verifyOverlay").style.pointerEvents = "auto";
+    var closeBtn = document.getElementById("verifyModalCloseBtn");
+    if (closeBtn) closeBtn.style.display = _vmVerifyLocked ? "none" : "flex";
+    var overlay = document.getElementById("verifyOverlay");
+    if (_vmVerifyLocked) {
+        overlay.onclick = null;
+    } else {
+        overlay.onclick = function () { closeVerifyModal(); };
+    }
+    overlay.style.opacity = "1";
+    overlay.style.visibility = "visible";
+    overlay.style.pointerEvents = "auto";
     var modal = document.getElementById("verifyModal");
     modal.style.opacity = "1";
     modal.style.visibility = "visible";
@@ -8484,6 +8514,19 @@ function openVerifyModal(email) {
 }
 
 function closeVerifyModal() {
+    if (_vmVerifyLocked) return;
+    document.getElementById("verifyOverlay").style.opacity = "0";
+    document.getElementById("verifyOverlay").style.visibility = "hidden";
+    document.getElementById("verifyOverlay").style.pointerEvents = "none";
+    var modal = document.getElementById("verifyModal");
+    modal.style.opacity = "0";
+    modal.style.visibility = "hidden";
+    modal.style.pointerEvents = "none";
+    modal.style.transform = "translate(-50%,-46%) scale(0.98)";
+}
+
+function _forceCloseVerifyModal() {
+    _vmVerifyLocked = false;
     document.getElementById("verifyOverlay").style.opacity = "0";
     document.getElementById("verifyOverlay").style.visibility = "hidden";
     document.getElementById("verifyOverlay").style.pointerEvents = "none";
@@ -8515,7 +8558,10 @@ async function submitVerifyCode() {
         }
         if (successEl) { successEl.style.display = "block"; successEl.textContent = data.message || "Your email is verified!"; }
         hideVerifyBanner();
-        setTimeout(closeVerifyModal, 1400);
+        setTimeout(function () {
+            _forceCloseVerifyModal();
+            checkSession();
+        }, 1200);
     } catch (err) {
         if (errorEl) errorEl.textContent = err.message || "Connection error.";
     }
@@ -8840,11 +8886,7 @@ async function signup(event) {
         try { sessionStorage.setItem("vm_first_run", "1"); } catch (_) {}
         var authenticated = await checkSession();
         if (!authenticated) throw new Error("Session validation failed");
-        // New accounts start unverified — surface the 6-digit-code modal right
-        // away so the user can finish verification in one step.
-        if (data.needs_verification) {
-            setTimeout(function () { openVerifyModal(data.email || ""); }, 800);
-        }
+        // checkSession handles the verify modal for unverified accounts.
         return; // dashboard is live
     } catch (err) {
         setSignupError(err.message || "Sign-up failed");
