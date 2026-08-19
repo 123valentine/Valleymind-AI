@@ -13,6 +13,7 @@ import os
 import re
 import secrets
 import time
+import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from threading import Lock, Thread
@@ -376,7 +377,7 @@ RESET_TOKEN_TTL = timedelta(minutes=30)
 # see core/auth_codes.py and core/email_service.py.
 VERIFY_TTL = timedelta(minutes=30)
 OTP_TTL = timedelta(minutes=10)
-EMAIL_RESEND_COOLDOWN = 60   # seconds between resends per account (anti-spam)
+EMAIL_RESEND_COOLDOWN = 50   # seconds between resends per account (anti-spam)
 MAX_CODE_ATTEMPTS = 5
 
 SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com").strip()
@@ -1318,19 +1319,20 @@ def register():
             except Exception as exc:
                 print(f"[WARN] Failed to set creator identity in memory: {exc}")
 
-    # Fire the verification email outside the lock. Delivery never blocks signup:
-    # the account is created and signed in; the UI shows a "verify your email"
-    # banner and can resend. A generic result — we don't surface provider errors.
+    # Fire the verification email in a background thread so signup returns
+    # instantly.  The OTP is already persisted on the user record above.
+    # If the background send fails, the user can resend from the verify modal.
     try:
         from core import email_service
-        print(f"[EMAIL VERIFY] provider configured: {email_service.available()}")
-        print(f"[EMAIL VERIFY] attempting delivery to {email.split('@')[0]}@***")
+        _rid = uuid.uuid4().hex[:12]
+        print(f"[EMAIL][rid={_rid}] register_fire email={email.split('@')[0]}@*** configured={email_service.available()}")
         _vlink = f"{APP_BASE_URL}/verify-email?token={_verify_token}"
-        _sent = email_service.send_verification_email(
-            email, _verify_code, _vlink, minutes=int(VERIFY_TTL.total_seconds() // 60))
-        print(f"[EMAIL VERIFY] provider response: {'success' if _sent else 'failure'}")
+        _fire_email(email_service.send_verification_email,
+                    email, _verify_code, _vlink,
+                    minutes=int(VERIFY_TTL.total_seconds() // 60),
+                    request_id=_rid)
     except Exception as exc:
-        print(f"[EMAIL VERIFY] send failed: {type(exc).__name__}")
+        print(f"[EMAIL] register_fire_exception {type(exc).__name__}")
 
     return jsonify({
         "status": "success",
@@ -1398,12 +1400,14 @@ def forgot_password():
         link = f"{APP_BASE_URL}/reset-password?token={raw_token}"
         try:
             from core import email_service
-            print(f"[EMAIL VERIFY] password reset: provider configured: {email_service.available()}")
-            _sent = email_service.send_password_reset_email(
-                email, link, minutes=int(RESET_TOKEN_TTL.total_seconds() // 60))
-            print(f"[EMAIL VERIFY] password reset: provider response: {'success' if _sent else 'failure'}")
+            _rid = uuid.uuid4().hex[:12]
+            print(f"[EMAIL][rid={_rid}] password_reset_fire email={email.split('@')[0]}@*** configured={email_service.available()}")
+            _fire_email(email_service.send_password_reset_email,
+                        email, link,
+                        minutes=int(RESET_TOKEN_TTL.total_seconds() // 60),
+                        request_id=_rid)
         except Exception as exc:
-            print(f"[EMAIL VERIFY] password reset send failed: {type(exc).__name__}")
+            print(f"[EMAIL] password_reset_fire_exception {type(exc).__name__}")
 
     return generic
 
@@ -1456,12 +1460,14 @@ def reset_password():
     # Transactional security notice (best-effort; never blocks the reset).
     try:
         from core import email_service
-        email_service.send_security_email(
-            match_email, "Your password was reset",
-            "Your ValleyMind AI password was just reset using a password-reset link. "
-            "If this wasn't you, secure your account immediately.")
+        _rid = uuid.uuid4().hex[:12]
+        _fire_email(email_service.send_security_email,
+                    match_email, "Your password was reset",
+                    "Your ValleyMind AI password was just reset using a password-reset link. "
+                    "If this wasn't you, secure your account immediately.",
+                    request_id=_rid)
     except Exception as exc:
-        print(f"[EMAIL VERIFY] security email (password reset) failed: {type(exc).__name__}")
+        print(f"[EMAIL] security_email_exception {type(exc).__name__}")
 
     return jsonify({"status": "success", "message": "Your password has been reset. You can now sign in."})
 
@@ -1496,12 +1502,14 @@ def change_password():
 
     try:
         from core import email_service
-        email_service.send_security_email(
-            email, "Your password was changed",
-            "Your ValleyMind AI password was just changed from your account settings. "
-            "If this wasn't you, reset your password and contact support.")
+        _rid = uuid.uuid4().hex[:12]
+        _fire_email(email_service.send_security_email,
+                    email, "Your password was changed",
+                    "Your ValleyMind AI password was just changed from your account settings. "
+                    "If this wasn't you, reset your password and contact support.",
+                    request_id=_rid)
     except Exception as exc:
-        print(f"[EMAIL VERIFY] security email (password change) failed: {type(exc).__name__}")
+        print(f"[EMAIL] security_email_exception {type(exc).__name__}")
 
     return jsonify({"status": "success", "message": "Password changed successfully."})
 
@@ -1510,6 +1518,19 @@ def change_password():
 
 _EMAIL_UNAVAILABLE = "We couldn't send the email right now. Please try again shortly."
 _OTP_PURPOSES = {"email_verification", "login_verification", "password_reset", "security_confirmation"}
+
+
+def _fire_email(send_fn, *args, **kwargs):
+    """Send email in a background thread so the HTTP response is never blocked
+    by SMTP.  Failures are logged safely (no secrets) and silently swallowed —
+    the caller already returned a generic success/error to the client."""
+    rid = kwargs.pop("request_id", "") or uuid.uuid4().hex[:12]
+    def _bg():
+        try:
+            send_fn(*args, request_id=rid, **kwargs)
+        except Exception as exc:
+            print(f"[EMAIL][rid={rid}] bg_fail {type(exc).__name__}: {exc}")
+    Thread(target=_bg, daemon=True).start()
 
 
 @app.route("/verify-email", methods=["GET"])
@@ -1599,12 +1620,12 @@ def resend_verification():
         users[email] = user
         _save_users(users)
     link = f"{APP_BASE_URL}/verify-email?token={tok}"
-    print(f"[EMAIL VERIFY] resend: provider configured: {email_service.available()}")
-    print(f"[EMAIL VERIFY] resend: attempting delivery to {email.split('@')[0]}@***")
-    _sent = email_service.send_verification_email(email, code, link, minutes=int(VERIFY_TTL.total_seconds() // 60))
-    print(f"[EMAIL VERIFY] resend: provider response: {'success' if _sent else 'failure'}")
-    if not _sent:
-        return jsonify({"status": "error", "message": _EMAIL_UNAVAILABLE}), 503
+    _rid = uuid.uuid4().hex[:12]
+    print(f"[EMAIL][rid={_rid}] resend_fire email={email.split('@')[0]}@*** configured={email_service.available()}")
+    _fire_email(email_service.send_verification_email,
+                email, code, link,
+                minutes=int(VERIFY_TTL.total_seconds() // 60),
+                request_id=_rid)
     return jsonify({"status": "success", "message": "Verification email sent — check your inbox."})
 
 
@@ -1631,11 +1652,12 @@ def otp_request():
         code, _ = auth_codes.set_challenge(user, "otp", ttl_seconds=int(OTP_TTL.total_seconds()), purpose=purpose)
         users[email] = user
         _save_users(users)
-    print(f"[EMAIL VERIFY] OTP request: provider configured: {email_service.available()}")
-    _sent = email_service.send_otp_email(email, code, purpose=purpose, minutes=int(OTP_TTL.total_seconds() // 60))
-    print(f"[EMAIL VERIFY] OTP request: provider response: {'success' if _sent else 'failure'}")
-    if not _sent:
-        return jsonify({"status": "error", "message": _EMAIL_UNAVAILABLE}), 503
+    _rid = uuid.uuid4().hex[:12]
+    print(f"[EMAIL][rid={_rid}] otp_request_fire email={email.split('@')[0]}@*** purpose={purpose} configured={email_service.available()}")
+    _fire_email(email_service.send_otp_email,
+                email, code, purpose=purpose,
+                minutes=int(OTP_TTL.total_seconds() // 60),
+                request_id=_rid)
     return jsonify({"status": "success", "message": "A one-time code has been sent to your email."})
 
 

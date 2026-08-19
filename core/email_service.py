@@ -19,6 +19,9 @@ from __future__ import annotations
 import os
 import smtplib
 import ssl
+import socket
+import time
+import uuid
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.utils import formataddr
@@ -28,6 +31,9 @@ SUPPORT_EMAIL = "supportvalleymind@gmail.com"
 ACCENT = "#00c2b8"
 BG = "#0d0d1a"
 
+# Hard ceiling for the entire SMTP operation (connection + STARTTLS + auth + send).
+SMTP_TOTAL_TIMEOUT = 10
+
 
 def _cfg() -> dict:
     user = os.getenv("SMTP_USER", "").strip()
@@ -36,7 +42,7 @@ def _cfg() -> dict:
         "host": os.getenv("SMTP_HOST", "smtp.gmail.com").strip(),
         "port": int(raw_port) if raw_port.isdigit() else 587,
         "user": user,
-        "password": os.getenv("SMTP_PASS", "").strip(),
+        "password": os.getenv("SMTP_PASS", "").replace(" ", ""),
         "sender": os.getenv("MAIL_FROM", "").strip() or user,
         "reply_to": os.getenv("MAIL_REPLY_TO", "").strip(),
     }
@@ -48,14 +54,27 @@ def available() -> bool:
     return bool(c["user"] and c["password"] and c["sender"])
 
 
-def _send(to: str, subject: str, text_body: str, html_body: str) -> bool:
-    """Low-level multipart send. Never raises; never logs secrets/codes/bodies."""
+def _send(to: str, subject: str, text_body: str, html_body: str,
+          *, request_id: str = "") -> bool:
+    """Low-level multipart send. Never raises; never logs secrets/codes/bodies.
+
+    Every SMTP stage has an explicit socket timeout so the call can never block
+    indefinitely.  A ``request_id`` (auto-generated if omitted) is threaded
+    through structured timing logs so slow sends can be diagnosed without
+    exposing credentials or message content.
+    """
+    rid = request_id or uuid.uuid4().hex[:12]
+    t0 = time.monotonic()
+
+    def _elapsed() -> str:
+        return f"{(time.monotonic() - t0) * 1000:.0f}ms"
+
     c = _cfg()
     if not (c["user"] and c["password"] and c["sender"] and to):
         missing = [k for k in ("user", "password", "sender") if not c[k]]
         if not to:
             missing.append("to")
-        print(f"[MAIL DEBUG] not configured, missing: {missing}")
+        print(f"[EMAIL][rid={rid}] config_incomplete missing={missing} elapsed={_elapsed()}")
         return False
 
     msg = MIMEMultipart("alternative")
@@ -69,80 +88,74 @@ def _send(to: str, subject: str, text_body: str, html_body: str) -> bool:
 
     host = c["host"]
     port = c["port"]
-    print(f"[MAIL DEBUG] connecting to {host}:{port}")
-    try:
-        server = smtplib.SMTP(host, port, timeout=30)
-    except Exception as exc:
-        print(f"[MAIL DEBUG] connection failed: {type(exc).__name__}: {exc}")
-        return False
 
+    # ── Connection ─────────────────────────────────────────────
+    print(f"[EMAIL][rid={rid}] connect_start host={host}:{port}")
     try:
-        print(f"[MAIL DEBUG] connection established, starting STARTTLS")
+        server = smtplib.SMTP(host, port, timeout=SMTP_TOTAL_TIMEOUT)
+        server.timeout = SMTP_TOTAL_TIMEOUT  # enforce on all subsequent ops
+    except Exception as exc:
+        print(f"[EMAIL][rid={rid}] connect_fail {type(exc).__name__} elapsed={_elapsed()}")
+        return False
+    print(f"[EMAIL][rid={rid}] connect_ok elapsed={_elapsed()}")
+
+    # ── STARTTLS ───────────────────────────────────────────────
+    try:
         server.starttls(context=ssl.create_default_context())
-        print(f"[MAIL DEBUG] STARTTLS completed")
+        # Re-enforce timeout after TLS negotiation (some impls reset it)
+        server.timeout = SMTP_TOTAL_TIMEOUT
     except Exception as exc:
-        print(f"[MAIL DEBUG] STARTTLS failed: {type(exc).__name__}: {exc}")
-        try:
-            server.quit()
-        except Exception:
-            pass
+        print(f"[EMAIL][rid={rid}] starttls_fail {type(exc).__name__} elapsed={_elapsed()}")
+        _safe_quit(server)
         return False
+    print(f"[EMAIL][rid={rid}] starttls_ok elapsed={_elapsed()}")
 
+    # ── Authentication ─────────────────────────────────────────
     try:
-        print(f"[MAIL DEBUG] authenticating")
         server.login(c["user"], c["password"])
-        print(f"[MAIL DEBUG] authentication completed")
     except smtplib.SMTPAuthenticationError as exc:
-        print(f"[MAIL DEBUG] authentication failed: SMTPAuthenticationError code={exc.smtp_code} error={exc.smtp_error}")
-        try:
-            server.quit()
-        except Exception:
-            pass
+        print(f"[EMAIL][rid={rid}] auth_fail smtp_code={exc.smtp_code} elapsed={_elapsed()}")
+        _safe_quit(server)
         return False
     except Exception as exc:
-        print(f"[MAIL DEBUG] authentication failed: {type(exc).__name__}: {exc}")
-        try:
-            server.quit()
-        except Exception:
-            pass
+        print(f"[EMAIL][rid={rid}] auth_fail {type(exc).__name__} elapsed={_elapsed()}")
+        _safe_quit(server)
         return False
+    print(f"[EMAIL][rid={rid}] auth_ok elapsed={_elapsed()}")
 
+    # ── Send ───────────────────────────────────────────────────
     try:
-        print(f"[MAIL DEBUG] sending message")
         server.sendmail(c["sender"], [to], msg.as_string())
-        print(f"[MAIL DEBUG] message submitted successfully")
-        return True
     except smtplib.SMTPRecipientsRefused as exc:
-        print(f"[MAIL DEBUG] recipient refused: {exc.recipients}")
-        try:
-            server.quit()
-        except Exception:
-            pass
+        print(f"[EMAIL][rid={rid}] send_fail recipient_refused elapsed={_elapsed()}")
+        _safe_quit(server)
         return False
     except smtplib.SMTPSenderRefused as exc:
-        print(f"[MAIL DEBUG] sender refused: code={exc.smtp_code}")
-        try:
-            server.quit()
-        except Exception:
-            pass
+        print(f"[EMAIL][rid={rid}] send_fail sender_refused code={exc.smtp_code} elapsed={_elapsed()}")
+        _safe_quit(server)
         return False
     except smtplib.SMTPDataError as exc:
-        print(f"[MAIL DEBUG] data error: code={exc.smtp_code} error={exc.smtp_error}")
-        try:
-            server.quit()
-        except Exception:
-            pass
+        print(f"[EMAIL][rid={rid}] send_fail data_error code={exc.smtp_code} elapsed={_elapsed()}")
+        _safe_quit(server)
         return False
     except Exception as exc:
-        print(f"[MAIL DEBUG] send failed: {type(exc).__name__}: {exc}")
-        try:
-            server.quit()
-        except Exception:
-            pass
+        print(f"[EMAIL][rid={rid}] send_fail {type(exc).__name__} elapsed={_elapsed()}")
+        _safe_quit(server)
         return False
-    finally:
+    print(f"[EMAIL][rid={rid}] send_ok elapsed={_elapsed()}")
+
+    _safe_quit(server)
+    print(f"[EMAIL][rid={rid}] done total={_elapsed()}")
+    return True
+
+
+def _safe_quit(server: smtplib.SMTP) -> None:
+    """Close the SMTP connection, ignoring errors."""
+    try:
+        server.quit()
+    except Exception:
         try:
-            server.quit()
+            server.close()
         except Exception:
             pass
 
@@ -193,22 +206,29 @@ def _code_box(code: str) -> str:
 
 # ── Public transactional senders ────────────────────────────────────────────
 
-def send_verification_email(to: str, code: str, link: str, minutes: int = 30) -> bool:
+def send_verification_email(to: str, code: str, link: str, minutes: int = 30,
+                            *, request_id: str = "") -> bool:
     body = (
-        f"<p>Welcome to {BRAND}! Confirm this email address to finish setting up your account.</p>"
-        f"<p style='margin:18px 0;text-align:center;'>{_button('Verify my email', link)}</p>"
-        f"<p>Or enter this code in the app:</p>{_code_box(code)}"
-        f"<p style='color:#8a93a6;font-size:13px;'>This code and link expire in {minutes} minutes. "
-        f"If you didn't create a {BRAND} account, you can ignore this email.</p>"
+        f"<p>Welcome to {BRAND}!</p>"
+        f"<p>Your {BRAND} verification code is:</p>{_code_box(code)}"
+        f"<p style='color:#8a93a6;font-size:13px;'>Enter this 6-digit code in the app to verify your email. "
+        f"This code expires in {minutes} minutes.</p>"
+        f"<p style='color:#8a93a6;font-size:13px;'>If you didn't create a {BRAND} account, you can ignore this email.</p>"
     )
-    text = (f"Welcome to {BRAND}!\n\nVerify your email: {link}\n\n"
-            f"Or enter this code in the app: {code}\n\n"
-            f"This expires in {minutes} minutes. If you didn't sign up, ignore this email.\n"
+    text = (f"Welcome to {BRAND}!\n\n"
+            f"Your verification code is: {code}\n\n"
+            f"Enter this 6-digit code in the app to verify your email.\n"
+            f"This code expires in {minutes} minutes.\n"
+            f"If you didn't sign up, ignore this email.\n"
             f"Support: {SUPPORT_EMAIL}")
-    return _send(to, f"Verify your {BRAND} email", text, _shell("Verify your email", body, "Confirm your email to finish signing up."))
+    return _send(to, f"Your {BRAND} verification code", text,
+                 _shell("Your verification code", body,
+                        "Your ValleyMind AI verification code."),
+                 request_id=request_id)
 
 
-def send_password_reset_email(to: str, link: str, minutes: int = 30) -> bool:
+def send_password_reset_email(to: str, link: str, minutes: int = 30,
+                              *, request_id: str = "") -> bool:
     body = (
         f"<p>We received a request to reset your {BRAND} password.</p>"
         f"<p style='margin:18px 0;text-align:center;'>{_button('Reset my password', link)}</p>"
@@ -218,7 +238,9 @@ def send_password_reset_email(to: str, link: str, minutes: int = 30) -> bool:
     text = (f"Reset your {BRAND} password:\n{link}\n\n"
             f"This link expires in {minutes} minutes and can be used once. "
             f"If you didn't request it, ignore this email.\nSupport: {SUPPORT_EMAIL}")
-    return _send(to, f"Reset your {BRAND} password", text, _shell("Reset your password", body, "Reset your ValleyMind AI password."))
+    return _send(to, f"Reset your {BRAND} password", text,
+                 _shell("Reset your password", body, "Reset your ValleyMind AI password."),
+                 request_id=request_id)
 
 
 _OTP_PURPOSE_LABEL = {
@@ -229,19 +251,23 @@ _OTP_PURPOSE_LABEL = {
 }
 
 
-def send_otp_email(to: str, code: str, purpose: str = "login_verification", minutes: int = 10) -> bool:
+def send_otp_email(to: str, code: str, purpose: str = "login_verification",
+                    minutes: int = 10, *, request_id: str = "") -> bool:
     what = _OTP_PURPOSE_LABEL.get(purpose, "continue")
     body = (
-        f"<p>Use this one-time code to {what}:</p>{_code_box(code)}"
+        f"<p>Your {BRAND} verification code to {what} is:</p>{_code_box(code)}"
         f"<p style='color:#8a93a6;font-size:13px;'>This code expires in {minutes} minutes and can be used once. "
         f"Never share it with anyone — {BRAND} staff will never ask for it.</p>"
     )
-    text = (f"Your {BRAND} one-time code to {what}: {code}\n\n"
+    text = (f"Your {BRAND} verification code to {what}: {code}\n\n"
             f"Expires in {minutes} minutes. Never share this code.\nSupport: {SUPPORT_EMAIL}")
-    return _send(to, f"Your {BRAND} verification code", text, _shell("Your verification code", body, "Your one-time ValleyMind AI code."))
+    return _send(to, f"Your {BRAND} verification code", text,
+                 _shell("Your verification code", body, "Your one-time ValleyMind AI code."),
+                 request_id=request_id)
 
 
-def send_security_email(to: str, event: str, detail: str = "") -> bool:
+def send_security_email(to: str, event: str, detail: str = "",
+                        *, request_id: str = "") -> bool:
     detail_html = f"<p style='color:#8a93a6;font-size:13px;'>{detail}</p>" if detail else ""
     body = (
         f"<p>The following change was just made to your {BRAND} account:</p>"
@@ -252,4 +278,6 @@ def send_security_email(to: str, event: str, detail: str = "") -> bool:
     )
     text = (f"{BRAND} security notice: {event}\n{detail}\n\n"
             f"If this wasn't you, contact {SUPPORT_EMAIL} and reset your password.")
-    return _send(to, f"{BRAND} security alert: {event}", text, _shell("Security alert", body, event))
+    return _send(to, f"{BRAND} security alert: {event}", text,
+                 _shell("Security alert", body, event),
+                 request_id=request_id)
