@@ -240,7 +240,6 @@ def _save_users(users: dict):
 
 
 def _current_auth() -> dict:
-    print(f"[DEBUG] _current_auth: Session: {dict(session)}")
     user_id = str(session.get("user_id") or "").strip()
     email = str(session.get("email") or "").strip()
     if user_id:
@@ -1322,6 +1321,7 @@ def register():
     # Fire the verification email in a background thread so signup returns
     # instantly.  The OTP is already persisted on the user record above.
     # If the background send fails, the user can resend from the verify modal.
+    print(f"[OTP] register_persisted email={email.split('@')[0]}@*** has_code_hash={bool(record.get('verify_code_hash'))} has_token_hash={bool(record.get('verify_token_hash'))}")
     try:
         from core import email_service
         _rid = uuid.uuid4().hex[:12]
@@ -1581,15 +1581,20 @@ def verify_email_code():
         users = _load_users()
         user = users.get(email)
         if not user:
+            print(f"[OTP] verify_email email={email.split('@')[0]}@*** result=not_found")
             return jsonify({"status": "error", "message": "Account not found."}), 404
         if user.get("email_verified"):
+            print(f"[OTP] verify_email email={email.split('@')[0]}@*** result=already_verified")
             return jsonify({"status": "success", "email_verified": True, "message": "Your email is already verified."})
+        has_challenge = bool(user.get("verify_code_hash"))
+        attempts_before = int(user.get("verify_attempts") or 0)
         ok, reason = auth_codes.check_code(user, "verify", code, max_attempts=MAX_CODE_ATTEMPTS, purpose="email_verification")
         if ok:
             user["email_verified"] = True
             user["email_verified_at"] = datetime.now(timezone.utc).isoformat()
         users[email] = user
         _save_users(users)
+    print(f"[OTP] verify_email email={email.split('@')[0]}@*** result={reason} has_challenge={has_challenge} attempts_before={attempts_before}")
     if ok:
         return jsonify({"status": "success", "email_verified": True, "message": "Your email is verified."})
     msg = {"expired": "That code has expired — request a new one.",

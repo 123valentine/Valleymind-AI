@@ -8542,12 +8542,15 @@ async function submitVerifyCode() {
     var code = (codeEl ? codeEl.value : "").trim();
     var errorEl = document.getElementById("verifyError");
     var successEl = document.getElementById("verifySuccess");
+    var btn = document.querySelector("#verifyModal button[onclick=\"submitVerifyCode()\"]");
     if (errorEl) errorEl.textContent = "";
     if (successEl) successEl.style.display = "none";
     if (!/^\d{6}$/.test(code)) { if (errorEl) errorEl.textContent = "Enter the 6-digit code from your email."; return; }
+    if (btn) { btn.disabled = true; btn.textContent = "Verifying\u2026"; }
     try {
         var res = await apiFetch("/api/auth/verify-email", {
             method: "POST",
+            credentials: "include",
             headers: { "Content-Type": "application/json", ...authHeaders() },
             body: JSON.stringify({ code: code })
         });
@@ -8564,6 +8567,8 @@ async function submitVerifyCode() {
         }, 1200);
     } catch (err) {
         if (errorEl) errorEl.textContent = err.message || "Connection error.";
+    } finally {
+        if (btn) { btn.disabled = false; btn.textContent = "Verify Email"; }
     }
 }
 
@@ -8573,10 +8578,11 @@ async function resendVerification() {
     if (errorEl) errorEl.textContent = "";
     if (successEl) successEl.style.display = "none";
     var btn = document.getElementById("resendVerifyBtn");
-    if (btn) { btn.disabled = true; btn.textContent = "Sending..."; }
+    if (btn) { btn.disabled = true; btn.textContent = "Sending\u2026"; }
     try {
         var res = await apiFetch("/api/auth/resend-verification", {
             method: "POST",
+            credentials: "include",
             headers: { "Content-Type": "application/json", ...authHeaders() },
             body: JSON.stringify({})
         });

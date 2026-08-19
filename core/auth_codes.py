@@ -81,21 +81,32 @@ def check_code(record: dict, kind: str, code: str, *, max_attempts: int = 5,
     """Validate a numeric code. Returns ``(ok, reason)`` where reason is one of
     ok / expired / locked / invalid. Single-use: clears the challenge on success.
     Increments the attempt counter on a wrong-but-present code."""
-    stored = record.get(f"{kind}_code_hash")
+    import logging as _log
+    _ck = f"{kind}_code_hash"
+    stored = record.get(_ck)
     if not stored:
+        _log.warning("[OTP] check_code kind=%s sub=no_challenge", kind)
         return False, "invalid"
     if purpose is not None and record.get(f"{kind}_purpose") not in (None, purpose):
+        _log.warning("[OTP] check_code kind=%s sub=purpose_mismatch expected=%s got=%s",
+                     kind, purpose, record.get(f"{kind}_purpose"))
         return False, "invalid"
     if time.time() > float(record.get(f"{kind}_expires") or 0):
         clear(record, kind)
+        _log.warning("[OTP] check_code kind=%s sub=expired", kind)
         return False, "expired"
     if int(record.get(f"{kind}_attempts") or 0) >= max_attempts:
         clear(record, kind)
+        _log.warning("[OTP] check_code kind=%s sub=locked attempts=%s max=%s",
+                     kind, record.get(f"{kind}_attempts"), max_attempts)
         return False, "locked"
     if not secrets.compare_digest(str(stored), _hash(str(code or "").strip())):
         record[f"{kind}_attempts"] = int(record.get(f"{kind}_attempts") or 0) + 1
+        _log.warning("[OTP] check_code kind=%s sub=wrong_code attempts_now=%s",
+                     kind, record.get(f"{kind}_attempts"))
         return False, "invalid"
     clear(record, kind)  # single use
+    _log.info("[OTP] check_code kind=%s sub=ok", kind)
     return True, "ok"
 
 
