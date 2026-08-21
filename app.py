@@ -1318,19 +1318,22 @@ def register():
             except Exception as exc:
                 print(f"[WARN] Failed to set creator identity in memory: {exc}")
 
-    # Fire the verification email in a background thread so signup returns
-    # instantly.  The OTP is already persisted on the user record above.
-    # If the background send fails, the user can resend from the verify modal.
+    # Send the verification email SYNCHRONOUSLY (capped at SMTP_TOTAL_TIMEOUT)
+    # so the response can reflect whether the provider actually accepted it.
+    # The OTP is already persisted on the user record above; if the send fails
+    # the user can retry from the verify modal's resend button (which is also
+    # synchronous + honest now).
     print(f"[OTP] register_persisted email={email.split('@')[0]}@*** has_code_hash={bool(record.get('verify_code_hash'))} has_token_hash={bool(record.get('verify_token_hash'))}")
+    email_sent = False
     try:
         from core import email_service
         _rid = uuid.uuid4().hex[:12]
         print(f"[EMAIL][rid={_rid}] register_fire email={email.split('@')[0]}@*** configured={email_service.available()}")
         _vlink = f"{APP_BASE_URL}/verify-email?token={_verify_token}"
-        _fire_email(email_service.send_verification_email,
-                    email, _verify_code, _vlink,
-                    minutes=int(VERIFY_TTL.total_seconds() // 60),
-                    request_id=_rid)
+        email_sent = _send_email_now(email_service.send_verification_email,
+                                     email, _verify_code, _vlink,
+                                     minutes=int(VERIFY_TTL.total_seconds() // 60),
+                                     request_id=_rid)
     except Exception as exc:
         print(f"[EMAIL] register_fire_exception {type(exc).__name__}")
 
@@ -1348,6 +1351,10 @@ def register():
         "email_verified": False,
         "needs_verification": True,
         "first_time": True,
+        # Honest delivery signal: true only when SMTP accepted the message.
+        # The account is created either way; the verify modal's resend button
+        # covers the failure case. Frontend treats this as advisory only.
+        "email_sent": email_sent,
     }), 201
 
 
@@ -1523,7 +1530,12 @@ _OTP_PURPOSES = {"email_verification", "login_verification", "password_reset", "
 def _fire_email(send_fn, *args, **kwargs):
     """Send email in a background thread so the HTTP response is never blocked
     by SMTP.  Failures are logged safely (no secrets) and silently swallowed —
-    the caller already returned a generic success/error to the client."""
+    the caller already returned a generic success/error to the client.
+
+    Only for non-critical mail where the response must stay generic/fast
+    (password reset anti-enumeration, security notices). Verification-critical
+    sends must use _send_email_now so the API never claims "sent" unconfirmed.
+    """
     rid = kwargs.pop("request_id", "") or uuid.uuid4().hex[:12]
     def _bg():
         try:
@@ -1531,6 +1543,28 @@ def _fire_email(send_fn, *args, **kwargs):
         except Exception as exc:
             print(f"[EMAIL][rid={rid}] bg_fail {type(exc).__name__}: {exc}")
     Thread(target=_bg, daemon=True).start()
+
+
+def _send_email_now(send_fn, *args, **kwargs) -> bool:
+    """Send email SYNCHRONOUSLY and return whether the provider accepted it.
+
+    Used for verification-critical mail (signup verification, resend, OTP) so
+    the API response reflects reality: email_service caps the whole SMTP
+    operation at SMTP_TOTAL_TIMEOUT (10s), well inside the frontend's 30s
+    fetch timeout. Never logs secrets or codes."""
+    from core import email_service
+    rid = kwargs.pop("request_id", "") or uuid.uuid4().hex[:12]
+    t0 = time.monotonic()
+    if not email_service.available():
+        print(f"[EMAIL][rid={rid}] sync_skip reason=not_configured elapsed={(time.monotonic() - t0) * 1000:.0f}ms")
+        return False
+    try:
+        ok = bool(send_fn(*args, request_id=rid, **kwargs))
+    except Exception as exc:
+        print(f"[EMAIL][rid={rid}] sync_exception {type(exc).__name__} elapsed={(time.monotonic() - t0) * 1000:.0f}ms")
+        return False
+    print(f"[EMAIL][rid={rid}] sync_result ok={ok} total={(time.monotonic() - t0) * 1000:.0f}ms")
+    return ok
 
 
 @app.route("/verify-email", methods=["GET"])
@@ -1627,10 +1661,15 @@ def resend_verification():
     link = f"{APP_BASE_URL}/verify-email?token={tok}"
     _rid = uuid.uuid4().hex[:12]
     print(f"[EMAIL][rid={_rid}] resend_fire email={email.split('@')[0]}@*** configured={email_service.available()}")
-    _fire_email(email_service.send_verification_email,
-                email, code, link,
-                minutes=int(VERIFY_TTL.total_seconds() // 60),
-                request_id=_rid)
+    # Synchronous send: only report "sent" when SMTP actually accepted the
+    # message. A failure returns 503 so the frontend shows an error instead of
+    # a false success.
+    sent = _send_email_now(email_service.send_verification_email,
+                           email, code, link,
+                           minutes=int(VERIFY_TTL.total_seconds() // 60),
+                           request_id=_rid)
+    if not sent:
+        return jsonify({"status": "error", "message": _EMAIL_UNAVAILABLE}), 503
     return jsonify({"status": "success", "message": "Verification email sent — check your inbox."})
 
 
@@ -1659,10 +1698,13 @@ def otp_request():
         _save_users(users)
     _rid = uuid.uuid4().hex[:12]
     print(f"[EMAIL][rid={_rid}] otp_request_fire email={email.split('@')[0]}@*** purpose={purpose} configured={email_service.available()}")
-    _fire_email(email_service.send_otp_email,
-                email, code, purpose=purpose,
-                minutes=int(OTP_TTL.total_seconds() // 60),
-                request_id=_rid)
+    # Synchronous send with an honest result — same contract as resend.
+    sent = _send_email_now(email_service.send_otp_email,
+                           email, code, purpose=purpose,
+                           minutes=int(OTP_TTL.total_seconds() // 60),
+                           request_id=_rid)
+    if not sent:
+        return jsonify({"status": "error", "message": _EMAIL_UNAVAILABLE}), 503
     return jsonify({"status": "success", "message": "A one-time code has been sent to your email."})
 
 

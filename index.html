@@ -8482,6 +8482,9 @@ document.addEventListener("DOMContentLoaded", function () {
 var _vmVerifyEmail = "";
 var _vmEmail = "";
 var _vmVerifyLocked = false;
+// Set to false only when the backend reports the signup verification email
+// was NOT accepted by the mail provider (register response: email_sent=false).
+var _vmLastSignupEmailSent = true;
 
 function openVerifyModal(email, locked) {
     _vmVerifyLocked = !!locked;
@@ -8492,6 +8495,10 @@ function openVerifyModal(email, locked) {
     if (codeEl) codeEl.value = "";
     var err = document.getElementById("verifyError");
     if (err) err.textContent = "";
+    if (!_vmLastSignupEmailSent && err) {
+        err.textContent = "We couldn't send the email just now \u2014 tap \u201CDidn't get it? Resend code\u201D below.";
+        _vmLastSignupEmailSent = true; // surface once per failed signup send
+    }
     var ok = document.getElementById("verifySuccess");
     if (ok) ok.style.display = "none";
     var closeBtn = document.getElementById("verifyModalCloseBtn");
@@ -8888,6 +8895,9 @@ async function signup(event) {
         }
 
         setAuthToken(data.session_token || "");
+        // Backend reports whether SMTP actually accepted the verification
+        // email; the verify modal surfaces a resend hint when it did not.
+        _vmLastSignupEmailSent = data.email_sent !== false;
         // First-run flag: show the Chat guide the moment the dashboard loads.
         try { sessionStorage.setItem("vm_first_run", "1"); } catch (_) {}
         var authenticated = await checkSession();
