@@ -379,14 +379,8 @@ OTP_TTL = timedelta(minutes=10)
 EMAIL_RESEND_COOLDOWN = 50   # seconds between resends per account (anti-spam)
 MAX_CODE_ATTEMPTS = 5
 
-SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com").strip()
-try:
-    SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
-except (TypeError, ValueError):
-    SMTP_PORT = 587
-SMTP_USER = os.getenv("SMTP_USER", "").strip()
-SMTP_PASS = os.getenv("SMTP_PASS", "").strip()
-MAIL_FROM = os.getenv("MAIL_FROM", "").strip() or SMTP_USER
+# All transactional + promotional mail runs through core/email_service.py
+# (Resend HTTP API). Config lives there: RESEND_API_KEY, EMAIL_FROM, etc.
 APP_BASE_URL = (
     os.getenv("APP_BASE_URL", "").strip()
     or os.getenv("SITE_URL", "").strip()
@@ -397,36 +391,6 @@ APP_BASE_URL = (
 def _hash_token(token: str) -> str:
     """sha256 hex of a reset token — only the hash is ever stored."""
     return hashlib.sha256((token or "").encode("utf-8")).hexdigest()
-
-
-def send_email(to: str, subject: str, body: str) -> bool:
-    """Best-effort plain-text email via SMTP STARTTLS. Returns True if sent.
-
-    If SMTP_USER/SMTP_PASS are unset the mailer is simply skipped (no email is
-    sent) — the caller still returns its generic success message and NO other
-    reset path exists. The message body is never logged (it carries the token).
-    """
-    if not (SMTP_USER and SMTP_PASS and to):
-        print("[MAIL] SMTP not configured; skipping send")
-        return False
-    import smtplib
-    from email.message import EmailMessage
-
-    msg = EmailMessage()
-    msg["From"] = MAIL_FROM or SMTP_USER
-    msg["To"] = to
-    msg["Subject"] = subject
-    msg.set_content(body)
-    try:
-        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=20) as smtp:
-            smtp.starttls()
-            smtp.login(SMTP_USER, SMTP_PASS)
-            smtp.send_message(msg)
-        return True
-    except Exception as exc:
-        # Log the failure and recipient only — never the body/token.
-        print(f"[MAIL] send to {to} failed: {exc}")
-        return False
 
 
 def _client_ip() -> str:
@@ -1318,7 +1282,7 @@ def register():
             except Exception as exc:
                 print(f"[WARN] Failed to set creator identity in memory: {exc}")
 
-    # Send the verification email SYNCHRONOUSLY (capped at SMTP_TOTAL_TIMEOUT)
+    # Send the verification email SYNCHRONOUSLY (capped at RESEND_TIMEOUT)
     # so the response can reflect whether the provider actually accepted it.
     # The OTP is already persisted on the user record above; if the send fails
     # the user can retry from the verify modal's resend button (which is also
@@ -1351,7 +1315,7 @@ def register():
         "email_verified": False,
         "needs_verification": True,
         "first_time": True,
-        # Honest delivery signal: true only when SMTP accepted the message.
+        # Honest delivery signal: true only when Resend accepted the message.
         # The account is created either way; the verify modal's resend button
         # covers the failure case. Frontend treats this as advisory only.
         "email_sent": email_sent,
@@ -1549,8 +1513,8 @@ def _send_email_now(send_fn, *args, **kwargs) -> bool:
     """Send email SYNCHRONOUSLY and return whether the provider accepted it.
 
     Used for verification-critical mail (signup verification, resend, OTP) so
-    the API response reflects reality: email_service caps the whole SMTP
-    operation at SMTP_TOTAL_TIMEOUT (10s), well inside the frontend's 30s
+    the API response reflects reality: email_service caps the whole Resend
+    round-trip at RESEND_TIMEOUT (8s), well inside the frontend's 30s
     fetch timeout. Never logs secrets or codes."""
     from core import email_service
     rid = kwargs.pop("request_id", "") or uuid.uuid4().hex[:12]
@@ -5399,49 +5363,41 @@ except Exception as _exc:  # never let a watchdog hiccup stop the app from servi
     print(f"[BOOT] could not start studio assembly watchdog: {_exc}")
 
 
-# ── Startup SMTP diagnostic (runs once per process) ─────────────────────────
-# Reports whether the transactional email pipeline is configured and reachable.
-# Never logs secrets — only presence/absence flags and exception types.
-def _smtp_startup_check():
+# ── Startup email diagnostic (runs once per process) ────────────────────────
+# Reports whether the Resend transactional/promotional pipeline is configured.
+# Offline on purpose (no network call at boot) and never logs secrets — only
+# presence/absence flags and the configured sender identity.
+def _email_startup_check():
     try:
         from core import email_service
         c = email_service._cfg()
-        print(f"[MAIL DEBUG] startup check: available={email_service.available()}")
-        print(f"[MAIL DEBUG] startup check: host={'set' if c['host'] else 'missing'} port={'set' if c['port'] else 'missing'}")
-        print(f"[MAIL DEBUG] startup check: user={'set' if c['user'] else 'missing'} password={'set' if c['password'] else 'missing'} sender={'set' if c['sender'] else 'missing'}")
-        if not email_service.available():
-            print("[MAIL DEBUG] startup check: SMTP NOT configured — emails will not be sent")
-            return
-        import smtplib, ssl
-        print(f"[MAIL DEBUG] startup check: connecting to {c['host']}:{c['port']}")
-        srv = smtplib.SMTP(c["host"], c["port"], timeout=15)
-        print(f"[MAIL DEBUG] startup check: connected, STARTTLS")
-        srv.starttls(context=ssl.create_default_context())
-        print(f"[MAIL DEBUG] startup check: STARTTLS OK, authenticating")
-        srv.login(c["user"], c["password"])
-        print(f"[MAIL DEBUG] startup check: authentication OK — SMTP pipeline is healthy")
-        srv.quit()
-    except smtplib.SMTPAuthenticationError as exc:
-        print(f"[MAIL DEBUG] startup check: SMTP AUTH FAILED code={exc.smtp_code} — check SMTP_USER / SMTP_PASS")
+        ok = email_service.available()
+        print(f"[MAIL DEBUG] startup check: provider=resend available={ok}")
+        print(f"[MAIL DEBUG] startup check: api_key={'set' if c['api_key'] else 'MISSING'} "
+              f"sender={c['sender'] or 'MISSING'} reply_to={'set' if c['reply_to'] else 'unset'}")
+        if not ok:
+            print("[MAIL DEBUG] startup check: EMAIL NOT CONFIGURED — set RESEND_API_KEY and EMAIL_FROM")
     except Exception as exc:
-        print(f"[MAIL DEBUG] startup check: SMTP unreachable: {type(exc).__name__}: {exc}")
+        print(f"[MAIL DEBUG] startup check failed: {type(exc).__name__}: {exc}")
 
-_smtp_startup_check()
-del _smtp_startup_check
-
-
-# ── SMTP diagnostic endpoint (developer-only, protected by internal key) ─────
-# Usage: GET /internal/smtp-test?key=<SMTP_DIAG_KEY>&to=email@example.com
-# Tests SMTP connection, STARTTLS, auth, and optionally sends a test message.
-# Returns JSON with step-by-step results. Never exposes passwords or tokens.
-_SMTP_DIAG_KEY = os.getenv("SMTP_DIAG_KEY", "").strip()
+_email_startup_check()
+del _email_startup_check
 
 
-@app.route("/internal/smtp-test", methods=["GET"])
-def smtp_test_endpoint():
-    if not _SMTP_DIAG_KEY or request.args.get("key") != _SMTP_DIAG_KEY:
+# ── Email diagnostic endpoint (developer-only, protected by internal key) ────
+# Usage: GET /internal/email-test?key=<EMAIL_DIAG_KEY>&to=email@example.com
+# Checks Resend configuration and optionally sends a real test message.
+# Returns JSON with step-by-step results. Never exposes the API key.
+_EMAIL_DIAG_KEY = os.getenv("EMAIL_DIAG_KEY", "").strip() or os.getenv("SMTP_DIAG_KEY", "").strip()
+
+
+@app.route("/internal/email-test", methods=["GET"])
+@app.route("/internal/smtp-test", methods=["GET"])  # legacy alias
+def email_test_endpoint():
+    if not _EMAIL_DIAG_KEY or request.args.get("key") != _EMAIL_DIAG_KEY:
         return jsonify({"status": "error", "message": "Not found"}), 404
 
+    import httpx as _httpx
     from core import email_service
     c = email_service._cfg()
     results = []
@@ -5450,82 +5406,44 @@ def smtp_test_endpoint():
         results.append({"stage": stage, "status": status, "detail": detail})
 
     add("config_available", "PASS" if email_service.available() else "FAIL")
-    add("config_host", "PASS" if c["host"] else "FAIL", "set" if c["host"] else "missing")
-    add("config_port", "PASS" if c["port"] else "FAIL", str(c["port"]) if c["port"] else "missing")
-    add("config_user", "PASS" if c["user"] else "FAIL", "set" if c["user"] else "missing")
-    add("config_password", "PASS" if c["password"] else "FAIL", "set" if c["password"] else "missing")
-    add("config_sender", "PASS" if c["sender"] else "FAIL", "set" if c["sender"] else "missing")
+    add("config_api_key", "PASS" if c["api_key"] else "FAIL", "set" if c["api_key"] else "missing")
+    add("config_sender", "PASS" if c["sender"] else "FAIL", c["sender"] or "missing")
+    add("config_reply_to", "SKIP" if not c["reply_to"] else "PASS", c["reply_to"] or "unset")
 
     if not email_service.available():
-        return jsonify({"status": "error", "message": "SMTP not configured", "results": results}), 200
+        return jsonify({"status": "error", "message": "Resend not configured — set RESEND_API_KEY and EMAIL_FROM",
+                        "results": results}), 200
 
-    # Connection
-    import smtplib as _smtplib
-    import ssl as _ssl
+    # API-key validation against Resend (list verified domains; no mail sent).
     try:
-        server = _smtplib.SMTP(c["host"], c["port"], timeout=30)
-        add("connection", "PASS")
+        resp = _httpx.get("https://api.resend.com/domains",
+                          headers={"Authorization": f"Bearer {c['api_key']}"},
+                          timeout=email_service.RESEND_TOTAL_TIMEOUT)
+        if resp.status_code == 200:
+            domains = [d.get("name") for d in (resp.json().get("data") or [])]
+            add("api_auth", "PASS", f"verified domains: {', '.join(domains) if domains else 'none (sandbox only)'}")
+        elif resp.status_code == 401:
+            add("api_auth", "FAIL", "unauthorized — check RESEND_API_KEY")
+            return jsonify({"status": "error", "message": "Resend rejected the API key", "results": results}), 200
+        else:
+            add("api_auth", "WARN", f"status={resp.status_code}")
     except Exception as exc:
-        add("connection", "FAIL", f"{type(exc).__name__}: {exc}")
-        return jsonify({"status": "error", "message": "SMTP connection failed", "results": results}), 200
+        add("api_auth", "FAIL", f"{type(exc).__name__}: {exc}")
 
-    # STARTTLS
-    try:
-        server.starttls(context=_ssl.create_default_context())
-        add("STARTTLS", "PASS")
-    except Exception as exc:
-        add("STARTTLS", "FAIL", f"{type(exc).__name__}: {exc}")
-        try:
-            server.quit()
-        except Exception:
-            pass
-        return jsonify({"status": "error", "message": "STARTTLS failed", "results": results}), 200
-
-    # Auth
-    try:
-        server.login(c["user"], c["password"])
-        add("authentication", "PASS")
-    except _smtplib.SMTPAuthenticationError as exc:
-        add("authentication", "FAIL", f"code={exc.smtp_code}")
-        try:
-            server.quit()
-        except Exception:
-            pass
-        return jsonify({"status": "error", "message": "SMTP authentication failed", "results": results}), 200
-    except Exception as exc:
-        add("authentication", "FAIL", f"{type(exc).__name__}: {exc}")
-        try:
-            server.quit()
-        except Exception:
-            pass
-        return jsonify({"status": "error", "message": "SMTP auth failed", "results": results}), 200
-
-    # Optional send
+    # Optional live send
     to_addr = str(request.args.get("to") or "").strip()
     if to_addr:
-        from email.mime.multipart import MIMEMultipart as _MIMEMultipart
-        from email.mime.text import MIMEText as _MIMEText
-        from email.utils import formataddr as _formataddr
-        msg = _MIMEMultipart("alternative")
-        msg["Subject"] = "ValleyMind-AI SMTP Test"
-        msg["From"] = _formataddr(("ValleyMind AI", c["sender"]))
-        msg["To"] = to_addr
-        msg.attach(_MIMEText("SMTP delivery test from ValleyMind-AI.", "plain", "utf-8"))
-        msg.attach(_MIMEText("<p>SMTP delivery test from ValleyMind-AI.</p>", "html", "utf-8"))
-        try:
-            server.sendmail(c["sender"], [to_addr], msg.as_string())
-            add("send", "PASS", f"message accepted for {to_addr.split('@')[0]}@***")
-        except _smtplib.SMTPRecipientsRefused as exc:
-            add("send", "FAIL", f"recipient refused: {list(exc.recipients.keys())}")
-        except Exception as exc:
-            add("send", "FAIL", f"{type(exc).__name__}: {exc}")
+        html = ("<p>This is a delivery test from ValleyMind-AI via <strong>Resend</strong>.</p>"
+                "<p>If you received this, the email pipeline is working.</p>")
+        result = email_service.send_email(to_addr,
+                                          f"ValleyMind AI — {email_service.BRAND} delivery test",
+                                          html, "Delivery test from ValleyMind-AI via Resend.")
+        if result.get("success"):
+            add("send", "PASS", f"accepted for {to_addr.split('@')[0]}@*** id={result.get('id')}")
+        else:
+            add("send", "FAIL", f"error={result.get('error')}")
     else:
         add("send", "SKIP", "no recipient — add &to=email to test delivery")
-
-    try:
-        server.quit()
-    except Exception:
-        pass
 
     ok = all(r["status"] in ("PASS", "SKIP") for r in results)
     return jsonify({"status": "success" if ok else "error", "results": results}), 200

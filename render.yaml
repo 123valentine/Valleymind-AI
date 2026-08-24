@@ -172,18 +172,17 @@ services:
       - key: R2_BUCKET
         value: valleymind-media
 
-      # ── Transactional email (SMTP — verification, password-reset, OTP) ──
-      - key: SMTP_HOST
-        value: smtp.gmail.com
-      - key: SMTP_PORT
-        value: "587"
-      - key: SMTP_USER                    # Gmail address used as SMTP login
+      # ── Email via Resend API (transactional: verification, password-reset, OTP;
+      #    promotional: newsletters, product updates) ──────────────────────────
+      - key: RESEND_API_KEY               # https://resend.com/api-keys
         sync: false
-      - key: SMTP_PASS                    # Gmail app password (NOT account password)
+      - key: EMAIL_FROM                   # e.g. 'ValleyMind <noreply@yourdomain.com>' (domain must be verified)
         sync: false
-      - key: MAIL_FROM                    # Sender address (defaults to SMTP_USER if empty)
+      - key: EMAIL_FROM_NAME              # Display name if EMAIL_FROM lacks one
+        value: ValleyMind
+      - key: EMAIL_REPLY_TO               # Optional replies destination
         sync: false
-      - key: SMTP_DIAG_KEY                # Dev-only key for /internal/smtp-test
+      - key: EMAIL_DIAG_KEY               # Dev-only key for /internal/email-test
         sync: false
 
       # ── Auth ──────────────────────────────────────────────────────
