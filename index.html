@@ -8485,6 +8485,35 @@ var _vmVerifyLocked = false;
 // Set to false only when the backend reports the signup verification email
 // was NOT accepted by the mail provider (register response: email_sent=false).
 var _vmLastSignupEmailSent = true;
+// Set to true when the modal opens after a fresh OTP send, so openVerifyModal
+// can show "Verification code sent to your email." once.
+var _vmShowOtpSentMsg = false;
+// 50-second resend cooldown timer (cosmetic frontend countdown).
+var _verifyResendTimer = null;
+var _verifyResendRemaining = 0;
+var _VERIFY_RESEND_COOLDOWN = 50; // seconds — matches EMAIL_RESEND_COOLDOWN in app.py
+
+function _startVerifyResendCooldown(seconds) {
+    _clearVerifyResendCooldown();
+    _verifyResendRemaining = seconds || _VERIFY_RESEND_COOLDOWN;
+    var btn = document.getElementById("resendVerifyBtn");
+    if (btn) { btn.disabled = true; btn.textContent = "Resend OTP in " + _verifyResendRemaining + "s"; }
+    _verifyResendTimer = setInterval(function () {
+        _verifyResendRemaining--;
+        if (_verifyResendRemaining <= 0) {
+            _clearVerifyResendCooldown();
+            return;
+        }
+        if (btn) btn.textContent = "Resend OTP in " + _verifyResendRemaining + "s";
+    }, 1000);
+}
+
+function _clearVerifyResendCooldown() {
+    if (_verifyResendTimer) { clearInterval(_verifyResendTimer); _verifyResendTimer = null; }
+    _verifyResendRemaining = 0;
+    var btn = document.getElementById("resendVerifyBtn");
+    if (btn) { btn.disabled = false; btn.textContent = "Didn't get it? Resend code"; }
+}
 
 function openVerifyModal(email, locked) {
     _vmVerifyLocked = !!locked;
@@ -8500,7 +8529,15 @@ function openVerifyModal(email, locked) {
         _vmLastSignupEmailSent = true; // surface once per failed signup send
     }
     var ok = document.getElementById("verifySuccess");
-    if (ok) ok.style.display = "none";
+    if (ok) {
+        if (_vmShowOtpSentMsg) {
+            ok.style.display = "block";
+            ok.textContent = "Verification code sent to your email.";
+            _vmShowOtpSentMsg = false;
+        } else {
+            ok.style.display = "none";
+        }
+    }
     var closeBtn = document.getElementById("verifyModalCloseBtn");
     if (closeBtn) closeBtn.style.display = _vmVerifyLocked ? "none" : "flex";
     var overlay = document.getElementById("verifyOverlay");
@@ -8517,11 +8554,16 @@ function openVerifyModal(email, locked) {
     modal.style.visibility = "visible";
     modal.style.pointerEvents = "auto";
     modal.style.transform = "translate(-50%,-50%) scale(1)";
+    // Start the 50-second resend cooldown on every modal open (locked = fresh OTP sent).
+    if (_vmVerifyLocked) {
+        _startVerifyResendCooldown();
+    }
     setTimeout(function () { if (codeEl) codeEl.focus(); }, 120);
 }
 
 function closeVerifyModal() {
     if (_vmVerifyLocked) return;
+    _clearVerifyResendCooldown();
     document.getElementById("verifyOverlay").style.opacity = "0";
     document.getElementById("verifyOverlay").style.visibility = "hidden";
     document.getElementById("verifyOverlay").style.pointerEvents = "none";
@@ -8534,6 +8576,7 @@ function closeVerifyModal() {
 
 function _forceCloseVerifyModal() {
     _vmVerifyLocked = false;
+    _clearVerifyResendCooldown();
     document.getElementById("verifyOverlay").style.opacity = "0";
     document.getElementById("verifyOverlay").style.visibility = "hidden";
     document.getElementById("verifyOverlay").style.pointerEvents = "none";
@@ -8598,11 +8641,15 @@ async function resendVerification() {
             if (errorEl) errorEl.textContent = data.message || "Please try again shortly.";
             return;
         }
-        if (successEl) { successEl.style.display = "block"; successEl.textContent = data.message || "Verification email sent — check your inbox."; }
+        if (successEl) { successEl.style.display = "block"; successEl.textContent = data.message || "Verification email sent \u2014 check your inbox."; }
+        // Restart the 50-second frontend countdown after a successful resend.
+        _startVerifyResendCooldown();
     } catch (err) {
         if (errorEl) errorEl.textContent = err.message || "Connection error.";
     } finally {
-        if (btn) { btn.disabled = false; btn.textContent = "Didn't get it? Resend code"; }
+        // Button state is managed by _startVerifyResendCooldown on success,
+        // or restored here on failure.
+        if (btn && _verifyResendRemaining <= 0) { btn.disabled = false; btn.textContent = "Didn't get it? Resend code"; }
     }
 }
 
@@ -8744,6 +8791,9 @@ async function handleGoogleLogin(response) {
             throw new Error(data.message || "Google sign-in failed");
         }
         setAuthToken(data.session_token || "");
+        // Show "Verification code sent to your email." when the verify modal opens
+        // for a new Google user (backend sends the OTP synchronously).
+        if (data.needs_verification) _vmShowOtpSentMsg = true;
         var authenticated = await checkSession();
         if (!authenticated) throw new Error("Session validation failed");
     } catch (err) {
@@ -8898,6 +8948,8 @@ async function signup(event) {
         // Backend reports whether SMTP actually accepted the verification
         // email; the verify modal surfaces a resend hint when it did not.
         _vmLastSignupEmailSent = data.email_sent !== false;
+        // Show "Verification code sent to your email." on the verify modal.
+        _vmShowOtpSentMsg = true;
         // First-run flag: show the Chat guide the moment the dashboard loads.
         try { sessionStorage.setItem("vm_first_run", "1"); } catch (_) {}
         var authenticated = await checkSession();
