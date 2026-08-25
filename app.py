@@ -178,6 +178,68 @@ app.config.update(
     SESSION_COOKIE_SECURE=True,
 )
 
+
+# ── Auth migration on startup (dry-run first, then apply) ──────────────────
+def _run_auth_migration():
+    """Run the unified auth migration at startup.  First performs a dry-run
+    to report what WOULD change, then applies the changes.  Records in
+    DELETE_IDS are removed.  All output goes to stdout for operator
+    visibility.  Failures are caught and logged -- the app must never
+    refuse to start because of a migration issue."""
+    from core.auth_migration import DELETE_IDS, normalize_user_records
+    coll = users_collection()
+    if coll is None:
+        print("[AUTH_MIGRATE] MongoDB unavailable -- skipping startup migration")
+        return
+    try:
+        # Phase 1: dry-run
+        dry = normalize_user_records(coll, dry_run=True)
+        print(f"[AUTH_MIGRATE] dry-run: scanned={dry['scanned']} would_modify={dry['would_modify']}"
+              f" would_delete={dry['would_delete']}"
+              f" verified_kept={dry['verified_kept']}"
+              f" unverified_normalized={dry['unverified_normalized']}"
+              f" legacy_fields_removed={dry['legacy_fields_removed']}"
+              f" email_mirrored={dry['email_mirrored']}"
+              f" errors={dry['errors']}")
+        if dry.get("would_delete"):
+            print(f"[AUTH_MIGRATE] delete_ids: {sorted(DELETE_IDS)}")
+        # Per-record detail for operator review
+        for rec in dry.get("records", []):
+            if rec.get("changes"):
+                tag = " [DELETE]" if rec.get("deleted") else ""
+                print(f"[AUTH_MIGRATE]   {_id_summary(rec['_id'])} changes={len(rec['changes'])}{tag}")
+                for ch in rec["changes"]:
+                    print(f"[AUTH_MIGRATE]     {ch['field']}: {ch['old']} -> {ch['new']} ({ch['reason']})")
+
+        # Phase 2: apply (only if there are changes or deletions)
+        if dry["would_modify"] > 0 or dry["would_delete"] > 0:
+            applied = normalize_user_records(coll, dry_run=False)
+            print(f"[AUTH_MIGRATE] applied: modified={applied['actually_modified']}"
+                  f" deleted={applied['actually_deleted']}"
+                  f" verified_kept={applied['verified_kept']}"
+                  f" unverified_normalized={applied['unverified_normalized']}"
+                  f" legacy_fields_removed={applied['legacy_fields_removed']}"
+                  f" email_mirrored={applied['email_mirrored']}"
+                  f" errors={applied['errors']}")
+        else:
+            print("[AUTH_MIGRATE] all records already canonical -- no changes needed")
+    except Exception as exc:
+        print(f"[AUTH_MIGRATE] startup migration failed (non-fatal): {exc}")
+
+
+def _id_summary(doc_id) -> str:
+    """Compact repr of a user _id (email) for migration logs.  No secrets."""
+    s = str(doc_id or "")
+    at = s.find("@")
+    if at > 0:
+        return s[:at + 1] + "***"
+    return s[:12] + "***" if len(s) > 12 else s
+
+
+# Run migration at module load (once, before any request is served).
+_run_auth_migration()
+
+
 # Jinja helper used by the marketing templates' footer copyright year.
 @app.template_filter("utcnow_year")
 def _utcnow_year_filter(_value=None):
@@ -293,23 +355,64 @@ def _require_login_only():
 
 
 def _require_login():
-    """Require an authenticated session AND a verified email.
-    Unverified users receive a 403 with needs_verification=true so the
-    frontend can route them to the verification screen."""
+    """THE single server-side gate for normal application access.
+
+    Requires an authenticated session AND ValleyMind email verification.
+    Verification must be literally True on the user record — missing, NULL,
+    or malformed state is UNVERIFIED (see core/auth_migration.py). A session
+    without an email address is also gated: credentials alone never grant
+    access. Unverified users receive a 403 with needs_verification=true so
+    the frontend routes them to the verification screen. Auth-related
+    endpoints (verify / resend / OTP) use _require_login_only instead so
+    an unverified user can complete verification.
+
+    Hardened guards (fail-closed):
+      1. user_id must be non-empty (session/token present).
+      2. email must be non-empty after strip (sessions without email cannot
+         pass — credentials alone never grant access).
+      3. User record must exist AND be a dict (deleted/phantom records).
+      4. is_verified_record must return literally True (not truthy, not
+         string "true", not missing — see auth_migration.is_verified_record).
+    Every guard defaults to DENIED. No bypass path exists."""
+    from core.auth_migration import is_verified_record
+
+    # ── Guard 1: session must identify a user ───────────────────
     user_id = _current_user_id()
     if not user_id:
         return "", (jsonify({"status": "error", "message": "Login required"}), 401)
+
+    # ── Guard 2: session must carry a non-empty email ───────────
+    #    A session with a user_id but no email is a stale/incomplete
+    #    session.  Credentials alone must never grant application access.
     auth = _current_auth()
     email = str(auth.get("email") or "").strip().lower()
-    if email:
-        user_rec = _load_users().get(email) or {}
-        if not user_rec.get("email_verified"):
-            return "", (jsonify({
-                "status": "error",
-                "message": "Email verification required",
-                "needs_verification": True,
-                "email": email,
-            }), 403)
+    if not email:
+        return "", (jsonify({
+            "status": "error",
+            "message": "Email verification required",
+            "needs_verification": True,
+            "email": "",
+        }), 403)
+
+    # ── Guard 3: user record must exist and be a dict ───────────
+    #    If the users collection is down or the record was deleted,
+    #    _load_users() returns {} — .get() yields None — which is
+    #    unverified.  A non-dict record (corrupt storage) is also
+    #    unverified.
+    user_rec = _load_users().get(email)
+
+    # ── Guard 4: is_verified_record must be literally True ──────
+    #    Missing field, None, False, int, string "true", empty dict,
+    #    or any other non-True value → denied.  is_verified_record()
+    #    is the single predicate; never substitute a truthiness check.
+    if not is_verified_record(user_rec):
+        return "", (jsonify({
+            "status": "error",
+            "message": "Email verification required",
+            "needs_verification": True,
+            "email": email,
+        }), 403)
+
     return user_id, None
 
 
@@ -724,7 +827,8 @@ def auth_status():
     if marcus:
         _initialize_user_memory(marcus, auth.get("email", ""))
     email_auth = auth.get("email", "")
-    _user_rec = _load_users().get(email_auth) or {}
+    _user_rec = _load_users().get(email_auth) if email_auth else None
+    from core.auth_migration import is_verified_record
     return jsonify({
         "authenticated": True,
         "email": email_auth,
@@ -732,7 +836,7 @@ def auth_status():
         "character": "marcus",
         "memory_loaded": bool(marcus),
         "is_creator": _is_creator(email_auth),
-        "email_verified": bool(_user_rec.get("email_verified")),
+        "email_verified": is_verified_record(_user_rec),
         "video_generation_enabled": _video_generation_enabled(),
     })
 
@@ -1005,23 +1109,22 @@ def login():
         users = _load_users()
         user = users.get(email)
 
-        if user:
-            stored_hash = str(user.get("password_hash") or "")
-            if not check_password_hash(stored_hash, password):
-                return jsonify({"status": "error", "message": "Invalid email or password"}), 401
-            email_verified = bool(user.get("email_verified"))
-            if is_creator:
-                user["identity_name"] = CREATOR_NAME
-                user["title"] = CREATOR_TITLE
-                _save_users(users)
-        else:
-            users[email] = {
-                "user_id": user_id,
-                "password_hash": generate_password_hash(password),
-            }
-            if is_creator:
-                users[email]["identity_name"] = CREATOR_NAME
-                users[email]["title"] = CREATOR_TITLE
+        if not user:
+            # Unified auth: login NEVER creates accounts. Unknown credentials
+            # are rejected with the same generic message as a wrong password
+            # (no account enumeration, no unverified skeleton records).
+            # Registration (/auth/register) is the only account-creation path.
+            return jsonify({"status": "error", "message": "Invalid email or password"}), 401
+
+        stored_hash = str(user.get("password_hash") or "")
+        if not check_password_hash(stored_hash, password):
+            return jsonify({"status": "error", "message": "Invalid email or password"}), 401
+
+        from core.auth_migration import is_verified_record
+        email_verified = is_verified_record(user)
+        if is_creator:
+            user["identity_name"] = CREATOR_NAME
+            user["title"] = CREATOR_TITLE
             _save_users(users)
 
     session.clear()
@@ -1095,28 +1198,55 @@ def google_auth():
 
     user_id = _safe_user_id(email)
     is_creator = _is_creator(email)
+    from core.auth_migration import is_verified_record
+    from core import auth_codes
+
+    # Challenge plaintext (emailed once, never stored) when a send is needed.
+    _verify_code = _verify_token = None
+    challenge_issued = False
 
     with _users_lock:
         users = _load_users()
         user = users.get(email)
         if user:
+            # Existing account: attach/refresh the Google identity but keep
+            # THIS account's own verification state. A grandfathered verified
+            # record stays verified; an unverified one must still complete
+            # ValleyMind OTP regardless of what Google asserted.
             user["google_id"] = google_id
             if name:
                 user["name"] = name
             if picture:
                 user["picture"] = picture
+            email_verified = is_verified_record(user)
         else:
-            users[email] = {
+            # Unified auth: even Google sign-ups start UNVERIFIED in
+            # ValleyMind. Google proves mailbox ownership; ValleyMind OTP
+            # proves this person wants access HERE.
+            user = {
                 "user_id": user_id,
                 "google_id": google_id,
                 "name": name,
                 "picture": picture,
-                "email_verified": True,
+                "email": email,
                 "auth_method": "google",
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "email_verified": False,
             }
+            users[email] = user
+            email_verified = False
         if is_creator:
             users[email]["identity_name"] = CREATOR_NAME
             users[email]["title"] = CREATOR_TITLE
+
+        if not email_verified:
+            # Issue (or rotate) the single-use verification challenge now so
+            # the user can complete it right after this response. The resend
+            # endpoint remains available for retries/delivery failures.
+            _verify_code, _verify_token = auth_codes.set_challenge(
+                user, "verify", ttl_seconds=int(VERIFY_TTL.total_seconds()),
+                with_token=True, purpose="email_verification")
+            challenge_issued = True
         _save_users(users)
 
     session.clear()
@@ -1139,7 +1269,24 @@ def google_auth():
             try:
                 marcus.memory.set_creator_identity(CREATOR_NAME, CREATOR_TITLE)
             except Exception as exc:
-                print(f"[WARN] Failed to set creator identity in memory: {exc}")
+                print(f"[WARN] Failed to set creator identity for {email}: {exc}")
+
+    # Verification mail goes out synchronously with an honest result, exactly
+    # like /auth/register. If the provider rejects it, email_sent=False tells
+    # the frontend to offer the resend button; the challenge stays valid.
+    email_sent = False
+    if challenge_issued and _verify_code:
+        try:
+            from core import email_service
+            _rid = uuid.uuid4().hex[:12]
+            print(f"[EMAIL][rid={_rid}] google_verify_fire email={email.split('@')[0]}@*** configured={email_service.available()}")
+            _vlink = f"{APP_BASE_URL}/verify-email?token={_verify_token}"
+            email_sent = _send_email_now(email_service.send_verification_email,
+                                         email, _verify_code, _vlink,
+                                         minutes=int(VERIFY_TTL.total_seconds() // 60),
+                                         request_id=_rid)
+        except Exception as exc:
+            print(f"[EMAIL] google_verify_fire_exception {type(exc).__name__}")
 
     return jsonify({
         "status": "success",
@@ -1151,6 +1298,9 @@ def google_auth():
         "character": "marcus",
         "session_token": token,
         "is_creator": is_creator,
+        "email_verified": email_verified,
+        "needs_verification": not email_verified,
+        "email_sent": bool(email_sent) if challenge_issued else None,
     })
 
 
@@ -1549,7 +1699,8 @@ def verify_email_link():
                     match_email, match_rec = em, rec
                     break
             if match_rec:
-                if match_rec.get("email_verified"):
+                from core.auth_migration import is_verified_record
+                if is_verified_record(match_rec):
                     status = "success"
                 else:
                     ok, reason = auth_codes.check_token(match_rec, "verify", token)
@@ -1581,7 +1732,8 @@ def verify_email_code():
         if not user:
             print(f"[OTP] verify_email email={email.split('@')[0]}@*** result=not_found")
             return jsonify({"status": "error", "message": "Account not found."}), 404
-        if user.get("email_verified"):
+        from core.auth_migration import is_verified_record
+        if is_verified_record(user):
             print(f"[OTP] verify_email email={email.split('@')[0]}@*** result=already_verified")
             return jsonify({"status": "success", "email_verified": True, "message": "Your email is already verified."})
         has_challenge = bool(user.get("verify_code_hash"))
@@ -1614,7 +1766,8 @@ def resend_verification():
         user = users.get(email)
         if not user:
             return jsonify({"status": "error", "message": "Account not found."}), 404
-        if user.get("email_verified"):
+        from core.auth_migration import is_verified_record
+        if is_verified_record(user):
             return jsonify({"status": "success", "message": "Your email is already verified."})
         if auth_codes.cooldown_active(user, "verify", EMAIL_RESEND_COOLDOWN):
             return jsonify({"status": "error", "message": "Please wait a moment before requesting another email."}), 429
@@ -5361,6 +5514,24 @@ try:
     _sj_boot.start_watchdog()
 except Exception as _exc:  # never let a watchdog hiccup stop the app from serving
     print(f"[BOOT] could not start studio assembly watchdog: {_exc}")
+
+
+# ── Startup auth migration (runs once per process, idempotent) ──────────────
+# Normalizes every account to the unified verification schema: missing/NULL
+# email_verified becomes explicit False (never "verified by default"), legacy
+# security-question fields are stripped, and the email field mirrors the
+# record id. Verified accounts stay verified. Disable locally with
+# AUTH_MIGRATION_ENABLED=false.
+if os.getenv("AUTH_MIGRATION_ENABLED", "true").strip().lower() != "false":
+    try:
+        from core.auth_migration import normalize_user_records
+        _mig = normalize_user_records(users_collection())
+        if not _mig.get("skipped"):
+            print(f"[AUTH-MIGRATE] startup result: {_mig}")
+        else:
+            print(f"[AUTH-MIGRATE] startup skipped: {_mig.get('skipped')}")
+    except Exception as _exc:  # never block serving on a migration hiccup
+        print(f"[AUTH-MIGRATE] startup failed (non-fatal): {_exc}")
 
 
 # ── Startup email diagnostic (runs once per process) ────────────────────────
