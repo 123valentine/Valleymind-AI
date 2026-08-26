@@ -3,7 +3,7 @@ import os
 from pathlib import Path
 
 from core.config import PROJECT_ROOT
-from core.db import get_db, get_db_manager
+from core.db import get_db
 
 
 def migrate():
@@ -12,7 +12,6 @@ def migrate():
         print("[MIGRATE] Cannot connect to MongoDB. Aborting.")
         return
 
-    db_manager = get_db_manager()
     users_dir = PROJECT_ROOT / "memory_data" / "users"
 
     if not users_dir.exists():
@@ -49,7 +48,13 @@ def migrate():
                     chat_id = chat_file.stem
                     with open(chat_file, "r", encoding="utf-8") as f:
                         messages = json.load(f)
-                    db_manager.background_chat_write(chat_id, messages)
+                    db.chats.update_one(
+                        {"chat_id": chat_id},
+                        {"$set": {"chat_id": chat_id, "user_id": user_id,
+                                  "messages": messages, "message_count": len(messages),
+                                  "last_activity": __import__("datetime").datetime.now(__import__("datetime").timezone.utc)}},
+                        upsert=True,
+                    )
                     print(f"[MIGRATE] Chat '{chat_id}' uploaded for user '{user_id}'")
                     migrated_chats += 1
 

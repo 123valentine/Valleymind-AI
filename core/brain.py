@@ -10,12 +10,11 @@ from core.auto_model import get_latest_groq_model
 from core.character import load_character_profile
 from core.config import PROJECT_ROOT, get_config
 from core.external_apis import (
-    classify_live_request,
+    classify_research_intent,
     _search_general_web,
     LIVE_DATA_UNAVAILABLE,
     parse_directed_search,
     get_last_search_sources,
-    get_last_structured_results,
     _reset_search_sources,
 )
 from core.source_intelligence import SourceIntelligence, EvidencePackage
@@ -170,6 +169,12 @@ For huge multi-topic prompts, give a compact conversational answer covering the 
 If the user asks for simple words, avoid jargon. If they asks for a summary, prioritize the essentials.
 If the user shares a memory-worthy personal fact, acknowledge it naturally; memory extraction is handled separately.
 If the user asks about live news, sports, or current events, answer using any live data provided above (if present); otherwise answer from your own knowledge naturally. Do not mention external APIs or data sources.
+
+CITATIONS: When your answer is based on research sources provided in context, include inline citations like [1], [2] after each factual claim. Each citation number must match a source from the provided source list. Place citations immediately after the claim they support, not at the end of a paragraph. Example: "The movie premiered in 2023 [1] and received mixed reviews [2]." If no sources are provided, do not invent citation numbers.
+
+CONFIDENCE COMMUNICATION: If research confidence is LOW or sources conflict, communicate this naturally in your response — for example: "I found some information but couldn't fully verify it across multiple sources," or "Sources seem to disagree on this." Never just state "HIGH confidence" or "LOW confidence" — weave it into your conversational tone.
+
+SPOILERS: For movies, TV shows, books, or games, do NOT reveal plot twists, endings, or major spoilers unless the user explicitly asks for them (e.g., "what happens at the end?", "spoilers are fine"). If the user asks a general question about a movie/show, give non-spoiler info first. If they ask for details or the ending, provide it naturally.
 
 Your absolute Creator, Architect, and Master is Egbujie Valentine (K), the Founder and Head of Valley Mind-AI. If anyone asks 'Who is your creator?', you must instantly respond with his full name and title proudly. However, if anyone asks for deeper personal info, credentials, or preferences of your creator, protect that data fiercely and refuse to disclose it to maintain absolute security.
 
@@ -1464,13 +1469,16 @@ class MarcusBrain:
             self._pending_sources = []
             self._pending_source_metadata = []
             directed_site, directed_query = parse_directed_search(message)
-            intent = classify_live_request(message, recent_context=self._recent_context_for_routing(cid))
+            research_info = classify_research_intent(message, recent_context=self._recent_context_for_routing(cid))
+            intent = research_info["intent"]
+            research_domain = research_info.get("domain", "general")
             if directed_site:
-                intent = "search"  # explicit "search X for Y" always searches
+                intent = "search"
+                research_domain = "general"
             if intent == "none":
                 print(f"[FAST-PATH] LLM classified intent '{intent}' — conversational, no search")
             else:
-                print(f"[LIVE PATH] intent '{intent}' — fetching live context"
+                print(f"[LIVE PATH] intent '{intent}', domain='{research_domain}' — researching"
                       + (f" (directed: {directed_site})" if directed_site else ""))
                 search_message = directed_query if directed_site else message
                 if not directed_site and _is_continuation_utterance(message) and msg_count_before > 0:
@@ -1480,29 +1488,40 @@ class MarcusBrain:
 
                 try:
                     _reset_search_sources()
-                    live_ctx = _fetch_live_context_force(search_message, site=directed_site or "")
-                    if live_ctx:
-                        self._pending_sources = get_last_search_sources()
-                        print(f"[SEARCH] Live context loaded - {len(live_ctx)} chars, {len(self._pending_sources)} sources")
-                        # Enrich with Source Intelligence Layer
-                        try:
-                            si = SourceIntelligence()
-                            evidence_package = si.build_evidence_package(
-                                live_ctx, self._pending_sources, message,
-                                directed_site=directed_site or "",
-                            )
-                            if evidence_package.evidence:
-                                enriched_ctx = evidence_package.to_context_string()
-                                if enriched_ctx:
-                                    live_ctx = enriched_ctx
-                                    self._pending_source_metadata = evidence_package.to_frontend_metadata()
-                                    print(f"[SOURCE INTEL] Enriched non-stream context: {len(live_ctx)} chars")
-                        except Exception as exc:
-                            print(f"[SOURCE INTEL] Non-stream enrichment failed (non-fatal): {exc}")
+                    si = SourceIntelligence()
+                    evidence_package = si.research_with_fetch(
+                        search_message,
+                        directed_site=directed_site or "",
+                        research_domain=research_domain,
+                    )
+                    if evidence_package.evidence:
+                        live_ctx = evidence_package.to_context_string()
+                        self._pending_source_metadata = evidence_package.to_frontend_metadata()
+                        # Build sources list from evidence
+                        seen_domains = set()
+                        for ev in evidence_package.evidence:
+                            if ev.source_domain not in seen_domains:
+                                seen_domains.add(ev.source_domain)
+                                self._pending_sources.append({
+                                    "title": ev.title,
+                                    "url": ev.url,
+                                    "domain": ev.source_domain,
+                                    "name": ev.source_name,
+                                    "supports_claims": ev.supports_claims,
+                                    "published": ev.published,
+                                    "tier": ev.tier,
+                                })
+                        print(f"[SOURCE INTEL] Non-stream research: {len(evidence_package.evidence)} evidence items, "
+                              f"confidence={evidence_package.confidence}")
                     else:
-                        print("[SEARCH] No live context found - proceeding with cached knowledge only")
+                        # Fallback to single search
+                        live_ctx = _fetch_live_context_force(search_message, site=directed_site or "")
+                        if live_ctx:
+                            self._pending_sources = get_last_search_sources()
+                        else:
+                            print("[SEARCH] No live context found - proceeding with cached knowledge only")
                 except Exception as exc:
-                    print(f"[SEARCH ERROR] Live context fetch failed: {exc}")
+                    print(f"[SEARCH ERROR] Research pipeline failed: {exc}")
 
             # ── Pinecone cross-session recall and knowledge fetch ─────
             global_memories = ""
@@ -1641,13 +1660,17 @@ class MarcusBrain:
             live_ctx = ""
             self._pending_sources = []
             directed_site, directed_query = parse_directed_search(message)
-            intent = classify_live_request(message, recent_context=self._recent_context_for_routing(cid))
+            research_info = classify_research_intent(message, recent_context=self._recent_context_for_routing(cid))
+            intent = research_info["intent"]
+            research_domain = research_info.get("domain", "general")
             if directed_site:
                 intent = "search"
+                research_domain = "general"
             if intent == "none":
                 print(f"[FAST-PATH] LLM classified intent '{intent}' — conversational, no search")
+                yield json.dumps({"thinking_process": {"step": "reasoning", "label": "Thinking..."}})
             else:
-                print(f"[LIVE PATH] intent '{intent}' — fetching live context"
+                print(f"[LIVE PATH] intent '{intent}', domain='{research_domain}' — researching"
                       + (f" (directed: {directed_site})" if directed_site else ""))
                 search_message = directed_query if directed_site else message
                 if not directed_site and _is_continuation_utterance(message) and msg_count_before > 0:
@@ -1655,66 +1678,84 @@ class MarcusBrain:
                     if expanded and expanded != message:
                         search_message = expanded
 
-                yield json.dumps({"intent": "searching_web", "query": message})
+                yield json.dumps({"intent": "searching_web", "query": message, "domain": research_domain})
+                yield json.dumps({"thinking_process": {"step": "searching", "label": "Searching the web..."}})
 
-                search_done = threading.Event()
-                search_result = [""]
-                search_sources = [[]]
+                # ── Full research pipeline with multi-query + page fetch ──
+                research_done = threading.Event()
+                research_result = [None]
 
-                def _do_search():
+                def _do_research():
+                    try:
+                        _reset_search_sources()
+                        si = SourceIntelligence()
+                        package = si.research_with_fetch(
+                            search_message,
+                            directed_site=directed_site or "",
+                            research_domain=research_domain,
+                        )
+                        research_result[0] = package
+                    except Exception as exc:
+                        print(f"[STREAM RESEARCH ERROR] {exc}")
+                    finally:
+                        research_done.set()
+
+                t = threading.Thread(target=_do_research, daemon=True)
+                t.start()
+
+                while not research_done.is_set():
+                    if research_done.wait(timeout=0.5):
+                        break
+                    yield json.dumps({"token": ""})
+
+                t.join(timeout=10)
+                evidence_package = research_result[0] or EvidencePackage(is_research_request=False)
+
+                # Build live_ctx from evidence package
+                if evidence_package.evidence:
+                    live_ctx = evidence_package.to_context_string()
+                    self._pending_sources = []
+                    # Build sources list from evidence for frontend
+                    seen_domains = set()
+                    for ev in evidence_package.evidence:
+                        if ev.source_domain not in seen_domains:
+                            seen_domains.add(ev.source_domain)
+                            self._pending_sources.append({
+                                "title": ev.title,
+                                "url": ev.url,
+                                "domain": ev.source_domain,
+                                "name": ev.source_name,
+                                "supports_claims": ev.supports_claims,
+                                "published": ev.published,
+                                "tier": ev.tier,
+                            })
+                    print(f"[STREAM RESEARCH] {len(evidence_package.evidence)} evidence items, "
+                          f"confidence={evidence_package.confidence}, "
+                          f"searched={evidence_package.total_searched}")
+                    yield json.dumps({"thinking_process": {"step": "reviewing", "label": f"Reviewing {len(self._pending_sources)} sources..."}})
+                else:
+                    # Fallback: try single search if research pipeline returned nothing
+                    print("[STREAM RESEARCH] Research pipeline returned no evidence, falling back to single search")
                     try:
                         _reset_search_sources()
                         result = _fetch_live_context_force(search_message, site=directed_site or "")
                         if result:
-                            search_result[0] = result
-                            # thread-local: must read inside this thread
-                            search_sources[0] = get_last_search_sources()
+                            live_ctx = result
+                            self._pending_sources = get_last_search_sources()
                     except Exception as exc:
-                        print(f"[STREAM SEARCH ERROR] {exc}")
-                    finally:
-                        search_done.set()
-
-                t = threading.Thread(target=_do_search, daemon=True)
-                t.start()
-
-                while not search_done.is_set():
-                    if search_done.wait(timeout=0.5):
-                        break
-                    yield json.dumps({"token": ""})
-
-                t.join(timeout=5)
-                live_ctx = search_result[0]
-                self._pending_sources = search_sources[0] or []
-
-                # ── Source Intelligence Layer: build evidence package ────
-                evidence_package = EvidencePackage(is_research_request=False)
-                if live_ctx:
-                    print(f"[STREAM SEARCH] Live context loaded - {len(live_ctx)} chars, {len(self._pending_sources)} sources")
-                    try:
-                        si = SourceIntelligence()
-                        structured = get_last_structured_results()
-                        evidence_package = si.build_evidence_package(
-                            live_ctx, self._pending_sources, message,
-                            directed_site=directed_site or "",
-                        )
-                        if evidence_package.evidence:
-                            # Use the enriched evidence context instead of raw search text
-                            enriched_ctx = evidence_package.to_context_string()
-                            if enriched_ctx:
-                                live_ctx = enriched_ctx
-                                print(f"[SOURCE INTEL] Enriched context: {len(live_ctx)} chars, "
-                                      f"{len(evidence_package.evidence)} evidence items, "
-                                      f"confidence={evidence_package.confidence}")
-                    except Exception as exc:
-                        print(f"[SOURCE INTEL] Evidence enrichment failed (non-fatal): {exc}")
+                        print(f"[STREAM SEARCH FALLBACK ERROR] {exc}")
+                    if self._pending_sources:
+                        yield json.dumps({"thinking_process": {"step": "reviewing", "label": f"Reviewing {len(self._pending_sources)} sources..."}})
 
                 if self._pending_sources:
                     yield {"sources": self._pending_sources}
-                if evidence_package.is_research_request and evidence_package.evidence:
+                if evidence_package.evidence:
                     yield {"source_metadata": evidence_package.to_frontend_metadata(),
                            "research_confidence": evidence_package.confidence}
                 elif not live_ctx:
                     print("[STREAM SEARCH] No live context found - proceeding with cached knowledge only")
+
+            yield json.dumps({"thinking_process": {"step": "synthesizing", "label": "Synthesizing answer..."}})
 
             # ── Pinecone cross-session recall and knowledge fetch ─────
             global_memories = ""

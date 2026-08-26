@@ -372,6 +372,99 @@ def classify_live_request(message: str, recent_context: str = "") -> str:
         return "none"
 
 
+def classify_research_intent(message: str, recent_context: str = "") -> dict:
+    """Classify user intent with domain awareness for the research pipeline.
+
+    Returns dict with keys:
+        intent: "search" | "none"
+        domain: "tech" | "news" | "sports" | "science" | "media" | "finance" |
+                "politics" | "health" | "education" | "shopping" | "travel" | "general"
+        reason: brief explanation
+        needs_multi_query: whether this warrants multiple search queries
+        freshness: "high" | "medium" | "low"
+    """
+    msg = str(message or "")
+
+    if _SELF_REFERENTIAL_RE.search(msg):
+        return {"intent": "none", "domain": "general", "reason": "self-referential", "needs_multi_query": False, "freshness": "low"}
+    if _FOLLOWUP_RE.match(msg):
+        return {"intent": "none", "domain": "general", "reason": "follow-up", "needs_multi_query": False, "freshness": "low"}
+
+    config = get_config()
+    model = get_latest_groq_model()
+    api_key = config.groq_api_key
+    if not api_key or not model:
+        _log("Research intent classification skipped: API key or model missing")
+        return {"intent": "search", "domain": "general", "reason": "fallback", "needs_multi_query": False, "freshness": "medium"}
+
+    SYSTEM_PROMPT = (
+        "Classify the user's message for a research engine.\n"
+        "Respond with ONLY a JSON object (no markdown, no explanation):\n"
+        '{"intent":"search"|"none","domain":"tech"|"news"|"sports"|"science"|"media"|"finance"|"politics"|"health"|"education"|"shopping"|"travel"|"general",'
+        '"reason":"brief reason","needs_multi_query":true|false,'
+        '"freshness":"high"|"medium"|"low"}\n\n'
+        "Rules:\n"
+        "- intent=SEARCH when asking for external/time-sensitive info NOT already in context\n"
+        "- intent=CHAT/none for greetings, personal statements, follow-ups on already-found info\n"
+        "- domain=tech for APIs, programming, software, hardware, AI, developer tools\n"
+        "- domain=news for current events, breaking news, general journalism\n"
+        "- domain=sports for scores, transfers, fixtures, standings, player stats\n"
+        "- domain=science for research papers, discoveries, academic research\n"
+        "- domain=media for movies, TV shows, music, books, games, celebrities\n"
+        "- domain=finance for stocks, crypto, markets, investing, banking, economy, GDP\n"
+        "- domain=politics for elections, legislation, government policy, diplomacy, politicians\n"
+        "- domain=health for diseases, symptoms, treatments, nutrition, fitness, mental health\n"
+        "- domain=education for schools, universities, courses, learning, degrees, curricula\n"
+        "- domain=shopping for products, prices, reviews, deals, comparisons, where to buy\n"
+        "- domain=travel for flights, hotels, destinations, visas, travel guides, tourism\n"
+        "- domain=general for anything else requiring current information\n"
+        "- needs_multi_query=true when the question is complex, comparative, or needs cross-referencing\n"
+        "- freshness=high for 'today', 'latest', 'now', 'current', 'just', 'breaking'\n"
+        "- freshness=medium for 'recent', 'this week', 'this month', '2024', '2025', '2026'\n"
+        "- freshness=low for general knowledge, historical, 'best', 'top', 'how to'\n"
+        "Personal statements ('I watch Liverpool', 'I work as a nurse') are ALWAYS intent=none.\n"
+        "Questions about the user themselves are ALWAYS intent=none."
+    )
+
+    user_content = msg
+    if recent_context:
+        user_content = (
+            f"Recent conversation:\n{recent_context}\n\nLatest message:\n{msg}"
+        )
+
+    try:
+        client = Groq(api_key=api_key, base_url=config.groq_base_url)
+        chat_completion = client.chat.completions.create(
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": user_content},
+            ],
+            model=model,
+            temperature=0.1,
+            max_tokens=200,
+        )
+        raw = chat_completion.choices[0].message.content.strip()
+        _log(f"Research intent raw: {raw[:200]}")
+        # Extract JSON from response (handle markdown code blocks)
+        json_match = re.search(r"\{[^}]+\}", raw)
+        if json_match:
+            result = json.loads(json_match.group())
+            result.setdefault("intent", "none")
+            result.setdefault("domain", "general")
+            result.setdefault("reason", "")
+            result.setdefault("needs_multi_query", False)
+            result.setdefault("freshness", "medium")
+            print(f"[ROUTER AGENT] Research intent: {result}")
+            return result
+        # Fallback: check for SEARCH/CHAT in raw text
+        if "SEARCH" in raw.upper():
+            return {"intent": "search", "domain": "general", "reason": "parsed from text", "needs_multi_query": False, "freshness": "medium"}
+        return {"intent": "none", "domain": "general", "reason": "parsed from text", "needs_multi_query": False, "freshness": "low"}
+    except Exception as exc:
+        _log(f"Research intent classification failed: {_safe_error(exc)}")
+        return {"intent": "none", "domain": "general", "reason": "error", "needs_multi_query": False, "freshness": "low"}
+
+
 def _sports_topic(message: str) -> str:
     text = str(message or "").lower()
     if re.search(r"\b(history|historical|old|past|previous|all[- ]time|career|legend|won in|final in|season \d{4}|19\d{2}|20[0-2]\d)\b", text):
@@ -595,6 +688,76 @@ def _tinyfish_api_key() -> str:
     return os.getenv("TINYFISH_API_KEY", "").strip() or os.getenv("TF_API_KEY", "").strip()
 
 
+def _fetch_url_content(url: str, max_chars: int = 4000) -> str:
+    """Fetch and extract text content from a URL using TinyFish Fetch API.
+
+    Returns cleaned text content (not HTML), truncated to max_chars.
+    Falls back to empty string on failure — never raises.
+    Includes SSRF protection to block private/metadata IPs.
+    """
+    api_key = _tinyfish_api_key()
+    if not api_key:
+        _log("TinyFish Fetch skipped: TINYFISH_API_KEY not set")
+        return ""
+
+    # SSRF protection: block private and metadata IPs
+    try:
+        parsed = urlparse(url)
+        hostname = parsed.hostname or ""
+        if not hostname:
+            return ""
+        # Block obvious private/metadata targets
+        blocked = {
+            "localhost", "127.0.0.1", "0.0.0.0", "::1",
+            "metadata.google.internal", "169.254.169.254",
+            "instance-data", "100.100.100.200",
+        }
+        if hostname.lower() in blocked:
+            _log(f"Fetch blocked: SSRF target {hostname}")
+            return ""
+        # Block RFC1918 / loopback / link-local ranges if parsed as IP
+        import ipaddress
+        try:
+            ip = ipaddress.ip_address(hostname)
+            if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast:
+                _log(f"Fetch blocked: private IP {hostname}")
+                return ""
+        except ValueError:
+            pass  # hostname is a domain name, not an IP — fine
+        # Only allow http/https schemes
+        if parsed.scheme and parsed.scheme not in ("http", "https"):
+            _log(f"Fetch blocked: non-http scheme {parsed.scheme}")
+            return ""
+    except Exception:
+        return ""
+
+    _log(f"TinyFish Fetch: {url[:80]}")
+    try:
+        resp = requests.post(
+            "https://api.fetch.tinyfish.ai",
+            json={"url": url},
+            headers={"X-API-Key": api_key},
+            timeout=20,
+        )
+        if resp.status_code != 200:
+            _log(f"TinyFish Fetch HTTP {resp.status_code}")
+            return ""
+        data = resp.json()
+        content = data.get("content") or data.get("text") or ""
+        if not content:
+            _log("TinyFish Fetch returned empty content")
+            return ""
+        # Clean and truncate
+        content = re.sub(r"\s+", " ", content).strip()
+        if len(content) > max_chars:
+            content = content[:max_chars].rsplit(" ", 1)[0] + "..."
+        _log(f"TinyFish Fetch success: {len(content)} chars")
+        return content
+    except Exception as exc:
+        _log(f"TinyFish Fetch failed: {_safe_error(exc)[:100]}")
+        return ""
+
+
 def _search_tinyfish(query: str, site: str = "") -> str:
     api_key = _tinyfish_api_key()
     if not api_key:
@@ -681,6 +844,7 @@ def _search_tinyfish(query: str, site: str = "") -> str:
 
 
 def _search_general_web(query: str, site: str = "") -> str:
+    """Search the web using TinyFish with DuckDuckGo Lite and Wikipedia fallbacks."""
     try:
         tf_context = _search_tinyfish(query, site=site)
         if tf_context and tf_context != LIVE_DATA_UNAVAILABLE:
@@ -688,6 +852,100 @@ def _search_general_web(query: str, site: str = "") -> str:
     except Exception as exc:
         _log(f"TinyFish failed: {_safe_error(exc)}")
 
+    # Fallback 1: DuckDuckGo Lite (no API key needed)
+    try:
+        ddg_context = _search_ddg_lite(query)
+        if ddg_context and ddg_context != LIVE_DATA_UNAVAILABLE:
+            return ddg_context
+    except Exception as exc:
+        _log(f"DDG fallback failed: {_safe_error(exc)}")
+
+    # Fallback 2: Wikipedia API
+    try:
+        wiki_context = _search_wikipedia(query)
+        if wiki_context and wiki_context != LIVE_DATA_UNAVAILABLE:
+            return wiki_context
+    except Exception as exc:
+        _log(f"Wikipedia fallback failed: {_safe_error(exc)}")
+
+    return LIVE_DATA_UNAVAILABLE
+
+
+def _search_ddg_lite(query: str) -> str:
+    """DuckDuckGo Lite fallback — lightweight HTML scrape, no API key."""
+    import urllib.request as _req
+    import urllib.parse as _parse
+    import html as _html
+
+    encoded = _parse.quote(query)
+    url = f"https://lite.duckduckgo.com/lite/?q={encoded}"
+    try:
+        req = _req.Request(url, headers={
+            "User-Agent": "Mozilla/5.0 (compatible; ValleymindBot/1.0)",
+        })
+        with _req.urlopen(req, timeout=12) as resp:
+            raw = resp.read().decode("utf-8", errors="replace")
+    except Exception as exc:
+        _log(f"DDG Lite request failed: {_safe_error(exc)[:80]}")
+        return LIVE_DATA_UNAVAILABLE
+
+    # Parse simple results from DDG Lite HTML
+    results = []
+    # DDG Lite uses <a class="result-link"> for titles and <td class="result-snippet"> for snippets
+    link_pattern = re.compile(r'<a[^>]+class="result-link"[^>]*href="([^"]*)"[^>]*>(.*?)</a>', re.DOTALL)
+    snippet_pattern = re.compile(r'<td[^>]*class="result-snippet"[^>]*>(.*?)</td>', re.DOTALL)
+
+    links = link_pattern.findall(raw)
+    snippets = snippet_pattern.findall(raw)
+
+    for i, (href, title) in enumerate(links[:5]):
+        title_clean = re.sub(r"<[^>]+>", "", title).strip()
+        title_clean = _html.unescape(title_clean)
+        href = _html.unescape(href)
+        snippet = ""
+        if i < len(snippets):
+            snippet = re.sub(r"<[^>]+>", "", snippets[i]).strip()
+            snippet = _html.unescape(snippet)[:200]
+        if title_clean:
+            results.append(f"- {title_clean}: {snippet}")
+
+    if results:
+        _log(f"DDG Lite: {len(results)} results")
+        return "Live search results:\n" + "\n".join(results)
+    return LIVE_DATA_UNAVAILABLE
+
+
+def _search_wikipedia(query: str) -> str:
+    """Wikipedia API fallback — extractive summary for factual queries."""
+    import urllib.request as _req
+    import urllib.parse as _parse
+
+    encoded = _parse.quote(query)
+    api_url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{encoded}"
+    try:
+        req = _req.Request(api_url, headers={
+            "User-Agent": "ValleymindBot/1.0 (research assistant)",
+        })
+        with _req.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8", errors="replace"))
+    except Exception:
+        # Try search-based approach if direct title lookup fails
+        try:
+            search_url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{_parse.quote(query.split()[0])}"
+            req = _req.Request(search_url, headers={
+                "User-Agent": "ValleymindBot/1.0 (research assistant)",
+            })
+            with _req.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read().decode("utf-8", errors="replace"))
+        except Exception as exc:
+            _log(f"Wikipedia failed: {_safe_error(exc)[:80]}")
+            return LIVE_DATA_UNAVAILABLE
+
+    extract = data.get("extract", "")
+    title = data.get("title", "")
+    if extract:
+        _log(f"Wikipedia: found summary for '{title}'")
+        return f"Live search results:\n- {title}: {extract[:400]}"
     return LIVE_DATA_UNAVAILABLE
 
 

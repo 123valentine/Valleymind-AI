@@ -405,7 +405,9 @@ def _require_login():
     #    Missing field, None, False, int, string "true", empty dict,
     #    or any other non-True value → denied.  is_verified_record()
     #    is the single predicate; never substitute a truthiness check.
-    if not is_verified_record(user_rec):
+    #    Bypassed when EMAIL_VERIFICATION_ENABLED is False (temporarily
+    #    disabled until a verified sending domain is configured).
+    if EMAIL_VERIFICATION_ENABLED and not is_verified_record(user_rec):
         return "", (jsonify({
             "status": "error",
             "message": "Email verification required",
@@ -481,6 +483,15 @@ VERIFY_TTL = timedelta(minutes=30)
 OTP_TTL = timedelta(minutes=10)
 EMAIL_RESEND_COOLDOWN = 50   # seconds between resends per account (anti-spam)
 MAX_CODE_ATTEMPTS = 5
+
+# ── Email verification gate ────────────────────────────────────────────────
+# When False (the default) the OTP / email-verification requirement is
+# bypassed: new sign-ups and Google log-ins are immediately usable, and
+# existing unverified accounts are not blocked.  All OTP / Resend code is
+# preserved and can be re-enabled by setting this to "true".
+EMAIL_VERIFICATION_ENABLED = os.getenv(
+    "EMAIL_VERIFICATION_ENABLED", "false"
+).strip().lower() in ("true", "1", "yes")
 
 # All transactional + promotional mail runs through core/email_service.py
 # (Resend HTTP API). Config lives there: RESEND_API_KEY, EMAIL_FROM, etc.
@@ -837,6 +848,7 @@ def auth_status():
         "memory_loaded": bool(marcus),
         "is_creator": _is_creator(email_auth),
         "email_verified": is_verified_record(_user_rec),
+        "email_verification_enabled": EMAIL_VERIFICATION_ENABLED,
         "video_generation_enabled": _video_generation_enabled(),
     })
 
@@ -1223,6 +1235,8 @@ def google_auth():
             # Unified auth: even Google sign-ups start UNVERIFIED in
             # ValleyMind. Google proves mailbox ownership; ValleyMind OTP
             # proves this person wants access HERE.
+            # When EMAIL_VERIFICATION_ENABLED is False, new accounts start
+            # verified so the user can enter the app immediately.
             user = {
                 "user_id": user_id,
                 "google_id": google_id,
@@ -1231,15 +1245,17 @@ def google_auth():
                 "email": email,
                 "auth_method": "google",
                 "created_at": datetime.now(timezone.utc).isoformat(),
-                "email_verified": False,
+                "email_verified": False if EMAIL_VERIFICATION_ENABLED else True,
             }
+            if not EMAIL_VERIFICATION_ENABLED:
+                user["email_verified_at"] = datetime.now(timezone.utc).isoformat()
             users[email] = user
-            email_verified = False
+            email_verified = user["email_verified"]
         if is_creator:
             users[email]["identity_name"] = CREATOR_NAME
             users[email]["title"] = CREATOR_TITLE
 
-        if not email_verified:
+        if EMAIL_VERIFICATION_ENABLED and not email_verified:
             # Issue (or rotate) the single-use verification challenge now so
             # the user can complete it right after this response. The resend
             # endpoint remains available for retries/delivery failures.
@@ -1300,6 +1316,7 @@ def google_auth():
         "is_creator": is_creator,
         "email_verified": email_verified,
         "needs_verification": not email_verified,
+        "email_verification_enabled": EMAIL_VERIFICATION_ENABLED,
         "email_sent": bool(email_sent) if challenge_issued else None,
     })
 
@@ -1388,13 +1405,22 @@ def register():
         if is_creator:
             record["identity_name"] = CREATOR_NAME
             record["title"] = CREATOR_TITLE
-        # Email/password accounts start unverified — issue a single-use
-        # verification challenge (magic-link token + 6-digit code). Only the
-        # hashes are stored; the plaintext is returned once, to email.
-        from core import auth_codes
-        _verify_code, _verify_token = auth_codes.set_challenge(
-            record, "verify", ttl_seconds=int(VERIFY_TTL.total_seconds()),
-            with_token=True, purpose="email_verification")
+
+        # When email verification is disabled, new accounts start verified
+        # so the user can enter the app immediately.  OTP/Resend code is
+        # preserved and re-enabled by setting EMAIL_VERIFICATION_ENABLED=true.
+        _verify_code = _verify_token = None
+        if EMAIL_VERIFICATION_ENABLED:
+            # Issue a single-use verification challenge (magic-link token +
+            # 6-digit code).  Only the hashes are stored; the plaintext is
+            # returned once, to email.
+            from core import auth_codes
+            _verify_code, _verify_token = auth_codes.set_challenge(
+                record, "verify", ttl_seconds=int(VERIFY_TTL.total_seconds()),
+                with_token=True, purpose="email_verification")
+        else:
+            record["email_verified"] = True
+            record["email_verified_at"] = datetime.now(timezone.utc).isoformat()
         users[email] = record
         _save_users(users)
 
@@ -1436,21 +1462,22 @@ def register():
     # so the response can reflect whether the provider actually accepted it.
     # The OTP is already persisted on the user record above; if the send fails
     # the user can retry from the verify modal's resend button (which is also
-    # synchronous + honest now).
-    print(f"[OTP] register_persisted email={email.split('@')[0]}@*** has_code_hash={bool(record.get('verify_code_hash'))} has_token_hash={bool(record.get('verify_token_hash'))}")
+    # synchronous + honest now).  Skipped entirely when verification is disabled.
     email_sent = False
-    try:
-        from core import email_service
-        _rid = uuid.uuid4().hex[:12]
-        print(f"[EMAIL][rid={_rid}] register_fire email={email.split('@')[0]}@*** configured={email_service.available()}")
-        _vlink = f"{APP_BASE_URL}/verify-email?token={_verify_token}"
-        email_sent = _send_email_now(email_service.send_verification_email,
-                                     email, _verify_code, _vlink,
-                                     minutes=int(VERIFY_TTL.total_seconds() // 60),
-                                     request_id=_rid)
-    except Exception as exc:
-        print(f"[EMAIL] register_fire_exception {type(exc).__name__}")
+    if EMAIL_VERIFICATION_ENABLED and _verify_code:
+        try:
+            from core import email_service
+            _rid = uuid.uuid4().hex[:12]
+            print(f"[EMAIL][rid={_rid}] register_fire email={email.split('@')[0]}@*** configured={email_service.available()}")
+            _vlink = f"{APP_BASE_URL}/verify-email?token={_verify_token}"
+            email_sent = _send_email_now(email_service.send_verification_email,
+                                         email, _verify_code, _vlink,
+                                         minutes=int(VERIFY_TTL.total_seconds() // 60),
+                                         request_id=_rid)
+        except Exception as exc:
+            print(f"[EMAIL] register_fire_exception {type(exc).__name__}")
 
+    _reg_email_verified = record.get("email_verified", False)
     return jsonify({
         "status": "success",
         "authenticated": True,
@@ -1462,8 +1489,9 @@ def register():
         "character": "marcus",
         "session_token": token,
         "is_creator": is_creator,
-        "email_verified": False,
-        "needs_verification": True,
+        "email_verified": _reg_email_verified,
+        "needs_verification": not _reg_email_verified,
+        "email_verification_enabled": EMAIL_VERIFICATION_ENABLED,
         "first_time": True,
         # Honest delivery signal: true only when Resend accepted the message.
         # The account is created either way; the verify modal's resend button

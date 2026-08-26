@@ -143,6 +143,138 @@
   .thinking-dot:nth-child(2){animation-delay:0.16s}
   .thinking-dot:nth-child(3){animation-delay:0.32s}
   @keyframes swimDots{0%,100%{transform:translateY(0) translateX(0);opacity:0.35}35%{transform:translateY(-5px) translateX(2px);opacity:1}70%{transform:translateY(2px) translateX(-1px);opacity:0.65}}
+  /* ── Thinking Process Block ──────────────────────────────────── */
+  .thinking-process {
+    margin: 0 0 8px; padding: 0; max-width: 560px;
+    font-family: 'Inter', 'Segoe UI', sans-serif;
+  }
+  .thinking-process-toggle {
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 6px 12px; border-radius: 8px; border: none; cursor: pointer;
+    background: rgba(0,212,255,0.06); color: #7dd3fc;
+    font-size: 11.5px; font-weight: 600; letter-spacing: 0.02em;
+    transition: background 0.2s, color 0.2s;
+    font-family: 'Space Grotesk', 'Segoe UI', sans-serif;
+  }
+  .thinking-process-toggle:hover {
+    background: rgba(0,212,255,0.12); color: #bae6fd;
+  }
+  .thinking-process-toggle .tp-icon {
+    width: 14px; height: 14px; flex-shrink: 0;
+    opacity: 0.7; transition: transform 0.25s ease;
+  }
+  .thinking-process.open .thinking-process-toggle .tp-icon {
+    transform: rotate(90deg);
+  }
+  .thinking-process-toggle .tp-label {
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .thinking-process-toggle .tp-dots {
+    display: inline-flex; gap: 3px; margin-left: 4px; vertical-align: middle;
+  }
+  .thinking-process-toggle .tp-dots span {
+    width: 4px; height: 4px; border-radius: 50%; background: #0ea5e9;
+    animation: tpPulse 1.4s ease-in-out infinite;
+  }
+  .thinking-process-toggle .tp-dots span:nth-child(2) { animation-delay: 0.2s; }
+  .thinking-process-toggle .tp-dots span:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes tpPulse { 0%,100%{ opacity:0.3; transform:scale(0.8); } 50%{ opacity:1; transform:scale(1); } }
+  .thinking-process-steps {
+    display: none; margin-top: 6px; padding: 8px 12px;
+    border-radius: 8px; background: rgba(0,212,255,0.03);
+    border: 1px solid rgba(0,212,255,0.08);
+  }
+  .thinking-process.open .thinking-process-steps { display: block; }
+  .thinking-process-step {
+    display: flex; align-items: flex-start; gap: 8px;
+    padding: 4px 0; font-size: 12px; color: #94a3b8; line-height: 1.5;
+  }
+  .thinking-process-step:last-child { padding-bottom: 0; }
+  .thinking-process-step .step-icon {
+    width: 16px; height: 16px; flex-shrink: 0; margin-top: 1px;
+    border-radius: 50%; display: flex; align-items: center; justify-content: center;
+    font-size: 10px; font-weight: 700;
+  }
+  .thinking-process-step .step-icon.done {
+    background: rgba(34,197,94,0.12); color: #22c55e;
+    border: 1px solid rgba(34,197,94,0.25);
+  }
+  .thinking-process-step .step-icon.active {
+    background: rgba(0,212,255,0.12); color: #00d4ff;
+    border: 1px solid rgba(0,212,255,0.3);
+    animation: stepPulse 1.2s ease-in-out infinite;
+  }
+  @keyframes stepPulse { 0%,100%{ box-shadow:0 0 0 0 rgba(0,212,255,0.3); } 50%{ box-shadow:0 0 0 4px rgba(0,212,255,0); } }
+  .thinking-process-step .step-text {
+    color: #cbd5e1; font-weight: 500;
+  }
+  .thinking-process-step.step-done .step-text { color: #94a3b8; }
+  .thinking-process-step.step-active .step-text { color: #e2e8f0; }
+
+  /* ── Improved Source Panel (replaces old source-panel) ────────── */
+  .sources-section {
+    margin-top: 14px; padding: 12px 14px; border-radius: 12px;
+    background: rgba(15,23,42,0.55); border: 1px solid rgba(255,255,255,0.06);
+    font-family: 'Inter', 'Segoe UI', sans-serif;
+  }
+  .sources-header {
+    display: flex; align-items: center; gap: 7px; margin-bottom: 10px;
+    cursor: pointer; user-select: none;
+  }
+  .sources-header-icon {
+    width: 14px; height: 14px; color: #64748b; flex-shrink: 0;
+  }
+  .sources-header-label {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em;
+    color: #64748b; font-weight: 600;
+    font-family: 'Space Grotesk', sans-serif;
+  }
+  .sources-header-count {
+    font-size: 10px; color: #475569; margin-left: 2px;
+  }
+  .sources-confidence {
+    font-size: 9px; padding: 2px 7px; border-radius: 99px; margin-left: auto;
+    font-weight: 600; white-space: nowrap;
+  }
+  .sources-confidence.high { background: rgba(34,197,94,0.1); color: #22c55e; border: 1px solid rgba(34,197,94,0.2); }
+  .sources-confidence.medium { background: rgba(234,179,8,0.1); color: #eab308; border: 1px solid rgba(234,179,8,0.2); }
+  .sources-confidence.low { background: rgba(148,163,184,0.1); color: #94a3b8; border: 1px solid rgba(148,163,184,0.2); }
+  .sources-list { display: flex; flex-direction: column; gap: 2px; }
+  .source-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 7px 10px; border-radius: 8px; text-decoration: none; color: inherit;
+    transition: background 0.15s;
+  }
+  .source-row:hover { background: rgba(255,255,255,0.04); }
+  .source-favicon {
+    width: 18px; height: 18px; border-radius: 4px; flex-shrink: 0;
+    background: rgba(255,255,255,0.04);
+  }
+  .source-favicon[data-fallback] {
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10px; font-weight: 700; color: #64748b;
+    background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.08);
+  }
+  .source-info { flex: 1; min-width: 0; overflow: hidden; }
+  .source-name {
+    font-size: 12.5px; font-weight: 600; color: #e2e8f0;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    line-height: 1.3;
+  }
+  .source-title {
+    font-size: 11px; color: #94a3b8;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    line-height: 1.3; max-width: 320px;
+  }
+  .source-domain {
+    font-size: 10px; color: #475569; line-height: 1.3;
+  }
+  .source-tier {
+    font-size: 8.5px; font-weight: 700; padding: 2px 6px; border-radius: 99px;
+    flex-shrink: 0; white-space: nowrap; letter-spacing: 0.02em;
+  }
+  .source-tier.t1 { background: rgba(34,197,94,0.1); color: #22c55e; border: 1px solid rgba(34,197,94,0.2); }
+  .source-tier.t2 { background: rgba(59,130,246,0.1); color: #60a5fa; border: 1px solid rgba(59,130,246,0.2); }
   .cs-badge { background:rgba(255,170,0,0.1); color:#ffaa00; border:1px solid rgba(255,170,0,0.3); }
   .img-skeleton {
     width:100%; max-width:320px; height:240px; border-radius:12px;
@@ -3874,7 +4006,7 @@ function renderSourcePanel(bubbleEl, sourceMetadata, confidence) {
     }
     panel.appendChild(header);
 
-    sourceMetadata.slice(0, 6).forEach(function (s) {
+    sourceMetadata.slice(0, 6).forEach(function (s, idx) {
         var domain = s.domain || (function () { try { return new URL(s.url).hostname.replace("www.", ""); } catch (e) { return s.url; } })();
         var displayName = s.name || domain.split(".")[0].charAt(0).toUpperCase() + domain.split(".")[0].slice(1);
 
@@ -3882,14 +4014,20 @@ function renderSourcePanel(bubbleEl, sourceMetadata, confidence) {
         row.href = s.url;
         row.target = "_blank";
         row.rel = "noopener noreferrer";
-        row.style.cssText = "display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;text-decoration:none;color:#cbd5e1;transition:background 0.15s;margin-bottom:2px;";
+        row.style.cssText = "display:flex;align-items:flex-start;gap:8px;padding:6px 8px;border-radius:6px;text-decoration:none;color:#cbd5e1;transition:background 0.15s;margin-bottom:2px;";
         row.onmouseenter = function () { row.style.background = "rgba(255,255,255,0.04)"; };
         row.onmouseleave = function () { row.style.background = "transparent"; };
+
+        // Citation number badge
+        var numBadge = document.createElement("span");
+        numBadge.textContent = idx + 1;
+        numBadge.style.cssText = "font-size:9px;font-weight:700;color:#60a5fa;background:rgba(96,165,250,0.12);border:1px solid rgba(96,165,250,0.2);border-radius:4px;padding:1px 5px;flex-shrink:0;margin-top:2px;";
+        row.appendChild(numBadge);
 
         var fav = document.createElement("img");
         fav.src = s.icon || ("https://www.google.com/s2/favicons?sz=32&domain=" + encodeURIComponent(domain));
         fav.width = 16; fav.height = 16;
-        fav.style.cssText = "border-radius:3px;flex-shrink:0;";
+        fav.style.cssText = "border-radius:3px;flex-shrink:0;margin-top:1px;";
         fav.onerror = function () {
             fav.onerror = null;
             fav.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='7' fill='none' stroke='%2364748b' stroke-width='1.5'/%3E%3Ctext x='8' y='11' text-anchor='middle' font-size='9' fill='%2364748b'%3E%E2%9C%93%3C/text%3E%3C/svg%3E";
@@ -3906,6 +4044,16 @@ function renderSourcePanel(bubbleEl, sourceMetadata, confidence) {
             titleEl.textContent = s.title;
             titleEl.style.cssText = "font-size:10px;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:280px;";
             info.appendChild(titleEl);
+        }
+        // Show excerpt from supports_claims if available
+        if (s.supports_claims && s.supports_claims.length > 0) {
+            var excerptEl = document.createElement("div");
+            var excerptText = s.supports_claims[0];
+            if (excerptText.length > 120) excerptText = excerptText.slice(0, 117) + "...";
+            excerptEl.textContent = excerptText;
+            excerptEl.style.cssText = "font-size:9px;color:#64748b;margin-top:2px;line-height:1.3;font-style:italic;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
+            excerptEl.title = s.supports_claims.join(" | ");
+            info.appendChild(excerptEl);
         }
         var domainEl = document.createElement("div");
         domainEl.textContent = domain;
@@ -3926,6 +4074,255 @@ function renderSourcePanel(bubbleEl, sourceMetadata, confidence) {
     });
 
     bub.appendChild(panel);
+}
+
+function renderInlineCitations(bubbleEl, sourceMetadata) {
+    if (!bubbleEl || !Array.isArray(sourceMetadata) || !sourceMetadata.length) return;
+    var bub = bubbleEl.querySelector(".bubble") || bubbleEl;
+    if (!bub) return;
+    var textEl = bub.querySelector(".message-text") || bub;
+    if (!textEl) return;
+
+    // Build domain→index mapping (1-indexed for citations)
+    var domainIndex = {};
+    sourceMetadata.forEach(function (s, i) {
+        var domain = s.domain || "";
+        if (domain && !(domain in domainIndex)) {
+            domainIndex[domain] = i + 1;
+        }
+    });
+    if (!Object.keys(domainIndex).length) return;
+
+    // Find and replace [N] citation patterns with styled superscripts
+    var walker = document.createTreeWalker(textEl, NodeFilter.SHOW_TEXT, null, false);
+    var textNodes = [];
+    while (walker.nextNode()) textNodes.push(walker.currentNode);
+
+    var citationRe = /\[(\d+)\]/g;
+    textNodes.forEach(function (node) {
+        var text = node.textContent;
+        if (!citationRe.test(text)) return;
+        citationRe.lastIndex = 0;
+
+        var frag = document.createDocumentFragment();
+        var lastIdx = 0;
+        var match;
+        while ((match = citationRe.exec(text)) !== null) {
+            // Add text before the citation
+            if (match.index > lastIdx) {
+                frag.appendChild(document.createTextNode(text.slice(lastIdx, match.index)));
+            }
+            // Create styled superscript citation
+            var num = match[1];
+            var sup = document.createElement("sup");
+            sup.className = "inline-citation";
+            sup.textContent = "[" + num + "]";
+            sup.style.cssText = "color:#60a5fa;font-size:10px;font-weight:600;cursor:pointer;margin:0 1px;padding:0 2px;border-radius:3px;background:rgba(96,165,250,0.1);transition:background 0.15s;";
+            sup.title = "Source " + num;
+            sup.onmouseenter = function () { sup.style.background = "rgba(96,165,250,0.25)"; };
+            sup.onmouseleave = function () { sup.style.background = "rgba(96,165,250,0.1)"; };
+            // Click to scroll to source panel
+            sup.onclick = function (e) {
+                e.preventDefault();
+                var panel = bub.querySelector(".sources-section");
+                if (panel) {
+                    var rows = panel.querySelectorAll(".source-row");
+                    var idx = parseInt(num) - 1;
+                    if (rows[idx]) rows[idx].scrollIntoView({ behavior: "smooth", block: "center" });
+                }
+            };
+            frag.appendChild(sup);
+            lastIdx = match.index + match[0].length;
+        }
+        // Add remaining text
+        if (lastIdx < text.length) {
+            frag.appendChild(document.createTextNode(text.slice(lastIdx)));
+        }
+        text.parentNode.replaceChild(frag, text);
+    });
+}
+
+/* ── Thinking Process Block ────────────────────────────────────────────
+   Creates a collapsible "Thinking Process" indicator similar to Claude's
+   thinking blocks. Steps are added one by one via addThinkingStep(),
+   and the block auto-expands while active, then collapses when done.
+   --------------------------------------------------------------------- */
+function createThinkingProcess(container) {
+    if (!container) return null;
+    var wrap = document.createElement("div");
+    wrap.className = "thinking-process";
+
+    var toggle = document.createElement("button");
+    toggle.className = "thinking-process-toggle";
+    toggle.innerHTML =
+        '<svg class="tp-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>' +
+        '<span class="tp-label">Thinking</span>' +
+        '<span class="tp-dots"><span></span><span></span><span></span></span>';
+
+    var stepsEl = document.createElement("div");
+    stepsEl.className = "thinking-process-steps";
+
+    wrap.appendChild(toggle);
+    wrap.appendChild(stepsEl);
+    container.appendChild(wrap);
+
+    // Toggle open/close
+    toggle.onclick = function () {
+        wrap.classList.toggle("open");
+    };
+
+    return {
+        el: wrap,
+        toggle: toggle,
+        stepsEl: stepsEl,
+        steps: [],
+        _activeStepIdx: -1,
+        addStep: function (label) {
+            // Mark previous step as done
+            if (this._activeStepIdx >= 0 && this._activeStepIdx < this.steps.length) {
+                var prev = this.steps[this._activeStepIdx];
+                prev.iconEl.textContent = "\u2713";
+                prev.iconEl.className = "step-icon done";
+                prev.row.className = "thinking-process-step step-done";
+            }
+            var row = document.createElement("div");
+            row.className = "thinking-process-step step-active";
+            var iconEl = document.createElement("span");
+            iconEl.className = "step-icon active";
+            iconEl.innerHTML = '<span class="tp-dots"><span></span><span></span><span></span></span>';
+            var textEl = document.createElement("span");
+            textEl.className = "step-text";
+            textEl.textContent = label;
+            row.appendChild(iconEl);
+            row.appendChild(textEl);
+            this.stepsEl.appendChild(row);
+            this.steps.push({ row: row, iconEl: iconEl, textEl: textEl });
+            this._activeStepIdx = this.steps.length - 1;
+            // Auto-open while active
+            this.el.classList.add("open");
+            // Update toggle label
+            this.toggle.querySelector(".tp-label").textContent = label;
+            // Scroll into view
+            try { this.el.scrollIntoView({ behavior: "smooth", block: "nearest" }); } catch (e) {}
+            return this;
+        },
+        finish: function () {
+            // Mark last step as done
+            if (this._activeStepIdx >= 0 && this._activeStepIdx < this.steps.length) {
+                var last = this.steps[this._activeStepIdx];
+                last.iconEl.textContent = "\u2713";
+                last.iconEl.className = "step-icon done";
+                last.row.className = "thinking-process-step step-done";
+            }
+            // Remove dots from toggle
+            var dots = this.toggle.querySelector(".tp-dots");
+            if (dots) dots.remove();
+            // Collapse after a brief delay
+            var self = this;
+            setTimeout(function () { self.el.classList.remove("open"); }, 600);
+        }
+    };
+}
+
+/* ── Improved Sources Panel ────────────────────────────────────────────
+   Clean, modern source cards shown only when real search results exist.
+   Shows favicon, name, title, domain, and tier badge. No fake/empty sources.
+   --------------------------------------------------------------------- */
+function renderSourcesPanel(bubbleEl, sourceMetadata, confidence) {
+    if (!bubbleEl || !Array.isArray(sourceMetadata) || !sourceMetadata.length) return;
+    var bub = bubbleEl.querySelector(".bubble") || bubbleEl;
+    if (bub.querySelector(".sources-section")) return; // avoid duplicates
+
+    // Filter out any empty/placeholder sources
+    var valid = sourceMetadata.filter(function (s) {
+        return s && s.url && s.domain && !s.domain.startsWith("example");
+    });
+    if (!valid.length) return;
+
+    var section = document.createElement("div");
+    section.className = "sources-section";
+
+    // Header row
+    var header = document.createElement("div");
+    header.className = "sources-header";
+    header.innerHTML =
+        '<svg class="sources-header-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>' +
+        '<span class="sources-header-label">Sources</span>' +
+        '<span class="sources-header-count">(' + valid.length + ')</span>';
+
+    if (confidence) {
+        var badge = document.createElement("span");
+        badge.className = "sources-confidence " + confidence;
+        badge.textContent = confidence.charAt(0).toUpperCase() + confidence.slice(1);
+        header.appendChild(badge);
+    }
+
+    section.appendChild(header);
+
+    // Source list
+    var list = document.createElement("div");
+    list.className = "sources-list";
+
+    valid.slice(0, 8).forEach(function (s, idx) {
+        var domain = s.domain || (function () { try { return new URL(s.url).hostname.replace("www.", ""); } catch (e) { return s.url; } })();
+        var displayName = s.name || domain.split(".")[0].charAt(0).toUpperCase() + domain.split(".")[0].slice(1);
+
+        var row = document.createElement("a");
+        row.href = s.url;
+        row.target = "_blank";
+        row.rel = "noopener noreferrer";
+        row.className = "source-row";
+
+        // Favicon
+        var favSrc = s.icon || ("https://www.google.com/s2/favicons?sz=32&domain=" + encodeURIComponent(domain));
+        var fav = document.createElement("img");
+        fav.className = "source-favicon";
+        fav.src = favSrc;
+        fav.width = 18; fav.height = 18;
+        fav.loading = "lazy";
+        fav.onerror = function () {
+            fav.onerror = null;
+            fav.setAttribute("data-fallback", "1");
+            fav.removeAttribute("src");
+            fav.style.width = "18px"; fav.style.height = "18px";
+            fav.textContent = displayName.charAt(0).toUpperCase();
+        };
+
+        // Info block
+        var info = document.createElement("div");
+        info.className = "source-info";
+        var nameEl = document.createElement("div");
+        nameEl.className = "source-name";
+        nameEl.textContent = displayName;
+        info.appendChild(nameEl);
+        if (s.title && s.title !== displayName) {
+            var titleEl = document.createElement("div");
+            titleEl.className = "source-title";
+            titleEl.textContent = s.title;
+            titleEl.title = s.title;
+            info.appendChild(titleEl);
+        }
+        var domainEl = document.createElement("div");
+        domainEl.className = "source-domain";
+        domainEl.textContent = domain;
+        info.appendChild(domainEl);
+
+        row.appendChild(fav);
+        row.appendChild(info);
+
+        // Tier badge for official / verified sources
+        if (s.tier && s.tier <= 2) {
+            var tierBadge = document.createElement("span");
+            tierBadge.className = "source-tier " + (s.tier === 1 ? "t1" : "t2");
+            tierBadge.textContent = s.tier === 1 ? "Official" : "Verified";
+            row.appendChild(tierBadge);
+        }
+
+        list.appendChild(row);
+    });
+
+    section.appendChild(list);
+    bub.appendChild(section);
 }
 
 function addMessage(text, type = "ai", imageData, mediaUrl, videoUrl) {
@@ -8326,8 +8723,9 @@ async function checkSession() {
 
             // Email/password accounts start unverified until the emailed code or
             // magic link is used. Unverified users are BLOCKED from the app by a
-            // non-dismissable verify modal overlay.
-            if (data.email_verified === false) {
+            // non-dismissable verify modal overlay.  When email verification is
+            // disabled server-side the modal is skipped entirely.
+            if (data.email_verified === false && data.email_verification_enabled !== false) {
                 hideVerifyBanner();
                 if (splash) {
                     setTimeout(function () {
@@ -9105,6 +9503,7 @@ window.send = async function () {
         var streamSourceMetadata = [];
         var streamConfidence = "";
         var statusIndicator = null;
+        var thinkingBlock = null;
 
         while (true) {
             var chunk = await reader.read();
@@ -9158,7 +9557,15 @@ window.send = async function () {
                             } else if (evt.intent === "video_progress") {
                                 statusBubble.textContent = (evt.status_message || "Generating video...");
                             } else if (evt.intent === "searching_web") {
-                                statusBubble.textContent = "Researching…";
+                                var domainLabels = {
+                                    "tech": "Checking documentation & technical sources…",
+                                    "news": "Scanning latest news sources…",
+                                    "sports": "Looking up scores & sports data…",
+                                    "science": "Checking research & scientific sources…",
+                                    "media": "Looking up reviews & media info…",
+                                    "general": "Researching…"
+                                };
+                                statusBubble.textContent = domainLabels[evt.domain] || "Researching…";
                             } else {
                                 statusBubble.textContent = "Searching the web...";
                             }
@@ -9174,6 +9581,22 @@ window.send = async function () {
                             existingBubble.textContent = (evt.status_message || "Generating video...");
                         }
                         document.getElementById("messages").scrollTop = document.getElementById("messages").scrollHeight;
+                    }
+                    continue;
+                }
+
+                /* ---- THINKING PROCESS — collapsible reasoning steps ---- */
+                if (evt.thinking_process) {
+                    var tp = evt.thinking_process;
+                    if (!thinkingBlock) {
+                        // Create the thinking process container in the messages area
+                        var msgsContainer = document.getElementById("messages");
+                        if (msgsContainer) {
+                            thinkingBlock = createThinkingProcess(msgsContainer);
+                        }
+                    }
+                    if (thinkingBlock) {
+                        thinkingBlock.addStep(tp.label || "Processing...");
                     }
                     continue;
                 }
@@ -9311,6 +9734,12 @@ window.send = async function () {
                         if (bubbleEl) {
                             var bub = bubbleEl.querySelector(".bubble");
                             if (bub) bub.textContent = "";
+                            // Move thinking process block inside the bubble (above the text)
+                            if (thinkingBlock && thinkingBlock.el && bub) {
+                                bub.insertBefore(thinkingBlock.el, bub.firstChild);
+                                thinkingBlock.finish();
+                                thinkingBlock = null;
+                            }
                         }
                     }
                     fullReply += tok;
@@ -9341,13 +9770,28 @@ window.send = async function () {
                 addMessage(fullReply, "ai");
                 var msgsC = document.getElementById("messages");
                 bubbleEl = msgsC ? msgsC.lastElementChild : null;
+                // Move thinking process block if it exists
+                if (thinkingBlock && thinkingBlock.el && bubbleEl) {
+                    var bub = bubbleEl.querySelector(".bubble");
+                    if (bub) bub.insertBefore(thinkingBlock.el, bub.firstChild);
+                    thinkingBlock.finish();
+                    thinkingBlock = null;
+                }
             }
         }
 
-        var sourcesForRender = (streamSources && streamSources.length) ? streamSources : (streamMeta.sources || []);
-        if (bubbleEl && sourcesForRender.length) renderSourceChips(bubbleEl, sourcesForRender);
+        /* Only render sources when real search evidence was collected —
+           never show empty or fake source lists. */
+        if (bubbleEl && streamSourceMetadata.length && streamSourceMetadata.some(function (s) { return s && s.url && s.domain; })) {
+            renderSourcesPanel(bubbleEl, streamSourceMetadata, streamConfidence);
+            renderInlineCitations(bubbleEl, streamSourceMetadata);
+        }
 
-        if (bubbleEl && streamSourceMetadata.length) renderSourcePanel(bubbleEl, streamSourceMetadata, streamConfidence);
+        /* Finish any lingering thinking process block */
+        if (thinkingBlock) {
+            thinkingBlock.finish();
+            thinkingBlock = null;
+        }
 
         if (streamMeta.chat_id && !currentChatId) currentChatId = streamMeta.chat_id;
 
@@ -9371,12 +9815,14 @@ window.send = async function () {
         }
     } catch (err) {
         if (!streamError) streamError = err.message || "Connection error";
+        if (thinkingBlock) { thinkingBlock.finish(); thinkingBlock = null; }
     }
 
     // Fallback to non-streaming if streaming failed
     if (streamError) {
         try {
             removeThinkingIndicator(thinking);
+            if (thinkingBlock) { thinkingBlock.finish(); thinkingBlock = null; }
             var body2 = { message: text || "(image attached)", persona: currentPersona };
             if (currentChatId) body2.chat_id = currentChatId;
             if (pendingImageData) body2.image = pendingImageData;

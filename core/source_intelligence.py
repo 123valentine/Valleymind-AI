@@ -122,6 +122,7 @@ class EvidencePackage:
     confidence: str = "low"     # high, medium, low
     research_log: list[str] = field(default_factory=list)
     is_research_request: bool = False
+    conflicts: list[str] = field(default_factory=list)
 
     def to_context_string(self, budget: int = EVIDENCE_BUDGET_CHARS) -> str:
         """Render evidence as a compact context string for the LLM."""
@@ -168,6 +169,13 @@ class EvidencePackage:
         )
         lines.append(summary)
 
+        if self.conflicts:
+            lines.append("")
+            lines.append("[SOURCE CONFLICTS — requires LLM resolution]")
+            for c in self.conflicts:
+                lines.append(f"⚠ {c}")
+            lines.append("Note: when sources conflict, present both perspectives and note the discrepancy.")
+
         return "\n".join(lines)
 
     def to_frontend_metadata(self) -> list[dict]:
@@ -201,6 +209,7 @@ class EvidencePackage:
             "confidence": self.confidence,
             "research_log": self.research_log,
             "is_research_request": self.is_research_request,
+            "conflicts": self.conflicts,
         }
 
 
@@ -320,6 +329,7 @@ _SOURCE_SPECIFIED_RE = re.compile(
 
 # Domain-aware search strategies — when a domain is mentioned, boost it
 _DOMAIN_STRATEGIES = {
+    # Tech / developer
     "groq": {"domains": ["console.groq.com", "groq.com"], "type": "official_documentation"},
     "openai": {"domains": ["platform.openai.com", "openai.com"], "type": "official_documentation"},
     "anthropic": {"domains": ["docs.anthropic.com", "anthropic.com"], "type": "official_documentation"},
@@ -330,6 +340,72 @@ _DOMAIN_STRATEGIES = {
     "mongodb": {"domains": ["mongodb.com/docs"], "type": "official_documentation"},
     "python": {"domains": ["docs.python.org"], "type": "official_documentation"},
     "react": {"domains": ["react.dev"], "type": "official_documentation"},
+    "docker": {"domains": ["docs.docker.com"], "type": "official_documentation"},
+    "kubernetes": {"domains": ["kubernetes.io"], "type": "official_documentation"},
+    "aws": {"domains": ["docs.aws.amazon.com"], "type": "official_documentation"},
+    "google cloud": {"domains": ["cloud.google.com", "developers.google.com"], "type": "official_documentation"},
+    "azure": {"domains": ["azure.microsoft.com", "learn.microsoft.com"], "type": "official_documentation"},
+    # News
+    "reuters": {"domains": ["reuters.com"], "type": "news_agency"},
+    "bbc": {"domains": ["bbc.com", "bbc.co.uk"], "type": "news"},
+    "cnn": {"domains": ["cnn.com"], "type": "news"},
+    "associated press": {"domains": ["apnews.com"], "type": "news_agency"},
+    "bloomberg": {"domains": ["bloomberg.com"], "type": "financial_news"},
+    "techcrunch": {"domains": ["techcrunch.com"], "type": "tech_news"},
+    "the verge": {"domains": ["theverge.com"], "type": "tech_news"},
+    "ars technica": {"domains": ["arstechnica.com"], "type": "tech_news"},
+    # Science
+    "pubmed": {"domains": ["pubmed.ncbi.nlm.nih.gov"], "type": "medical_database"},
+    "nature": {"domains": ["nature.com"], "type": "scientific_journal"},
+    "arxiv": {"domains": ["arxiv.org"], "type": "preprint_repository"},
+    "nih": {"domains": ["nih.gov"], "type": "government_research"},
+    "cdc": {"domains": ["cdc.gov"], "type": "government_health"},
+    # Media / entertainment
+    "imdb": {"domains": ["imdb.com"], "type": "entertainment_database"},
+    "rotten tomatoes": {"domains": ["rottentomatoes.com"], "type": "review_aggregator"},
+    "metacritic": {"domains": ["metacritic.com"], "type": "review_aggregator"},
+    "goodreads": {"domains": ["goodreads.com"], "type": "book_database"},
+    "steam": {"domains": ["store.steampowered.com"], "type": "game_store"},
+    "ign": {"domains": ["ign.com"], "type": "gaming_news"},
+    "polygon": {"domains": ["polygon.com"], "type": "gaming_news"},
+    # Sports
+    "espn": {"domains": ["espn.com"], "type": "sports_news"},
+    "bbc sport": {"domains": ["bbc.com/sport"], "type": "sports_news"},
+    "transfermarkt": {"domains": ["transfermarkt.com"], "type": "transfer_database"},
+    # Reference
+    "wikipedia": {"domains": ["wikipedia.org"], "type": "encyclopedia"},
+    "stackoverflow": {"domains": ["stackoverflow.com"], "type": "qa_forum"},
+}
+
+# Subject domain detection keywords
+_DOMAIN_KEYWORDS = {
+    "tech": [
+        "api", "sdk", "library", "framework", "programming", "code", "developer",
+        "software", "hardware", "ai", "machine learning", "llm", "gpt", "model",
+        "server", "database", "cloud", "deploy", "docker", "kubernetes", "git",
+        "bug", "error", "fix", "install", "config", "endpoint", "webhook",
+    ],
+    "news": [
+        "news", "breaking", "announce", "election", "president", "government",
+        "policy", "economy", "market", "stock", "trade", "war", "conflict",
+        "climate", "protest", "summit", "deal", "agreement", "crisis",
+    ],
+    "sports": [
+        "score", "match", "game", "fixture", "transfer", "league", "champion",
+        "tournament", "player", "team", "coach", "season", "standings", "table",
+        "premier league", "champions league", "nba", "nfl", "mlb", "f1",
+    ],
+    "science": [
+        "study", "research", "paper", "discovery", "experiment", "hypothesis",
+        "clinical trial", "drug", "treatment", "disease", "vaccine", "genome",
+        "physics", "chemistry", "biology", "space", "nasa", "telescope",
+    ],
+    "media": [
+        "movie", "film", "show", "series", "album", "song", "book", "game",
+        "actor", "actress", "director", "release", "premiere", "season",
+        "episode", "streaming", "netflix", "spotify", "playstation", "xbox",
+        "trailer", "review", "rating", "oscar", "emmy", "grammy",
+    ],
 }
 
 
@@ -339,20 +415,42 @@ class SearchPlan:
     queries: list[str] = field(default_factory=list)
     target_domains: list[str] = field(default_factory=list)
     source_type: str = "general"
+    domain: str = "general"
     needs_freshness: bool = False
     is_user_specified: bool = False
     intent_description: str = ""
 
 
-def plan_search(message: str, directed_site: str = "") -> SearchPlan:
+def _detect_domain(message: str) -> str:
+    """Detect the subject domain of a user message."""
+    lower = message.lower()
+    scores = {}
+    for domain, keywords in _DOMAIN_KEYWORDS.items():
+        score = sum(1 for kw in keywords if kw in lower)
+        if score > 0:
+            scores[domain] = score
+    if not scores:
+        return "general"
+    return max(scores, key=scores.get)
+
+
+def plan_search(message: str, directed_site: str = "", research_domain: str = "") -> SearchPlan:
     """Analyze a user message and generate a search strategy.
 
     This does NOT perform the search — it only plans what to search.
+
+    Args:
+        message: The user's research query
+        directed_site: Optional site to constrain search to
+        research_domain: Optional domain hint from classify_research_intent
     """
     plan = SearchPlan()
 
     text = (message or "").strip()
     lower = text.lower()
+
+    # Use provided domain hint or detect from message
+    plan.domain = research_domain or _detect_domain(text)
 
     # Check for time-sensitive keywords
     for kw in _FRESHNESS_KEYWORDS:
@@ -378,20 +476,40 @@ def plan_search(message: str, directed_site: str = "") -> SearchPlan:
     # Generate primary query — use the user's message as-is
     plan.queries.append(text)
 
-    # For technical questions, generate supplementary queries
-    if any(kw in lower for kw in ["error", "bug", "issue", "fix", "problem"]):
-        # Technical troubleshooting — add a query focused on solutions
-        clean = re.sub(r"\bmy\b", "the", text, flags=re.IGNORECASE)
-        plan.queries.append(f"{clean} solution fix")
+    # Generate supplementary queries based on domain and question type
+    if plan.domain == "tech":
+        if any(kw in lower for kw in ["error", "bug", "issue", "fix", "problem"]):
+            clean = re.sub(r"\bmy\b", "the", text, flags=re.IGNORECASE)
+            plan.queries.append(f"{clean} solution fix")
+        if any(kw in lower for kw in ["api", "endpoint", "sdk", "library"]):
+            plan.queries.append(f"official documentation {text}")
+    elif plan.domain == "news":
+        plan.queries.append(f"{text} latest news")
+        if plan.needs_freshness:
+            plan.queries.append(f"{text} today")
+    elif plan.domain == "sports":
+        plan.queries.append(f"{text} scores results")
+        plan.queries.append(f"{text} latest news")
+    elif plan.domain == "science":
+        plan.queries.append(f"{text} research study")
+        plan.queries.append(f"{text} latest findings")
+    elif plan.domain == "media":
+        plan.queries.append(f"{text} reviews ratings")
+        plan.queries.append(f"{text} cast information")
+    else:
+        # General: add a freshness query if needed
+        if plan.needs_freshness:
+            plan.queries.append(f"{text} latest 2026")
 
-    if any(kw in lower for kw in ["api", "endpoint", "sdk", "library"]):
-        # API questions — add official docs query
-        plan.queries.append(f"official documentation {text}")
+    # Limit to 3 queries max
+    plan.queries = plan.queries[:3]
 
     plan.intent_description = (
+        f"Domain: {plan.domain}, "
         f"Source type: {plan.source_type}, "
         f"Freshness needed: {plan.needs_freshness}, "
-        f"Target domains: {plan.target_domains or 'any'}"
+        f"Target domains: {plan.target_domains or 'any'}, "
+        f"Queries: {len(plan.queries)}"
     )
     return plan
 
@@ -401,7 +519,10 @@ def plan_search(message: str, directed_site: str = "") -> SearchPlan:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def _dedupe_results(results: list[dict]) -> list[dict]:
-    """Deduplicate search results by domain + path (ignore query params)."""
+    """Deduplicate search results by domain + path (ignore query params).
+
+    Strips tracking query params and fragments for cleaner deduplication.
+    """
     seen = set()
     deduped = []
     for r in results:
@@ -494,24 +615,118 @@ def _build_evidence_from_snippet(result: dict) -> Evidence:
 def _extract_claims(text: str) -> list[str]:
     """Extract key claims/facts from a text passage."""
     claims = []
-    # Look for specific facts: numbers, dates, limits, prices
+    # Look for specific facts: numbers with context, dates, limits, prices
+    # Use word-boundary-safe patterns to avoid matching digits inside URLs/ids
     number_patterns = [
-        re.compile(r"(\d[\d,]*\.?\d*)\s*(?:tokens?|tpm|rpm|requests?|per\s+minute|limit|max)"),
-        re.compile(r"(?:limit|max|cap(?:acity)?)\s*(?:is|=|:)\s*(\d[\d,]*\.?\d*)"),
-        re.compile(r"\$[\d,.]+"),
-        re.compile(r"(?:free|paid|tier|plan)\s+(?:tier|plan|limit|level)"),
+        re.compile(r"\b(\d[\d,]*\.?\d*)\s+(?:tokens?|tpm|rpm|requests?|per\s+minute|limit|max)\b"),
+        re.compile(r"\b(?:limit|max|cap(?:acity)?)\s*(?:is|=|:)\s*(\d[\d,]*\.?\d*)\b"),
+        re.compile(r"\$\s*[\d,.]+\b"),
+        re.compile(r"\b(?:free|paid|tier|plan)\s+(?:tier|plan|limit|level)\b"),
     ]
     for pat in number_patterns:
         matches = pat.findall(text.lower())
         for m in matches[:2]:
             if isinstance(m, str) and len(m) > 1:
                 claims.append(m.strip())
+
+    # General fact extraction: dates, named entities, key statements
+    if not claims:
+        # Extract sentences that contain factual indicators
+        sentences = re.split(r"[.!?\n]", text)
+        fact_indicators = re.compile(
+            r"\b(?:according to|announced|launched|released|confirmed|reported|"
+            r"study found|research shows|data reveals|evidence suggests|"
+            r"broke|won|lost|signed|acquired|merged|filed|signed into law|"
+            r"directed by|starring|premiered|aired|rated|scored)\b",
+            re.IGNORECASE,
+        )
+        for sent in sentences:
+            sent = sent.strip()
+            if len(sent) < 20 or len(sent) > 300:
+                continue
+            if fact_indicators.search(sent):
+                claims.append(sent[:200])
+                if len(claims) >= 3:
+                    break
+
+    # Fallback: use the first meaningful sentence
     if not claims and len(text) > 30:
-        # Fallback: use the first sentence as the claim
         first_sent = re.split(r"[.!?\n]", text)[0].strip()
-        if first_sent:
-            claims.append(first_sent[:120])
+        if first_sent and len(first_sent) > 20:
+            claims.append(first_sent[:200])
     return claims[:3]
+
+
+def _detect_conflicts(evidence: list[Evidence]) -> list[str]:
+    """Detect conflicting claims across evidence items.
+
+    Returns a list of conflict descriptions (empty if no conflicts).
+    Only flags true conflicts: same subject + same attribute but different values.
+    Uses word-boundary-safe number extraction and validates that conflicting
+    claims share enough context to actually be about the same thing.
+    """
+    if len(evidence) < 2:
+        return []
+
+    conflicts = []
+    # Group claims by source domain
+    source_claims: dict[str, list[str]] = {}
+    for ev in evidence:
+        domain = ev.source_domain
+        if domain not in source_claims:
+            source_claims[domain] = []
+        for claim in ev.supports_claims:
+            source_claims[domain].append(claim.lower().strip())
+
+    # Common "attribute" keywords that indicate what property is being described
+    _attribute_words = re.compile(
+        r"(?:tokens?|tpm|rpm|requests?|limit|max|cap|price|cost|rate|"
+        r"users?|revenue|growth|speed|score|rating|population|"
+        r"percentage|share|margin|return|yield|rate|frequency|count|"
+        r"level|volume|distance|weight|size|area|height|width|depth)",
+        re.IGNORECASE,
+    )
+
+    # Compare across different domains
+    domains = list(source_claims.keys())
+    for i in range(len(domains)):
+        for j in range(i + 1, len(domains)):
+            d1, d2 = domains[i], domains[j]
+            for c1 in source_claims[d1]:
+                for c2 in source_claims[d2]:
+                    # Require minimum word overlap to be about the same topic
+                    words1 = set(re.findall(r"\b\w{3,}\b", c1))
+                    words2 = set(re.findall(r"\b\w{3,}\b", c2))
+                    overlap = words1 & words2
+                    if len(overlap) < 3:
+                        continue
+
+                    # Extract numbers with word-boundary safety
+                    nums1 = set(re.findall(r"\b(\d[\d,]*\.?\d*)\b", c1))
+                    nums2 = set(re.findall(r"\b(\d[\d,]*\.?\d*)\b", c2))
+                    if not nums1 or not nums2 or nums1 == nums2:
+                        continue
+
+                    # Check both claims mention an attribute keyword
+                    # This avoids flagging unrelated sentences that happen to share numbers
+                    attr1 = _attribute_words.search(c1)
+                    attr2 = _attribute_words.search(c2)
+                    if attr1 and attr2:
+                        # Same attribute keyword → real conflict
+                        conflicts.append(
+                            f"Sources disagree: {d1} says '{c1[:80]}' "
+                            f"but {d2} says '{c2[:80]}'"
+                        )
+                    elif len(overlap) >= 5:
+                        # Many shared words but no attribute keyword match
+                        # Only flag if very high overlap
+                        conflicts.append(
+                            f"Sources disagree: {d1} says '{c1[:80]}' "
+                            f"but {d2} says '{c2[:80]}'"
+                        )
+                    if len(conflicts) >= 3:
+                        return conflicts
+    return conflicts
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -519,24 +734,43 @@ def _extract_claims(text: str) -> list[str]:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def _compute_confidence(evidence: list[Evidence], total_searched: int) -> str:
-    """Compute research confidence based on evidence quality."""
+    """Compute research confidence based on evidence quality and diversity.
+
+    Factors:
+    - Tier 1 (Wikipedia, gov) and Tier 2 (major outlets) sources
+    - Number of independent sources (domains)
+    - Total evidence count
+    """
     if not evidence:
         return "low"
 
     tier1_count = sum(1 for e in evidence if e.tier == 1)
-    tier2_count = sum(1 for e in evidence if e.tier <= 2)
+    tier2_count = sum(1 for e in evidence if e.tier == 2)
+    # Use source_name as fallback when domain is empty (unit tests)
+    unique_sources = len({
+        e.source_domain or e.source_name for e in evidence
+    })
     total = len(evidence)
 
+    # High: multiple strong sources agreeing
     if tier1_count >= 2:
         return "high"
-    if tier1_count >= 1 and tier2_count >= 2:
+    if tier1_count >= 1 and tier2_count >= 2 and unique_sources >= 3:
         return "high"
-    if tier2_count >= 2:
+    if tier2_count >= 3 and unique_sources >= 3:
         return "high"
-    if tier1_count >= 1 or tier2_count >= 1:
+
+    # Medium: at least some quality evidence
+    if tier1_count >= 1 and tier2_count >= 1:
         return "medium"
-    if total >= 3:
+    if tier2_count >= 2 and unique_sources >= 2:
         return "medium"
+    if tier1_count >= 1:
+        return "medium"
+    if tier2_count >= 1:
+        return "medium"
+
+    # Low: only weak sources or very few results
     return "low"
 
 
@@ -550,7 +784,7 @@ class SourceIntelligence:
     Usage::
 
         si = SourceIntelligence()
-        package = si.research(
+        package = si.research_with_fetch(
             "What are Groq's current rate limits?",
             directed_site="console.groq.com",
         )
@@ -562,44 +796,42 @@ class SourceIntelligence:
     def __init__(self):
         self._lock = threading.Lock()
 
-    def research(
+    def research_with_fetch(
         self,
         message: str,
         directed_site: str = "",
-        existing_search_results: str = "",
-        existing_sources: list[dict] | None = None,
+        research_domain: str = "",
     ) -> EvidencePackage:
-        """Run the full research pipeline and return an evidence package.
+        """Full research pipeline with multi-query search and page content fetching.
 
-        This is the main entry point.  It:
-        1. Plans the search strategy
-        2. Uses existing search results if available (from the current pipeline)
-        3. Deduplicates and ranks results
-        4. Builds evidence from snippets
-        5. Computes confidence
-        6. Returns a compact evidence package
-
-        The package is provider-agnostic — it survives LLM fallbacks.
+        This is the Phase 1 research engine:
+        1. Plans multi-query search strategy
+        2. Executes up to 3 search queries
+        3. Fetches full page content from top results
+        4. Extracts claims from page content
+        5. Cross-checks sources for conflicts
+        6. Computes confidence with conflict awareness
+        7. Returns enriched EvidencePackage with page content
         """
         from core.external_apis import (
             _search_general_web,
-            _search_tinyfish,
+            _fetch_url_content,
             LIVE_DATA_UNAVAILABLE,
         )
 
         log: list[str] = []
         package = EvidencePackage(research_log=log, is_research_request=True)
 
-        # Step 1: Plan the search
-        plan = plan_search(message, directed_site=directed_site)
+        # Step 1: Plan multi-query search
+        plan = plan_search(message, directed_site=directed_site, research_domain=research_domain)
         log.append(f"Search plan: {plan.intent_description}")
         print(f"[SOURCE INTEL] Plan: {plan.intent_description}")
 
-        # Step 2: Execute searches
+        # Step 2: Execute searches (up to 3 queries)
         all_results: list[dict] = []
         total_searched = 0
 
-        for query in plan.queries[:2]:  # max 2 search queries
+        for query in plan.queries[:3]:
             try:
                 raw = _search_general_web(query, site=directed_site or "")
                 if raw and raw != LIVE_DATA_UNAVAILABLE:
@@ -613,103 +845,150 @@ class SourceIntelligence:
                 log.append(f"Search '{query[:60]}': failed ({exc})")
                 print(f"[SOURCE INTEL] Search failed: {exc}")
 
-        # Step 2b: Also use existing search results from the pipeline
-        if existing_sources:
-            for src in existing_sources:
-                all_results.append({
-                    "title": src.get("title", ""),
-                    "url": src.get("url", ""),
-                    "domain": src.get("domain", ""),
-                    "snippet": "",
-                })
-            log.append(f"Ingested {len(existing_sources)} existing pipeline sources")
-
         if not all_results:
             package.total_searched = total_searched
             package.confidence = "low"
             log.append("No search results found")
             return package
 
-        # Step 3: Deduplicate
+        # Step 3: Deduplicate and rank
         deduped = _dedupe_results(all_results)
         log.append(f"After dedup: {len(deduped)} unique sources")
-
-        # Step 4: Rank
         ranked = _rank_results(deduped, plan)
 
-        # Step 5: Build evidence from top results (up to budget)
+        # Step 4: Fetch page content from top results (up to 3)
+        fetched_urls = set()
+        for r in ranked[:5]:
+            url = r.get("url", "")
+            if not url or url in fetched_urls:
+                continue
+            fetched_urls.add(url)
+            try:
+                content = _fetch_url_content(url, max_chars=MAX_FETCH_CHARS)
+                if content:
+                    r["_fetched_content"] = content
+                    log.append(f"Fetched {urlparse(url).netloc}: {len(content)} chars")
+            except Exception as exc:
+                log.append(f"Fetch {urlparse(url).netloc} failed: {exc}")
+
+        # Step 5: Build evidence (prefer fetched content over snippets)
         evidence = []
         for r in ranked[:EVIDENCE_BUDGET_EVIDENCES * 2]:
             if len(evidence) >= EVIDENCE_BUDGET_EVIDENCES:
                 break
-            ev = _build_evidence_from_snippet(r)
-            if ev.content and ev.url:
-                evidence.append(ev)
+            fetched = r.get("_fetched_content", "")
+            if fetched:
+                # Use fetched content for richer evidence
+                source = r.get("_source") or classify_domain(r.get("domain", ""))
+                claims = _extract_claims(fetched)
+                ev = Evidence(
+                    source_name=source.name,
+                    source_domain=source.domain,
+                    source_icon=source.icon_url,
+                    source_type=source.source_type,
+                    url=r.get("url", ""),
+                    title=r.get("title", ""),
+                    content=fetched[:800],
+                    relevance=r.get("_score", 0.0),
+                    supports_claims=claims,
+                    published=r.get("published", ""),
+                    accessed_at=datetime.now(timezone.utc).isoformat(),
+                    tier=source.tier,
+                )
+                if ev.content and ev.url:
+                    evidence.append(ev)
+            else:
+                ev = _build_evidence_from_snippet(r)
+                if ev.content and ev.url:
+                    evidence.append(ev)
 
-        # Step 6: Compute confidence
+        # Step 6: Detect conflicts
+        conflicts = _detect_conflicts(evidence)
+        if conflicts:
+            log.append(f"Conflicts detected: {len(conflicts)}")
+            for c in conflicts:
+                log.append(f"  Conflict: {c}")
+
+        # Step 7: Compute confidence (conflict-aware)
         confidence = _compute_confidence(evidence, total_searched)
+        if conflicts and confidence == "high":
+            confidence = "medium"
+            log.append("Downgraded confidence due to conflicts")
 
         package.evidence = evidence
         package.total_searched = total_searched
-        package.total_opened = len(evidence)
+        package.total_opened = len(fetched_urls)
         package.total_used = len(evidence)
         package.confidence = confidence
+        package.conflicts = conflicts
 
-        log.append(f"Evidence: {len(evidence)} items, confidence={confidence}")
+        log.append(f"Evidence: {len(evidence)} items, confidence={confidence}, "
+                   f"fetched: {len(fetched_urls)}, conflicts: {len(conflicts)}")
         print(f"[SOURCE INTEL] Research complete: {len(evidence)} evidence items, "
-              f"confidence={confidence}, searched={total_searched}")
+              f"confidence={confidence}, searched={total_searched}, "
+              f"fetched={len(fetched_urls)}, conflicts={len(conflicts)}")
 
         return package
 
     def build_evidence_package(
         self,
-        search_results_text: str,
-        search_sources: list[dict],
-        user_message: str,
-        directed_site: str = "",
+        search_text: str,
+        sources: list[dict],
+        query: str = "",
     ) -> EvidencePackage:
-        """Build an evidence package from the existing search pipeline's output.
+        """Build an EvidencePackage from already-gathered search results.
 
-        This is a lightweight version that doesn't re-search — it just
-        enriches the existing results with source intelligence metadata.
+        This is a lightweight, offline method that does NOT make any network
+        calls.  It takes the formatted search text (as returned by
+        ``_search_general_web``) and an optional list of source dicts
+        (``{title, url, domain}``) and produces an ``EvidencePackage`` suitable
+        for passing to any LLM provider.
+
+        Use this when search has already happened and you just need to package
+        the results for the LLM context window or for frontend metadata.
         """
-        log: list[str] = []
-        package = EvidencePackage(research_log=log, is_research_request=True)
+        package = EvidencePackage(
+            is_research_request=bool(search_text or sources),
+            research_log=[],
+        )
 
-        plan = plan_search(user_message, directed_site=directed_site)
+        # Merge parsed results from search text with explicit sources
+        parsed = _parse_search_text(search_text) if search_text else []
+        merged = list(sources) if sources else []
+        seen_urls = {s.get("url") for s in merged}
+        for p in parsed:
+            url = p.get("url", "")
+            if url and url not in seen_urls:
+                merged.append(p)
+                seen_urls.add(url)
 
-        # Parse existing search results text into structured data
-        results = _parse_search_text(search_results_text)
-        if search_sources:
-            for src in search_sources:
-                results.append({
-                    "title": src.get("title", ""),
-                    "url": src.get("url", ""),
-                    "domain": src.get("domain", ""),
-                    "snippet": "",
-                })
-
-        if not results:
+        if not merged:
             package.confidence = "low"
-            log.append("No results to package")
             return package
 
-        deduped = _dedupe_results(results)
-        ranked = _rank_results(deduped, plan)
+        # Rank the merged results against the query
+        plan = plan_search(query) if query else SearchPlan(queries=[query or ""])
+        ranked = _rank_results(merged, plan)
 
-        evidence = []
+        # Build evidence from each result
+        evidence: list[Evidence] = []
         for r in ranked[:EVIDENCE_BUDGET_EVIDENCES]:
             ev = _build_evidence_from_snippet(r)
-            if ev.content and ev.url:
+            if ev.content or ev.title:
                 evidence.append(ev)
 
-        package.evidence = evidence
-        package.total_searched = len(deduped)
-        package.total_opened = len(evidence)
-        package.total_used = len(evidence)
-        package.confidence = _compute_confidence(evidence, len(deduped))
-        log.append(f"Packaged {len(evidence)} evidence items from existing results")
+        # Detect conflicts and compute confidence
+        conflicts = _detect_conflicts(evidence)
+        confidence = _compute_confidence(evidence, len(merged))
+        if conflicts and confidence == "high":
+            confidence = "medium"
 
+        package.evidence = evidence
+        package.total_searched = len(merged)
+        package.total_opened = len(merged)
+        package.total_used = len(evidence)
+        package.confidence = confidence
+        package.conflicts = conflicts
         return package
 
 

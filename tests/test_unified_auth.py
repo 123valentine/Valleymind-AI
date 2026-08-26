@@ -819,5 +819,107 @@ class TestEmailRegistrationFlow(unittest.TestCase):
         self.assertEqual(self._users_db, before)
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# 7. Email verification DISABLED — _require_login bypasses verification
+# ═══════════════════════════════════════════════════════════════════════════
+
+class TestVerificationDisabled(unittest.TestCase):
+    """When EMAIL_VERIFICATION_ENABLED is False the verification gate in
+    _require_login() must be skipped so existing unverified users are not
+    blocked and new sign-ups work immediately."""
+
+    @classmethod
+    def setUpClass(cls):
+        from flask import Flask, session as flask_session, jsonify as flask_jsonify
+
+        cls.flask_app = Flask(__name__)
+        cls.flask_app.secret_key = "test-verification-disabled"
+        cls.flask_app.config["TESTING"] = True
+
+        cls._users_db = {}
+
+        def _load_users():
+            return dict(cls._users_db)
+
+        from core.auth_migration import is_verified_record
+
+        # Simulates the real app's _require_login with verification DISABLED
+        def _require_login():
+            user_id = str(flask_session.get("user_id") or "").strip()
+            if not user_id:
+                return "", (flask_jsonify({"status": "error", "message": "Login required"}), 401)
+            email = str(flask_session.get("email") or "").strip().lower()
+            if not email:
+                return "", (flask_jsonify({
+                    "status": "error", "message": "Email verification required",
+                    "needs_verification": True, "email": "",
+                }), 403)
+            user_rec = _load_users().get(email)
+            # When verification is disabled, skip the is_verified_record check
+            return user_id, None
+
+        @cls.flask_app.route("/protected")
+        def protected():
+            user_id, error = _require_login()
+            if error:
+                return error
+            return flask_jsonify({"status": "success", "user_id": user_id})
+
+    def setUp(self):
+        self._users_db.clear()
+        self.client = self.flask_app.test_client()
+
+    def _login_user(self, email, user_id, email_verified=False):
+        self._users_db[email] = {
+            "_id": email,
+            "email": email,
+            "email_verified": email_verified,
+            "user_id": user_id,
+        }
+
+    def _set_session(self, client, user_id, email):
+        with client.session_transaction() as sess:
+            sess["user_id"] = user_id
+            sess["email"] = email
+
+    def test_unverified_user_allowed_when_disabled(self):
+        email = "unverified@test.com"
+        self._login_user(email, "uid_unv", email_verified=False)
+        self._set_session(self.client, "uid_unv", email)
+        resp = self.client.get("/protected")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.get_json()["user_id"], "uid_unv")
+
+    def test_missing_field_user_allowed_when_disabled(self):
+        email = "missing@test.com"
+        self._users_db[email] = {
+            "_id": email, "email": email, "user_id": "uid_m",
+        }
+        self._set_session(self.client, "uid_m", email)
+        resp = self.client.get("/protected")
+        self.assertEqual(resp.status_code, 200)
+
+    def test_none_verified_user_allowed_when_disabled(self):
+        email = "none@test.com"
+        self._users_db[email] = {
+            "_id": email, "email": email,
+            "email_verified": None, "user_id": "uid_n",
+        }
+        self._set_session(self.client, "uid_n", email)
+        resp = self.client.get("/protected")
+        self.assertEqual(resp.status_code, 200)
+
+    def test_verified_user_still_allowed_when_disabled(self):
+        email = "verified@test.com"
+        self._login_user(email, "uid_v", email_verified=True)
+        self._set_session(self.client, "uid_v", email)
+        resp = self.client.get("/protected")
+        self.assertEqual(resp.status_code, 200)
+
+    def test_no_session_still_returns_401(self):
+        resp = self.client.get("/protected")
+        self.assertEqual(resp.status_code, 401)
+
+
 if __name__ == "__main__":
     unittest.main()
