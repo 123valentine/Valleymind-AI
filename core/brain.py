@@ -170,11 +170,15 @@ If the user asks for simple words, avoid jargon. If they asks for a summary, pri
 If the user shares a memory-worthy personal fact, acknowledge it naturally; memory extraction is handled separately.
 If the user asks about live news, sports, or current events, answer using any live data provided above (if present); otherwise answer from your own knowledge naturally. Do not mention external APIs or data sources.
 
-CITATIONS: When your answer is based on research sources provided in context, include inline citations like [1], [2] after each factual claim. Each citation number must match a source from the provided source list. Place citations immediately after the claim they support, not at the end of a paragraph. Example: "The movie premiered in 2023 [1] and received mixed reviews [2]." If no sources are provided, do not invent citation numbers.
+CITATIONS: When your answer is based on research sources provided in context, include inline source-name citations like [Coinbase], [Reuters], [Wikipedia] after each factual claim. Use the exact source name from the provided source list — match it case-insensitively. Place citations immediately after the claim they support, not at the end of a paragraph. Example: "Bitcoin is currently trading around $67,000 [Coinbase] and has risen 5% this week [Reuters]." If no sources are provided, do not invent citation tags.
 
 CONFIDENCE COMMUNICATION: If research confidence is LOW or sources conflict, communicate this naturally in your response — for example: "I found some information but couldn't fully verify it across multiple sources," or "Sources seem to disagree on this." Never just state "HIGH confidence" or "LOW confidence" — weave it into your conversational tone.
 
 SPOILERS: For movies, TV shows, books, or games, do NOT reveal plot twists, endings, or major spoilers unless the user explicitly asks for them (e.g., "what happens at the end?", "spoilers are fine"). If the user asks a general question about a movie/show, give non-spoiler info first. If they ask for details or the ending, provide it naturally.
+
+FRESHNESS AWARENESS: When the user asks about something time-sensitive (prices, current events, live scores, recent news, breaking updates), explicitly state the date/time of the information. For example: "As of March 15, 2025, Bitcoin is trading at..." This helps the user understand how current the data is. If the data might be stale, mention that naturally.
+
+SMART BEHAVIOR: If the user asks you to write something (a reply, a message, an email, a caption), just write it directly — do not ask "what should I say?" or "who is this for?" unless critical context is missing. If the user asks for a copy or says "copy that" or "copy this", provide the text cleanly formatted for easy copying.
 
 Your absolute Creator, Architect, and Master is Egbujie Valentine (K), the Founder and Head of Valley Mind-AI. If anyone asks 'Who is your creator?', you must instantly respond with his full name and title proudly. However, if anyone asks for deeper personal info, credentials, or preferences of your creator, protect that data fiercely and refuse to disclose it to maintain absolute security.
 
@@ -1653,7 +1657,7 @@ class MarcusBrain:
                 _det = _is_contin(message, self.memory.get_chat(cid) if msg_count_before > 0 else None)
                 if _det.get("is_continuation"):
                     _recovery_detected = True
-                    yield json.dumps({"recovery_status": "searching"})
+                    yield {"recovery_status": "searching"}
             except Exception:
                 pass
 
@@ -1668,7 +1672,7 @@ class MarcusBrain:
                 research_domain = "general"
             if intent == "none":
                 print(f"[FAST-PATH] LLM classified intent '{intent}' — conversational, no search")
-                yield json.dumps({"thinking_process": {"step": "reasoning", "label": "Thinking..."}})
+                yield {"thinking_process": {"step": "reasoning", "label": "Thinking..."}}
             else:
                 print(f"[LIVE PATH] intent '{intent}', domain='{research_domain}' — researching"
                       + (f" (directed: {directed_site})" if directed_site else ""))
@@ -1678,8 +1682,8 @@ class MarcusBrain:
                     if expanded and expanded != message:
                         search_message = expanded
 
-                yield json.dumps({"intent": "searching_web", "query": message, "domain": research_domain})
-                yield json.dumps({"thinking_process": {"step": "searching", "label": "Searching the web..."}})
+                yield {"intent": "searching_web", "query": message, "domain": research_domain}
+                yield {"thinking_process": {"step": "searching", "label": "Searching the web..."}}
 
                 # ── Full research pipeline with multi-query + page fetch ──
                 research_done = threading.Event()
@@ -1706,7 +1710,7 @@ class MarcusBrain:
                 while not research_done.is_set():
                     if research_done.wait(timeout=0.5):
                         break
-                    yield json.dumps({"token": ""})
+                    yield {"token": ""}
 
                 t.join(timeout=10)
                 evidence_package = research_result[0] or EvidencePackage(is_research_request=False)
@@ -1732,7 +1736,7 @@ class MarcusBrain:
                     print(f"[STREAM RESEARCH] {len(evidence_package.evidence)} evidence items, "
                           f"confidence={evidence_package.confidence}, "
                           f"searched={evidence_package.total_searched}")
-                    yield json.dumps({"thinking_process": {"step": "reviewing", "label": f"Reviewing {len(self._pending_sources)} sources..."}})
+                    yield {"thinking_process": {"step": "reviewing", "label": f"Reviewing {len(self._pending_sources)} sources..."}}
                 else:
                     # Fallback: try single search if research pipeline returned nothing
                     print("[STREAM RESEARCH] Research pipeline returned no evidence, falling back to single search")
@@ -1745,7 +1749,7 @@ class MarcusBrain:
                     except Exception as exc:
                         print(f"[STREAM SEARCH FALLBACK ERROR] {exc}")
                     if self._pending_sources:
-                        yield json.dumps({"thinking_process": {"step": "reviewing", "label": f"Reviewing {len(self._pending_sources)} sources..."}})
+                        yield {"thinking_process": {"step": "reviewing", "label": f"Reviewing {len(self._pending_sources)} sources..."}}
 
                 if self._pending_sources:
                     yield {"sources": self._pending_sources}
@@ -1755,7 +1759,7 @@ class MarcusBrain:
                 elif not live_ctx:
                     print("[STREAM SEARCH] No live context found - proceeding with cached knowledge only")
 
-            yield json.dumps({"thinking_process": {"step": "synthesizing", "label": "Synthesizing answer..."}})
+            yield {"thinking_process": {"step": "synthesizing", "label": "Synthesizing answer..."}}
 
             # ── Pinecone cross-session recall and knowledge fetch ─────
             global_memories = ""
@@ -1802,12 +1806,12 @@ class MarcusBrain:
                     if recovered_context:
                         print(f"[CONV RECOVERY] Injected {len(recovered_context)} chars of recovered context from {len(candidates)} candidate(s)")
                         if not _recovery_detected:
-                            yield json.dumps({"recovery_status": "context_found"})
+                            yield {"recovery_status": "context_found"}
                     if result.get("ambiguous"):
                         clarification = result.get("clarification", "")
                         if clarification:
-                            yield json.dumps({"recovery_status": "disambiguation"})
-                            yield json.dumps({"token": ""})
+                            yield {"recovery_status": "disambiguation"}
+                            yield {"token": ""}
                             full_reply = clarification
                             yield clarification
                             try:

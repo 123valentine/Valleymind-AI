@@ -293,6 +293,21 @@ _FOLLOWUP_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Reply-writing / composition requests — user wants text generated, not searched
+_REPLY_WRITE_RE = re.compile(
+    r"\b(write|draft|compose|craft|pen|compose|phrase|word)\b.*"
+    r"\b(reply|response|message|email|caption|text|note|letter|tweet|post)\b",
+    re.IGNORECASE,
+)
+
+# Copy-box requests — user wants text formatted for easy copying
+_COPY_BOX_RE = re.compile(
+    r"^\s*(copy|copy that|copy this|give me the text|just the text|"
+    r"clean (version|copy|text)|format (this|it) for (copy|copying)|"
+    r"put that in a (copy|text) box)\s*[.!?]*\s*$",
+    re.IGNORECASE,
+)
+
 
 def classify_live_request(message: str, recent_context: str = "") -> str:
     msg = str(message or "")
@@ -389,6 +404,10 @@ def classify_research_intent(message: str, recent_context: str = "") -> dict:
         return {"intent": "none", "domain": "general", "reason": "self-referential", "needs_multi_query": False, "freshness": "low"}
     if _FOLLOWUP_RE.match(msg):
         return {"intent": "none", "domain": "general", "reason": "follow-up", "needs_multi_query": False, "freshness": "low"}
+    if _REPLY_WRITE_RE.search(msg):
+        return {"intent": "none", "domain": "general", "reason": "reply-writing", "needs_multi_query": False, "freshness": "low"}
+    if _COPY_BOX_RE.match(msg):
+        return {"intent": "none", "domain": "general", "reason": "copy-box", "needs_multi_query": False, "freshness": "low"}
 
     config = get_config()
     model = get_latest_groq_model()

@@ -275,6 +275,33 @@
   }
   .source-tier.t1 { background: rgba(34,197,94,0.1); color: #22c55e; border: 1px solid rgba(34,197,94,0.2); }
   .source-tier.t2 { background: rgba(59,130,246,0.1); color: #60a5fa; border: 1px solid rgba(59,130,246,0.2); }
+  /* Compact sources: chips row + collapsible details */
+  .sources-chips {
+    display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 0;
+  }
+  .source-chip {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 3px 8px; border-radius: 6px; font-size: 11px;
+    background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06);
+    color: #94a3b8; text-decoration: none; transition: background 0.15s;
+    max-width: 140px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .source-chip:hover { background: rgba(255,255,255,0.08); color: #cbd5e1; }
+  .source-chip-fav { width: 14px; height: 14px; border-radius: 3px; flex-shrink: 0; }
+  .source-chip-name { overflow: hidden; text-overflow: ellipsis; }
+  .source-chip-tier {
+    width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0;
+    background: rgba(34,197,94,0.6);
+  }
+  .source-chip-tier.t1 { background: #22c55e; }
+  .source-chip-more { color: #64748b; font-style: italic; max-width: none; }
+  .sources-details {
+    display: none; margin-top: 8px; padding-top: 8px;
+    border-top: 1px solid rgba(255,255,255,0.06);
+  }
+  .sources-collapsed .sources-header { margin-bottom: 8px; }
+  .sources-collapsed .sources-chips { margin-bottom: 0; }
+  .sources-section:not(.sources-collapsed) .sources-details { display: block; }
   .cs-badge { background:rgba(255,170,0,0.1); color:#ffaa00; border:1px solid rgba(255,170,0,0.3); }
   .img-skeleton {
     width:100%; max-width:320px; height:240px; border-radius:12px;
@@ -4083,24 +4110,31 @@ function renderInlineCitations(bubbleEl, sourceMetadata) {
     var textEl = bub.querySelector(".message-text") || bub;
     if (!textEl) return;
 
-    // Build domain→index mapping (1-indexed for citations)
+    // Build name→index and domain→index mappings (1-indexed)
+    var nameIndex = {};
     var domainIndex = {};
     sourceMetadata.forEach(function (s, i) {
         var domain = s.domain || "";
         if (domain && !(domain in domainIndex)) {
             domainIndex[domain] = i + 1;
         }
+        var name = s.name || "";
+        if (name && !(name.toLowerCase() in nameIndex)) {
+            nameIndex[name.toLowerCase()] = { idx: i + 1, displayName: name };
+        }
     });
-    if (!Object.keys(domainIndex).length) return;
+    if (!Object.keys(domainIndex).length && !Object.keys(nameIndex).length) return;
 
-    // Find and replace [N] citation patterns with styled superscripts
+    // Find and replace [SourceName] and [N] citation patterns
     var walker = document.createTreeWalker(textEl, NodeFilter.SHOW_TEXT, null, false);
     var textNodes = [];
     while (walker.nextNode()) textNodes.push(walker.currentNode);
 
-    var citationRe = /\[(\d+)\]/g;
+    // Combined regex: [SourceName] or [N]
+    var citationRe = /\[([A-Za-z][A-Za-z0-9 .&'-]*\d*|\d+)\]/g;
     textNodes.forEach(function (node) {
         var text = node.textContent;
+        citationRe.lastIndex = 0;
         if (!citationRe.test(text)) return;
         citationRe.lastIndex = 0;
 
@@ -4108,33 +4142,48 @@ function renderInlineCitations(bubbleEl, sourceMetadata) {
         var lastIdx = 0;
         var match;
         while ((match = citationRe.exec(text)) !== null) {
-            // Add text before the citation
             if (match.index > lastIdx) {
                 frag.appendChild(document.createTextNode(text.slice(lastIdx, match.index)));
             }
-            // Create styled superscript citation
-            var num = match[1];
-            var sup = document.createElement("sup");
-            sup.className = "inline-citation";
-            sup.textContent = "[" + num + "]";
-            sup.style.cssText = "color:#60a5fa;font-size:10px;font-weight:600;cursor:pointer;margin:0 1px;padding:0 2px;border-radius:3px;background:rgba(96,165,250,0.1);transition:background 0.15s;";
-            sup.title = "Source " + num;
-            sup.onmouseenter = function () { sup.style.background = "rgba(96,165,250,0.25)"; };
-            sup.onmouseleave = function () { sup.style.background = "rgba(96,165,250,0.1)"; };
-            // Click to scroll to source panel
-            sup.onclick = function (e) {
-                e.preventDefault();
-                var panel = bub.querySelector(".sources-section");
-                if (panel) {
-                    var rows = panel.querySelectorAll(".source-row");
-                    var idx = parseInt(num) - 1;
-                    if (rows[idx]) rows[idx].scrollIntoView({ behavior: "smooth", block: "center" });
+            var inner = match[1].trim();
+            var num = null;
+            var label = inner;
+            // Try numeric first
+            if (/^\d+$/.test(inner)) {
+                num = parseInt(inner);
+                label = "[" + inner + "]";
+            } else {
+                // Try source name match (case-insensitive)
+                var lower = inner.toLowerCase();
+                if (nameIndex[lower]) {
+                    num = nameIndex[lower].idx;
+                    label = nameIndex[lower].displayName;
                 }
-            };
-            frag.appendChild(sup);
+            }
+            if (num) {
+                var sup = document.createElement("sup");
+                sup.className = "inline-citation";
+                sup.textContent = label;
+                sup.style.cssText = "color:#60a5fa;font-size:10px;font-weight:600;cursor:pointer;margin:0 1px;padding:0 2px;border-radius:3px;background:rgba(96,165,250,0.1);transition:background 0.15s;";
+                sup.title = "Source " + num;
+                sup.onmouseenter = function () { sup.style.background = "rgba(96,165,250,0.25)"; };
+                sup.onmouseleave = function () { sup.style.background = "rgba(96,165,250,0.1)"; };
+                sup.onclick = function (e) {
+                    e.preventDefault();
+                    var panel = bub.querySelector(".sources-section");
+                    if (panel) {
+                        var rows = panel.querySelectorAll(".source-row");
+                        var idx = num - 1;
+                        if (rows[idx]) rows[idx].scrollIntoView({ behavior: "smooth", block: "center" });
+                    }
+                };
+                frag.appendChild(sup);
+            } else {
+                // Unrecognized citation — keep original text
+                frag.appendChild(document.createTextNode(match[0]));
+            }
             lastIdx = match.index + match[0].length;
         }
-        // Add remaining text
         if (lastIdx < text.length) {
             frag.appendChild(document.createTextNode(text.slice(lastIdx)));
         }
@@ -4231,18 +4280,17 @@ function createThinkingProcess(container) {
 function renderSourcesPanel(bubbleEl, sourceMetadata, confidence) {
     if (!bubbleEl || !Array.isArray(sourceMetadata) || !sourceMetadata.length) return;
     var bub = bubbleEl.querySelector(".bubble") || bubbleEl;
-    if (bub.querySelector(".sources-section")) return; // avoid duplicates
+    if (bub.querySelector(".sources-section")) return;
 
-    // Filter out any empty/placeholder sources
     var valid = sourceMetadata.filter(function (s) {
         return s && s.url && s.domain && !s.domain.startsWith("example");
     });
     if (!valid.length) return;
 
     var section = document.createElement("div");
-    section.className = "sources-section";
+    section.className = "sources-section sources-collapsed";
 
-    // Header row
+    // Collapsed header bar (always visible)
     var header = document.createElement("div");
     header.className = "sources-header";
     header.innerHTML =
@@ -4257,14 +4305,48 @@ function renderSourcesPanel(bubbleEl, sourceMetadata, confidence) {
         header.appendChild(badge);
     }
 
-    section.appendChild(header);
+    // Compact inline source chips (always visible)
+    var chipsRow = document.createElement("div");
+    chipsRow.className = "sources-chips";
 
-    // Source list
+    valid.slice(0, 6).forEach(function (s) {
+        var domain = s.domain || "";
+        var displayName = s.name || domain.split(".")[0].charAt(0).toUpperCase() + domain.split(".")[0].slice(1);
+        var chip = document.createElement("a");
+        chip.href = s.url;
+        chip.target = "_blank";
+        chip.rel = "noopener noreferrer";
+        chip.className = "source-chip";
+        var favSrc = s.icon || ("https://www.google.com/s2/favicons?sz=32&domain=" + encodeURIComponent(domain));
+        chip.innerHTML = '<img class="source-chip-fav" src="' + favSrc + '" width="14" height="14" loading="lazy" onerror="this.style.display=\'none\'">' +
+            '<span class="source-chip-name">' + displayName + '</span>';
+        if (s.tier && s.tier <= 2) {
+            var tierDot = document.createElement("span");
+            tierDot.className = "source-chip-tier" + (s.tier === 1 ? " t1" : "");
+            chip.appendChild(tierDot);
+        }
+        chipsRow.appendChild(chip);
+    });
+
+    if (valid.length > 6) {
+        var more = document.createElement("span");
+        more.className = "source-chip source-chip-more";
+        more.textContent = "+" + (valid.length - 6) + " more";
+        chipsRow.appendChild(more);
+    }
+
+    section.appendChild(header);
+    section.appendChild(chipsRow);
+
+    // Expandable full details (hidden by default)
+    var detailsWrap = document.createElement("div");
+    detailsWrap.className = "sources-details";
+
     var list = document.createElement("div");
     list.className = "sources-list";
 
     valid.slice(0, 8).forEach(function (s, idx) {
-        var domain = s.domain || (function () { try { return new URL(s.url).hostname.replace("www.", ""); } catch (e) { return s.url; } })();
+        var domain = s.domain || "";
         var displayName = s.name || domain.split(".")[0].charAt(0).toUpperCase() + domain.split(".")[0].slice(1);
 
         var row = document.createElement("a");
@@ -4273,7 +4355,6 @@ function renderSourcesPanel(bubbleEl, sourceMetadata, confidence) {
         row.rel = "noopener noreferrer";
         row.className = "source-row";
 
-        // Favicon
         var favSrc = s.icon || ("https://www.google.com/s2/favicons?sz=32&domain=" + encodeURIComponent(domain));
         var fav = document.createElement("img");
         fav.className = "source-favicon";
@@ -4288,7 +4369,6 @@ function renderSourcesPanel(bubbleEl, sourceMetadata, confidence) {
             fav.textContent = displayName.charAt(0).toUpperCase();
         };
 
-        // Info block
         var info = document.createElement("div");
         info.className = "source-info";
         var nameEl = document.createElement("div");
@@ -4310,7 +4390,6 @@ function renderSourcesPanel(bubbleEl, sourceMetadata, confidence) {
         row.appendChild(fav);
         row.appendChild(info);
 
-        // Tier badge for official / verified sources
         if (s.tier && s.tier <= 2) {
             var tierBadge = document.createElement("span");
             tierBadge.className = "source-tier " + (s.tier === 1 ? "t1" : "t2");
@@ -4321,7 +4400,19 @@ function renderSourcesPanel(bubbleEl, sourceMetadata, confidence) {
         list.appendChild(row);
     });
 
-    section.appendChild(list);
+    detailsWrap.appendChild(list);
+    section.appendChild(detailsWrap);
+
+    // Toggle expand/collapse
+    header.onclick = function () {
+        section.classList.toggle("sources-collapsed");
+    };
+    chipsRow.onclick = function (e) {
+        if (e.target === chipsRow) {
+            section.classList.toggle("sources-collapsed");
+        }
+    };
+
     bub.appendChild(section);
 }
 

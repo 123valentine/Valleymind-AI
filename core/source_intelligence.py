@@ -49,6 +49,9 @@ _FRESHNESS_KEYWORDS = frozenset({
     "latest", "today", "current", "now", "recent", "this week", "this month",
     "this year", "new", "update", "pricing", "limits", "rate limit",
     "api limit", "tpm", "rpm", "status", "outage", "incident",
+    "price", "price of", "right now", "as of", "currently",
+    "live", "happening", "breaking", "just", "morning", "tonight",
+    "yesterday", "tomorrow", "this morning", "this evening",
 })
 
 
@@ -123,6 +126,7 @@ class EvidencePackage:
     research_log: list[str] = field(default_factory=list)
     is_research_request: bool = False
     conflicts: list[str] = field(default_factory=list)
+    freshness_category: str = ""  # "current" | "background" | ""
 
     def to_context_string(self, budget: int = EVIDENCE_BUDGET_CHARS) -> str:
         """Render evidence as a compact context string for the LLM."""
@@ -130,6 +134,12 @@ class EvidencePackage:
             return ""
 
         lines = ["[SOURCE INTELLIGENCE — Verified Evidence]", ""]
+        if self.freshness_category == "current":
+            lines.append("[DATA TYPE: CURRENT — information reflects the latest available data as of the search time]")
+            lines.append("")
+        elif self.freshness_category == "background":
+            lines.append("[DATA TYPE: BACKGROUND — historical or general knowledge; may not reflect the latest state]")
+            lines.append("")
         used = 0
         char_count = 0
 
@@ -197,6 +207,7 @@ class EvidencePackage:
                 "tier": ev.tier,
                 "supports_claims": ev.supports_claims,
                 "published": ev.published,
+                "freshness_category": self.freshness_category,
             })
         return sources
 
@@ -210,6 +221,7 @@ class EvidencePackage:
             "research_log": self.research_log,
             "is_research_request": self.is_research_request,
             "conflicts": self.conflicts,
+            "freshness_category": self.freshness_category,
         }
 
 
@@ -477,12 +489,16 @@ def plan_search(message: str, directed_site: str = "", research_domain: str = ""
     plan.queries.append(text)
 
     # Generate supplementary queries based on domain and question type
+    from datetime import datetime as _dt
+    _current_year = str(_dt.now().year)
     if plan.domain == "tech":
         if any(kw in lower for kw in ["error", "bug", "issue", "fix", "problem"]):
             clean = re.sub(r"\bmy\b", "the", text, flags=re.IGNORECASE)
             plan.queries.append(f"{clean} solution fix")
         if any(kw in lower for kw in ["api", "endpoint", "sdk", "library"]):
             plan.queries.append(f"official documentation {text}")
+        if plan.needs_freshness:
+            plan.queries.append(f"{text} {_current_year}")
     elif plan.domain == "news":
         plan.queries.append(f"{text} latest news")
         if plan.needs_freshness:
@@ -499,7 +515,7 @@ def plan_search(message: str, directed_site: str = "", research_domain: str = ""
     else:
         # General: add a freshness query if needed
         if plan.needs_freshness:
-            plan.queries.append(f"{text} latest 2026")
+            plan.queries.append(f"{text} latest {_current_year}")
 
     # Limit to 3 queries max
     plan.queries = plan.queries[:3]
@@ -827,6 +843,12 @@ class SourceIntelligence:
         # Step 1: Plan multi-query search
         plan = plan_search(message, directed_site=directed_site, research_domain=research_domain)
         log.append(f"Search plan: {plan.intent_description}")
+
+        # Determine freshness category based on plan signals
+        if plan.needs_freshness or plan.domain in ("news", "sports", "finance"):
+            package.freshness_category = "current"
+        else:
+            package.freshness_category = "background"
         print(f"[SOURCE INTEL] Plan: {plan.intent_description}")
 
         # Step 2: Execute searches (up to 3 queries)

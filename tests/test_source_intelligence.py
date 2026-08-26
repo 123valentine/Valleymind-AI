@@ -703,5 +703,230 @@ class TestResearchWithFetchUsesStructuredResults(unittest.TestCase):
         assert "q1.com" in domains or "q2.com" in domains
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# Regression: Freshness keyword detection
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class TestFreshnessKeywords(unittest.TestCase):
+    def test_price_keyword_triggers_freshness(self):
+        """'price of Bitcoin' should trigger needs_freshness."""
+        plan = plan_search("What is the price of Bitcoin right now?")
+        assert plan.needs_freshness is True
+
+    def test_right_now_keyword(self):
+        """'right now' should trigger needs_freshness."""
+        plan = plan_search("What is the current price right now?")
+        assert plan.needs_freshness is True
+
+    def test_generic_question_no_freshness(self):
+        """'How does Bitcoin work?' should NOT trigger freshness."""
+        plan = plan_search("How does Bitcoin work?")
+        assert plan.needs_freshness is False
+
+    def test_freshness_query_appended(self):
+        """When needs_freshness=True, a supplementary freshness query should be added."""
+        plan = plan_search("Bitcoin price right now")
+        assert plan.needs_freshness is True
+        # Should have at least 2 queries: original + freshness variant
+        assert len(plan.queries) >= 2
+        # At least one query should contain 'today' or the current year
+        year = str(__import__("datetime").datetime.now().year)
+        has_freshness_query = any(
+            "today" in q.lower() or year in q
+            for q in plan.queries
+        )
+        assert has_freshness_query, f"No freshness query found in {plan.queries}"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Regression: Smart intent detection
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class TestSmartIntentDetection(unittest.TestCase):
+    def test_reply_write_detected(self):
+        """Reply-writing requests should be classified as 'none' intent."""
+        from unittest.mock import patch, MagicMock
+        from core.external_apis import classify_research_intent
+        with patch("core.external_apis.get_config") as mock_cfg, \
+             patch("core.external_apis.get_latest_groq_model", return_value="test-model"):
+            mock_cfg.return_value = MagicMock(groq_api_key="fake", groq_base_url="")
+            result = classify_research_intent("Write a reply to this email")
+            assert result["intent"] == "none"
+            assert result["reason"] == "reply-writing"
+
+    def test_copy_box_detected(self):
+        """Copy-box requests should be classified as 'none' intent."""
+        from unittest.mock import patch, MagicMock
+        from core.external_apis import classify_research_intent
+        with patch("core.external_apis.get_config") as mock_cfg, \
+             patch("core.external_apis.get_latest_groq_model", return_value="test-model"):
+            mock_cfg.return_value = MagicMock(groq_api_key="fake", groq_base_url="")
+            result = classify_research_intent("copy that")
+            assert result["intent"] == "none"
+            assert result["reason"] == "copy-box"
+
+    def test_copy_this_detected(self):
+        """'copy this' should be classified as 'none' intent."""
+        from unittest.mock import patch, MagicMock
+        from core.external_apis import classify_research_intent
+        with patch("core.external_apis.get_config") as mock_cfg, \
+             patch("core.external_apis.get_latest_groq_model", return_value="test-model"):
+            mock_cfg.return_value = MagicMock(groq_api_key="fake", groq_base_url="")
+            result = classify_research_intent("copy this")
+            assert result["intent"] == "none"
+            assert result["reason"] == "copy-box"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Regression: Freshness category assignment
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class TestFreshnessCategory(unittest.TestCase):
+    def test_news_query_gets_current_category(self):
+        """News queries should get freshness_category='current'."""
+        from unittest.mock import patch
+        si = SourceIntelligence()
+        with patch("core.external_apis._search_general_web", return_value=""), \
+             patch("core.external_apis.get_last_structured_results", return_value=[]), \
+             patch("core.external_apis._reset_search_sources"):
+            pkg = si.research_with_fetch("What happened in the news today?")
+        assert pkg.freshness_category == "current"
+
+    def test_tech_docs_get_background_category(self):
+        """Technical documentation queries should get freshness_category='background'."""
+        from unittest.mock import patch
+        si = SourceIntelligence()
+        with patch("core.external_apis._search_general_web", return_value=""), \
+             patch("core.external_apis.get_last_structured_results", return_value=[]), \
+             patch("core.external_apis._reset_search_sources"):
+            pkg = si.research_with_fetch("How does Docker networking work?")
+        assert pkg.freshness_category == "background"
+
+    def test_freshness_in_context_string(self):
+        """Freshness category should appear in the context string."""
+        pkg = EvidencePackage(
+            evidence=[
+                Evidence(
+                    source_name="Coinbase", source_domain="coinbase.com",
+                    source_icon="", source_type="web", url="https://coinbase.com",
+                    title="Bitcoin Price", content="BTC is $67000", tier=2,
+                )
+            ],
+            total_searched=5, total_used=1, confidence="high",
+            freshness_category="current",
+        )
+        ctx = pkg.to_context_string()
+        assert "CURRENT" in ctx
+
+    def test_freshness_in_frontend_metadata(self):
+        """Freshness category should appear in frontend metadata."""
+        pkg = EvidencePackage(
+            evidence=[
+                Evidence(
+                    source_name="Coinbase", source_domain="coinbase.com",
+                    source_icon="", source_type="web", url="https://coinbase.com",
+                    title="Bitcoin Price", content="BTC is $67000", tier=2,
+                )
+            ],
+            total_searched=5, total_used=1, confidence="high",
+            freshness_category="current",
+        )
+        meta = pkg.to_frontend_metadata()
+        assert len(meta) == 1
+        assert meta[0]["freshness_category"] == "current"
+
+    def test_freshness_in_to_dict(self):
+        """Freshness category should appear in to_dict()."""
+        pkg = EvidencePackage(
+            evidence=[], confidence="low",
+            freshness_category="background",
+        )
+        d = pkg.to_dict()
+        assert d["freshness_category"] == "background"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Regression: SSE event yields are dicts (not json.dumps strings)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class TestSSEDictYields(unittest.TestCase):
+    def test_stream_respond_yields_dicts_for_structured_events(self):
+        """All structured SSE events (thinking_process, intent, recovery_status)
+        should be yielded as plain dicts, not json.dumps strings.
+
+        This is critical because app.py's dispatcher uses isinstance(token, dict)
+        to distinguish structured events from text tokens. If brain.py yields
+        json.dumps strings, they get silently re-wrapped as {"token": "..."},
+        and the frontend never sees the original event structure.
+        """
+        import ast
+        import re
+
+        # Read brain.py source
+        with open("core/brain.py", "r") as f:
+            source = f.read()
+
+        # Find stream_respond method body
+        start = source.find("def stream_respond(self, message: str")
+        assert start > 0, "stream_respond method not found"
+        # Find the end (next def at same indent or end of file)
+        method_body = source[start:start + 5000]
+
+        # Check that structured events yield dicts, not json.dumps
+        # Pattern: yield {"thinking_process": ...} or yield {"intent": ...} or yield {"recovery_status": ...}
+        dict_yields = re.findall(
+            r'yield\s+\{(?!.*json\.dumps).*"(?:thinking_process|intent|recovery_status|token)"',
+            method_body,
+        )
+        # Should have at least 5 dict yields for the structured events
+        assert len(dict_yields) >= 5, (
+            f"Expected >= 5 structured dict yields in stream_respond, found {len(dict_yields)}. "
+            f"Structured events must be yielded as dicts, not json.dumps strings."
+        )
+
+    def test_no_json_dumps_for_structured_events(self):
+        """Ensure no json.dumps() wrapping for structured SSE events."""
+        with open("core/brain.py", "r") as f:
+            source = f.read()
+
+        start = source.find("def stream_respond(self, message: str")
+        method_body = source[start:start + 5000]
+
+        bad_yields = re.findall(
+            r'yield\s+json\.dumps\(\{[^}]*(?:thinking_process|recovery_status)',
+            method_body,
+        )
+        assert len(bad_yields) == 0, (
+            f"Found {len(bad_yields)} json.dumps() yields for structured events: {bad_yields}. "
+            f"These should be plain dict yields."
+        )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Regression: System prompt contains expected sections
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class TestSystemPromptSections(unittest.TestCase):
+    def test_citations_use_source_names(self):
+        """System prompt should instruct LLM to use [SourceName] citations."""
+        from core.brain import _CHAT_SYSTEM_PROMPT
+        assert "SourceName" in _CHAT_SYSTEM_PROMPT or "[Coinbase]" in _CHAT_SYSTEM_PROMPT or "[Wikipedia]" in _CHAT_SYSTEM_PROMPT
+
+    def test_freshness_awareness_section(self):
+        """System prompt should contain freshness awareness instructions."""
+        from core.brain import _CHAT_SYSTEM_PROMPT
+        assert "FRESHNESS AWARENESS" in _CHAT_SYSTEM_PROMPT
+
+    def test_smart_behavior_section(self):
+        """System prompt should contain smart behavior instructions."""
+        from core.brain import _CHAT_SYSTEM_PROMPT
+        assert "SMART BEHAVIOR" in _CHAT_SYSTEM_PROMPT
+
+    def test_personality_section(self):
+        """System prompt should contain conversational style instructions."""
+        from core.brain import _CHAT_SYSTEM_PROMPT
+        assert "CONVERSATIONAL STYLE" in _CHAT_SYSTEM_PROMPT
+
+
 if __name__ == "__main__":
     unittest.main()
