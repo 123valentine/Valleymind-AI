@@ -816,6 +816,8 @@ class SourceIntelligence:
         from core.external_apis import (
             _search_general_web,
             _fetch_url_content,
+            get_last_structured_results,
+            _reset_search_sources,
             LIVE_DATA_UNAVAILABLE,
         )
 
@@ -833,9 +835,14 @@ class SourceIntelligence:
 
         for query in plan.queries[:3]:
             try:
+                _reset_search_sources()
                 raw = _search_general_web(query, site=directed_site or "")
                 if raw and raw != LIVE_DATA_UNAVAILABLE:
-                    results = _parse_search_text(raw)
+                    structured = get_last_structured_results()
+                    if structured:
+                        results = structured
+                    else:
+                        results = _parse_search_text(raw)
                     all_results.extend(results)
                     total_searched += len(results)
                     log.append(f"Search '{query[:60]}': {len(results)} results")

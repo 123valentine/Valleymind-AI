@@ -560,5 +560,148 @@ class TestSourceIntelligenceClass(unittest.TestCase):
         assert len(restored["evidence"]) > 0
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# Test 15: research_with_fetch uses structured results (URL regression)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class TestResearchWithFetchUsesStructuredResults(unittest.TestCase):
+    """Regression: research_with_fetch must use structured results from
+    _get_last_structured_results() which contain proper URLs, rather than
+    _parse_search_text() which loses URLs from TinyFish output.
+
+    Without this fix, evidence items had empty url/domain, which caused
+    the frontend Sources panel to never render.
+    """
+
+    def test_structured_results_used_when_available(self):
+        """When TinyFish provides structured results, they should be used."""
+        from unittest.mock import patch
+
+        structured = [
+            {
+                "title": "Bitcoin Price Today - CoinDesk",
+                "url": "https://www.coindesk.com/price/bitcoin",
+                "domain": "coindesk.com",
+                "snippet": "Bitcoin traded at $111,745 on August 26.",
+                "published": "",
+            },
+            {
+                "title": "Bitcoin Price Chart - CoinMarketCap",
+                "url": "https://coinmarketcap.com/currencies/bitcoin/",
+                "domain": "coinmarketcap.com",
+                "snippet": "Bitcoin price is updated in real-time.",
+                "published": "",
+            },
+        ]
+
+        fake_search_text = (
+            "Live search results:\n"
+            "- Bitcoin Price Today - CoinDesk: Bitcoin traded at $111,745.\n"
+            "- Bitcoin Price Chart - CoinMarketCap: Bitcoin price is updated.\n"
+        )
+
+        def mock_general_web(query, site=""):
+            return fake_search_text
+
+        def mock_structured():
+            return structured
+
+        si = SourceIntelligence()
+        with patch("core.external_apis._search_general_web", mock_general_web), \
+             patch("core.external_apis.get_last_structured_results", mock_structured), \
+             patch("core.external_apis._reset_search_sources"), \
+             patch("core.external_apis._fetch_url_content", return_value="Fetched content about Bitcoin price at $111,745."):
+            pkg = si.research_with_fetch("What is the current price of Bitcoin?")
+
+        assert len(pkg.evidence) > 0, "Evidence should not be empty"
+        for ev in pkg.evidence:
+            assert ev.url, f"Evidence url should be populated, got: {ev.url!r}"
+            assert ev.source_domain, f"Evidence domain should be populated, got: {ev.source_domain!r}"
+
+    def test_frontend_metadata_has_urls(self):
+        """Frontend metadata from evidence must include url and domain."""
+        from unittest.mock import patch
+
+        structured = [
+            {
+                "title": "Bitcoin Price Today - CoinDesk",
+                "url": "https://www.coindesk.com/price/bitcoin",
+                "domain": "coindesk.com",
+                "snippet": "Bitcoin traded at $111,745.",
+                "published": "",
+            },
+        ]
+
+        si = SourceIntelligence()
+        with patch("core.external_apis._search_general_web", return_value="Live search results:\n- Bitcoin Price Today: Bitcoin traded at $111,745.\n"), \
+             patch("core.external_apis.get_last_structured_results", return_value=structured), \
+             patch("core.external_apis._reset_search_sources"), \
+             patch("core.external_apis._fetch_url_content", return_value="Fetched content about Bitcoin."):
+            pkg = si.research_with_fetch("What is the current price of Bitcoin?")
+
+        meta = pkg.to_frontend_metadata()
+        assert len(meta) > 0, "Frontend metadata should not be empty"
+        for m in meta:
+            assert m["url"], f"Metadata url should be populated, got: {m['url']!r}"
+            assert m["domain"], f"Metadata domain should be populated, got: {m['domain']!r}"
+
+    def test_fallback_to_parse_when_no_structured(self):
+        """When structured results are empty, should fall back to _parse_search_text.
+
+        _parse_search_text extracts titles from formatted text but cannot recover
+        URLs, so evidence items will have empty urls and get filtered. This is
+        acceptable — brain.py's fallback path handles DDG/Wikipedia results.
+        The key assertion is that the pipeline does not crash and returns a
+        valid EvidencePackage.
+        """
+        from unittest.mock import patch
+
+        fake_search_text = (
+            "Live search results:\n"
+            "- Groq Rate Limits: TPM limit is 8000.\n"
+        )
+
+        si = SourceIntelligence()
+        with patch("core.external_apis._search_general_web", return_value=fake_search_text), \
+             patch("core.external_apis.get_last_structured_results", return_value=[]), \
+             patch("core.external_apis._reset_search_sources"), \
+             patch("core.external_apis._fetch_url_content", return_value="Groq TPM limit is 8000 per minute."):
+            pkg = si.research_with_fetch("What are Groq rate limits?")
+
+        assert pkg is not None
+        assert isinstance(pkg.evidence, list)
+        assert pkg.total_searched >= 1
+
+    def test_per_query_structured_isolation(self):
+        """Each query should get its own structured results, not accumulated."""
+        from unittest.mock import patch
+
+        structured_q1 = [
+            {"title": "Q1 Result", "url": "https://q1.com", "domain": "q1.com", "snippet": "Q1 info", "published": ""},
+        ]
+        structured_q2 = [
+            {"title": "Q2 Result", "url": "https://q2.com", "domain": "q2.com", "snippet": "Q2 info", "published": ""},
+        ]
+
+        query_calls = {"n": 0}
+
+        def mock_general_web(query, site=""):
+            query_calls["n"] += 1
+            return "Live search results:\n- Result\n"
+
+        def mock_structured():
+            return structured_q1 if query_calls["n"] == 1 else structured_q2
+
+        si = SourceIntelligence()
+        with patch("core.external_apis._search_general_web", mock_general_web), \
+             patch("core.external_apis.get_last_structured_results", mock_structured), \
+             patch("core.external_apis._reset_search_sources"), \
+             patch("core.external_apis._fetch_url_content", return_value="Content"):
+            pkg = si.research_with_fetch("What is Bitcoin price and Ethereum price?")
+
+        domains = {ev.source_domain for ev in pkg.evidence}
+        assert "q1.com" in domains or "q2.com" in domains
+
+
 if __name__ == "__main__":
     unittest.main()
