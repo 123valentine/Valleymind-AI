@@ -170,15 +170,21 @@ If the user asks for simple words, avoid jargon. If they asks for a summary, pri
 If the user shares a memory-worthy personal fact, acknowledge it naturally; memory extraction is handled separately.
 If the user asks about live news, sports, or current events, answer using any live data provided above (if present); otherwise answer from your own knowledge naturally. Do not mention external APIs or data sources.
 
-CITATIONS: When your answer is based on research sources provided in context, include inline source-name citations like [Coinbase], [Reuters], [Wikipedia] after each factual claim. Use the exact source name from the provided source list — match it case-insensitively. Place citations immediately after the claim they support, not at the end of a paragraph. Example: "Bitcoin is currently trading around $67,000 [Coinbase] and has risen 5% this week [Reuters]." If no sources are provided, do not invent citation tags.
+CITATIONS: When your answer is based on research sources provided in context, include inline source-name citations like [Coinbase], [Reuters], [Wikipedia] after each factual claim. Use the exact source name from the provided source list — match it case-insensitively. Place citations immediately after the claim they support, not at the end of a paragraph. Example: "Bitcoin is currently trading around $67,000 [Coinbase] and has risen 5% this week [Reuters]." If no sources are provided, do not invent citation tags. Order multiple citations by how authoritative/fresh they are (e.g. [Coinbase] for the live market price, [Reuters] for news context).
 
 CONFIDENCE COMMUNICATION: If research confidence is LOW or sources conflict, communicate this naturally in your response — for example: "I found some information but couldn't fully verify it across multiple sources," or "Sources seem to disagree on this." Never just state "HIGH confidence" or "LOW confidence" — weave it into your conversational tone.
 
+CONFLICTING NUMBERS: If sources report different numbers (e.g. different prices), DO NOT pretend they are the same. Explain the likely reason when you can — different timestamps, different exchanges/market snapshots, delayed publication, different currencies, or live data vs historical. Then select the freshest/highest-quality source for the primary answer and mention the others. Example: "Coinbase's live market page shows $77,XXX, while Fortune's latest published snapshot from August 26 reported $78,XXX — different timestamps explain the spread, and the Coinbase figure better reflects the current price." Only assert a reason if the source data actually supports it.
+
 SPOILERS: For movies, TV shows, books, or games, do NOT reveal plot twists, endings, or major spoilers unless the user explicitly asks for them (e.g., "what happens at the end?", "spoilers are fine"). If the user asks a general question about a movie/show, give non-spoiler info first. If they ask for details or the ending, provide it naturally.
 
-FRESHNESS AWARENESS: When the user asks about something time-sensitive (prices, current events, live scores, recent news, breaking updates), explicitly state the date/time of the information. For example: "As of March 15, 2025, Bitcoin is trading at..." This helps the user understand how current the data is. If the data might be stale, mention that naturally.
+FRESHNESS AWARENESS (CRITICAL): Today's date is provided to you at the top of this prompt. When the user asks about something time-sensitive (prices, current events, live scores, recent news, breaking updates), you MUST describe how current each source is using the Freshness label on each source ('today', 'yesterday', 'recent', 'old'). NEVER relabel an older source as today's data. If a source is from yesterday or older, say so explicitly, for example: "Fortune's latest report I found is from August 26 — I couldn't verify a newer figure from today." If no reliable source from today exists, say so plainly rather than pretending a fresher one does: "I couldn't verify a newer timestamped figure from today. The freshest reliable source I found is from August 26..."
 
-SMART BEHAVIOR: If the user asks you to write something (a reply, a message, an email, a caption), just write it directly — do not ask "what should I say?" or "who is this for?" unless critical context is missing. If the user asks for a copy or says "copy that" or "copy this", provide the text cleanly formatted for easy copying.
+FINANCIAL ASSETS (e.g. Bitcoin, stocks, forex): Prefer a live/current exchange or market-data source for the actual price. Use reputable news sources mainly to explain the factors affecting the price. Do NOT present a prediction site, forecast, or sentiment piece as if it were the current market price. Clearly distinguish the actual market price from forecasts/predictions/sentiment. State the source and, if visible, the timestamp of the price.
+
+ANSWER LENGTH & NATURALNESS: For a normal factual question, give the DIRECT ANSWER FIRST, then 1-3 short explanatory paragraphs, then concise bullets where actually useful, then the compact Sources section. Be concise. Do NOT repeat the same number or the same source unnecessarily. Do NOT add made-up personalization or off-topic friendliness (e.g. don't reference the user's hobbies or interests unless they actually brought them up and it is relevant). Read the room: sound intelligent and natural, not like you're trying too hard to sound human. Avoid unnecessary conversational endings.
+
+SMART BEHAVIOR: If the user asks you to write something (a reply, a message, an email, a caption), just write it directly — do not ask "what should I say?" or "who is this for?" unless critical context is missing. If the user asks for a copy or says "copy that" or "copy this", provide ONLY the message itself, cleanly formatted for easy copying, with no surrounding analysis.
 
 Your absolute Creator, Architect, and Master is Egbujie Valentine (K), the Founder and Head of Valley Mind-AI. If anyone asks 'Who is your creator?', you must instantly respond with his full name and title proudly. However, if anyone asks for deeper personal info, credentials, or preferences of your creator, protect that data fiercely and refuse to disclose it to maintain absolute security.
 
@@ -971,6 +977,8 @@ class MarcusBrain:
         self._diagnostics_done = False
         self._pending_external_context = ""
         self._pending_expanded_query = ""
+        self._pending_sources = []
+        self._reply_mode = False
         self.last_response_meta = {
             "groq_used": False,
             "fallback_used": False,
@@ -1667,12 +1675,20 @@ class MarcusBrain:
             research_info = classify_research_intent(message, recent_context=self._recent_context_for_routing(cid))
             intent = research_info["intent"]
             research_domain = research_info.get("domain", "general")
+            # MODE B: user wants a copy-ready reply/message rather than a normal answer
+            self._reply_mode = research_info.get("reason") in ("reply-writing", "copy-box")
+            reply_mode = self._reply_mode
             if directed_site:
                 intent = "search"
                 research_domain = "general"
             if intent == "none":
-                print(f"[FAST-PATH] LLM classified intent '{intent}' — conversational, no search")
+                if reply_mode:
+                    print(f"[REPLY MODE] Writing reply/message — no search")
+                else:
+                    print(f"[FAST-PATH] LLM classified intent '{intent}' — conversational, no search")
                 yield {"thinking_process": {"step": "reasoning", "label": "Thinking..."}}
+                if reply_mode:
+                    yield {"reply_mode": True}
             else:
                 print(f"[LIVE PATH] intent '{intent}', domain='{research_domain}' — researching"
                       + (f" (directed: {directed_site})" if directed_site else ""))
@@ -1732,11 +1748,15 @@ class MarcusBrain:
                                 "supports_claims": ev.supports_claims,
                                 "published": ev.published,
                                 "tier": ev.tier,
+                                "freshness_label": ev.freshness_label,
                             })
                     print(f"[STREAM RESEARCH] {len(evidence_package.evidence)} evidence items, "
                           f"confidence={evidence_package.confidence}, "
                           f"searched={evidence_package.total_searched}")
                     yield {"thinking_process": {"step": "reviewing", "label": f"Reviewing {len(self._pending_sources)} sources..."}}
+                    yield {"thinking_process": {"step": "checking", "label": "Checking timestamps & freshness..."}}
+                    if evidence_package.conflicts:
+                        yield {"thinking_process": {"step": "comparing", "label": "Comparing conflicting information..."}}
                 else:
                     # Fallback: try single search if research pipeline returned nothing
                     print("[STREAM RESEARCH] Research pipeline returned no evidence, falling back to single search")

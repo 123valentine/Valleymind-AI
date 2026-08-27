@@ -40,6 +40,8 @@ from core.source_intelligence import (
     _extract_claims,
     _compute_confidence,
     _parse_search_text,
+    _parse_published_date,
+    _age_label,
     EVIDENCE_BUDGET_CHARS,
     EVIDENCE_BUDGET_EVIDENCES,
 )
@@ -866,11 +868,16 @@ class TestSSEDictYields(unittest.TestCase):
         with open("core/brain.py", "r") as f:
             source = f.read()
 
-        # Find stream_respond method body
+        # Find stream_respond method body (full method, not a fixed window)
         start = source.find("def stream_respond(self, message: str")
         assert start > 0, "stream_respond method not found"
-        # Find the end (next def at same indent or end of file)
-        method_body = source[start:start + 5000]
+        # Find the end: next "    def " at the same 4-space indent, or end of file
+        method_end = len(source)
+        for m in re.finditer(r"^    def ", source, re.MULTILINE):
+            if m.start() > start:
+                method_end = m.start()
+                break
+        method_body = source[start:method_end]
 
         # Check that structured events yield dicts, not json.dumps
         # Pattern: yield {"thinking_process": ...} or yield {"intent": ...} or yield {"recovery_status": ...}
@@ -890,7 +897,12 @@ class TestSSEDictYields(unittest.TestCase):
             source = f.read()
 
         start = source.find("def stream_respond(self, message: str")
-        method_body = source[start:start + 5000]
+        method_end = len(source)
+        for m in re.finditer(r"^    def ", source, re.MULTILINE):
+            if m.start() > start:
+                method_end = m.start()
+                break
+        method_body = source[start:method_end]
 
         bad_yields = re.findall(
             r'yield\s+json\.dumps\(\{[^}]*(?:thinking_process|recovery_status)',
@@ -926,6 +938,221 @@ class TestSystemPromptSections(unittest.TestCase):
         """System prompt should contain conversational style instructions."""
         from core.brain import _CHAT_SYSTEM_PROMPT
         assert "CONVERSATIONAL STYLE" in _CHAT_SYSTEM_PROMPT
+
+    def test_conflicting_numbers_section(self):
+        """System prompt should contain conflicting numbers instructions."""
+        from core.brain import _CHAT_SYSTEM_PROMPT
+        assert "CONFLICTING NUMBERS" in _CHAT_SYSTEM_PROMPT
+
+    def test_financial_assets_section(self):
+        """System prompt should contain financial assets instructions."""
+        from core.brain import _CHAT_SYSTEM_PROMPT
+        assert "FINANCIAL ASSETS" in _CHAT_SYSTEM_PROMPT
+
+    def test_answer_length_section(self):
+        """System prompt should contain answer length instructions."""
+        from core.brain import _CHAT_SYSTEM_PROMPT
+        assert "ANSWER LENGTH" in _CHAT_SYSTEM_PROMPT
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Regression: Published-date parsing and freshness labels
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class TestPublishedDateParsing(unittest.TestCase):
+    def test_iso_date(self):
+        dt = _parse_published_date("2026-08-26T12:34:56Z")
+        assert dt is not None
+        assert dt.year == 2026 and dt.month == 8 and dt.day == 26
+
+    def test_iso_date_only(self):
+        dt = _parse_published_date("2026-08-26")
+        assert dt is not None and dt.day == 26
+
+    def test_slash_date(self):
+        dt = _parse_published_date("2026/08/26")
+        assert dt is not None and dt.day == 26
+
+    def test_short_month_date(self):
+        dt = _parse_published_date("Aug 26, 2026")
+        assert dt is not None and dt.month == 8 and dt.day == 26
+
+    def test_long_month_date(self):
+        dt = _parse_published_date("August 26, 2026")
+        assert dt is not None and dt.month == 8
+
+    def test_day_month_year(self):
+        dt = _parse_published_date("26 Aug 2026")
+        assert dt is not None and dt.month == 8 and dt.day == 26
+
+    def test_unparseable_returns_none(self):
+        assert _parse_published_date("") is None
+        assert _parse_published_date("nonsense") is None
+        assert _parse_published_date(None) is None
+
+    def test_invalid_date_returns_none(self):
+        assert _parse_published_date("2026-13-45") is None
+
+
+class TestAgeLabel(unittest.TestCase):
+    def setUp(self):
+        from datetime import datetime
+        self.now = datetime(2026, 8, 27, 12, 0, 0)
+
+    def test_today(self):
+        age, label = _age_label("2026-08-27", self.now)
+        assert label == "today"
+
+    def test_yesterday(self):
+        age, label = _age_label("2026-08-26", self.now)
+        assert label == "yesterday"
+
+    def test_recent(self):
+        age, label = _age_label("2026-08-22", self.now)
+        assert label == "recent"
+
+    def test_old(self):
+        age, label = _age_label("2026-07-01", self.now)
+        assert label == "old"
+
+    def test_unparseable(self):
+        age, label = _age_label("", self.now)
+        assert age is None and label == ""
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Regression: Freshness-aware ranking + financial market-data boost
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class TestFreshnessRanking(unittest.TestCase):
+    def test_today_ranks_above_old_for_freshness(self):
+        """For a freshness query, a same-day source should outrank an old one."""
+        plan = SearchPlan(
+            queries=["bitcoin price"],
+            needs_freshness=True,
+            domain="finance",
+        )
+        results = [
+            {"url": "https://news.com/bitcoin", "title": "Bitcoin", "domain": "news.com",
+             "snippet": "Bitcoin market news", "published": "2026-08-20"},
+            {"url": "https://coinmarketcap.com/bitcoin", "title": "Bitcoin price", "domain": "coinmarketcap.com",
+             "snippet": "Bitcoin today", "published": "2026-08-27"},
+        ]
+        ranked = _rank_results(results, plan)
+        assert ranked[0]["domain"] == "coinmarketcap.com", (
+            "Same-day market-data source should rank above an older news source"
+        )
+
+    def test_finance_predictions_penalized(self):
+        """Prediction/forecast sources should be demoted for finance queries."""
+        plan = SearchPlan(
+            queries=["bitcoin price"],
+            needs_freshness=True,
+            domain="finance",
+        )
+        results = [
+            {"url": "https://predictor.io/btc", "title": "Bitcoin price prediction", "domain": "predictor.io",
+             "snippet": "Our prediction for bitcoin forecast", "published": "2026-08-27"},
+            {"url": "https://coingecko.com/bitcoin", "title": "Bitcoin", "domain": "coingecko.com",
+             "snippet": "Live bitcoin price", "published": "2026-08-27"},
+        ]
+        ranked = _rank_results(results, plan)
+        # Coingecko (market data) should beat a prediction site
+        assert ranked[0]["domain"] == "coingecko.com"
+
+    def test_market_data_source_type(self):
+        """Exchange/market-data domains should classify with market source_type."""
+        src = classify_domain("coinbase.com")
+        assert src.source_type == "exchange_market_data"
+        src2 = classify_domain("coinmarketcap.com")
+        assert src2.source_type == "market_data"
+        src3 = classify_domain("bloomberg.com")
+        assert src3.source_type == "financial_news"
+
+    def test_finance_domain_detection(self):
+        """A bitcoin price query should be detected as finance domain."""
+        plan = plan_search("What is the current price of Bitcoin right now?")
+        assert plan.domain == "finance", f"expected finance, got {plan.domain}"
+
+    def test_freshness_labels_attached(self):
+        """_rank_results should attach _age_label to each result."""
+        plan = SearchPlan(queries=["x"], needs_freshness=True)
+        results = [
+            {"url": "https://a.com", "title": "A", "domain": "a.com",
+             "snippet": "content", "published": "2026-08-26"},
+        ]
+        ranked = _rank_results(results, plan)
+        assert ranked[0]["_age_label"] in ("today", "yesterday", "recent", "old")
+        assert "_age_days" in ranked[0]
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Regression: Evidence freshness_label + context string freshness instructions
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class TestFreshnessContext(unittest.TestCase):
+    def test_evidence_carries_freshness_label(self):
+        result = {
+            "title": "Bitcoin price",
+            "url": "https://coinmarketcap.com/bitcoin",
+            "domain": "coinmarketcap.com",
+            "snippet": "Bitcoin today price",
+            "published": "2026-08-26",
+            "_score": 0.8,
+            "_source": classify_domain("coinmarketcap.com"),
+        }
+        ev = _build_evidence_from_snippet(result)
+        assert ev.freshness_label in ("today", "yesterday", "recent", "old", "")
+
+    def test_context_string_includes_today_date(self):
+        from core.source_intelligence import EvidencePackage, EVIDENCE_BUDGET_CHARS
+        ev = Evidence(
+            source_name="Coinbase", source_domain="coinbase.com", source_icon="",
+            source_type="exchange_market_data", url="https://coinbase.com",
+            title="BTC", content="Bitcoin price", supports_claims=[],
+            published="2026-08-27", accessed_at="", tier=1,
+            freshness_label="today",
+        )
+        pkg = EvidencePackage(evidence=[ev])
+        ctx = pkg.to_context_string()
+        assert "TODAY'S DATE" in ctx
+        assert "NEVER relabel" in ctx
+        assert "Freshness: today" in ctx
+
+    def test_data_type_current_header(self):
+        from core.source_intelligence import EvidencePackage
+        ev = Evidence(
+            source_name="Coinbase", source_domain="coinbase.com", source_icon="",
+            source_type="exchange_market_data", url="https://coinbase.com",
+            title="BTC", content="price", supports_claims=[],
+            published="2026-08-27", accessed_at="", tier=1, freshness_label="today",
+        )
+        pkg = EvidencePackage(evidence=[ev], freshness_category="current")
+        ctx = pkg.to_context_string()
+        assert "DATA TYPE: CURRENT" in ctx
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Regression: MODE B reply mode SSE flag
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class TestReplyMode(unittest.TestCase):
+    def test_stream_respond_yields_reply_mode(self):
+        """stream_respond should yield a reply_mode dict in MODE B (reply/copy) intent."""
+        import re
+        with open("core/brain.py", "r") as f:
+            source = f.read()
+        start = source.find("def stream_respond(self, message: str")
+        assert start > 0, "stream_respond method not found"
+        method_body = source[start:start + 9000]
+        # Reply-mode flag yield present
+        assert 'reply_mode' in method_body, "stream_respond should reference reply_mode"
+
+    def test_done_events_include_reply_mode(self):
+        """app.py dispatch done events should include reply_mode from the brain."""
+        with open("app.py", "r") as f:
+            source = f.read()
+        assert "reply_mode" in source, "app.py should include reply_mode in done events"
 
 
 if __name__ == "__main__":

@@ -2314,7 +2314,7 @@ def _dispatch_chat_stream(user_id, message, chat_id, image_data, persona="marcus
         except Exception as exc:
             yield f"data: {json.dumps({'error': str(exc)})}\n\n"
 
-        yield f"data: {json.dumps({'done': True, 'chat_id': resolved_chat_id, 'updated_title': updated_title})}\n\n"
+        yield f"data: {json.dumps({'done': True, 'chat_id': resolved_chat_id, 'updated_title': updated_title, 'reply_mode': bool(getattr(marcus, '_reply_mode', False))})}\n\n"
 
     return Response(
         stream_with_context(generate()),
@@ -2482,7 +2482,7 @@ def _dispatch_multi_stream(user_id, message, chat_id, image_data):
             print(f"[Router]   IMAGE failed: {image_result.error}")
             yield f"data: {json.dumps({'error': 'Image generation failed. The text response above is still valid.'})}\n\n"
 
-        yield f"data: {json.dumps({'done': True, 'chat_id': resolved_chat_id, 'updated_title': updated_title})}\n\n"
+        yield f"data: {json.dumps({'done': True, 'chat_id': resolved_chat_id, 'updated_title': updated_title, 'reply_mode': bool(getattr(marcus, '_reply_mode', False))})}\n\n"
 
     return Response(
         stream_with_context(generate()),

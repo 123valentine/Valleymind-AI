@@ -106,6 +106,7 @@ class Evidence:
     published: str = ""
     accessed_at: str = ""
     tier: int = 3
+    freshness_label: str = ""  # "today" | "yesterday" | "recent" | "old" | ""
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -134,6 +135,15 @@ class EvidencePackage:
             return ""
 
         lines = ["[SOURCE INTELLIGENCE — Verified Evidence]", ""]
+        from datetime import datetime as _dt
+        today_str = _dt.now().strftime("%A, %B %d, %Y")
+        lines.append(f"TODAY'S DATE (for comparing source freshness): {today_str}")
+        lines.append(
+            "IMPORTANT: A source marked 'today' is from today; 'yesterday' is 1 day old; "
+            "'recent' is under a week old; 'old' is a week or more old. NEVER relabel an "
+            "older source as today's data."
+        )
+        lines.append("")
         if self.freshness_category == "current":
             lines.append("[DATA TYPE: CURRENT — information reflects the latest available data as of the search time]")
             lines.append("")
@@ -155,6 +165,8 @@ class EvidencePackage:
                 block += f"Supports: {', '.join(ev.supports_claims)}\n"
             if ev.published:
                 block += f"Published: {ev.published}\n"
+            if ev.freshness_label:
+                block += f"Freshness: {ev.freshness_label} (relative to today)\n"
             block += "\n"
 
             if char_count + len(block) > budget:
@@ -208,6 +220,7 @@ class EvidencePackage:
                 "supports_claims": ev.supports_claims,
                 "published": ev.published,
                 "freshness_category": self.freshness_category,
+                "freshness_label": ev.freshness_label,
             })
         return sources
 
@@ -289,6 +302,18 @@ _NEWS_KEYWORDS = re.compile(
     r"(?:news|article|report|breaking|latest|announcement)", re.IGNORECASE
 )
 
+# Domain → source_type overrides (financial / market-data sources)
+_SOURCE_TYPE_OVERRIDES = {
+    "coinbase.com": "exchange_market_data", "binance.com": "exchange_market_data",
+    "coinmarketcap.com": "market_data", "coingecko.com": "market_data",
+    "finance.yahoo.com": "market_data", "investing.com": "financial_news",
+    "marketwatch.com": "financial_news", "cnbc.com": "financial_news",
+    "ft.com": "financial_news", "bloomberg.com": "financial_news",
+    "reuters.com": "news_agency", "apnews.com": "news_agency",
+    "techcrunch.com": "tech_news", "theverge.com": "tech_news",
+    "arstechnica.com": "tech_news",
+}
+
 
 def classify_domain(domain: str) -> SourceIdentity:
     """Classify a domain into a SourceIdentity with tier and type."""
@@ -310,7 +335,15 @@ def classify_domain(domain: str) -> SourceIdentity:
     if not name:
         name = d.split(".")[0].capitalize()
 
-    source_type = "official_documentation" if tier == 1 else "web"
+    if tier == 1:
+        source_type = "official_documentation"
+    elif _NEWS_KEYWORDS.search(d):
+        source_type = "news"
+    else:
+        source_type = "web"
+    # Apply financial / market-data overrides
+    source_type = _SOURCE_TYPE_OVERRIDES.get(root_domain, source_type)
+    source_type = _SOURCE_TYPE_OVERRIDES.get(d, source_type)
 
     return SourceIdentity(
         source_id=root_domain,
@@ -366,6 +399,17 @@ _DOMAIN_STRATEGIES = {
     "techcrunch": {"domains": ["techcrunch.com"], "type": "tech_news"},
     "the verge": {"domains": ["theverge.com"], "type": "tech_news"},
     "ars technica": {"domains": ["arstechnica.com"], "type": "tech_news"},
+    # Financial / market data (live price sources)
+    "coinbase": {"domains": ["coinbase.com"], "type": "exchange_market_data"},
+    "binance": {"domains": ["binance.com"], "type": "exchange_market_data"},
+    "coinmarketcap": {"domains": ["coinmarketcap.com"], "type": "market_data"},
+    "coingecko": {"domains": ["coingecko.com"], "type": "market_data"},
+    "investing": {"domains": ["investing.com"], "type": "financial_news"},
+    "marketwatch": {"domains": ["marketwatch.com"], "type": "financial_news"},
+    "cnbc": {"domains": ["cnbc.com"], "type": "financial_news"},
+    "financial times": {"domains": ["ft.com"], "type": "financial_news"},
+    "yahoo finance": {"domains": ["finance.yahoo.com"], "type": "market_data"},
+    "forex": {"domains": ["forex.com", "investing.com"], "type": "market_data"},
     # Science
     "pubmed": {"domains": ["pubmed.ncbi.nlm.nih.gov"], "type": "medical_database"},
     "nature": {"domains": ["nature.com"], "type": "scientific_journal"},
@@ -418,6 +462,13 @@ _DOMAIN_KEYWORDS = {
         "episode", "streaming", "netflix", "spotify", "playstation", "xbox",
         "trailer", "review", "rating", "oscar", "emmy", "grammy",
     ],
+    "finance": [
+        "bitcoin", "crypto", "cryptocurrency", "ethereum", "altcoin", "blockchain",
+        "stock price", "share price", "stock market", "invest", "trading",
+        "ticker", "nasdaq", "nyse", "forex", "cryptocurrency", "etf", "dividend",
+        "index fund", "exchange rate", "interest rate", "yield", "financial",
+        "stock", "bank", "economy", "inflation",
+    ],
 }
 
 
@@ -438,7 +489,12 @@ def _detect_domain(message: str) -> str:
     lower = message.lower()
     scores = {}
     for domain, keywords in _DOMAIN_KEYWORDS.items():
-        score = sum(1 for kw in keywords if kw in lower)
+        score = 0
+        for kw in keywords:
+            # Word-boundary match to avoid substring false positives
+            # (e.g. "ai" matching inside "affecting" or "actor" inside "factors")
+            if re.search(r"\b" + re.escape(kw) + r"\b", lower):
+                score += 1
         if score > 0:
             scores[domain] = score
     if not scores:
@@ -512,6 +568,12 @@ def plan_search(message: str, directed_site: str = "", research_domain: str = ""
     elif plan.domain == "media":
         plan.queries.append(f"{text} reviews ratings")
         plan.queries.append(f"{text} cast information")
+    elif plan.domain == "finance":
+        # Prefer live market data: add a "live/current price" query plus news context
+        plan.source_type = plan.source_type if plan.source_type != "general" else "financial"
+        plan.queries.append(f"{text} live price today")
+        if plan.needs_freshness:
+            plan.queries.append(f"{text} current price {_dt.now().strftime('%B %d %Y')} {_current_year}")
     else:
         # General: add a freshness query if needed
         if plan.needs_freshness:
@@ -555,8 +617,95 @@ def _dedupe_results(results: list[dict]) -> list[dict]:
     return deduped
 
 
+def _parse_published_date(published: str) -> Optional[datetime]:
+    """Best-effort parse of a publication date string into a datetime.
+
+    Returns None if it cannot be parsed.  Handles common formats:
+      2026-08-26, 2026-08-26T12:34:56, Aug 26, 2026, August 26, 2026,
+      26 Aug 2026, 2026/08/26.
+    """
+    if not published:
+        return None
+    text = str(published).strip()
+    if not text:
+        return None
+
+    # ISO date formats
+    iso_match = re.match(r"(\d{4})-(\d{1,2})-(\d{1,2})", text)
+    if iso_match:
+        try:
+            return datetime(int(iso_match.group(1)), int(iso_match.group(2)), int(iso_match.group(3)))
+        except ValueError:
+            return None
+
+    # YYYY/MM/DD
+    slash_match = re.match(r"(\d{4})[/](\d{1,2})[/](\d{1,2})", text)
+    if slash_match:
+        try:
+            return datetime(int(slash_match.group(1)), int(slash_match.group(2)), int(slash_match.group(3)))
+        except ValueError:
+            return None
+
+    # "Aug 26, 2026" or "August 26, 2026" or "26 Aug 2026"
+    months = {
+        "jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
+        "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12,
+    }
+    m_re = re.compile(
+        r"(?P<mon>[A-Za-z]{3,9})\s+(?P<day>\d{1,2}),?\s+(?P<year>\d{4})"
+    )
+    m = m_re.search(text)
+    if m:
+        mon = months.get(m.group("mon").lower()[:3])
+        if mon:
+            try:
+                return datetime(int(m.group("year")), mon, int(m.group("day")))
+            except ValueError:
+                return None
+
+    m_re2 = re.compile(
+        r"(?P<day>\d{1,2})\s+(?P<mon>[A-Za-z]{3,9})\s+(?P<year>\d{4})"
+    )
+    m2 = m_re2.search(text)
+    if m2:
+        mon = months.get(m2.group("mon").lower()[:3])
+        if mon:
+            try:
+                return datetime(int(m2.group("year")), mon, int(m2.group("day")))
+            except ValueError:
+                return None
+
+    return None
+
+
+def _age_label(published: str, now: Optional[datetime] = None) -> tuple[Optional[float], str]:
+    """Compute age (in days) and a freshness label for a published date.
+
+    Returns (age_days_or_None, label).  label is one of:
+      "today", "yesterday", "recent" (< 7 days), "old" (>= 7 days),
+      "" (unparseable/no date).
+    """
+    dt = _parse_published_date(published)
+    if dt is None:
+        return None, ""
+    now = now or datetime.now()
+    today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    published_day = dt.replace(hour=0, minute=0, second=0, microsecond=0)
+    age_days = (today - published_day).days
+    if age_days <= 0:
+        label = "today"
+    elif age_days == 1:
+        label = "yesterday"
+    elif age_days < 7:
+        label = "recent"
+    else:
+        label = "old"
+    return float(age_days), label
+
+
 def _rank_results(results: list[dict], plan: SearchPlan) -> list[dict]:
     """Rank search results by relevance to the search plan."""
+    now = datetime.now()
     for r in results:
         score = 0.0
         domain = (r.get("domain") or "").lower().replace("www.", "")
@@ -585,15 +734,52 @@ def _rank_results(results: list[dict], plan: SearchPlan) -> list[dict]:
         score += title_overlap * 0.2
         score += snippet_overlap * 0.1
 
-        # Freshness boost for time-sensitive queries
-        if plan.needs_freshness:
-            published = (r.get("published") or "").strip()
-            if published:
-                score += 0.15
-
         # Official documentation bonus
         if plan.source_type == "official_documentation" and source.tier == 1:
             score += 0.2
+
+        # Market-data / exchange bonus for financial or freshness queries
+        # (for prices: an exchange/market snapshot is better than a prediction site)
+        if plan.domain == "finance" or plan.needs_freshness:
+            source_type = (source.source_type or "").lower()
+            if source_type in ("exchange_market_data", "market_data"):
+                score += 0.3
+            elif source_type in ("financial_news", "news_agency"):
+                score += 0.15
+            # Penalize prediction/forecast/sentiment sites for price queries
+            tl = (r.get("title") or "") + " " + (r.get("snippet") or "")
+            tl_lower = tl.lower()
+            if any(w in tl_lower for w in ["prediction", "forecast", "price prediction",
+                                           "predict", "sentiment", "will bitcoin reach"]):
+                if plan.domain == "finance":
+                    score -= 0.3
+
+        # ── Freshness scoring (graded by age) ──────────────────────
+        published = (r.get("published") or "").strip()
+        age_days, age_label = _age_label(published, now)
+        r["_age_days"] = age_days
+        r["_age_label"] = age_label
+
+        if plan.needs_freshness:
+            if age_label == "today":
+                score += 0.5
+            elif age_label == "yesterday":
+                score += 0.25
+            elif age_label == "recent":
+                score += 0.1
+            elif published:
+                # has a date but is old → no boost, slight penalty
+                score -= 0.1
+            else:
+                # No parseable date on a freshness query → mild penalty
+                # (could be stale or untimestamped; not preferred)
+                score -= 0.05
+            # Bonus for fresh authoritative sources
+            if age_label in ("today", "yesterday"):
+                if source.tier <= 2:
+                    score += 0.2
+                if source.tier == 1:
+                    score += 0.15
 
         r["_score"] = round(score, 4)
         r["_source"] = source
@@ -612,6 +798,9 @@ def _build_evidence_from_snippet(result: dict) -> Evidence:
     # Extract the most relevant content (snippet is already truncated by search API)
     content = snippet or title
 
+    published = str(result.get("published", "") or "")
+    _age, age_label = _age_label(published)
+
     return Evidence(
         source_name=source.name,
         source_domain=source.domain,
@@ -622,9 +811,10 @@ def _build_evidence_from_snippet(result: dict) -> Evidence:
         content=content[:800],
         relevance=result.get("_score", 0.0),
         supports_claims=_extract_claims(content),
-        published=result.get("published", ""),
+        published=published,
         accessed_at=datetime.now(timezone.utc).isoformat(),
         tier=source.tier,
+        freshness_label=age_label,
     )
 
 
@@ -910,6 +1100,8 @@ class SourceIntelligence:
                 # Use fetched content for richer evidence
                 source = r.get("_source") or classify_domain(r.get("domain", ""))
                 claims = _extract_claims(fetched)
+                published = str(r.get("published", "") or "")
+                _age, age_label = _age_label(published)
                 ev = Evidence(
                     source_name=source.name,
                     source_domain=source.domain,
@@ -920,9 +1112,10 @@ class SourceIntelligence:
                     content=fetched[:800],
                     relevance=r.get("_score", 0.0),
                     supports_claims=claims,
-                    published=r.get("published", ""),
+                    published=published,
                     accessed_at=datetime.now(timezone.utc).isoformat(),
                     tier=source.tier,
+                    freshness_label=age_label,
                 )
                 if ev.content and ev.url:
                     evidence.append(ev)

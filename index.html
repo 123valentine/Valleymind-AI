@@ -302,6 +302,25 @@
   .sources-collapsed .sources-header { margin-bottom: 8px; }
   .sources-collapsed .sources-chips { margin-bottom: 0; }
   .sources-section:not(.sources-collapsed) .sources-details { display: block; }
+  /* ── Reply Copy Bar (MODE B) ─────────────────────────────── */
+  .reply-copy-bar {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 8px; margin-top: 12px; padding: 10px 12px; border-radius: 10px;
+    background: rgba(0,212,255,0.05); border: 1px solid rgba(0,212,255,0.12);
+    font-family: 'Inter', 'Segoe UI', sans-serif;
+  }
+  .reply-copy-label {
+    font-size: 12px; font-weight: 600; color: #7dd3fc; display: flex; align-items: center; gap: 6px;
+  }
+  .reply-copy-btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 6px 14px; border-radius: 8px; border: none; cursor: pointer;
+    background: linear-gradient(135deg, #00d4ff, #0ea5e9); color: #04121c;
+    font-size: 12px; font-weight: 700; transition: opacity 0.15s, transform 0.1s;
+    font-family: 'Space Grotesk', 'Segoe UI', sans-serif;
+  }
+  .reply-copy-btn:hover { opacity: 0.9; transform: translateY(-1px); }
+  .reply-copy-btn:active { transform: translateY(0); }
   .cs-badge { background:rgba(255,170,0,0.1); color:#ffaa00; border:1px solid rgba(255,170,0,0.3); }
   .img-skeleton {
     width:100%; max-width:320px; height:240px; border-radius:12px;
@@ -4234,14 +4253,24 @@ function createThinkingProcess(container) {
                 prev.iconEl.className = "step-icon done";
                 prev.row.className = "thinking-process-step step-done";
             }
+            var emoji = "\uD83D\uDD0D";
+            var l = String(label || "").toLowerCase();
+            if (l.indexOf("search") !== -1) emoji = "\uD83D\uDD0E";         // 🔎
+            else if (l.indexOf("review") !== -1) emoji = "\uD83D\uDCDA";    // 📚
+            else if (l.indexOf("timestamp") !== -1 || l.indexOf("fresh") !== -1) emoji = "\uD83D\uDDB3"; // 🕒
+            else if (l.indexOf("compar") !== -1) emoji = "\u2696\uFE0F";    // ⚖️
+            else if (l.indexOf("synthes") !== -1) emoji = "\u270D\uFE0F";   // ✍️
+            else if (l.indexOf("thinking") !== -1) emoji = "\uD83D\uDCAC";  // 💬
             var row = document.createElement("div");
             row.className = "thinking-process-step step-active";
+            row.setAttribute("data-step", "1");
             var iconEl = document.createElement("span");
             iconEl.className = "step-icon active";
-            iconEl.innerHTML = '<span class="tp-dots"><span></span><span></span><span></span></span>';
+            iconEl.textContent = emoji;
+            iconEl.style.fontSize = "11px";
             var textEl = document.createElement("span");
             textEl.className = "step-text";
-            textEl.textContent = label;
+            textEl.textContent = emoji + " " + label;
             row.appendChild(iconEl);
             row.appendChild(textEl);
             this.stepsEl.appendChild(row);
@@ -4414,6 +4443,55 @@ function renderSourcesPanel(bubbleEl, sourceMetadata, confidence) {
     };
 
     bub.appendChild(section);
+}
+
+/* ── Reply Copy Bar (MODE B) ───────────────────────────────────────
+   When the user asked for a copy-ready reply/message ("reply to her",
+   "copy that"), render a prominent copy call-to-action under the message.
+   ------------------------------------------------------------------ */
+function renderReplyCopyBar(bubbleEl) {
+    if (!bubbleEl) return;
+    var bub = bubbleEl.querySelector(".bubble") || bubbleEl;
+    if (!bub || bub.querySelector(".reply-copy-bar")) return;
+
+    var bar = document.createElement("div");
+    bar.className = "reply-copy-bar";
+
+    var label = document.createElement("span");
+    label.className = "reply-copy-label";
+    label.textContent = "Copy-ready message";
+
+    var btn = document.createElement("button");
+    btn.className = "reply-copy-btn";
+    btn.innerHTML = '<i data-lucide="copy" style="width:14px;height:14px;"></i> Copy';
+    btn.type = "button";
+    btn.onclick = function () {
+        var text = bub.querySelector(".message-text") ? bub.querySelector(".message-text").textContent : bub.textContent;
+        if (!text) return;
+        function doCopy(cb) {
+            navigator.clipboard.writeText(text).then(cb).catch(function () {
+                var ta = document.createElement("textarea");
+                ta.value = text;
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand("copy");
+                document.body.removeChild(ta);
+                cb();
+            });
+        }
+        doCopy(function () {
+            btn.innerHTML = '<i data-lucide="check" style="width:14px;height:14px;"></i> Copied';
+            if (typeof lucide !== "undefined" && lucide.createIcons) lucide.createIcons();
+            setTimeout(function () {
+                btn.innerHTML = '<i data-lucide="copy" style="width:14px;height:14px;"></i> Copy';
+                if (typeof lucide !== "undefined" && lucide.createIcons) lucide.createIcons();
+            }, 1500);
+        });
+    };
+
+    bar.appendChild(label);
+    bar.appendChild(btn);
+    bub.appendChild(bar);
 }
 
 function addMessage(text, type = "ai", imageData, mediaUrl, videoUrl) {
@@ -9595,6 +9673,7 @@ window.send = async function () {
         var streamConfidence = "";
         var statusIndicator = null;
         var thinkingBlock = null;
+        var streamReplyMode = false;
 
         while (true) {
             var chunk = await reader.read();
@@ -9689,6 +9768,12 @@ window.send = async function () {
                     if (thinkingBlock) {
                         thinkingBlock.addStep(tp.label || "Processing...");
                     }
+                    continue;
+                }
+
+                /* ---- REPLY MODE — user asked for a copy-ready message ---- */
+                if (evt.reply_mode) {
+                    streamReplyMode = true;
                     continue;
                 }
 
@@ -9850,6 +9935,7 @@ window.send = async function () {
                     }
                     streamMeta = evt;
                     streamDone = true;
+                    if (evt.reply_mode) streamReplyMode = true;
                 }
             }
             if (streamError) break;
@@ -9882,6 +9968,11 @@ window.send = async function () {
         if (thinkingBlock) {
             thinkingBlock.finish();
             thinkingBlock = null;
+        }
+
+        /* MODE B — reply/copy request: render a prominent copy bar under the message */
+        if (bubbleEl && streamReplyMode) {
+            renderReplyCopyBar(bubbleEl);
         }
 
         if (streamMeta.chat_id && !currentChatId) currentChatId = streamMeta.chat_id;
