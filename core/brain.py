@@ -21,6 +21,12 @@ from core.source_intelligence import SourceIntelligence, EvidencePackage
 from core.memory import MemorySystem
 from core.memory_manager import MemoryManager
 from core.conversation_recovery import ConversationRecovery
+from core.african_culture import (
+    resolve_language,
+    retrieve_proverbs,
+    decide_adage_relevance,
+    build_cultural_grounding_block,
+)
 
 
 FALLBACK_RESPONSE = "I can't reach the reasoning model right now. Please try again shortly."
@@ -1210,23 +1216,45 @@ class MarcusBrain:
         sections.append(f"Character profile:\n{self.profile.to_prompt()}")
         sections.append("")
 
-        # Reply language — set from Settings > Language. Every reply must be in
-        # it; fall back to English only if you genuinely cannot hold the language.
+        # ── Response language + cultural grounding (independent concepts) ──
+        # Response language: set from Settings > Language. Cultural identity:
+        # set from Settings > Culture. The two are deliberately kept separate.
         try:
+            response_lang = str(self.memory.long_term.get("response_language") or "").strip()
             reply_language = str(self.memory.long_term.get("reply_language") or "").strip()
+            culture_identity = str(self.memory.long_term.get("culture_identity") or "").strip()
+            use_adages = bool(self.memory.long_term.get("use_cultural_adages", True))
         except Exception:
-            reply_language = ""
-        if reply_language and reply_language.lower() not in ("english", "en", ""):
-            extra = ""
-            if reply_language.lower() in ("nigerian pidgin", "pidgin", "naija"):
-                extra = " Use natural, everyday Nigerian Pidgin, not literal word-for-word translation."
-            elif reply_language.lower() == "igbo":
-                extra = " Write in natural, fluent Igbo."
-            sections.append(
-                f"LANGUAGE: Reply ENTIRELY in {reply_language}, no matter what language the "
-                f"user writes in.{extra} If you truly cannot produce {reply_language}, reply in "
-                f"English instead — never mix the two mid-reply or apologise about language."
-            )
+            response_lang, reply_language, culture_identity = "", "", ""
+            use_adages = True
+        response_code = resolve_language(response_lang) or resolve_language(reply_language) or "en"
+
+        # Retrieved cultural context — only surfaced when a cultural identity is
+        # chosen AND the conversation genuinely benefits from an adage. This keeps
+        # the model from inventing proverbs or forcing them into every reply.
+        retrieved_records = []
+        if use_adages and culture_identity and culture_identity != "none":
+            try:
+                retrieved_records = retrieve_proverbs(
+                    cultural_identity=culture_identity,
+                    language_code=response_code,
+                    message=user_message,
+                    limit=3,
+                )
+            except Exception as exc:
+                print(f"[CULTURE] cultural retrieval failed: {exc}")
+                retrieved_records = []
+
+        grounding = build_cultural_grounding_block(
+            response_language=response_code,
+            cultural_identity=culture_identity,
+            use_adages=use_adages,
+            retrieved=retrieved_records,
+            message=user_message,
+        )
+        if grounding:
+            sections.append("=== Response Language & Cultural Grounding ===")
+            sections.append(grounding)
             sections.append("")
 
         sections.append("Known user context, if useful:")

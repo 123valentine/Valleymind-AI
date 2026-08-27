@@ -1,0 +1,27 @@
+{
+  "culture": "amharic",
+  "proverbs": [
+    {
+      "id": "amharic-000001",
+      "culture": "amharic",
+      "text": "ድመት ማዳበር መጣለል አይደለም",
+      "translation_en": "Petting a cat is not the same as ignoring it (every effort has meaning).",
+      "meaning": "Small consistent efforts matter; do not dismiss them.",
+      "themes": [
+        "effort",
+        "perseverance"
+      ],
+      "source": {
+        "title": "Wikiquote (African proverbs)",
+        "url": "https://en.wikiquote.org/wiki/African_proverbs",
+        "license": "CC BY-SA",
+        "license_url": "https://creativecommons.org/licenses/by-sa/4.0/",
+        "accessed_at": "2026-08-27T12:58:31.974185+00:00"
+      },
+      "verification": {
+        "origin_verified": false,
+        "translation_verified": false
+      }
+    }
+  ]
+}

@@ -1,0 +1,45 @@
+{
+  "sources": [
+    {
+      "name": "Wikiquote (African proverbs)",
+      "url": "https://en.wikiquote.org/wiki/African_proverbs",
+      "license": "CC BY-SA",
+      "license_url": "https://creativecommons.org/licenses/by-sa/4.0/",
+      "languages": [
+        "ig",
+        "yo",
+        "ha",
+        "sw",
+        "zu",
+        "xh",
+        "pcm"
+      ],
+      "retrieved_at": "2026-08-27T12:58:31.974185+00:00",
+      "usage_notes": "Open knowledge; reused with attribution. Individual proverb authenticity varies.",
+      "imported": true
+    },
+    {
+      "name": "Wikiquote (Igbo proverbs)",
+      "url": "https://en.wikiquote.org/wiki/Igbo_proverbs",
+      "license": "CC BY-SA",
+      "license_url": "https://creativecommons.org/licenses/by-sa/4.0/",
+      "languages": [
+        "ig"
+      ],
+      "retrieved_at": "2026-08-27T12:58:31.974185+00:00",
+      "usage_notes": "Open knowledge; reused with attribution.",
+      "imported": true
+    },
+    {
+      "name": null,
+      "url": "https://en.wikiquote.org/w/api.php?action=parse&page=African_proverbs&prop=wikitext&format=json&formatversion=2",
+      "license": "unknown",
+      "license_url": null,
+      "languages": [],
+      "retrieved_at": "2026-08-27T12:58:31.974185+00:00",
+      "usage_notes": "Could NOT be imported automatically: disallowed by robots.txt. Needs human review before any use.",
+      "imported": false,
+      "needs_review": true
+    }
+  ]
+}

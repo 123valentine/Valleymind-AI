@@ -2886,7 +2886,7 @@ def api_settings(section):
     allowed = {
         "account", "memory", "projects", "creator", "preferences",
         "appearance", "notifications", "knowledge", "billing",
-        "privacy", "language", "integrations", "extensions",
+        "privacy", "language", "culture", "integrations", "extensions",
         "interests", "goals", "accessibility", "security",
         "connected", "tutorials", "help",
     }
@@ -2917,7 +2917,20 @@ def _mirror_settings_to_memory(user_id: str, section: str, body: dict):
             lang = str(body.get("language") or "").strip()
             if lang:
                 marcus.memory.long_term["reply_language"] = lang
-                marcus.memory.save_memory()
+            # NEW: persistent response language (canonical code, e.g. "ig", "pcm", "en")
+            response_lang = str(body.get("response_language") or "").strip()
+            if response_lang:
+                marcus.memory.long_term["response_language"] = response_lang
+            marcus.memory.save_memory()
+        elif section == "culture":
+            # CULTURAL IDENTITY is INDEPENDENT from response language (by design).
+            cid = str(body.get("cultural_identity") or "").strip().lower()
+            if cid:
+                marcus.memory.long_term["culture_identity"] = cid
+            use = body.get("use_cultural_adages")
+            if use is not None:
+                marcus.memory.long_term["use_cultural_adages"] = bool(use)
+            marcus.memory.save_memory()
         elif section == "interests":
             tags = body.get("tags", body.get("interests"))
             if isinstance(tags, list):

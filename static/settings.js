@@ -8,6 +8,7 @@ var SETTINGS_SECTIONS = [
   { id: "accessibility", label: "Accessibility" },
   { id: "appearance",    label: "Appearance" },
   { id: "language",      label: "Language & Region" },
+  { id: "culture",       label: "Culture" },
   { id: "notifications", label: "Notifications" },
   { id: "privacy",       label: "Privacy & Data" },
   { id: "security",      label: "Security" },
@@ -75,6 +76,7 @@ function renderSettingsContent(id) {
     case "connected":     renderConnectedSection(container);     break;
     case "accessibility": renderAccessibilitySection(container); break;
     case "language":      renderLanguageSection(container);      break;
+    case "culture":       renderCultureSection(container);       break;
     case "integrations":  renderIntegrationsSection(container);  break;
     case "extensions":    renderExtensionsSection(container);    break;
     case "tutorials":     renderTutorialsSection(container);     break;
@@ -1106,12 +1108,52 @@ function clearLocalCache() {
 // LANGUAGE & REGION
 // ══════════════════════════════════════════════════════════════
 
+// The 16 supported response languages (contact core/african_culture.py for tiers).
+// Value = canonical ISO code persisted as `response_language`.
+var CULTURAL_LANGUAGES = [
+  { value: "en",  label: "English" },
+  { value: "pcm", label: "Nigerian Pidgin (Naija)" },
+  { value: "ig",  label: "Igbo" },
+  { value: "yo",  label: "Yoruba" },
+  { value: "ha",  label: "Hausa" },
+  { value: "sw",  label: "Swahili (Kiswahili)" },
+  { value: "zu",  label: "Zulu (isiZulu)" },
+  { value: "xh",  label: "Xhosa (isiXhosa)" },
+  { value: "af",  label: "Afrikaans" },
+  { value: "st",  label: "Sesotho" },
+  { value: "tn",  label: "Setswana" },
+  { value: "nso", label: "Sepedi" },
+  { value: "nr",  label: "isiNdebele" },
+  { value: "ss",  label: "siSwati" },
+  { value: "ve",  label: "Tshivenda" },
+  { value: "ts",  label: "Xitsonga" }
+];
+
+// Effective response-language value: prefer the stored canonical code, but
+// fall back gracefully to any legacy name selection.
+function _effectiveResponseLang(data) {
+  var code = data.response_language;
+  if (code) {
+    for (var i = 0; i < CULTURAL_LANGUAGES.length; i++) {
+      if (CULTURAL_LANGUAGES[i].value === code) return code;
+    }
+  }
+  var legacy = data.language;
+  var idx = {
+    "Nigerian Pidgin": "pcm", "Igbo": "ig", "Yoruba": "yo", "Hausa": "ha",
+    "Swahili": "sw", "Zulu": "zu", "Xhosa": "xh", "Afrikaans": "af"
+  };
+  if (legacy && idx[legacy]) return idx[legacy];
+  return "en";
+}
+
 function renderLanguageSection(container) {
-  container.innerHTML = _SH.sectionHeader("Language & Region", "Configure your regional preferences");
+  container.innerHTML = _SH.sectionHeader("Language & Region", "How the AI talks to you");
   settingsApiGet("language").then(function (d) {
     var data = d.data || {};
-    container.innerHTML = _SH.sectionHeader("Language & Region", "Configure your regional preferences") +
-      _SH.card("Language", '<p style="color:#94a3b8;font-size:10px;margin:0 0 4px;">Reply Language — the AI answers in this language</p>' + _SH.select(["English", "Igbo", "Nigerian Pidgin", "Spanish", "French", "German", "Portuguese", "Arabic", "Chinese", "Japanese", "Hindi"], "langLanguage", data.language)) +
+    var resp = _effectiveResponseLang(data);
+    container.innerHTML = _SH.sectionHeader("Language & Region", "How the AI talks to you") +
+      _SH.card("Response Language", '<p style="color:#94a3b8;font-size:10px;margin:0 0 4px;">Reply Language — the AI answers in this language</p>' + _SH.select(CULTURAL_LANGUAGES, "langResponseLang", resp)) +
       _SH.card("Region & Formatting", '<div style="display:flex;gap:10px;"><div style="flex:1;"><p style="color:#94a3b8;font-size:10px;margin:0 0 4px;">Region</p>' + _SH.select(["Nigeria", "United States", "United Kingdom", "Canada", "Australia", "Germany", "France", "Other"], "langRegion", data.region) + '</div><div style="flex:1;"><p style="color:#94a3b8;font-size:10px;margin:0 0 4px;">Time Zone</p>' + _SH.select(["UTC+1 (WAT)", "UTC+0 (GMT)", "UTC-5 (EST)", "UTC-8 (PST)", "UTC+2 (CEST)", "UTC+8 (SGT)", "UTC+9 (JST)"], "langTimezone", data.timezone) + '</div></div>' +
         '<div style="height:10px;"></div><div style="display:flex;gap:10px;"><div style="flex:1;"><p style="color:#94a3b8;font-size:10px;margin:0 0 4px;">Date Format</p>' + _SH.select(["DD/MM/YYYY", "MM/DD/YYYY", "YYYY-MM-DD"], "langDateFormat", data.date_format) + '</div><div style="flex:1;"><p style="color:#94a3b8;font-size:10px;margin:0 0 4px;">Currency</p>' + _SH.select(["NGN (₦)", "USD ($)", "EUR (€)", "GBP (£)"], "langCurrency", data.currency) + '</div></div>') +
       '<div style="margin-top:4px;">' + _SH.btn("Save", "saveLanguagePrefs()", "rgba(0,212,255,0.8)") + _SH.statusSpan("langStatus") + '</div>';
@@ -1120,9 +1162,48 @@ function renderLanguageSection(container) {
 
 function saveLanguagePrefs() {
   _saveSettingsAndShow("language", {
-    language: _getVal("langLanguage"), region: _getVal("langRegion"), timezone: _getVal("langTimezone"),
+    response_language: _getVal("langResponseLang"), language: _getVal("langResponseLang"),
+    region: _getVal("langRegion"), timezone: _getVal("langTimezone"),
     date_format: _getVal("langDateFormat"), currency: _getVal("langCurrency"),
   }, "langStatus");
+}
+
+// ══════════════════════════════════════════════════════════════
+// CULTURE — keeps cultural identity INDEPENDENT from response language
+// ══════════════════════════════════════════════════════════════
+
+var CULTURAL_IDENTITIES = [
+  { value: "none",          label: "No specific cultural preference" },
+  { value: "igbo",          label: "Igbo" },
+  { value: "yoruba",        label: "Yoruba" },
+  { value: "hausa",         label: "Hausa" },
+  { value: "nigerian",      label: "Nigerian (broader Nigerian)" },
+  { value: "akan",          label: "Akan" },
+  { value: "swahili_ea",    label: "Swahili / East African" },
+  { value: "zulu",          label: "Zulu" },
+  { value: "xhosa",         label: "Xhosa" },
+  { value: "south_african", label: "South African / Southern African" },
+  { value: "other_african", label: "Other African" },
+  { value: "custom",        label: "Custom / Other" }
+];
+
+function renderCultureSection(container) {
+  container.innerHTML = _SH.sectionHeader("Culture", "Cultural identity & how the AI grounds its wisdom");
+  settingsApiGet("culture").then(function (d) {
+    var data = d.data || {};
+    container.innerHTML = _SH.sectionHeader("Culture", "Cultural identity & how the AI grounds its wisdom") +
+      '<p style="color:#64748b;font-size:12px;margin:0 0 14px;">Cultural identity is <b>separate</b> from response language and is never inferred from your name, location, accent or appearance. Choose only what you want the AI to reflect.</p>' +
+      _SH.card("Cultural Identity", '<p style="color:#94a3b8;font-size:10px;margin:0 0 4px;">Which cultural tradition should the AI reflect in its wisdom?</p>' + _SH.select(CULTURAL_IDENTITIES, "cultureIdentity", data.cultural_identity || "")) +
+      _SH.card("Cultural Wisdom", _SH.row("Use cultural adages & proverbs", _SH.toggle("cultureAdages", data.use_cultural_adages !== false), "When relevant, the AI may weave in proverbs from your chosen culture — never forced, never as scientific/medical/legal evidence.")) +
+      '<div style="margin-top:4px;">' + _SH.btn("Save", "saveCulturePrefs()", "rgba(0,212,255,0.8)") + _SH.statusSpan("cultureStatus") + '</div>';
+  }).catch(function () { container.innerHTML = _SH.sectionHeader("Culture") + '<p style="color:#64748b;">Could not load cultural settings.</p>'; });
+}
+
+function saveCulturePrefs() {
+  _saveSettingsAndShow("culture", {
+    cultural_identity: _getVal("cultureIdentity") || "",
+    use_cultural_adages: document.getElementById("cultureAdages") ? document.getElementById("cultureAdages").checked : true,
+  }, "cultureStatus");
 }
 
 // ══════════════════════════════════════════════════════════════

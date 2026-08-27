@@ -1,0 +1,51 @@
+{
+  "culture": "yoruba",
+  "proverbs": [
+    {
+      "id": "yoruba-000001",
+      "culture": "yoruba",
+      "text": "Àgbà kì í lojú, bí ọmọdé bá ní ọgbọ́n, ó máa ń gbọ́.",
+      "translation_en": "Age is not wasted; even if a child has wisdom, it still listens to elders.",
+      "meaning": "Respect for elders and experience; wisdom comes with age.",
+      "themes": [
+        "respect",
+        "elders",
+        "wisdom"
+      ],
+      "source": {
+        "title": "Wikiquote (African proverbs)",
+        "url": "https://en.wikiquote.org/wiki/African_proverbs",
+        "license": "CC BY-SA",
+        "license_url": "https://creativecommons.org/licenses/by-sa/4.0/",
+        "accessed_at": "2026-08-27T12:58:31.958561+00:00"
+      },
+      "verification": {
+        "origin_verified": false,
+        "translation_verified": false
+      }
+    },
+    {
+      "id": "yoruba-000002",
+      "culture": "yoruba",
+      "text": "Ìyá ò ní bí ọmọ bá ká kù.",
+      "translation_en": "A mother does not give up on her child.",
+      "meaning": "Perseverance, parental devotion, and persistence.",
+      "themes": [
+        "family",
+        "perseverance",
+        "love"
+      ],
+      "source": {
+        "title": "Wikiquote (African proverbs)",
+        "url": "https://en.wikiquote.org/wiki/African_proverbs",
+        "license": "CC BY-SA",
+        "license_url": "https://creativecommons.org/licenses/by-sa/4.0/",
+        "accessed_at": "2026-08-27T12:58:31.958561+00:00"
+      },
+      "verification": {
+        "origin_verified": false,
+        "translation_verified": false
+      }
+    }
+  ]
+}

@@ -1,0 +1,50 @@
+{
+  "culture": "general_african",
+  "proverbs": [
+    {
+      "id": "general_african-000001",
+      "culture": "general_african",
+      "text": "Smooth seas do not make skillful sailors.",
+      "translation_en": "Smooth seas do not make skillful sailors.",
+      "meaning": "Hardship and challenge build skill, wisdom and resilience.",
+      "themes": [
+        "resilience",
+        "growth",
+        "perseverance"
+      ],
+      "source": {
+        "title": "Wikiquote (African proverbs)",
+        "url": "https://en.wikiquote.org/wiki/African_proverbs",
+        "license": "CC BY-SA",
+        "license_url": "https://creativecommons.org/licenses/by-sa/4.0/",
+        "accessed_at": "2026-08-27T12:58:31.939632+00:00"
+      },
+      "verification": {
+        "origin_verified": false,
+        "translation_verified": false
+      }
+    },
+    {
+      "id": "general_african-000002",
+      "culture": "general_african",
+      "text": "The eye never forgets what the heart has seen.",
+      "translation_en": "The eye never forgets what the heart has seen.",
+      "meaning": "Deeply moving experiences leave a lasting impression.",
+      "themes": [
+        "memory",
+        "wisdom"
+      ],
+      "source": {
+        "title": "Wikiquote (African proverbs)",
+        "url": "https://en.wikiquote.org/wiki/African_proverbs",
+        "license": "CC BY-SA",
+        "license_url": "https://creativecommons.org/licenses/by-sa/4.0/",
+        "accessed_at": "2026-08-27T12:58:31.939632+00:00"
+      },
+      "verification": {
+        "origin_verified": false,
+        "translation_verified": false
+      }
+    }
+  ]
+}

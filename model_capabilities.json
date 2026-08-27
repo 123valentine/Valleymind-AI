@@ -1,0 +1,23 @@
+{
+  "model": "gpt-oss (hosted via Groq)",
+  "generated_at": "2026-08-27T00:00:00Z",
+  "note": "Language support varies by underlying model. This layer can be updated independently of the UI when the deployment model changes. 'full' = reliably fluent; 'good' = generally fluent; 'partial' = workable for everyday use; 'experimental' = model capability is limited or unproven — treat with caution. No language is labelled 'fully supported' without evidence from the current model.",
+  "languages": {
+    "en":  {"model_support": "full",         "notes": "Primary language"},
+    "af":  {"model_support": "good",         "notes": "Well-resourced language"},
+    "sw":  {"model_support": "good",         "notes": "Widely covered by modern models"},
+    "zu":  {"model_support": "partial",      "notes": "Workable for common phrases"},
+    "xh":  {"model_support": "partial",      "notes": "Workable for common phrases"},
+    "pcm": {"model_support": "experimental", "notes": "Nigerian Pidgin; not to be 'corrected' to English"},
+    "ig":  {"model_support": "experimental", "notes": "Igbo competence is limited"},
+    "yo":  {"model_support": "experimental", "notes": "Yoruba competence is limited"},
+    "ha":  {"model_support": "experimental", "notes": "Hausa competence is limited"},
+    "st":  {"model_support": "experimental", "notes": "Sesotho not yet evidenced"},
+    "tn":  {"model_support": "experimental", "notes": "Setswana not yet evidenced"},
+    "nso": {"model_support": "experimental", "notes": "Sepedi not yet evidenced"},
+    "nr":  {"model_support": "experimental", "notes": "isiNdebele not yet evidenced"},
+    "ss":  {"model_support": "experimental", "notes": "siSwati not yet evidenced"},
+    "ve":  {"model_support": "experimental", "notes": "Tshivenda not yet evidenced"},
+    "ts":  {"model_support": "experimental", "notes": "Xitsonga not yet evidenced"}
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "culture": "hausa",
+  "proverbs": [
+    {
+      "id": "hausa-000001",
+      "culture": "hausa",
+      "text": "Ruwa ba ya taka shuru.",
+      "translation_en": "Water does not step on grass (it flows silently).",
+      "meaning": "Steady, quiet effort achieves more than noise.",
+      "themes": [
+        "patience",
+        "effort",
+        "silence"
+      ],
+      "source": {
+        "title": "Wikiquote (African proverbs)",
+        "url": "https://en.wikiquote.org/wiki/African_proverbs",
+        "license": "CC BY-SA",
+        "license_url": "https://creativecommons.org/licenses/by-sa/4.0/",
+        "accessed_at": "2026-08-27T12:58:31.958561+00:00"
+      },
+      "verification": {
+        "origin_verified": false,
+        "translation_verified": false
+      }
+    }
+  ]
+}

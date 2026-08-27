@@ -1,0 +1,50 @@
+{
+  "generated_at": "2026-08-27T12:58:32.003071+00:00",
+  "languages": {
+    "general_african": {
+      "items": 2,
+      "verified": 0
+    },
+    "igbo": {
+      "items": 3,
+      "verified": 0
+    },
+    "yoruba": {
+      "items": 2,
+      "verified": 0
+    },
+    "hausa": {
+      "items": 1,
+      "verified": 0
+    },
+    "swahili": {
+      "items": 2,
+      "verified": 0
+    },
+    "zulu": {
+      "items": 2,
+      "verified": 0
+    },
+    "xhosa": {
+      "items": 1,
+      "verified": 0
+    },
+    "pidgin": {
+      "items": 1,
+      "verified": 0
+    },
+    "akan": {
+      "items": 1,
+      "verified": 0
+    },
+    "amharic": {
+      "items": 1,
+      "verified": 0
+    }
+  },
+  "total_items": 16,
+  "verified": 0,
+  "needs_review": 16,
+  "duplicates_removed": 0,
+  "sources": 3
+}

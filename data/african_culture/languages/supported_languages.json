@@ -1,0 +1,20 @@
+{
+  "languages": [
+    { "code": "en",  "name": "English",         "native_name": "English",      "region": "Global",          "country_examples": [],                    "model_support": "full",         "cultural_data_available": true },
+    { "code": "pcm", "name": "Nigerian Pidgin", "native_name": "Naija",        "region": "West Africa",     "country_examples": ["Nigeria"],           "model_support": "experimental", "cultural_data_available": true },
+    { "code": "ig",  "name": "Igbo",            "native_name": "Igbo",         "region": "West Africa",     "country_examples": ["Nigeria"],           "model_support": "experimental", "cultural_data_available": true },
+    { "code": "yo",  "name": "Yoruba",          "native_name": "Yoruba",       "region": "West Africa",     "country_examples": ["Nigeria"],           "model_support": "experimental", "cultural_data_available": true },
+    { "code": "ha",  "name": "Hausa",           "native_name": "Hausa",        "region": "West Africa",     "country_examples": ["Nigeria", "Niger"],  "model_support": "experimental", "cultural_data_available": true },
+    { "code": "sw",  "name": "Swahili",         "native_name": "Kiswahili",    "region": "East Africa",     "country_examples": ["Kenya", "Tanzania"], "model_support": "good",         "cultural_data_available": true },
+    { "code": "zu",  "name": "Zulu",            "native_name": "isiZulu",      "region": "Southern Africa", "country_examples": ["South Africa"],       "model_support": "partial",      "cultural_data_available": true },
+    { "code": "xh",  "name": "Xhosa",           "native_name": "isiXhosa",     "region": "Southern Africa", "country_examples": ["South Africa"],       "model_support": "partial",      "cultural_data_available": true },
+    { "code": "af",  "name": "Afrikaans",       "native_name": "Afrikaans",    "region": "Southern Africa", "country_examples": ["South Africa"],       "model_support": "good",         "cultural_data_available": true },
+    { "code": "st",  "name": "Sesotho",         "native_name": "Sesotho",      "region": "Southern Africa", "country_examples": ["Lesotho"],            "model_support": "experimental", "cultural_data_available": true },
+    { "code": "tn",  "name": "Setswana",        "native_name": "Setswana",     "region": "Southern Africa", "country_examples": ["Botswana"],           "model_support": "experimental", "cultural_data_available": true },
+    { "code": "nso", "name": "Sepedi",          "native_name": "Sepedi",       "region": "Southern Africa", "country_examples": ["South Africa"],       "model_support": "experimental", "cultural_data_available": true },
+    { "code": "nr",  "name": "isiNdebele",      "native_name": "isiNdebele",   "region": "Southern Africa", "country_examples": ["South Africa"],       "model_support": "experimental", "cultural_data_available": true },
+    { "code": "ss",  "name": "siSwati",         "native_name": "siSwati",      "region": "Southern Africa", "country_examples": ["Eswatini"],           "model_support": "experimental", "cultural_data_available": true },
+    { "code": "ve",  "name": "Tshivenda",       "native_name": "Tshivenda",    "region": "Southern Africa", "country_examples": ["South Africa"],       "model_support": "experimental", "cultural_data_available": true },
+    { "code": "ts",  "name": "Xitsonga",        "native_name": "Xitsonga",     "region": "Southern Africa", "country_examples": ["South Africa"],       "model_support": "experimental", "cultural_data_available": true }
+  ]
+}

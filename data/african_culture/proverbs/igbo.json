@@ -1,0 +1,73 @@
+{
+  "culture": "igbo",
+  "proverbs": [
+    {
+      "id": "igbo-000001",
+      "culture": "igbo",
+      "text": "Onye were ndụ, were aka ya ruo ọdụ.",
+      "translation_en": "When a person is alive, they will use their hands to reach the tail.",
+      "meaning": "As long as there is life, there is still hope and a chance to achieve.",
+      "themes": [
+        "perseverance",
+        "hope",
+        "patience"
+      ],
+      "source": {
+        "title": "Wikiquote (Igbo proverbs)",
+        "url": "https://en.wikiquote.org/wiki/Igbo_proverbs",
+        "license": "CC BY-SA",
+        "license_url": "https://creativecommons.org/licenses/by-sa/4.0/",
+        "accessed_at": "2026-08-27T12:58:31.958561+00:00"
+      },
+      "verification": {
+        "origin_verified": false,
+        "translation_verified": false
+      }
+    },
+    {
+      "id": "igbo-000002",
+      "culture": "igbo",
+      "text": "Agwo na-aga n'ụzọ, na-eche na ọ ga-eri ewu.",
+      "translation_en": "The snake that walks the path does not expect to starve.",
+      "meaning": "Those who keep moving and working meet with opportunity along the way.",
+      "themes": [
+        "perseverance",
+        "effort"
+      ],
+      "source": {
+        "title": "Wikiquote (Igbo proverbs)",
+        "url": "https://en.wikiquote.org/wiki/Igbo_proverbs",
+        "license": "CC BY-SA",
+        "license_url": "https://creativecommons.org/licenses/by-sa/4.0/",
+        "accessed_at": "2026-08-27T12:58:31.958561+00:00"
+      },
+      "verification": {
+        "origin_verified": false,
+        "translation_verified": false
+      }
+    },
+    {
+      "id": "igbo-000003",
+      "culture": "igbo",
+      "text": "Ewu na-eri nri, ọ naghị eche na ọ ga-ata ụfụ.",
+      "translation_en": "A goat eats when it can, not knowing what suffering lies ahead.",
+      "meaning": "We cannot control the future, only make the most of the present.",
+      "themes": [
+        "patience",
+        "present",
+        "contentment"
+      ],
+      "source": {
+        "title": "Wikiquote (Igbo proverbs)",
+        "url": "https://en.wikiquote.org/wiki/Igbo_proverbs",
+        "license": "CC BY-SA",
+        "license_url": "https://creativecommons.org/licenses/by-sa/4.0/",
+        "accessed_at": "2026-08-27T12:58:31.958561+00:00"
+      },
+      "verification": {
+        "origin_verified": false,
+        "translation_verified": false
+      }
+    }
+  ]
+}

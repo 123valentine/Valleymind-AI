@@ -1,0 +1,27 @@
+{
+  "culture": "xhosa",
+  "proverbs": [
+    {
+      "id": "xhosa-000001",
+      "culture": "xhosa",
+      "text": "Umuntu ngumuntu ngabantu.",
+      "translation_en": "A person is a person through other people.",
+      "meaning": "Community is the foundation of humanity (Ubuntu).",
+      "themes": [
+        "community",
+        "ubuntu"
+      ],
+      "source": {
+        "title": "Wikiquote (African proverbs)",
+        "url": "https://en.wikiquote.org/wiki/African_proverbs",
+        "license": "CC BY-SA",
+        "license_url": "https://creativecommons.org/licenses/by-sa/4.0/",
+        "accessed_at": "2026-08-27T12:58:31.958561+00:00"
+      },
+      "verification": {
+        "origin_verified": false,
+        "translation_verified": false
+      }
+    }
+  ]
+}

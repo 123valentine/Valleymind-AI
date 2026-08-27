@@ -1,0 +1,20 @@
+{
+  "id": "respect_for_elders",
+  "name": "Respect for elders",
+  "culture": "Pan-African",
+  "summary": "Wisdom, guidance and deference to those who came before.",
+  "themes": [
+    "respect",
+    "elders"
+  ],
+  "source": {
+    "title": "Wikiquote (African proverbs)",
+    "url": "https://en.wikiquote.org/wiki/African_proverbs",
+    "license": "CC BY-SA",
+    "license_url": "https://creativecommons.org/licenses/by-sa/4.0/",
+    "accessed_at": "2026-08-27T12:58:27.578607+00:00"
+  },
+  "verification": {
+    "origin_verified": false
+  }
+}

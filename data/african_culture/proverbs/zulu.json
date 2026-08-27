@@ -1,0 +1,51 @@
+{
+  "culture": "zulu",
+  "proverbs": [
+    {
+      "id": "zulu-000001",
+      "culture": "zulu",
+      "text": "Umuntu ngumuntu ngabantu.",
+      "translation_en": "A person is a person through other people.",
+      "meaning": "Humanity and dignity depend on community (Ubuntu).",
+      "themes": [
+        "community",
+        "ubuntu",
+        "humanity"
+      ],
+      "source": {
+        "title": "Wikiquote (African proverbs)",
+        "url": "https://en.wikiquote.org/wiki/African_proverbs",
+        "license": "CC BY-SA",
+        "license_url": "https://creativecommons.org/licenses/by-sa/4.0/",
+        "accessed_at": "2026-08-27T12:58:31.958561+00:00"
+      },
+      "verification": {
+        "origin_verified": false,
+        "translation_verified": false
+      }
+    },
+    {
+      "id": "zulu-000002",
+      "culture": "zulu",
+      "text": "Inkomo kayibulawa ngokuyithemba.",
+      "translation_en": "An ox is not killed by trusting it (you must act, not just rely on faith).",
+      "meaning": "Effort and action are required; wishing alone is not enough.",
+      "themes": [
+        "effort",
+        "action",
+        "responsibility"
+      ],
+      "source": {
+        "title": "Wikiquote (African proverbs)",
+        "url": "https://en.wikiquote.org/wiki/African_proverbs",
+        "license": "CC BY-SA",
+        "license_url": "https://creativecommons.org/licenses/by-sa/4.0/",
+        "accessed_at": "2026-08-27T12:58:31.958561+00:00"
+      },
+      "verification": {
+        "origin_verified": false,
+        "translation_verified": false
+      }
+    }
+  ]
+}

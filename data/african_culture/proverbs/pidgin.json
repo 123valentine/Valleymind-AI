@@ -1,0 +1,27 @@
+{
+  "culture": "pidgin",
+  "proverbs": [
+    {
+      "id": "pidgin-000001",
+      "culture": "pidgin",
+      "text": "Patient man dey ride bicycle, impatient man dey trek.",
+      "translation_en": "A patient man rides a bicycle; an impatient man walks on foot.",
+      "meaning": "Patience eventually brings comfort and progress; haste causes suffering.",
+      "themes": [
+        "patience",
+        "perseverance"
+      ],
+      "source": {
+        "title": "Wikiquote (African proverbs)",
+        "url": "https://en.wikiquote.org/wiki/African_proverbs",
+        "license": "CC BY-SA",
+        "license_url": "https://creativecommons.org/licenses/by-sa/4.0/",
+        "accessed_at": "2026-08-27T12:58:31.958561+00:00"
+      },
+      "verification": {
+        "origin_verified": false,
+        "translation_verified": false
+      }
+    }
+  ]
+}

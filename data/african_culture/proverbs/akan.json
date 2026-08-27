@@ -1,0 +1,28 @@
+{
+  "culture": "akan",
+  "proverbs": [
+    {
+      "id": "akan-000001",
+      "culture": "akan",
+      "text": "Sɛ wopɛ sɛ wɔbɔ wo din a, bɔ w'ani.",
+      "translation_en": "If you want your name to be praised, work hard.",
+      "meaning": "Reputation is earned through diligent effort.",
+      "themes": [
+        "effort",
+        "reputation",
+        "responsibility"
+      ],
+      "source": {
+        "title": "Wikiquote (African proverbs)",
+        "url": "https://en.wikiquote.org/wiki/African_proverbs",
+        "license": "CC BY-SA",
+        "license_url": "https://creativecommons.org/licenses/by-sa/4.0/",
+        "accessed_at": "2026-08-27T12:58:31.958561+00:00"
+      },
+      "verification": {
+        "origin_verified": false,
+        "translation_verified": false
+      }
+    }
+  ]
+}
