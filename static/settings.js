@@ -690,12 +690,42 @@ function saveCreatorProfile() {
 // AI PREFERENCES
 // ══════════════════════════════════════════════════════════════
 
+// "Complete your ValleyMind preferences" entry card for existing users. It opens
+// the SAME wizard component /static/onboarding.js uses for first-run signups, so
+// everything reads and writes the one shared Preferences + Language & Region +
+// Culture storage. Purely advisory: hidden once a setup field is filled or the
+// user taps "Not now" (session-scoped).
+function _prefSetupBanner(data) {
+  try {
+    if (sessionStorage.getItem("vm_pref_setup_dismissed")) return "";
+  } catch (_) {}
+  var has = data.communication_style || data.communication_note || data.use_cases ||
+    data.use_cases_other || data.custom_preference || data.voice_style;
+  if (has) return "";
+  return '<div style="display:flex;align-items:center;gap:14px;justify-content:space-between;flex-wrap:wrap;background:linear-gradient(135deg,rgba(0,212,255,0.08),rgba(14,165,233,0.04));border:1px solid rgba(0,212,255,0.22);border-radius:12px;padding:16px 18px;margin-bottom:16px;">' +
+    '<div style="flex:1;min-width:220px;">' +
+      '<div style="color:#f1f5f9;font-size:13.5px;font-weight:700;font-family:\'Inter\',sans-serif;">Complete your ValleyMind preferences</div>' +
+      '<p style="color:#94a3b8;font-size:12px;margin:4px 0 0;font-family:\'Inter\',sans-serif;">A short guided setup — language, communication style, and how you like to work. Quick and skippable; change anything later.</p>' +
+    '</div>' +
+    '<div style="display:flex;gap:8px;flex-wrap:wrap;">' +
+      '<button onclick="openPreferencesSetup({source:\'settings\'})" style="border:none;border-radius:8px;background:#00d4ff;color:#003642;font-weight:700;padding:9px 16px;cursor:pointer;font-size:12px;font-family:\'Inter\',sans-serif;">Set preferences</button>' +
+      '<button onclick="dismissPreferenceSetupBanner()" style="border:1px solid rgba(255,255,255,0.12);border-radius:8px;background:transparent;color:#94a3b8;font-weight:600;padding:9px 14px;cursor:pointer;font-size:12px;font-family:\'Inter\',sans-serif;">Not now</button>' +
+    '</div>' +
+  '</div>';
+}
+
+function dismissPreferenceSetupBanner() {
+  try { sessionStorage.setItem("vm_pref_setup_dismissed", "1"); } catch (_) {}
+  renderSettingsContent("preferences");
+}
+
 function renderPreferencesSection(container) {
   container.innerHTML = _SH.sectionHeader("AI Preferences", "Customize how ValleyMind generates responses");
   settingsApiGet("preferences").then(function (d) {
     var data = d.data || {};
     container.innerHTML = _SH.sectionHeader("AI Preferences", "Customize how ValleyMind generates responses") +
-      _SH.card("Response Style", '<div style="display:flex;gap:10px;"><div style="flex:1;"><p style="color:#94a3b8;font-size:10px;margin:0 0 4px;">Response Length</p>' + _SH.select(["Short", "Balanced", "Detailed"], "prefResponseLength", data.response_length) + '</div><div style="flex:1;"><p style="color:#94a3b8;font-size:10px;margin:0 0 4px;">Creativity</p>' + _SH.select(["Conservative", "Moderate", "Creative", "Very Creative"], "prefCreativity", data.creativity) + '</div></div><div style="height:10px;"></div><div style="display:flex;gap:10px;"><div style="flex:1;"><p style="color:#94a3b8;font-size:10px;margin:0 0 4px;">Thinking Style</p>' + _SH.select(["Analytical", "Creative", "Balanced"], "prefThinkingStyle", data.thinking_style) + '</div><div style="flex:1;"><p style="color:#94a3b8;font-size:10px;margin:0 0 4px;">Default Language</p>' + _SH.select(["English", "Spanish", "French", "German", "Portuguese", "Arabic", "Chinese", "Japanese"], "prefLanguage", data.language) + '</div></div>') +
+      _prefSetupBanner(data) +
+      _SH.card("Response Style", '<div style="display:flex;gap:10px;"><div style="flex:1;"><p style="color:#94a3b8;font-size:10px;margin:0 0 4px;">Response Length</p>' + _SH.select(["Short", "Balanced", "Detailed"], "prefResponseLength", data.response_length) + '</div><div style="flex:1;"><p style="color:#94a3b8;font-size:10px;margin:0 0 4px;">Creativity</p>' + _SH.select(["Conservative", "Moderate", "Creative", "Very Creative"], "prefCreativity", data.creativity) + '</div></div><div style="height:10px;"></div><div style="display:flex;gap:10px;"><div style="flex:1;"><p style="color:#94a3b8;font-size:10px;margin:0 0 4px;">Thinking Style</p>' + _SH.select(["Analytical", "Creative", "Balanced"], "prefThinkingStyle", data.thinking_style) + '</div><div style="flex:1;"><p style="color:#94a3b8;font-size:10px;margin:0 0 4px;">Default Language</p>' + _SH.select(CULTURAL_LANGUAGES, "prefLanguage", _effectiveResponseLang(data)) + '</div></div>') +
       _SH.card("Writing & Coding", '<div style="display:flex;gap:10px;"><div style="flex:1;"><p style="color:#94a3b8;font-size:10px;margin:0 0 4px;">Writing Style</p>' + _SH.select(["Professional", "Conversational", "Academic", "Creative", "Technical"], "prefWritingStyle", data.writing_style) + '</div><div style="flex:1;"><p style="color:#94a3b8;font-size:10px;margin:0 0 4px;">Coding Style</p>' + _SH.select(["Minimal", "Explanatory", "Production-ready"], "prefCodingStyle", data.coding_style) + '</div></div>') +
       _SH.card("Media Preferences", '<div style="display:flex;gap:10px;"><div style="flex:1;"><p style="color:#94a3b8;font-size:10px;margin:0 0 4px;">Image Style</p>' + _SH.select(["Standard", "Cinematic", "Artistic", "Realistic", "Anime", "3D Render"], "prefImageStyle", data.image_style) + '</div><div style="flex:1;"><p style="color:#94a3b8;font-size:10px;margin:0 0 4px;">Video Style</p>' + _SH.select(["Standard", "Cinematic", "Animation", "Documentary"], "prefVideoStyle", data.video_style) + '</div></div><div style="height:10px;"></div><div style="display:flex;gap:10px;"><div style="flex:1;"><p style="color:#94a3b8;font-size:10px;margin:0 0 4px;">Voice Style</p>' + _SH.select(["Natural", "Professional", "Friendly", "Energetic"], "prefVoiceStyle", data.voice_style) + '</div><div style="flex:1;display:flex;align-items:flex-end;gap:8px;padding-bottom:4px;"><span style="color:#94a3b8;font-size:11px;">Auto Suggestions</span>' + _SH.toggle("prefAutoSuggest", data.auto_suggestions !== false) + '</div></div>') +
       '<div style="margin-top:4px;">' + _SH.btn("Save AI Preferences", "saveAIPreferences()", "rgba(0,212,255,0.8)") + _SH.statusSpan("prefStatus") + '</div>';

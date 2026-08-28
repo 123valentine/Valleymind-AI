@@ -78,6 +78,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="/static/settings.js"></script>
+<script src="/static/onboarding.js"></script>
 <script src="/static/tutorials.js"></script>
 <script id="tailwind-config">
   tailwind.config = {
@@ -8906,6 +8907,25 @@ async function checkSession() {
                 return true;
             }
 
+            // ── First-run Preferences Setup ─────────────────────────
+            // New accounts (email signup or the first Google login) set a one-shot
+            // flag. When the flag is present and the account is verified, open the
+            // SAME wizard the Settings panel uses — optional and skippable, never
+            // forced. Closing/skipping clears it, so it fires exactly once.
+            if (typeof window.openPreferencesSetup === "function" &&
+                sessionStorage.getItem("vm_pref_setup_pending") === "1" &&
+                sessionStorage.getItem("vm_pref_setup_dismissed") !== "1") {
+                sessionStorage.removeItem("vm_pref_setup_pending");
+                var firstRunName = (email || _vmEmail || "").split("@")[0] || "";
+                setTimeout(function () {
+                    try {
+                        window.openPreferencesSetup({ source: "first_run" });
+                    } catch (err) {
+                        console.warn("[first-run] preferences setup failed:", err);
+                    }
+                }, 900);
+            }
+
             if (splash) {
                 // Brief show: matches the 2s logo intro, then fades out
                 setTimeout(function () {
@@ -9358,6 +9378,11 @@ async function handleGoogleLogin(response) {
             throw new Error(data.message || "Google sign-in failed");
         }
         setAuthToken(data.session_token || "");
+        // Brand-new Google accounts should be offered the (optional, skippable)
+        // Preferences setup after verification — same wizard as Settings.
+        if (data.is_new_user) {
+            try { sessionStorage.setItem("vm_pref_setup_pending", "1"); } catch (_) {}
+        }
         // Show "Verification code sent to your email." when the verify modal opens
         // for a new Google user (backend sends the OTP synchronously).
         if (data.needs_verification) _vmShowOtpSentMsg = true;
@@ -9519,6 +9544,10 @@ async function signup(event) {
         _vmShowOtpSentMsg = true;
         // First-run flag: show the Chat guide the moment the dashboard loads.
         try { sessionStorage.setItem("vm_first_run", "1"); } catch (_) {}
+        // One-shot marker so checkSession opens the Preferences wizard after
+        // email verification (or immediately when verification is disabled).
+        // The wizard is optional and skippable.
+        try { sessionStorage.setItem("vm_pref_setup_pending", "1"); } catch (_) {}
         var authenticated = await checkSession();
         if (!authenticated) throw new Error("Session validation failed");
         // checkSession handles the verify modal for unverified accounts.

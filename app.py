@@ -1220,6 +1220,7 @@ def google_auth():
     with _users_lock:
         users = _load_users()
         user = users.get(email)
+        is_new_user = user is None
         if user:
             # Existing account: attach/refresh the Google identity but keep
             # THIS account's own verification state. A grandfathered verified
@@ -1316,6 +1317,7 @@ def google_auth():
         "is_creator": is_creator,
         "email_verified": email_verified,
         "needs_verification": not email_verified,
+        "is_new_user": is_new_user,
         "email_verification_enabled": EMAIL_VERIFICATION_ENABLED,
         "email_sent": bool(email_sent) if challenge_issued else None,
     })
@@ -2905,6 +2907,23 @@ def api_settings(section):
     return jsonify({"status": "success", "section": section, "message": "Saved"})
 
 
+def _mirror_preference_to_memory(marcus, key: str, text: str, label: str):
+    """Write one user preference into long-term memory as BOTH the legacy
+    preference dict entry AND a first-class, AI-readable fact (the preference
+    dict is only migrated into facts once, so newly saved keys must be added as
+    facts explicitly to stay visible to the brain)."""
+    text = str(text or "").strip()
+    if not text or text.lower() in ("none", "n/a", "na"):
+        return
+    marcus.memory.remember_preference(key, text[:2000])
+    marcus.memory.remember_fact(
+        "preference",
+        f"User prefers {label}: {text}"[:400],
+        text[:2000],
+        confidence=0.9,
+    )
+
+
 def _mirror_settings_to_memory(user_id: str, section: str, body: dict):
     """Persist relevant settings into the user's long-term memory so the brain
     can personalise recommendations and replies. This is the single choke point
@@ -2921,6 +2940,21 @@ def _mirror_settings_to_memory(user_id: str, section: str, body: dict):
             response_lang = str(body.get("response_language") or "").strip()
             if response_lang:
                 marcus.memory.long_term["response_language"] = response_lang
+            # Voluntarily-provided language & cultural background (NEVER inferred —
+            # only what the user typed/selected explicitly). Kept as preferences
+            # the brain may draw on, not as identity assertions.
+            for key, label in (
+                ("country", "country"),
+                ("state_province", "region/state/province"),
+                ("native_languages", "native language(s)"),
+                ("cultural_background", "cultural background"),
+            ):
+                _mirror_preference_to_memory(marcus, f"language_{key}", body.get(key), label)
+            prefer_no = body.get("prefer_not_to_say")
+            if prefer_no is True or prefer_no == "true":
+                marcus.memory.remember_preference("language_prefer_not_to_say", "true")
+            elif prefer_no is False or prefer_no == "false":
+                marcus.memory.remember_preference("language_prefer_not_to_say", "false")
             marcus.memory.save_memory()
         elif section == "culture":
             # CULTURAL IDENTITY is INDEPENDENT from response language (by design).
@@ -2930,6 +2964,12 @@ def _mirror_settings_to_memory(user_id: str, section: str, body: dict):
             use = body.get("use_cultural_adages")
             if use is not None:
                 marcus.memory.long_term["use_cultural_adages"] = bool(use)
+            # Cultural expression level (off/natural/deep) — stored as a stated
+            # preference only; retrieval/rendering arrives in a later phase.
+            expr = str(body.get("cultural_expression") or "").strip().lower()
+            if expr:
+                marcus.memory.long_term["cultural_expression"] = expr
+                _mirror_preference_to_memory(marcus, "cultural_expression", expr, "the level of cultural expression in replies")
             marcus.memory.save_memory()
         elif section == "interests":
             tags = body.get("tags", body.get("interests"))
@@ -2948,7 +2988,33 @@ def _mirror_settings_to_memory(user_id: str, section: str, body: dict):
             for key, val in body.items():
                 if isinstance(val, str) and val.strip():
                     marcus.memory.remember_preference(key, val.strip())
-        elif section in ("preferences", "appearance", "notifications", "accessibility", "creator"):
+        elif section == "preferences":
+            _DISPLAY_LABELS = {
+                "communication_style": "communication style",
+                "communication_note": "extra communication guidance",
+                "use_cases": "primary uses of ValleyMind",
+                "use_cases_other": "what they use ValleyMind for (other)",
+                "expressive_language": "expressive language features",
+                "custom_preference": "custom working preference",
+                "voice_style": "voice style",
+                "language": "response language",
+            }
+            for key, val in body.items():
+                if val is None or val == "" or (isinstance(val, list) and not val):
+                    continue
+                text = str(val)
+                if isinstance(val, list):
+                    text = ", ".join(str(i) for i in val)
+                text = text[:2000]
+                marcus.memory.remember_preference(f"preferences_{key}", text)
+                label = _DISPLAY_LABELS.get(key, key.replace("_", " "))
+                marcus.memory.remember_fact(
+                    "preference",
+                    f"User prefers {label}: {text}"[:400],
+                    text,
+                    confidence=0.9,
+                )
+        elif section in ("appearance", "notifications", "accessibility", "creator"):
             for key, val in body.items():
                 if val is None or val == "":
                     continue
