@@ -20,8 +20,9 @@ Coverage:
   A. Language section persistence  (response_language, language, country,
      state_province, native_languages, cultural_background, prefer_not_to_say)
   B. Preferences section persistence  (communication_style/note, use_cases,
-     use_cases_other, expressive_language, custom_preference, voice_style) and
-     that pre-existing preference fields still round-trip.
+     use_cases_other, expressive_language, custom_preference, voice_style) —
+     including the Page-2 keys multilingual_behavior & preferred_characters —
+     and that pre-existing preference fields still round-trip.
   C. Culture section persistence  (cultural_expression)
   D. Memory mirroring — saved preference values become AI-readable memory facts
      through the existing _mirror_settings_to_memory / _mirror_preference_to_memory.
@@ -151,7 +152,46 @@ class SettingsApiTestCase(unittest.TestCase):
         saved = client.get("/api/settings/language").get_json()["data"]
         self.assertIs(saved["prefer_not_to_say"], True)
 
+    def test_native_languages_round_trip_as_array(self):
+        client = self._auth("lang_c@example.com")
+        client.put("/api/settings/language", json={
+            "native_languages": ["Igbo", "English"],
+            "response_language": "en",
+        })
+        saved = client.get("/api/settings/language").get_json()["data"]
+        self.assertEqual(saved["native_languages"], ["Igbo", "English"])
+
     # ── B. Preferences persistence ──────────────────────────────
+
+    def test_multilingual_and_characters_round_trip(self):
+        client = self._auth("prefs_b@example.com")
+        payload = {
+            "multilingual_behavior": "Follow the language I use",
+            "preferred_characters": ["Marcus", "Angelina"],
+        }
+        resp = client.put("/api/settings/preferences", json=payload)
+        self.assertEqual(resp.status_code, 200)
+
+        saved = client.get("/api/settings/preferences").get_json()["data"]
+        self.assertEqual(saved["multilingual_behavior"], "Follow the language I use")
+        self.assertEqual(saved["preferred_characters"], ["Marcus", "Angelina"])
+
+    def test_single_preferences_store_serves_both_wizard_keys(self):
+        """The multi-step wizard and Settings share the same preferences dict —
+        new keys merge in without wiping pre-existing ones."""
+        client = self._auth("prefs_c@example.com")
+        client.put("/api/settings/preferences", json={"voice_style": "Natural"})
+        client.put("/api/settings/preferences", json={
+            "voice_style": "Natural",
+            "multilingual_behavior": "Mix languages naturally when appropriate",
+            "preferred_characters": ["Marcus", "Angelina", "Elena"],
+            "expressive_language_other": "Nigerian Pidgin slang",
+        })
+        saved = client.get("/api/settings/preferences").get_json()["data"]
+        self.assertEqual(saved["voice_style"], "Natural")
+        self.assertEqual(saved["multilingual_behavior"], "Mix languages naturally when appropriate")
+        self.assertEqual(saved["preferred_characters"], ["Marcus", "Angelina", "Elena"])
+        self.assertEqual(saved["expressive_language_other"], "Nigerian Pidgin slang")
 
     def test_preferences_section_round_trip(self):
         client = self._auth("prefs_a@example.com")
@@ -255,6 +295,36 @@ class SettingsApiTestCase(unittest.TestCase):
         self.assertTrue(any("User prefers voice style: Natural" in s for s in summaries))
         values = [f["value"] for f in mem.facts]
         self.assertIn("Friendly, Direct", values)
+
+    def test_native_languages_array_mirrored_as_joined_string(self):
+        marcus = FakeMarcus()
+        with patch.object(app_module, "load_marcus", return_value=marcus):
+            app_module._mirror_settings_to_memory("uid_lang_arr", "language", {
+                "native_languages": ["Igbo", "English", "Pidgin English"],
+                "response_language": "en",
+            })
+        mem = marcus.memory
+        self.assertEqual(mem.preferences["language_native_languages"], "Igbo, English, Pidgin English")
+        self.assertTrue(any(
+            f["summary"] == "User prefers native language(s): Igbo, English, Pidgin English"
+            for f in mem.facts
+        ))
+
+    def test_multilingual_and_characters_mirrored_to_memory(self):
+        marcus = FakeMarcus()
+        with patch.object(app_module, "load_marcus", return_value=marcus):
+            app_module._mirror_settings_to_memory("uid_ml", "preferences", {
+                "multilingual_behavior": "Follow the language I use",
+                "preferred_characters": ["Marcus", "Angelina", "Elena"],
+            })
+        mem = marcus.memory
+        self.assertEqual(mem.preferences["preferences_multilingual_behavior"],
+                         "Follow the language I use")
+        self.assertEqual(mem.preferences["preferences_preferred_characters"],
+                         "Marcus, Angelina, Elena")
+        self.assertTrue(any(
+            "User prefers preferred characters: Marcus, Angelina, Elena" in f["summary"] for f in mem.facts
+        ))
 
     def test_mirror_preference_skips_blank_or_none(self):
         marcus = FakeMarcus()
@@ -400,6 +470,20 @@ class FrontendIntegrationTestCase(unittest.TestCase):
         self.assertIn("/api/settings/language", js)
         self.assertIn("/api/settings/preferences", js)
         self.assertIn("/api/settings/culture", js)
+
+    def test_onboarding_page2_fields_present(self):
+        js = (Path(ROOT) / "static" / "onboarding.js").read_text(encoding="utf-8")
+        self.assertIn("var COUNTRY_OPTIONS = [", js)
+        self.assertIn("var SPEAK_OPTIONS = [", js)
+        self.assertIn("prefSetupShare", js)
+        self.assertIn("prefSetupHeritage", js)
+        self.assertIn("obNatOtherWrap", js)
+        self.assertIn("obExprOtherWrap", js)
+        self.assertIn("multilingual_behavior", js)
+        self.assertIn('"multilingual"', js)
+        self.assertIn("preferred_characters", js)
+        self.assertIn('"characters"', js)
+        self.assertIn("var CHARACTER_OPTIONS = [", js)
 
     def test_ai_preferences_uses_canonical_language_registry(self):
         js = (Path(ROOT) / "static" / "settings.js").read_text(encoding="utf-8")

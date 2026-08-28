@@ -2949,7 +2949,10 @@ def _mirror_settings_to_memory(user_id: str, section: str, body: dict):
                 ("native_languages", "native language(s)"),
                 ("cultural_background", "cultural background"),
             ):
-                _mirror_preference_to_memory(marcus, f"language_{key}", body.get(key), label)
+                val = body.get(key)
+                if isinstance(val, list):
+                    val = ", ".join(str(i).strip() for i in val if str(i).strip())
+                _mirror_preference_to_memory(marcus, f"language_{key}", val, label)
             prefer_no = body.get("prefer_not_to_say")
             if prefer_no is True or prefer_no == "true":
                 marcus.memory.remember_preference("language_prefer_not_to_say", "true")

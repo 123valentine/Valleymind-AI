@@ -15,19 +15,22 @@
 
 (function () {
 
-  var STEP_IDS = ["intro", "use", "lang", "style", "background", "expression", "expressive", "voice", "custom", "review"];
+  var STEP_IDS = ["intro", "use", "lang", "style", "background", "expression", "expressive", "multilingual", "characters", "voice", "custom", "review"];
 
   // Every preference key maps to the EXISTING settings section it belongs to.
   var KEY_SECTION = {
     response_language: "language", language: "language",
     country: "language", state_province: "language",
-    native_languages: "language", cultural_background: "language",
+    native_languages: "language", native_languages_other: "language",
+    cultural_background: "language",
     prefer_not_to_say: "language",
     cultural_expression: "culture",
     communication_style: "preferences", communication_note: "preferences",
     use_cases: "preferences", use_cases_other: "preferences",
-    expressive_language: "preferences", custom_preference: "preferences",
-    voice_style: "preferences",
+    expressive_language: "preferences", expressive_language_other: "preferences",
+    multilingual_behavior: "preferences",
+    preferred_characters: "preferences",
+    custom_preference: "preferences", voice_style: "preferences",
   };
 
   var OB = {
@@ -88,10 +91,12 @@
     syncDraftFromDirty();
     updatePreview();
     syncCardClass(section, key, value, idx === -1);
-    // "Other" reveals a text box on the use-cases step
-    var wrap = document.getElementById("obOtherWrap");
-    if (wrap && key === "use_cases") {
-      wrap.style.display = cur.indexOf("Other") !== -1 ? "block" : "none";
+    // "Other" reveals a free-text box on the relevant step
+    var OTHER_WRAPS = { use_cases: "obOtherWrap", native_languages: "obNatOtherWrap", expressive_language: "obExprOtherWrap" };
+    var wrapId = OTHER_WRAPS[key];
+    if (wrapId) {
+      var wrap = document.getElementById(wrapId);
+      if (wrap) wrap.style.display = cur.indexOf("Other") !== -1 ? "block" : "none";
     }
   };
 
@@ -180,6 +185,11 @@
         lang.response_language = prefs.language;
       }
       OB.ev = { language: lang, preferences: prefs, culture: culture };
+      // AI characters default to all-on by default (the same understanding is
+      // shared system-wide); seed once so toggling works from a real array.
+      if (OB.ev.preferences.preferred_characters === undefined) {
+        OB.ev.preferences.preferred_characters = CHARACTER_OPTIONS.slice();
+      }
       OB.loading = false;
       render();
     }, function () {
@@ -208,9 +218,11 @@
     if (id === "lang") writes.push(writeLanguage());
     else if (id === "use") writes.push(writePrefs({ use_cases: draftArray("preferences", "use_cases"), use_cases_other: str("preferences", "use_cases_other") }));
     else if (id === "style") writes.push(writePrefs({ communication_style: draftArray("preferences", "communication_style"), communication_note: str("preferences", "communication_note") }));
-    else if (id === "background") writes.push(writeSection("language", merged("language")));
+    else if (id === "background") writes.push(writeSection("language", writeLanguageDraft()));
     else if (id === "expression") writes.push(writeSection("culture", merged("culture")));
-    else if (id === "expressive") writes.push(writePrefs({ expressive_language: draftArray("preferences", "expressive_language") }));
+    else if (id === "expressive") writes.push(writePrefs({ expressive_language: draftArray("preferences", "expressive_language").filter(notOther), expressive_language_other: str("preferences", "expressive_language_other") }));
+    else if (id === "multilingual") writes.push(writePrefs({ multilingual_behavior: str("preferences", "multilingual_behavior") }));
+    else if (id === "characters") writes.push(writePrefs({ preferred_characters: charactersSelected() }));
     else if (id === "voice") writes.push(writePrefs({ voice_style: str("preferences", "voice_style") }));
     else if (id === "custom") writes.push(writePrefs({ custom_preference: str("preferences", "custom_preference") }));
     if (writes.length) Promise.all(writes).catch(function () { /* non-fatal */ });
@@ -227,7 +239,10 @@
         communication_note: str("preferences", "communication_note"),
         use_cases: draftArray("preferences", "use_cases"),
         use_cases_other: str("preferences", "use_cases_other"),
-        expressive_language: draftArray("preferences", "expressive_language"),
+        expressive_language: draftArray("preferences", "expressive_language").filter(notOther),
+        expressive_language_other: str("preferences", "expressive_language_other"),
+        multilingual_behavior: str("preferences", "multilingual_behavior"),
+        preferred_characters: charactersSelected(),
         custom_preference: str("preferences", "custom_preference"),
         voice_style: str("preferences", "voice_style"),
       }),
@@ -242,8 +257,14 @@
 
   // Response language must land in the Language & Region section (the brain
   // reads it from there) AND mirror into AI Preferences for display.
-  function writeLanguage() {
+  function writeLanguageDraft() {
     var lang = merged("language");
+    if (Array.isArray(lang.native_languages)) lang.native_languages = lang.native_languages.filter(notOther);
+    return lang;
+  }
+
+  function writeLanguage() {
+    var lang = writeLanguageDraft();
     lang.response_language = currentLanguageValue();
     lang.language = lang.response_language;
     return writeSection("language", lang);
@@ -341,6 +362,8 @@
     if (id === "background") return stepBackground();
     if (id === "expression") return stepExpression();
     if (id === "expressive") return stepExpressive();
+    if (id === "multilingual") return stepMultilingual();
+    if (id === "characters") return stepCharacters();
     if (id === "voice") return stepVoice();
     if (id === "custom") return stepCustom();
     return stepReview();
@@ -382,11 +405,65 @@
       '</div>';
   }
 
+  var COUNTRY_OPTIONS = [
+    "Nigeria", "Ghana", "Kenya", "South Africa", "Ethiopia", "Tanzania", "Uganda",
+    "Cameroon", "Senegal", "Egypt", "Morocco", "Rwanda", "Zimbabwe", "Zambia",
+    "Ivory Coast", "Congo", "Angola", "Mali", "Sudan", "Somalia", "Liberia",
+    "Sierra Leone", "United States", "United Kingdom", "Canada", "Australia",
+    "Germany", "France", "Netherlands", "Spain", "Portugal", "Italy", "Ireland",
+    "Sweden", "India", "Japan", "China", "Brazil", "Mexico", "Other",
+  ];
+
+  var SPEAK_OPTIONS = [
+    "English", "Igbo", "Yoruba", "Hausa", "Edo", "Ibibio", "Efik", "Pidgin English",
+    "French", "Spanish", "Portuguese", "Arabic", "Hindi", "Japanese", "Chinese", "German",
+  ];
+
+  function secTitle(num, title) {
+    return '<div class="ob-sec"><span class="ob-sec-num">' + num + '</span><span class="ob-sec-title">' + title + '</span></div>';
+  }
+
+  // Country dropdown: "Other" reveals a free-text box that overwrites the value.
+  window.prefSetupCountry = function (val) {
+    routeDirty("country", val);
+    var wrap = document.getElementById("obCountryWrap");
+    if (wrap) wrap.style.display = val === "Other" ? "block" : "none";
+    updatePreview();
+  };
+
   function stepLang() {
-    return '<h1 class="ob-h1">What language should ValleyMind normally respond in?</h1>' +
-      '<p class="ob-sub">ValleyMind answers in this language. You can switch anytime in Settings → Language &amp; Region.</p>' +
-      '<label class="ob-label" for="ob_lang">Response language</label>' +
-      _SH.select(CULTURAL_LANGUAGES, "ob_lang", currentLanguageValue(), "prefSetupInput('response_language', this.value)");
+    var l = OB.ev.language;
+    var curCountry = str("language", "country");
+    var inList = COUNTRY_OPTIONS.indexOf(curCountry) !== -1;
+    var isOther = !inList && curCountry !== "";
+    var spoken = draftArray("language", "native_languages");
+    var otherLangVal = str("language", "native_languages_other");
+    var chips = SPEAK_OPTIONS.map(function (opt) {
+      return toggleChip("native_languages", opt, spoken.indexOf(opt) !== -1);
+    }).join("");
+    chips += toggleChip("native_languages", "Other", spoken.indexOf("Other") !== -1);
+    return '<h1 class="ob-h1">Help ValleyMind understand how you communicate</h1>' +
+      '<p class="ob-sub">ValleyMind adapts how it talks to you based on the languages, cultural background and style you choose. These preferences are voluntary &mdash; ValleyMind never guesses your ethnicity, culture or identity from your name, location, IP address or language.</p>' +
+      secTitle("1", "Where are you from?") +
+      '<label class="ob-label" for="ob_country">Country</label>' +
+      _SH.select(COUNTRY_OPTIONS, "ob_country", isOther ? "Other" : curCountry, "prefSetupCountry(this.value)") +
+      '<div id="obCountryWrap" style="display:' + (isOther ? "block" : "none") + ';margin-top:10px;">' +
+        '<input class="ob-input" type="text" value="' + escAttr(isOther ? curCountry : "") + '" placeholder="Type your country" autocomplete="off" oninput="prefSetupInput(\'country\', this.value)">' +
+      '</div>' +
+      '<div style="height:14px;"></div>' +
+      '<label class="ob-label" for="ob_state">State / Province / Region</label>' +
+      '<input id="ob_state" class="ob-input" type="text" value="' + escAttr(str("language", "state_province")) + '" placeholder="Select or type your state / region" autocomplete="off" oninput="prefSetupInput(\'state_province\', this.value)">' +
+      '<p class="ob-note">Your location helps ValleyMind understand regional context. It does not automatically determine your ethnicity or culture.</p>' +
+      secTitle("2", "What languages do you speak?") +
+      '<p class="ob-sub" style="margin-bottom:10px;">Select all that apply</p>' +
+      '<div class="ob-chip-wrap" role="group" aria-label="Languages you speak">' + chips + '</div>' +
+      '<div id="obNatOtherWrap" style="display:' + (spoken.indexOf("Other") !== -1 ? "block" : "none") + ';margin-top:10px;">' +
+        '<input class="ob-input" type="text" value="' + escAttr(otherLangVal) + '" placeholder="Other language" autocomplete="off" oninput="prefSetupInput(\'native_languages_other\', this.value)">' +
+      '</div>' +
+      '<div style="height:14px;"></div>' +
+      '<label class="ob-label" for="ob_lang">Your primary response language</label>' +
+      _SH.select(CULTURAL_LANGUAGES, "ob_lang", currentLanguageValue(), "prefSetupInput('response_language', this.value)") +
+      '<p class="ob-note">You can speak one language and still have a different cultural background. ValleyMind keeps these preferences separate.</p>';
   }
 
   var STYLE_OPTIONS = [
@@ -407,62 +484,139 @@
       '<textarea id="ob_style_note" class="ob-input ob-textarea" placeholder="Keep things simple and don\'t use too much technical language." oninput="prefSetupInput(\'communication_note\', this.value)">' + escHtml(note) + '</textarea>';
   }
 
-  function stepBackground() {
-    var l = OB.ev.language;
-    var pref = l.prefer_not_to_say === true || l.prefer_not_to_say === "true";
-    return '<h1 class="ob-h1">Are there languages or cultural backgrounds you want ValleyMind to understand better?</h1>' +
-      '<p class="ob-sub">Completely optional. ValleyMind never guesses your culture from your name, location or language — it only uses what you choose to share here.</p>' +
-      '<label class="ob-check" for="ob_prefer">' +
-        '<input id="ob_prefer" type="checkbox" ' + (pref ? "checked" : "") + ' onchange="prefSetupInput(\'prefer_not_to_say\', this.checked); var w=document.getElementById(\'obBgFields\'); if(w){w.style.opacity=this.checked?0.35:1; var inp=w.querySelectorAll(\'input,textarea\'); for(var i=0;i<inp.length;i++){inp[i].disabled=this.checked;}}">' +
-        '<span class="ob-check-label"><b>Prefer not to say</b></span>' +
-      '</label>' +
-      '<div id="obBgFields" style="display:flex;flex-direction:column;gap:14px;transition:opacity 0.2s;' + (pref ? "opacity:0.35;" : "") + '">' +
-        field("ob_bg_country", "Country", "country", str("language", "country"), "e.g. Nigeria") +
-        field("ob_bg_state", "Region / State / Province", "state_province", str("language", "state_province"), "e.g. Lagos") +
-        field("ob_bg_native", "Native language(s)", "native_languages", str("language", "native_languages"), "e.g. Igbo, English") +
-        field("ob_bg_ctx", "Optional cultural background", "cultural_background", str("language", "cultural_background"), "Only what you\'re comfortable sharing") +
-      '</div>';
+  function radioChoice(name, value, label, checked, onclick) {
+    return '<label class="ob-choice ' + (checked ? "selected" : "") + '" onclick="' + onclick + '">' +
+      '<input type="radio" name="' + name + '" value="' + value + '" ' + (checked ? "checked" : "") + ' style="accent-color:#00d4ff;width:16px;height:16px;">' +
+      '<span class="ob-choice-body"><b class="ob-choice-label">' + escHtml(label) + '</b></span>' +
+    '</label>';
   }
 
-  function field(labelFor, label, key, val, placeholder) {
-    return '<div><label class="ob-label" for="' + labelFor + '">' + label + '</label>' +
-      '<input id="' + labelFor + '" class="ob-input" type="text" value="' + escAttr(val) + '" placeholder="' + escAttr(placeholder) + '" autocomplete="off" oninput="prefSetupInput(\'' + key + '\', this.value)"></div>';
+  function notOther(s) { return s !== "Other"; }
+
+  // "I want to share" / "I prefer not to say" — the latter disables the fields.
+  window.prefSetupShare = function (share) {
+    routeDirty("prefer_not_to_say", !share);
+    var w = document.getElementById("obBgFields");
+    if (w) {
+      w.style.opacity = share ? 1 : 0.35;
+      var inps = w.querySelectorAll("input");
+      for (var i = 0; i < inps.length; i++) inps[i].disabled = !share;
+    }
+    updatePreview();
+  };
+
+  // The optional heritage-language box feeds the SAME native_languages store
+  // (single source of truth) — typed values merge with the ones chosen earlier.
+  window.prefSetupHeritage = function (text) {
+    if (!OB.ev) return;
+    var base = draftArray("language", "native_languages").filter(notOther);
+    var parts = String(text || "").split(",").map(function (s) { return s.trim(); }).filter(Boolean);
+    var merged = base.slice();
+    for (var i = 0; i < parts.length; i++) {
+      if (merged.indexOf(parts[i]) === -1) merged.push(parts[i]);
+    }
+    routeDirty("native_languages", merged);
+  };
+
+  function stepBackground() {
+    var l = OB.ev.language;
+    var pns = l.prefer_not_to_say === true || l.prefer_not_to_say === "true";
+    var share = !pns;
+    var heritageVal = draftArray("language", "native_languages").filter(notOther).join(", ");
+    return '<h1 class="ob-h1">What is your cultural background?</h1>' +
+      '<p class="ob-sub">Choose what you would like ValleyMind to understand about you.</p>' +
+      '<div class="ob-choice-list" role="radiogroup" aria-label="Share cultural background">' +
+        radioChoice("ob_share", "share", "I want to share my cultural background", share, "prefSetupShare(true); reflowChoices(this)") +
+        radioChoice("ob_share", "pns", "I prefer not to say", pns, "prefSetupShare(false); reflowChoices(this)") +
+      '</div>' +
+      '<div id="obBgFields" style="display:flex;flex-direction:column;gap:14px;transition:opacity 0.2s;margin-top:14px;' + (pns ? "opacity:0.35;" : "") + '">' +
+        '<div><label class="ob-label" for="ob_bg_ctx">Cultural background</label>' +
+          '<input id="ob_bg_ctx" class="ob-input" type="text" value="' + escAttr(str("language", "cultural_background")) + '" placeholder="Example: Igbo, Yoruba, Hausa, Edo, mixed heritage, Nigerian, Ghanaian, etc." autocomplete="off" ' + (pns ? "disabled" : "") + ' oninput="prefSetupInput(\'cultural_background\', this.value)"></div>' +
+        '<div><label class="ob-label" for="ob_bg_heritage">Optional: Native / heritage language</label>' +
+          '<input id="ob_bg_heritage" class="ob-input" type="text" value="' + escAttr(heritageVal) + '" placeholder="e.g. Igbo" autocomplete="off" ' + (pns ? "disabled" : "") + ' oninput="prefSetupHeritage(this.value)"></div>' +
+      '</div>' +
+      '<p class="ob-note">This information is provided by you. ValleyMind does not infer or assign cultural identity automatically.</p>';
   }
 
   var EXPRESSION_OPTIONS = [
-    { value: "off", label: "Off", desc: "Keep responses culturally neutral unless I specifically ask." },
-    { value: "natural", label: "Natural", desc: "Use relevant expressions, sayings and cultural context when they genuinely fit the conversation." },
-    { value: "deep", label: "Deep", desc: "Use cultural context more actively when appropriate." },
+    { value: "off", label: "Off", desc: "Keep responses culturally neutral unless I explicitly ask.", reco: false },
+    { value: "natural", label: "Natural", desc: "Use cultural references, expressions, sayings and context when they genuinely fit the conversation.", reco: true },
+    { value: "deep", label: "Deep", desc: "Allow stronger use of relevant cultural expressions, proverbs, sayings, humor, language patterns and regional context when appropriate.", reco: false },
   ];
 
   function stepExpression() {
     var cur = str("culture", "cultural_expression") || "natural";
     var radios = EXPRESSION_OPTIONS.map(function (o) {
       var on = cur === o.value;
+      var reco = o.reco ? '<span class="ob-reco">Recommended</span>' : "";
       return '<label class="ob-choice ' + (on ? "selected" : "") + '" onclick="prefSetupSetRadio(\'cultural_expression\',\'' + o.value + '\'); reflowChoices(this)">' +
         '<input type="radio" name="ob_cultural_expression" value="' + o.value + '" ' + (on ? "checked" : "") + ' style="accent-color:#00d4ff;width:16px;height:16px;">' +
-        '<span class="ob-choice-body"><b class="ob-choice-label">' + o.label + '</b><span class="ob-choice-desc">' + o.desc + '</span></span>' +
+        '<span class="ob-choice-body"><b class="ob-choice-label">' + o.label + reco + '</b><span class="ob-choice-desc">' + o.desc + '</span></span>' +
       '</label>';
     }).join("");
-    return '<h1 class="ob-h1">How would you like ValleyMind to use cultural expressions?</h1>' +
-      '<p class="ob-sub">This only saves your preference — ValleyMind\'s cultural intelligence is turned on gradually in a later update.</p>' +
+    return '<h1 class="ob-h1">How deeply should ValleyMind use cultural expression?</h1>' +
+      '<p class="ob-sub">Choose how much cultural context should naturally appear in conversations. This only saves your preference &mdash; cultural intelligence is turned on gradually in a later update.</p>' +
       '<div class="ob-choice-list" role="radiogroup" aria-label="Cultural expression">' + radios + '</div>';
   }
 
   var EXPRESSIVE_OPTIONS = [
-    "Light humor", "Playful teasing", "Local expressions", "Slang",
-    "Adages / proverbs", "Creative wordplay", "Witty / savage responses when appropriate",
+    "Proverbs & traditional sayings", "Local expressions", "Nigerian Pidgin",
+    "Light teasing", "Banter", "Humor", "Sarcasm", "Savage / playful comebacks",
+    "Storytelling", "Formal cultural language", "Keep it respectful and straightforward",
   ];
 
   function stepExpressive() {
     var selected = draftArray("preferences", "expressive_language");
+    var otherVal = str("preferences", "expressive_language_other");
     var chips = EXPRESSIVE_OPTIONS.map(function (opt) {
       return toggleChip("expressive_language", opt, selected.indexOf(opt) !== -1);
     }).join("");
-    return '<h1 class="ob-h1">Expressive touches</h1>' +
-      '<p class="ob-sub">Optional ways ValleyMind can add flavor to its replies.</p>' +
+    chips += toggleChip("expressive_language", "Other", selected.indexOf("Other") !== -1);
+    return '<h1 class="ob-h1">What kind of expressions do you enjoy?</h1>' +
+      '<p class="ob-sub">Select any that fit you.</p>' +
       '<div class="ob-chip-wrap" role="group" aria-label="Expressive language">' + chips + '</div>' +
-      '<p class="ob-note">ValleyMind should use these according to the conversation and context, not randomly.</p>';
+      '<div id="obExprOtherWrap" style="display:' + (selected.indexOf("Other") !== -1 ? "block" : "none") + ';margin-top:10px;">' +
+        '<input class="ob-input" type="text" value="' + escAttr(otherVal) + '" placeholder="Other expression" autocomplete="off" oninput="prefSetupInput(\'expressive_language_other\', this.value)">' +
+      '</div>' +
+      '<p class="ob-note">ValleyMind should use these naturally, not force them into every response.</p>';
+  }
+
+  var MULTILINGUAL_OPTIONS = [
+    "Stay in my selected language",
+    "Follow the language I use",
+    "Mix languages naturally when appropriate",
+    "Ask me before switching languages",
+  ];
+
+  function stepMultilingual() {
+    var cur = str("preferences", "multilingual_behavior");
+    var radios = MULTILINGUAL_OPTIONS.map(function (opt) {
+      var on = cur === opt;
+      return radioChoice("ob_multilingual", opt, opt, on,
+        "prefSetupSetRadio('multilingual_behavior','" + jsStr(opt) + "'); reflowChoices(this)");
+    }).join("");
+    return '<h1 class="ob-h1">How should ValleyMind handle multilingual conversations?</h1>' +
+      '<p class="ob-sub">Choose how ValleyMind responds when a conversation mixes languages.</p>' +
+      '<div class="ob-choice-list" role="radiogroup" aria-label="Multilingual behavior">' + radios + '</div>' +
+      '<p class="ob-note">Example: if you start in English and switch to Igbo, ValleyMind can follow your change instead of automatically translating everything back to English.</p>';
+  }
+
+  var CHARACTER_OPTIONS = ["Marcus", "Angelina", "Elena"];
+
+  // Seeded (default all-on) in loadDraft — this is the draft's single source.
+  function charactersSelected() {
+    return draftArray("preferences", "preferred_characters");
+  }
+
+  function stepCharacters() {
+    var sel = charactersSelected();
+    var cards = CHARACTER_OPTIONS.map(function (c) {
+      return toggleCard("preferred_characters", c, sel.indexOf(c) !== -1);
+    }).join("");
+    return '<h1 class="ob-h1">Who should apply these preferences?</h1>' +
+      '<p class="ob-sub">Your language and cultural preferences can be used across your ValleyMind characters when relevant.</p>' +
+      '<div class="ob-card-grid" role="group" aria-label="Apply to characters">' + cards + '</div>' +
+      '<p class="ob-note">The same underlying language and cultural understanding is shared across the ValleyMind AI system. Each character may express it differently according to their personality and the context of the conversation.</p>';
   }
 
   var VOICE_OPTIONS = [
@@ -495,13 +649,22 @@
 
   function stepReview() {
     var p = previewRows();
-    return '<h1 class="ob-h1">You\'re all set</h1>' +
-      '<p class="ob-sub">Review how ValleyMind will communicate with you, then save when ready.</p>' +
+    return '<h1 class="ob-h1">Review your choices</h1>' +
+      '<p class="ob-sub">Your ValleyMind communication profile &mdash; save when ready.</p>' +
       '<div class="ob-review-grid">' +
-        obReviewRow("Language", p.language) +
-        obReviewRow("Style", p.style) +
+        obReviewRow("Response language", p.language) +
+        obReviewRow("Languages", p.languages) +
+        obReviewRow("Country", p.country || "&mdash;") +
+        obReviewRow("Cultural background", p.background || "&mdash;") +
         obReviewRow("Cultural expression", p.expression) +
+        obReviewRow("Communication style", p.style) +
+        obReviewRow("Preferred expressions", p.expressive.length ? p.expressive.join(" \u00b7 ") : "&mdash;") +
+        obReviewRow("Multilingual behavior", p.multilingual) +
+        obReviewRow("AI characters", p.characters) +
+        obReviewRow("Voice", p.voice) +
+        (p.custom ? obReviewRow("Custom preference", p.custom) : "") +
       '</div>' +
+      '<p class="ob-note" style="margin:0 0 14px;">Your preferences are always editable &mdash; change them anytime from Settings &#8594; AI Preferences &#8594; Language &amp; Culture.</p>' +
       '<div class="ob-sample" aria-hidden="true">' +
         '<span class="ob-sample-label">Preview</span>' +
         '<p class="ob-sample-text">' + escHtml(previewLine()) + '</p>' +
@@ -521,11 +684,26 @@
     }
     var styles = draftArray("preferences", "communication_style");
     var expr = str("culture", "cultural_expression") || "natural";
+    var langs = draftArray("language", "native_languages").filter(notOther);
+    var langOther = str("language", "native_languages_other");
+    if (langOther) langs.push(langOther);
+    var exprs = draftArray("preferences", "expressive_language").filter(notOther);
+    var exprOther = str("preferences", "expressive_language_other");
+    if (exprOther) exprs.push(exprOther);
+    var pnsPref = OB.ev && OB.ev.language ? OB.ev.language.prefer_not_to_say : false;
+    var pns = pnsPref === true || pnsPref === "true";
     return {
       language: langLabel,
+      languages: langs.length ? langs.join(", ") : "&mdash;",
+      country: str("language", "country"),
+      background: pns ? "Prefer not to say" : str("language", "cultural_background"),
       style: styles.length ? styles[0] : "Let ValleyMind adapt",
       expression: { off: "Off", natural: "Natural", deep: "Deep" }[expr] || "Natural",
-      expressive: draftArray("preferences", "expressive_language"),
+      expressive: exprs,
+      multilingual: str("preferences", "multilingual_behavior") || "Follow the language I use",
+      characters: charactersSelected().join(", "),
+      voice: str("preferences", "voice_style") || "Natural",
+      custom: str("preferences", "custom_preference"),
     };
   }
 
@@ -564,8 +742,13 @@
     return '<div class="ob-preview-card">' +
       '<div class="ob-preview-title">Live preview</div>' +
       '<div class="ob-preview-row"><span>Language</span><b>' + escHtml(p.language) + '</b></div>' +
-      '<div class="ob-preview-row"><span>Style</span><b>' + escHtml(p.style) + '</b></div>' +
+      '<div class="ob-preview-row"><span>Languages</span><b>' + p.languages + '</b></div>' +
+      '<div class="ob-preview-row"><span>Country</span><b>' + escHtml(p.country || "—") + '</b></div>' +
+      '<div class="ob-preview-row"><span>Cultural background</span><b>' + escHtml(p.background || "—") + '</b></div>' +
       '<div class="ob-preview-row"><span>Cultural expression</span><b>' + escHtml(p.expression) + '</b></div>' +
+      '<div class="ob-preview-row"><span>Style</span><b>' + escHtml(p.style) + '</b></div>' +
+      '<div class="ob-preview-row"><span>Multilingual</span><b>' + escHtml(p.multilingual) + '</b></div>' +
+      '<div class="ob-preview-row"><span>AI characters</span><b>' + escHtml(p.characters) + '</b></div>' +
       '<div class="ob-preview-expr">' + escHtml(exprNote) + '</div>' +
       expBadge +
       '<div class="ob-preview-bubble">“' + escHtml(previewLine()) + '”</div>' +
@@ -660,6 +843,10 @@
     ".ob-choice-label{color:#e2e8f0;font-size:13.5px;}",
     ".ob-choice-desc{color:#64748b;font-size:12px;line-height:1.5;}",
     ".ob-note{color:#64748b;font-size:12px;margin:14px 0 0;font-family:'Inter',sans-serif;line-height:1.6;}",
+    ".ob-sec{display:flex;align-items:center;gap:9px;margin:0 0 10px;}",
+    ".ob-sec-num{width:21px;height:21px;border-radius:6px;background:rgba(0,212,255,0.12);color:#00d4ff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;font-family:'Space Grotesk',sans-serif;flex-shrink:0;}",
+    ".ob-sec-title{color:#e2e8f0;font-size:13.5px;font-weight:700;font-family:'Inter',sans-serif;}",
+    ".ob-reco{display:inline-block;vertical-align:middle;margin-left:8px;background:linear-gradient(135deg,rgba(0,212,255,0.22),rgba(14,165,233,0.16));color:#7dd3fc;border:1px solid rgba(0,212,255,0.35);border-radius:999px;padding:1px 8px;font-size:9px;text-transform:uppercase;letter-spacing:0.08em;font-family:'Space Grotesk',sans-serif;font-weight:700;}",
     ".ob-prefer-wrap{margin-bottom:14px;}",
     ".ob-check{display:flex;align-items:center;gap:9px;cursor:pointer;font-family:'Inter',sans-serif;color:#e2e8f0;font-size:13.5px;margin:0 0 12px;}",
     ".ob-check input{accent-color:#00d4ff;width:16px;height:16px;}",
