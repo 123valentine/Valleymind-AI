@@ -403,6 +403,104 @@ class SettingsApiTestCase(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.get_json()["data"], {})
 
+    # ── F2. Preferences setup status (server-side first-entry gate) ─
+
+    def test_new_user_setup_status_is_not_started(self):
+        client = self._auth("setup_new@example.com")
+        resp = client.get("/api/settings/setup-status")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.get_json()["setup_status"], "not_started")
+
+    def test_save_persists_settings_and_marks_completed(self):
+        client = self._auth("setup_save@example.com")
+        client.put("/api/settings/preferences", json={
+            "about_me": "I run a design studio",
+            "use_cases": ["Graphic design", "Content creation"],
+            "voice_style": "Natural",
+        })
+        resp = client.post("/api/settings/setup-status", json={"setup_status": "completed"})
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.get_json()["setup_status"], "completed")
+        self.assertEqual(client.get("/api/settings/setup-status").get_json()["setup_status"],
+                         "completed")
+        saved = client.get("/api/settings/preferences").get_json()["data"]
+        self.assertEqual(saved["about_me"], "I run a design studio")
+        self.assertEqual(saved["use_cases"], ["Graphic design", "Content creation"])
+
+    def test_skip_preserves_settings_marks_skipped_and_allows_chat(self):
+        client = self._auth("setup_skip@example.com")
+        client.put("/api/settings/preferences", json={
+            "about_me": "I journal daily",
+            "use_cases": ["Journaling"],
+        })
+        resp = client.post("/api/settings/setup-status", json={"setup_status": "skipped"})
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.get_json()["setup_status"], "skipped")
+        self.assertEqual(client.get("/api/settings/setup-status").get_json()["setup_status"],
+                         "skipped")
+        saved = client.get("/api/settings/preferences").get_json()["data"]
+        self.assertEqual(saved["about_me"], "I journal daily")
+        self.assertEqual(saved["use_cases"], ["Journaling"])
+        self.assertEqual(saved["preferences_setup_status"], "skipped")
+        # The auth gate stays OPEN after a skip: 404 (brain not configured in the
+        # test harness) rather than 401 proves the user can reach chat endpoints.
+        resp_chat = client.get("/chat/history")
+        self.assertIn(resp_chat.status_code, (200, 404))
+
+    def test_setup_status_invalid_value_rejected(self):
+        client = self._auth("setup_bad@example.com")
+        resp = client.post("/api/settings/setup-status", json={"setup_status": "maybe"})
+        self.assertEqual(resp.status_code, 400)
+
+    def test_backward_compat_existing_prefs_without_flag_marks_completed(self):
+        client = self._auth("setup_back@example.com")
+        client.put("/api/settings/preferences", json={"voice_style": "Professional"})
+        self.assertEqual(client.get("/api/settings/setup-status").get_json()["setup_status"],
+                         "completed")
+
+    def test_defaults_never_force_completion(self):
+        client = self._auth("setup_fresh@example.com")
+        self.assertEqual(client.get("/api/settings/setup-status").get_json()["setup_status"],
+                         "not_started")
+        self.assertEqual(client.get("/api/settings/preferences").status_code, 200)
+
+    def test_about_me_and_use_case_profile_round_trip(self):
+        client = self._auth("about_ct@example.com")
+        client.put("/api/settings/preferences", json={
+            "about_me": "I am a lawyer and part-time podcaster",
+            "use_case_profile": "Research and writing long-form articles",
+            "use_cases": ["Research", "Writing"],
+        })
+        saved = client.get("/api/settings/preferences").get_json()["data"]
+        self.assertEqual(saved["about_me"], "I am a lawyer and part-time podcaster")
+        self.assertEqual(saved["use_case_profile"], "Research and writing long-form articles")
+        self.assertEqual(saved["use_cases"], ["Research", "Writing"])
+
+    def test_multi_user_setup_and_settings_are_isolated(self):
+        client_a = self._auth("iso_a@example.com")
+        client_b = self._auth("iso_b@example.com")
+        client_c = self._auth("iso_c@example.com")
+        client_a.put("/api/settings/preferences", json={
+            "about_me": "A-only secret identity",
+            "use_cases": ["Coding"],
+        })
+        client_b.put("/api/settings/preferences", json={
+            "about_me": "B-only baking hobby",
+            "use_cases": ["Journaling"],
+        })
+        da = client_a.get("/api/settings/preferences").get_json()["data"]
+        db = client_b.get("/api/settings/preferences").get_json()["data"]
+        self.assertEqual(da["about_me"], "A-only secret identity")
+        self.assertIn("B-only", db["about_me"])
+        self.assertNotIn("B-only", da.get("about_me", ""))
+        self.assertNotIn("A-only", db.get("about_me", ""))
+        # Setup status is per-user as well: A completing never affects a fresh user.
+        client_a.post("/api/settings/setup-status", json={"setup_status": "completed"})
+        self.assertEqual(client_a.get("/api/settings/setup-status").get_json()["setup_status"],
+                         "completed")
+        self.assertEqual(client_c.get("/api/settings/setup-status").get_json()["setup_status"],
+                         "not_started")
+
     # ── G. Creator compatibility ────────────────────────────────
 
     def test_creator_uses_the_same_preference_system(self):
@@ -443,6 +541,52 @@ class SettingsApiTestCase(unittest.TestCase):
         self.assertIn("culture", allowed)
         self.assertIn("creator", allowed)
 
+    def test_creator_setup_status_flow(self):
+        email = app_module.CREATOR_EMAIL
+        client = self._auth(email)
+        self.assertEqual(client.get("/api/settings/setup-status").get_json()["setup_status"],
+                         "not_started")
+        client.put("/api/settings/preferences", json={
+            "about_me": "Founder of ValleyMind",
+            "voice_style": "Professional",
+        })
+        client.post("/api/settings/setup-status", json={"setup_status": "completed"})
+        self.assertEqual(client.get("/api/settings/setup-status").get_json()["setup_status"],
+                         "completed")
+        user_dir = self._user_dir(email)
+        json_files = list(user_dir.glob("*.json"))
+        self.assertEqual(len(json_files), 1)
+        raw = json.loads(json_files[0].read_text(encoding="utf-8"))
+        self.assertEqual(raw["preferences"]["preferences_setup_status"], "completed")
+
+    # ── D2. about_me & use_case_profile mirroring ───────────────
+
+    def test_about_me_mirrored_as_identity_fact(self):
+        marcus = FakeMarcus()
+        with patch.object(app_module, "load_marcus", return_value=marcus):
+            app_module._mirror_settings_to_memory("uid_about", "preferences", {
+                "about_me": "Software developer building African fintech startups",
+            })
+        mem = marcus.memory
+        self.assertEqual(mem.preferences["preferences_about_me"],
+                         "Software developer building African fintech startups")
+        summaries = [f["summary"] for f in mem.facts]
+        self.assertTrue(any("User-provided personal context" in s for s in summaries))
+        identity_facts = [f for f in mem.facts if f.get("type") == "identity"]
+        self.assertTrue(identity_facts, "about_me must be stored as a settled identity fact")
+
+    def test_use_case_profile_mirrored_as_fact(self):
+        marcus = FakeMarcus()
+        with patch.object(app_module, "load_marcus", return_value=marcus):
+            app_module._mirror_settings_to_memory("uid_ucp", "preferences", {
+                "use_case_profile": "I make short-form videos for TikTok",
+            })
+        mem = marcus.memory
+        self.assertEqual(mem.preferences["preferences_use_case_profile"],
+                         "I make short-form videos for TikTok")
+        summaries = [f["summary"] for f in mem.facts]
+        self.assertTrue(any("User use-case profile" in s for s in summaries))
+
 
 class FrontendIntegrationTestCase(unittest.TestCase):
     """Checks the frontend wiring that a Python test suite can reasonably probe."""
@@ -460,9 +604,11 @@ class FrontendIntegrationTestCase(unittest.TestCase):
 
     def test_index_has_first_run_pending_flag(self):
         html = self._index_html()
-        self.assertIn("vm_pref_setup_pending", html)
+        # The server-side setup-status endpoint replaced the fragile
+        # sessionStorage flag.  index.html now calls
+        # /api/settings/setup-status to decide whether to show the wizard.
+        self.assertIn("/api/settings/setup-status", html)
         self.assertIn("openPreferencesSetup", html)
-        self.assertIn("is_new_user", html)
 
     def test_onboarding_uses_shared_registry_and_settings_api(self):
         js = (Path(ROOT) / "static" / "onboarding.js").read_text(encoding="utf-8")
@@ -490,6 +636,197 @@ class FrontendIntegrationTestCase(unittest.TestCase):
         self.assertIn("var CULTURAL_LANGUAGES = [", js)
         self.assertIn('_SH.select(CULTURAL_LANGUAGES, "prefLanguage"', js)
         self.assertNotIn('"Spanish", "French", "German"', js)
+
+    def test_onboarding_use_case_options_match_canonical_spec(self):
+        js = (Path(ROOT) / "static" / "onboarding.js").read_text(encoding="utf-8")
+        for opt in ("Personal AI assistant", "Studying", "Writing", "Coding",
+                    "Business & productivity", "Content creation", "Graphic design",
+                    "Video creation", "Research", "Planning & productivity",
+                    "Journaling", "Other"):
+            self.assertIn(opt, js)
+        # "Other" free-text is bound to a separate input (JS source keeps the
+        # single quotes backslash-escaped inside its single-quoted string literal).
+        self.assertIn("oninput=\"prefSetupInput(\\'use_cases_other\\', this.value)\"", js)
+
+    def test_onboarding_preserves_all_use_case_steps_and_new_fields(self):
+        js = (Path(ROOT) / "static" / "onboarding.js").read_text(encoding="utf-8")
+        for field in ("about_me", "use_case_profile", "communication_style",
+                      "communication_note", "use_cases", "use_cases_other",
+                      "language", "country", "native_languages",
+                      "cultural_background", "cultural_expression",
+                      "expressive_language", "multilingual_behavior",
+                      "preferred_characters", "voice_style", "custom_preference"):
+            self.assertIn(field, js)
+        # The "Other" use-case path free-text is separate from the checkbox list.
+        self.assertIn("USE_OPTIONS", js)
+
+
+class ImageContextTestCase(unittest.TestCase):
+    """Image-generation preference injection (app._build_image_user_context).
+
+    Only IMAGE-relevant preferences are injected — language (for text inside
+    images), cultural expression (visual motifs), creative/visual tone and
+    creative use-cases. Private fields (about_me, custom_preference, non-image
+    sections) must never leak into the prompt. The user's explicit request is
+    always preserved verbatim AFTER the context and always takes precedence.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls._tmpdir = tempfile.TemporaryDirectory()
+        cls._settings_patch = patch.object(app_module, "_SETTINGS_DIR",
+                                           Path(cls._tmpdir.name) / "settings")
+        cls._settings_patch.start()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls._settings_patch.stop()
+        cls._tmpdir.cleanup()
+
+    def _save(self, user_id: str, data: dict):
+        app_module._save_settings(user_id, data)
+
+    def test_injects_relevant_image_prefs_only(self):
+        user = "img_user_a"
+        self._save(user, {
+            "language": {"response_language": "ig"},
+            "culture": {"cultural_expression": "natural"},
+            "preferences": {
+                "voice_style": "Professional",
+                "use_cases": ["Graphic design", "Video creation"],
+                "custom_preference": "secret-work-habit",
+                "about_me": "secret-about-me",
+            },
+        })
+        prompt = "A purple nebula over the Lagos skyline at night"
+        out = app_module._build_image_user_context(user, prompt)
+        self.assertIn("User's preferred language: ig", out)
+        self.assertIn("Cultural expression preference: natural", out)
+        self.assertIn("Visual tone: Professional", out)
+        self.assertIn("User's creative context: Graphic design", out)
+        self.assertNotIn("secret-work-habit", out)
+        self.assertNotIn("secret-about-me", out)
+        self.assertTrue(out.endswith(prompt))
+
+    def test_explicit_request_takes_precedence(self):
+        user = "img_user_b"
+        self._save(user, {"preferences": {"voice_style": "Natural",
+                                          "use_cases": ["Graphic design"]}})
+        prompt = "Draw a stormtrooper riding a white horse"
+        out = app_module._build_image_user_context(user, prompt)
+        self.assertTrue(out.startswith("[User context"))
+        self.assertIn("takes precedence", out)
+        self.assertTrue(out.endswith(prompt))
+        self.assertEqual(out.count(prompt), 1, "explicit request must appear exactly once")
+
+    def test_no_relevant_prefs_returns_prompt_unchanged(self):
+        user = "img_user_c"
+        self._save(user, {
+            "preferences": {"about_me": "nothing image-related", "custom_preference": "x"},
+            "memory": {"note": "private"},
+        })
+        prompt = "A mountain at sunrise"
+        self.assertEqual(app_module._build_image_user_context(user, prompt), prompt)
+
+    def test_empty_settings_returns_prompt_unchanged(self):
+        user = "img_user_d"
+        self._save(user, {})
+        prompt = "A boat on a calm river"
+        self.assertEqual(app_module._build_image_user_context(user, prompt), prompt)
+
+    def test_all_image_entrypoints_prepend_user_context(self):
+        src = (Path(ROOT) / "app.py").read_text(encoding="utf-8")
+        self.assertGreaterEqual(src.count("_build_image_user_context"), 5,
+                                "definition + at least 4 call sites: "
+                                "json, stream, multi-json, multi-stream, /api/generate-image")
+
+
+class BrainPreferenceInjectionTestCase(unittest.TestCase):
+    """User-level preference injection into the chat system prompt.
+
+    The same USER preferences must reach every persona (Marcus, Angelina,
+    Elena) because load_persona_brain restructures MarcusBrain for all three —
+    a single injection point guarantees identical user context. Persona
+    personality must remain distinct, and User A's preferences must never
+    leak into User B's prompt.
+    """
+
+    def setUp(self):
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self._tmp = Path(self._tmpdir.name)
+        # Keep brain hermetic: force local-file memory/chat stores, never Mongo.
+        self._mem_patch = patch("core.memory.user_memory_collection", lambda: None)
+        self._chat_patch = patch("core.memory.chats_collection", lambda: None)
+        self._mem_patch.start()
+        self._chat_patch.start()
+
+    def tearDown(self):
+        self._chat_patch.stop()
+        self._mem_patch.stop()
+        self._tmpdir.cleanup()
+
+    def _brain(self, persona: str, user_tag: str):
+        from core.brain import MarcusBrain
+        memory_file = str(self._tmp / user_tag / persona / "long_term.json")
+        os.makedirs(os.path.dirname(memory_file), exist_ok=True)
+        return MarcusBrain(
+            memory_file=memory_file,
+            behavior_file=str(Path(ROOT) / "character" / persona / "behavior.json"),
+        )
+
+    @staticmethod
+    def _seed_user(brain, about_me, use_cases, style, lang="ig"):
+        m = brain.memory
+        m.remember_preference("preferences_about_me", about_me)
+        m.remember_preference("preferences_use_cases", use_cases)
+        m.remember_preference("preferences_voice_style", style)
+        m.remember_preference("preferences_communication_style", "Friendly and direct")
+        m.long_term["response_language"] = lang
+        m.save_long_term()
+
+    def _system(self, brain, message="What do you think about this idea?"):
+        msgs = brain._groq_messages("chat_t", message)
+        self.assertEqual(msgs[0]["role"], "system")
+        return msgs[0]["content"]
+
+    def test_all_personas_receive_identical_user_preference_context(self):
+        content = "I'm building an African fintech startup and I write daily."
+        results = {}
+        for persona in ("marcus", "angelina", "elena"):
+            brain = self._brain(persona, "user_alpha")
+            self._seed_user(brain, content, "Coding, Content creation", "Professional")
+            system = self._system(brain)
+            results[persona] = system
+            self.assertIn("=== USER PREFERENCES / USER PROFILE CONTEXT ===", system)
+            self.assertIn(f"About the user: {content}", system)
+            self.assertIn("Primary use cases: Coding, Content creation", system)
+            self.assertIn("Voice preference: Professional", system)
+            self.assertIn("Communication style: Friendly and direct", system)
+            self.assertIn("Response language: ig", system)
+
+    def test_persona_personalities_stay_distinct(self):
+        systems = {}
+        for persona in ("marcus", "angelina", "elena"):
+            brain = self._brain(persona, "user_beta")
+            self._seed_user(brain, "Prefers short replies", "Writing", "Natural")
+            systems[persona] = self._system(brain)
+        self.assertNotEqual(systems["marcus"], systems["angelina"])
+        self.assertNotEqual(systems["marcus"], systems["elena"])
+        self.assertNotEqual(systems["angelina"], systems["elena"])
+
+    def test_multi_user_prompts_are_isolated(self):
+        brain_a = self._brain("marcus", "user_a")
+        brain_b = self._brain("marcus", "user_b")
+        self._seed_user(brain_a, "Loves Nigerian jollof rice debates",
+                        "Coding", "Professional")
+        self._seed_user(brain_b, "Building a skateboarding video channel",
+                        "Video creation", "Creative")
+        system_a = self._system(brain_a)
+        system_b = self._system(brain_b)
+        self.assertIn("Loves Nigerian jollof rice debates", system_a)
+        self.assertIn("Building a skateboarding video channel", system_b)
+        self.assertNotIn("skateboarding", system_a)
+        self.assertNotIn("jollof", system_b)
 
 
 if __name__ == "__main__":

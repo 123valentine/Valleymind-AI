@@ -15,7 +15,7 @@
 
 (function () {
 
-  var STEP_IDS = ["intro", "use", "lang", "style", "background", "expression", "expressive", "multilingual", "characters", "voice", "custom", "review"];
+  var STEP_IDS = ["intro", "use", "useprofile", "lang", "style", "background", "expression", "expressive", "multilingual", "characters", "voice", "custom", "aboutme", "review"];
 
   // Every preference key maps to the EXISTING settings section it belongs to.
   var KEY_SECTION = {
@@ -31,6 +31,7 @@
     multilingual_behavior: "preferences",
     preferred_characters: "preferences",
     custom_preference: "preferences", voice_style: "preferences",
+    about_me: "preferences", use_case_profile: "preferences",
   };
 
   var OB = {
@@ -63,12 +64,14 @@
 
   window.prefSetupSkip = function () {
     saveAll();           // keep anything already collected
+    persistSetupStatus("skipped");
     clearPendingFlag();
     closeOverlay();
   };
 
   window.prefSetupFinish = function () {
     saveAll();
+    persistSetupStatus("completed");
     clearPendingFlag();
     closeOverlay();
   };
@@ -225,6 +228,8 @@
     else if (id === "characters") writes.push(writePrefs({ preferred_characters: charactersSelected() }));
     else if (id === "voice") writes.push(writePrefs({ voice_style: str("preferences", "voice_style") }));
     else if (id === "custom") writes.push(writePrefs({ custom_preference: str("preferences", "custom_preference") }));
+    else if (id === "useprofile") writes.push(writePrefs({ use_case_profile: str("preferences", "use_case_profile") }));
+    else if (id === "aboutme") writes.push(writePrefs({ about_me: str("preferences", "about_me") }));
     if (writes.length) Promise.all(writes).catch(function () { /* non-fatal */ });
   }
 
@@ -239,12 +244,14 @@
         communication_note: str("preferences", "communication_note"),
         use_cases: draftArray("preferences", "use_cases"),
         use_cases_other: str("preferences", "use_cases_other"),
+        use_case_profile: str("preferences", "use_case_profile"),
         expressive_language: draftArray("preferences", "expressive_language").filter(notOther),
         expressive_language_other: str("preferences", "expressive_language_other"),
         multilingual_behavior: str("preferences", "multilingual_behavior"),
         preferred_characters: charactersSelected(),
         custom_preference: str("preferences", "custom_preference"),
         voice_style: str("preferences", "voice_style"),
+        about_me: str("preferences", "about_me"),
       }),
     ]).catch(function () { /* non-fatal */ });
   }
@@ -279,6 +286,19 @@
   function clearPendingFlag() {
     try { sessionStorage.removeItem("vm_pref_setup_pending"); } catch (_) {}
     try { sessionStorage.removeItem("vm_pref_setup_dismissed"); } catch (_) {}
+  }
+
+  // Persist the setup status (completed | skipped) to the server so the
+  // first-run wizard fires exactly once per user regardless of browser/session.
+  function persistSetupStatus(status) {
+    try {
+      apiFetch("/api/settings/setup-status", {
+        method: "POST",
+        credentials: "include",
+        headers: authHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ setup_status: status })
+      }).then(function (r) { return r.json(); }).catch(function () { /* non-fatal */ });
+    } catch (_) {}
   }
 
   // ── Overlay UI ─────────────────────────────────────────────────────
@@ -357,6 +377,7 @@
     var id = STEP_IDS[OB.step];
     if (id === "intro") return stepIntro();
     if (id === "use") return stepUse();
+    if (id === "useprofile") return stepUseProfile();
     if (id === "lang") return stepLang();
     if (id === "style") return stepStyle();
     if (id === "background") return stepBackground();
@@ -366,6 +387,7 @@
     if (id === "characters") return stepCharacters();
     if (id === "voice") return stepVoice();
     if (id === "custom") return stepCustom();
+    if (id === "aboutme") return stepAboutMe();
     return stepReview();
   }
 
@@ -378,15 +400,16 @@
 
   var USE_OPTIONS = [
     "Personal AI assistant",
-    "Content creation",
+    "Studying",
     "Writing",
-    "Coding & software development",
+    "Coding",
     "Business & productivity",
-    "Learning & research",
-    "Design & creativity",
-    "Video & media",
-    "Music",
-    "Brainstorming & ideas",
+    "Content creation",
+    "Graphic design",
+    "Video creation",
+    "Research",
+    "Planning & productivity",
+    "Journaling",
   ];
 
   function stepUse() {
@@ -403,6 +426,15 @@
         '<label class="ob-label" for="ob_use_other">Tell us more</label>' +
         '<input id="ob_use_other" class="ob-input" type="text" value="' + escAttr(otherVal) + '" placeholder="What are you planning to use ValleyMind for?" oninput="prefSetupInput(\'use_cases_other\', this.value)" autocomplete="off">' +
       '</div>';
+  }
+
+  function stepUseProfile() {
+    var val = str("preferences", "use_case_profile");
+    return '<h1 class="ob-h1">Tell ValleyMind more about how you plan to use it</h1>' +
+      '<p class="ob-sub">Optional but helpful. The more you share, the better ValleyMind can tailor its responses to your workflow and goals.</p>' +
+      '<label class="ob-label" for="ob_use_profile">Your use-case profile</label>' +
+      '<textarea id="ob_use_profile" class="ob-input ob-textarea" placeholder="e.g. I\'m a content creator making short-form videos for social media. I need help with scripting, captions, and brainstorming ideas. I usually work in English but sometimes mix in Pidgin." style="min-height:120px;" oninput="prefSetupInput(\'use_case_profile\', this.value)">' + escHtml(val) + '</textarea>' +
+      '<p class="ob-note">This helps ValleyMind understand your goals — not just what you do, but how and why you do it.</p>';
   }
 
   var COUNTRY_OPTIONS = [
@@ -647,6 +679,15 @@
       '<textarea id="ob_custom" class="ob-input ob-textarea" placeholder="e.g. I work in short bursts, prefer concise bullet answers for work questions, and think out loud when planning." oninput="prefSetupInput(\'custom_preference\', this.value)">' + escHtml(val) + '</textarea>';
   }
 
+  function stepAboutMe() {
+    var val = str("preferences", "about_me");
+    return '<h1 class="ob-h1">Remember this about me</h1>' +
+      '<p class="ob-sub">Share anything you\'d like ValleyMind to always remember about you — your interests, personality, what matters to you, or anything that helps ValleyMind understand who you are.</p>' +
+      '<label class="ob-label" for="ob_about_me">About me</label>' +
+      '<textarea id="ob_about_me" class="ob-input ob-textarea" placeholder="e.g. I\'m a software developer who loves Nigerian jollof rice debates. I prefer direct answers and don\'t like fluff. I\'m building a startup focused on African fintech." style="min-height:120px;" oninput="prefSetupInput(\'about_me\', this.value)">' + escHtml(val) + '</textarea>' +
+      '<p class="ob-note">ValleyMind uses this to personalise your experience. You can update this anytime in Settings.</p>';
+  }
+
   function stepReview() {
     var p = previewRows();
     return '<h1 class="ob-h1">Review your choices</h1>' +
@@ -662,6 +703,8 @@
         obReviewRow("Multilingual behavior", p.multilingual) +
         obReviewRow("AI characters", p.characters) +
         obReviewRow("Voice", p.voice) +
+        (p.useCaseProfile ? obReviewRow("Use-case profile", p.useCaseProfile) : "") +
+        (p.aboutMe ? obReviewRow("About me", p.aboutMe) : "") +
         (p.custom ? obReviewRow("Custom preference", p.custom) : "") +
       '</div>' +
       '<p class="ob-note" style="margin:0 0 14px;">Your preferences are always editable &mdash; change them anytime from Settings &#8594; AI Preferences &#8594; Language &amp; Culture.</p>' +
@@ -703,6 +746,8 @@
       multilingual: str("preferences", "multilingual_behavior") || "Follow the language I use",
       characters: charactersSelected().join(", "),
       voice: str("preferences", "voice_style") || "Natural",
+      useCaseProfile: str("preferences", "use_case_profile"),
+      aboutMe: str("preferences", "about_me"),
       custom: str("preferences", "custom_preference"),
     };
   }

@@ -2107,9 +2107,10 @@ def _dispatch_image_json(user_id, message, chat_id, image_data):
     _persist_chat_message(user_id, chat_id, "user", message)
 
     config = get_config()
+    prompt = _build_image_user_context(user_id, message)
     result = pm.get_manager().execute(
         pm.Capability.IMAGE,
-        prompt=message,
+        prompt=prompt,
         api_key=config.gemini_api_key or None,
         enhance=True,
     )
@@ -2182,7 +2183,7 @@ def _dispatch_image_stream(user_id, message, chat_id, image_data):
 
         result = pm.get_manager().execute(
             pm.Capability.IMAGE,
-            prompt=message,
+            prompt=_build_image_user_context(user_id, message),
             api_key=config.gemini_api_key or None,
             enhance=True,
         )
@@ -2350,7 +2351,7 @@ def _dispatch_multi_json(user_id, message, chat_id, image_data):
     config = get_config()
     image_result = pm.get_manager().execute(
         pm.Capability.IMAGE,
-        prompt=message,
+        prompt=_build_image_user_context(user_id, message),
         api_key=config.gemini_api_key or None,
         enhance=True,
     )
@@ -2456,7 +2457,7 @@ def _dispatch_multi_stream(user_id, message, chat_id, image_data):
 
         image_result = pm.get_manager().execute(
             pm.Capability.IMAGE,
-            prompt=message,
+            prompt=_build_image_user_context(user_id, message),
             api_key=config.gemini_api_key or None,
             enhance=True,
         )
@@ -2557,9 +2558,57 @@ def _dispatch_video_stream(user_id, message, chat_id, image_data):
     state = _spawn_video_generation(user_id, resolved_chat_id, message)
 
     return Response(
-        stream_with_context(_stream_video_state(state, resolved_chat_id)),
+        stream_with_context(generate()),
         mimetype='text/event-stream',
         headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no', 'Connection': 'keep-alive'},
+    )
+
+
+def _build_image_user_context(user_id: str, prompt: str) -> str:
+    """Prepend only image-relevant user preferences to the prompt.
+    For images we inject: language (for text-in-image), cultural context,
+    creative style — NOT all preferences blindly.  The user's explicit
+    request is always passed through unchanged AFTER the context block and
+    always takes precedence over any preference-derived hint."""
+    try:
+        settings = _load_settings(user_id)
+        prefs = settings.get("preferences") or {}
+        lang_section = settings.get("language") or {}
+        culture_section = settings.get("culture") or {}
+    except Exception:
+        return prompt
+
+    context_parts = []
+
+    # Language context — affects text rendered inside images
+    response_lang = lang_section.get("response_language") or ""
+    if response_lang and response_lang != "en":
+        context_parts.append(f"User's preferred language: {response_lang}")
+
+    # Cultural expression — affects visual motifs and style
+    cultural_expr = culture_section.get("cultural_expression") or ""
+    if cultural_expr and cultural_expr != "off":
+        context_parts.append(f"Cultural expression preference: {cultural_expr}")
+
+    # Creative context — relevant for image generation
+    creative_style = prefs.get("voice_style") or ""
+    if creative_style:
+        context_parts.append(f"Visual tone: {creative_style}")
+
+    # Use-case context — helps tailor the image purpose
+    use_cases = prefs.get("use_cases")
+    if isinstance(use_cases, list) and use_cases:
+        context_parts.append(f"User's creative context: {', '.join(use_cases[:3])}")
+
+    if not context_parts:
+        return prompt
+
+    ctx = " | ".join(context_parts)
+    # The explicit request below always takes precedence over this reference
+    # context — preferences only add relevant colour, never override intent.
+    return (
+        f"[User context (reference only — the explicit request below always "
+        f"takes precedence): {ctx}]\n{prompt}"
     )
 
 
@@ -2800,7 +2849,7 @@ def api_generate_image():
         manager = pm.get_manager()
         result = manager.execute(
             pm.Capability.IMAGE,
-            prompt=prompt,
+            prompt=_build_image_user_context(user_id, prompt),
             api_key=api_key or None,
             enhance=True,
             reference_image=reference_image,
@@ -2907,6 +2956,41 @@ def api_settings(section):
     return jsonify({"status": "success", "section": section, "message": "Saved"})
 
 
+# ── Preferences Setup Status API ─────────────────────────────────────
+# Server-side per-user flag that replaces the fragile sessionStorage
+# "vm_pref_setup_pending" flag.  Stored inside the existing preferences
+# section of settings.json — no second database, single source of truth.
+
+@app.route("/api/settings/setup-status", methods=["GET", "POST"])
+def api_settings_setup_status():
+    user_id, error = _require_login()
+    if error:
+        return error
+    prefs = _get_section_settings(user_id, "preferences")
+    if request.method == "GET":
+        status = prefs.get("preferences_setup_status", "not_started")
+        # Backward compat: users who already have saved preferences but no
+        # explicit status marker are treated as "completed" — they clearly
+        # completed the wizard at some point or configured preferences manually.
+        if status == "not_started":
+            has_content = any(
+                prefs.get(k)
+                for k in ("communication_style", "use_cases", "voice_style",
+                          "custom_preference", "expressive_language",
+                          "preferred_characters", "multilingual_behavior")
+            )
+            if has_content:
+                status = "completed"
+        return jsonify({"status": "success", "setup_status": status})
+    body = request.get_json(silent=True) or {}
+    new_status = str(body.get("setup_status") or "").strip().lower()
+    if new_status not in ("completed", "skipped", "not_started"):
+        return jsonify({"status": "error", "message": "Invalid setup_status value"}), 400
+    prefs["preferences_setup_status"] = new_status
+    _put_section_settings(user_id, "preferences", prefs)
+    return jsonify({"status": "success", "setup_status": new_status})
+
+
 def _mirror_preference_to_memory(marcus, key: str, text: str, label: str):
     """Write one user preference into long-term memory as BOTH the legacy
     preference dict entry AND a first-class, AI-readable fact (the preference
@@ -2997,7 +3081,9 @@ def _mirror_settings_to_memory(user_id: str, section: str, body: dict):
                 "communication_note": "extra communication guidance",
                 "use_cases": "primary uses of ValleyMind",
                 "use_cases_other": "what they use ValleyMind for (other)",
+                "use_case_profile": "use-case profile and goals",
                 "expressive_language": "expressive language features",
+                "about_me": "personal information the user wants remembered",
                 "custom_preference": "custom working preference",
                 "voice_style": "voice style",
                 "language": "response language",
@@ -3016,6 +3102,26 @@ def _mirror_settings_to_memory(user_id: str, section: str, body: dict):
                     f"User prefers {label}: {text}"[:400],
                     text,
                     confidence=0.9,
+                )
+            # about_me is personal info the user explicitly wants remembered.
+            # Store as a high-confidence fact so the brain treats it as
+            # settled truth, not a tentative preference.
+            about_me = str(body.get("about_me") or "").strip()
+            if about_me:
+                marcus.memory.remember_fact(
+                    "identity",
+                    f"User-provided personal context: {about_me}"[:400],
+                    about_me[:2000],
+                    confidence=1.0,
+                )
+            # use_case_profile gives richer context than the checkbox list.
+            ucp = str(body.get("use_case_profile") or "").strip()
+            if ucp:
+                marcus.memory.remember_fact(
+                    "preference",
+                    f"User use-case profile: {ucp}"[:400],
+                    ucp[:2000],
+                    confidence=0.95,
                 )
         elif section in ("appearance", "notifications", "accessibility", "creator"):
             for key, val in body.items():

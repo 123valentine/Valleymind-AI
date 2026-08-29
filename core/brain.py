@@ -1216,6 +1216,26 @@ class MarcusBrain:
         sections.append(f"Character profile:\n{self.profile.to_prompt()}")
         sections.append("")
 
+        # ── User Preferences / User Profile Context ─────────────────
+        # Every user's explicit preferences are injected here — USER
+        # LEVEL, not character level.  The same data feeds Marcus,
+        # Angelina, and Elena.  Preferences shape HOW the character
+        # responds; character personality stays independent.
+        try:
+            pref_context = self._build_user_preferences_context()
+        except Exception as exc:
+            print(f"[BRAIN] user preferences context failed: {exc}")
+            pref_context = ""
+        if pref_context:
+            sections.append("=== USER PREFERENCES / USER PROFILE CONTEXT ===")
+            sections.append(
+                "The following are the CURRENT USER's own preferences and profile. "
+                "Adapt your communication, tone, language and behaviour to match. "
+                "These override default personality tendencies wherever they conflict."
+            )
+            sections.append(pref_context)
+            sections.append("")
+
         # ── Response language + cultural grounding (independent concepts) ──
         # Response language: set from Settings > Language. Cultural identity:
         # set from Settings > Culture. The two are deliberately kept separate.
@@ -1346,6 +1366,132 @@ class MarcusBrain:
         else:
             messages.append({"role": "user", "content": user_message})
         return messages
+
+    def _build_user_preferences_context(self) -> str:
+        """Build a human-readable block of the current user's explicit
+        preferences and profile data, read from the brain's long-term memory
+        (which mirrors settings.json via _mirror_settings_to_memory).
+        Returns empty string if no preferences are stored.
+
+        This is USER-LEVEL data — the same preferences feed all three
+        characters.  Character personality stays separate from preferences."""
+        try:
+            long_term = self.memory.get_full_memory() or {}
+        except Exception:
+            return ""
+
+        prefs = long_term.get("preferences") or {}
+        if not isinstance(prefs, dict):
+            prefs = {}
+
+        # The mirror writes preference fields from the "preferences" section
+        # under a "preferences_" prefix (e.g. preferences_use_cases). Read both
+        # the raw key and the prefixed form so the block stays robust.
+        def P(key):
+            v = prefs.get(key)
+            if v is None:
+                v = prefs.get(f"preferences_{key}")
+            return v
+
+        lines = []
+
+        # About me (personal info the user explicitly wants remembered)
+        about_me = P("about_me")
+        if about_me:
+            lines.append(f"About the user: {str(about_me)[:500]}")
+
+        # Communication style
+        style = P("communication_style")
+        if style:
+            if isinstance(style, list):
+                style = ", ".join(str(s) for s in style)
+            lines.append(f"Communication style: {style}")
+
+        note = P("communication_note")
+        if note:
+            lines.append(f"Communication note: {str(note)[:300]}")
+
+        # Use cases
+        use_cases = P("use_cases")
+        if use_cases:
+            if isinstance(use_cases, list):
+                use_cases = ", ".join(str(u) for u in use_cases)
+            lines.append(f"Primary use cases: {use_cases}")
+
+        use_other = P("use_cases_other")
+        if use_other:
+            lines.append(f"Use case detail: {str(use_other)[:300]}")
+
+        # Use-case profile (richer context than the checkbox list)
+        ucp = P("use_case_profile")
+        if ucp:
+            lines.append(f"Use-case profile: {str(ucp)[:400]}")
+
+        # Expressive language
+        expressive = P("expressive_language")
+        if expressive:
+            if isinstance(expressive, list):
+                expressive = ", ".join(str(e) for e in expressive)
+            lines.append(f"Preferred expressions: {expressive}")
+
+        expressive_other = P("expressive_language_other")
+        if expressive_other:
+            lines.append(f"Other expressions: {str(expressive_other)[:200]}")
+
+        # Multilingual behavior
+        ml = P("multilingual_behavior")
+        if ml:
+            lines.append(f"Multilingual behavior: {ml}")
+
+        # Voice style
+        voice = P("voice_style")
+        if voice:
+            lines.append(f"Voice preference: {voice}")
+
+        # Custom preference
+        custom = P("custom_preference")
+        if custom:
+            lines.append(f"Custom preference: {str(custom)[:400]}")
+
+        # Preferred characters
+        chars = P("preferred_characters")
+        if chars:
+            if isinstance(chars, list):
+                chars = ", ".join(str(c) for c in chars)
+            lines.append(f"Preferred AI characters: {chars}")
+
+        # Response language (stored at the top level of long_term)
+        response_lang = long_term.get("response_language")
+        if response_lang:
+            lines.append(f"Response language: {response_lang}")
+
+        reply_lang = long_term.get("reply_language")
+        if reply_lang and reply_lang != response_lang:
+            lines.append(f"Reply language: {reply_lang}")
+
+        # Cultural identity / expression (stored at the top level)
+        culture = long_term.get("culture_identity")
+        if culture:
+            lines.append(f"Cultural identity: {culture}")
+
+        cultural_expr = long_term.get("cultural_expression")
+        if cultural_expr:
+            lines.append(f"Cultural expression level: {cultural_expr}")
+
+        # Language background mirrored from the "language" section
+        for bg_key, bg_label in (
+            ("language_country", "Country"),
+            ("language_state_province", "Region"),
+            ("language_native_languages", "Native languages"),
+            ("language_cultural_background", "Cultural background"),
+        ):
+            val = prefs.get(bg_key)
+            if val:
+                lines.append(f"{bg_label}: {val}")
+
+        if not lines:
+            return ""
+        return "\n".join(lines)
 
     def _try_llm_first(self, chat_id: str, user_message: str, image_data: str = "", live_context: str = "", mongo_history: list = None, global_memories: str = "", knowledge_data: str = "", recovered_context: str = "") -> dict:
         try:
