@@ -78,8 +78,8 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="/static/settings.js"></script>
-<script src="/static/pref_setup_model.js?v=2"></script>
-<script src="/static/onboarding.js?v=2"></script>
+<script src="/static/pref_setup_model.js?v=3"></script>
+<script src="/static/onboarding.js?v=3"></script>
 <script src="/static/tutorials.js"></script>
 <script id="tailwind-config">
   tailwind.config = {
@@ -2054,6 +2054,15 @@
   <div style="display:flex;gap:10px;flex-shrink:0;">
     <button onclick="openVerifyModal()" style="background:#00d4ff;color:#003642;border:none;border-radius:8px;padding:6px 14px;font-weight:700;font-size:12px;cursor:pointer;font-family:'Space Grotesk',sans-serif;">Verify now</button>
     <button onclick="dismissVerifyBanner()" style="background:transparent;color:#94a3b8;border:1px solid rgba(255,255,255,0.15);border-radius:8px;padding:6px 10px;font-size:12px;cursor:pointer;font-family:'Inter',sans-serif;">Later</button>
+  </div>
+</div>
+
+<!-- PREFERENCES SETUP BANNER (shown in the chat until preferences are completed) -->
+<div id="prefBanner" style="display:none;position:fixed;top:64px;right:0;left:280px;z-index:30;background:rgba(168,85,247,0.12);border-bottom:1px solid rgba(168,85,247,0.25);backdrop-filter:blur(12px);padding:8px 24px;align-items:center;justify-content:space-between;gap:12px;">
+  <p style="margin:0;color:#e9d5ff;font-size:12px;font-family:'Inter',sans-serif;line-height:1.5;">Finish your ValleyMind preferences &mdash; we'll resume right where you stopped.</p>
+  <div style="display:flex;gap:10px;flex-shrink:0;">
+    <button onclick="openPreferenceBannerSetup()" style="background:#a855f7;color:#1e1033;border:none;border-radius:8px;padding:6px 14px;font-weight:700;font-size:12px;cursor:pointer;font-family:'Space Grotesk',sans-serif;">Complete preferences</button>
+    <button onclick="dismissPreferenceBanner()" style="background:transparent;color:#94a3b8;border:1px solid rgba(255,255,255,0.15);border-radius:8px;padding:6px 10px;font-size:12px;cursor:pointer;font-family:'Inter',sans-serif;">Later</button>
   </div>
 </div>
 
@@ -8929,6 +8938,13 @@ async function checkSession() {
                             }
                         }, 900);
                     }
+                    // Chat banner: visible whenever preferences are NOT completed
+                    // (never started OR skipped) so progress is never lost silently.
+                    if (setupRes.ok && setupData.setup_status === "completed") {
+                        hidePreferenceBanner();
+                    } else if (setupRes.ok) {
+                        showPreferenceBanner();
+                    }
                 } catch (setupErr) {
                     console.warn("[checkSession] setup-status check failed:", setupErr);
                 }
@@ -9263,6 +9279,29 @@ function hideVerifyBanner() {
 function dismissVerifyBanner() {
     window._vmVerifyDismissed = true;
     hideVerifyBanner();
+}
+
+// ── Preferences setup banner (chat) ─────────────────────────────────────────
+function showPreferenceBanner() {
+    var banner = document.getElementById("prefBanner");
+    if (!banner) return;
+    if (window._vmPrefBannerDismissed) { banner.style.display = "none"; return; }
+    banner.style.display = "flex";
+}
+
+function hidePreferenceBanner() {
+    var banner = document.getElementById("prefBanner");
+    if (banner) banner.style.display = "none";
+}
+
+function dismissPreferenceBanner() {
+    window._vmPrefBannerDismissed = true;
+    hidePreferenceBanner();
+}
+
+function openPreferenceBannerSetup() {
+    if (typeof window.openPreferencesSetup !== "function") return;
+    window.openPreferencesSetup({ source: "settings" });
 }
 
 // ── Verify / reset deep-link handling ────────────────────────────────────────

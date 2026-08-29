@@ -291,6 +291,18 @@ async function main() {
     S.openPreferencesSetup({ source: "settings" });
     await wait(40);
     result.final = captureRender(overlay.innerHTML);
+  } else if (mode === "resume") {
+    // Resume-after-skip: capture the landing step for the given PREF_STATE,
+    // then Skip and reopen — Skip must NOT lose the resume position, and the
+    // wizard must still display with working Continue/Back/Skip affordances.
+    const initial = captureRender(overlay.innerHTML);
+    S.prefSetupSkip();
+    await wait(30);
+    const afterSkipDisplay = overlay.style.display;
+    S.openPreferencesSetup({ source: "settings" });
+    await wait(40);
+    const afterSkipReopen = captureRender(overlay.innerHTML);
+    result.resume = { initial, afterSkipDisplay, afterSkipReopen };
   }
 
   console.log(JSON.stringify(result));

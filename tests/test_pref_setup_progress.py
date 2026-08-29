@@ -13,6 +13,7 @@ Coverage (from the spec):
     onboarding.js no longer hard-codes the step list or a linear page bar.
 """
 
+import copy
 import json
 import os
 import shutil
@@ -132,6 +133,53 @@ class ProgressIndicatorHarnessTestCase(unittest.TestCase):
         self.assertEqual(out["final"]["ringPct"], "100")
         self.assertEqual(out["final"]["ringLabel"], "14 of 14 complete")
 
+    @unittest.skipIf(NODE is None, "node is not available")
+    def test_resume_after_skip_partial_keeps_position(self):
+        # Partial progress (2/14), then Skip → reopening must land on the first
+        # incomplete step (not intro, not a restart) and stay there after Skip.
+        state = {"setup_status": "skipped",
+                 "language": {"country": "Nigeria"},
+                 "preferences": {"communication_style": ["Direct"]}}
+        out = run_harness("resume", state)
+        r = out["resume"]
+        self.assertEqual(r["initial"]["ringPct"], "14")
+        self.assertTrue(r["initial"]["hasBack"], "resume skips intro → first incomplete step")
+        self.assertTrue(r["initial"]["hasContinue"], "Continue works on resume")
+        self.assertFalse(r["initial"]["hasFinish"], "not at the review/completed page yet")
+        self.assertEqual(r["afterSkipDisplay"], "none", "Skip closes the wizard")
+        self.assertEqual(r["afterSkipReopen"], r["initial"], "Skip preserves the resume position")
+
+    @unittest.skipIf(NODE is None, "node is not available")
+    def test_resume_fresh_user_stays_on_page_one(self):
+        out = run_harness("resume", {"setup_status": "skipped"})
+        r = out["resume"]
+        self.assertFalse(r["initial"]["hasBack"], "nothing completed → Page 1 (intro)")
+        self.assertTrue(r["initial"]["hasContinue"], "intro Continue present")
+        self.assertEqual(r["afterSkipReopen"], r["initial"], "Skip keeps fresh user at Page 1")
+
+    @unittest.skipIf(NODE is None, "node is not available")
+    def test_resume_lands_on_first_incomplete_with_answer_preserved(self):
+        # Every data step done EXCEPT voice → resume lands on voice (step 10)
+        # with the persisted answers intact (ring still 79% = 11 of 14).
+        state = copy.deepcopy(FULL)
+        del state["preferences"]["voice_style"]
+        out = run_harness("resume", state)
+        r = out["resume"]
+        self.assertEqual(r["initial"]["ringPct"], "79")
+        self.assertTrue(r["initial"]["hasBack"], "resume happened (past intro)")
+        self.assertFalse(r["initial"]["hasFinish"], "voice isn't the completed page")
+        self.assertEqual(r["afterSkipReopen"], r["initial"], "answers + position preserved after Skip")
+
+    @unittest.skipIf(NODE is None, "node is not available")
+    def test_resume_all_complete_shows_completed_state_not_restart(self):
+        # All data steps complete (but not finished) → the wizard shows the
+        # review/completed state instead of restarting from Page 1.
+        out = run_harness("resume", dict(FULL))
+        r = out["resume"]
+        self.assertEqual(r["initial"]["ringPct"], "86")
+        self.assertTrue(r["initial"]["hasFinish"], "completed state (review) shown for all-done user")
+        self.assertTrue(r["initial"]["hasBack"], "Back works on the review page")
+
 
 class ProgressFrontendStaticTestCase(unittest.TestCase):
     """Static guarantees about the frontend that don't need a browser."""
@@ -186,6 +234,26 @@ class ProgressFrontendStaticTestCase(unittest.TestCase):
         self.assertNotIn(".completionPercentage =", js, "no stored value in wizard")
         model = self._js_path("pref_setup_model.js").read_text(encoding="utf-8")
         self.assertNotIn('"completionPercentage"', model, "model never persists a percentage")
+
+    def test_resume_landing_step_derived_via_model(self):
+        js = self._js_path("onboarding.js").read_text(encoding="utf-8")
+        self.assertIn("function resumeStep()", js, "resume logic lives in the wizard")
+        self.assertIn("MODEL.isStepComplete(", js, "resume uses the model's completion rules")
+        self.assertIn("OB.step = resumeStep()", js, "landing step set from persisted state")
+        # Resume must run only AFTER the persisted state has been loaded.
+        load = js[js.index("function loadDraft()"):js.index("function saveStep(")]
+        self.assertIn("OB.ev = ", load, "state arrives before resume computes")
+        self.assertIn("OB.step = resumeStep()", load, "resume happens inside loadDraft, post-load")
+
+    def test_chat_banner_shown_until_preferences_completed(self):
+        html = self._index_html()
+        self.assertIn('id="prefBanner"', html, "chat banner markup present")
+        for fn in ("showPreferenceBanner", "hidePreferenceBanner",
+                   "dismissPreferenceBanner", "openPreferenceBannerSetup"):
+            self.assertIn("function " + fn + "()", html, "banner fn missing: %s" % fn)
+        self.assertIn('setup_status === "completed"', html, "banner reads setup-status")
+        self.assertIn("showPreferenceBanner()", html, "banner shown when not completed")
+        self.assertIn("hidePreferenceBanner()", html, "banner hidden once completed")
 
 
 if __name__ == "__main__":

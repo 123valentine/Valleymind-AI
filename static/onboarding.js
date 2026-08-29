@@ -12,6 +12,13 @@
 //     - auto-opened after email verification for new signups
 //     - opened from the "Complete your ValleyMind preferences" card in
 //       Settings > AI Preferences for existing users
+//
+// Resume-after-skip:
+//   Skipping never loses progress — answers are persisted on every transition.
+//   Reopening derives the landing step from the persisted state via the model:
+//     * first incomplete preference step (skipping already-complete pages)
+//     * intro (Page 1) when nothing has been completed yet
+//     * review (the completed state, never a restart) when everything is done.
 
 (function () {
 
@@ -214,6 +221,10 @@
         OB._charactersSeeded = true;
       }
       OB.loading = false;
+      // Resume where the user left off (derived from persisted state) instead
+      // of always restarting at Page 1 — intro when nothing done yet, review
+      // (completed state) when the table is already finished.
+      OB.step = resumeStep();
       render();
     }, function () {
       OB.loading = false;
@@ -311,6 +322,13 @@
   // Persist the setup status (completed | skipped) to the server so the
   // first-run wizard fires exactly once per user regardless of browser/session.
   function persistSetupStatus(status) {
+    if (status === "completed") {
+      // The chat preference banner mirrors server-side completion; when we just
+      // finished, take it down immediately instead of waiting for checkSession.
+      try {
+        if (typeof window.hidePreferenceBanner === "function") window.hidePreferenceBanner();
+      } catch (_) {}
+    }
     try {
       apiFetch("/api/settings/setup-status", {
         method: "POST",
@@ -385,6 +403,24 @@
       culture: (OB.ev && OB.ev.culture) || {},
       meta: { charactersSeeded: !!OB._charactersSeeded }
     };
+  }
+
+  // Landing step for a reopened wizard, derived from the persisted state (never
+  // a stored position). Intro/review are structural: they only complete on a
+  // genuinely finished wizard, and they are never "incomplete" resume targets —
+  // the user resumes at the first incomplete DATA step.
+  function resumeStep() {
+    if (!OB.ev) return 0;
+    var state = modelState();
+    var anyDataComplete = false;
+    var firstIncomplete = -1;
+    for (var i = 1; i < STEP_IDS.length - 1; i++) {
+      if (MODEL.isStepComplete(state, i)) anyDataComplete = true;
+      else if (firstIncomplete === -1) firstIncomplete = i;
+    }
+    if (!anyDataComplete) return 0;                       // Page 1
+    if (firstIncomplete === -1) return STEP_IDS.length - 1; // completed state
+    return firstIncomplete;                               // first incomplete
   }
 
   // Completion is DERIVED from the authoritative, persisted preference state
