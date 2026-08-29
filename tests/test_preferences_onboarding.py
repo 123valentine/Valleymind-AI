@@ -597,7 +597,7 @@ class FrontendIntegrationTestCase(unittest.TestCase):
     def test_index_loads_onboarding_after_settings(self):
         html = self._index_html()
         i_settings = html.find('<script src="/static/settings.js"></script>')
-        i_onboarding = html.find('<script src="/static/onboarding.js"></script>')
+        i_onboarding = html.find('<script src="/static/onboarding.js')
         self.assertNotEqual(i_settings, -1, "settings.js must be loaded")
         self.assertNotEqual(i_onboarding, -1, "onboarding.js must be loaded")
         self.assertLess(i_settings, i_onboarding, "onboarding.js must load AFTER settings.js")

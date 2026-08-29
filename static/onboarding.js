@@ -15,7 +15,16 @@
 
 (function () {
 
-  var STEP_IDS = ["intro", "use", "useprofile", "lang", "style", "background", "expression", "expressive", "multilingual", "characters", "voice", "custom", "aboutme", "review"];
+  // Single authoritative representation of the steps + completion rules lives
+  // in pref_setup_model.js (PREF_SETUP_MODEL). The wizard only ever reads it —
+  // total = PREFERENCE_STEPS.length, never a page-number → percentage mapping.
+  // Setting up preferences is optional, so missing model breaks loudly rather
+  // than silently mis-reporting progress.
+  if (!window.PREF_SETUP_MODEL) {
+    throw new Error("pref_setup_model.js must load before onboarding.js");
+  }
+  var MODEL = window.PREF_SETUP_MODEL;
+  var STEP_IDS = MODEL.stepIds();
 
   // Every preference key maps to the EXISTING settings section it belongs to.
   var KEY_SECTION = {
@@ -48,6 +57,9 @@
     OB.onClose = opts.onClose || null;
     OB.step = 0;
     ensureOverlay();
+    // Reopening must actually SHOW the wizard again — closeOverlay() hides it
+    // (display:none), so every open must reset that, not just the first one.
+    _overlay.style.display = "flex";
     OB.loading = true;
     OB.ev = null;
     render();
@@ -55,8 +67,9 @@
   };
 
   window.prefSetupGo = function (offset) {
-    var next = OB.step + offset;
-    if (next < 0 || next >= STEP_IDS.length) return;
+    if (OB.loading || !OB.ev) return;
+    var next = MODEL.nextStep(OB.step, offset);
+    if (next === OB.step) return;
     saveStep(OB.step);   // persist the step we are leaving (best effort)
     OB.step = next;
     render();
@@ -84,6 +97,8 @@
   window.prefSetupToggle = function (key, value) {
     var section = sectionOf(key);
     if (!section) return;
+    // A real swipe over the characters now becomes the user's own selection.
+    if (key === "preferred_characters") OB._charactersSeeded = false;
     var arrKey = section + ".__" + key;
     var cur = draftArray(section, key);
     var idx = cur.indexOf(value);
@@ -178,20 +193,25 @@
       apiFetch("/api/settings/language", { credentials: "include", headers: authHeaders() }).then(function (r) { return r.json(); }).catch(function () { return { data: {} }; }),
       apiFetch("/api/settings/preferences", { credentials: "include", headers: authHeaders() }).then(function (r) { return r.json(); }).catch(function () { return { data: {} }; }),
       apiFetch("/api/settings/culture", { credentials: "include", headers: authHeaders() }).then(function (r) { return r.json(); }).catch(function () { return { data: {} }; }),
+      apiFetch("/api/settings/setup-status", { credentials: "include", headers: authHeaders() }).then(function (r) { return r.json(); }).catch(function () { return {}; }),
     ]).then(function (res) {
       var lang = (res[0] && res[0].data) || {};
       var prefs = (res[1] && res[1].data) || {};
       var culture = (res[2] && res[2].data) || {};
+      var status = (res[3] && res[3].setup_status) || (res[3] && res[3].data && res[3].data.setup_status) || "";
       // Language & Region is the single source of truth for response
       // language; fall back to the AI Preferences key only for legacy accounts.
       if ((!lang.response_language || lang.response_language === "en") && prefs.language) {
         lang.response_language = prefs.language;
       }
-      OB.ev = { language: lang, preferences: prefs, culture: culture };
+      OB.ev = { language: lang, preferences: prefs, culture: culture, setup_status: status };
       // AI characters default to all-on by default (the same understanding is
       // shared system-wide); seed once so toggling works from a real array.
+      // The seed is the user's OWN completion only once they touch the page,
+      // so the model treats a freshly seeded default as "unanswered".
       if (OB.ev.preferences.preferred_characters === undefined) {
         OB.ev.preferences.preferred_characters = CHARACTER_OPTIONS.slice();
+        OB._charactersSeeded = true;
       }
       OB.loading = false;
       render();
@@ -221,8 +241,8 @@
     if (id === "lang") writes.push(writeLanguage());
     else if (id === "use") writes.push(writePrefs({ use_cases: draftArray("preferences", "use_cases"), use_cases_other: str("preferences", "use_cases_other") }));
     else if (id === "style") writes.push(writePrefs({ communication_style: draftArray("preferences", "communication_style"), communication_note: str("preferences", "communication_note") }));
-    else if (id === "background") writes.push(writeSection("language", writeLanguageDraft()));
-    else if (id === "expression") writes.push(writeSection("culture", merged("culture")));
+    else if (id === "background") writes.push(putSection("language", writeLanguageDraft()));
+    else if (id === "expression") writes.push(putSection("culture", merged("culture")));
     else if (id === "expressive") writes.push(writePrefs({ expressive_language: draftArray("preferences", "expressive_language").filter(notOther), expressive_language_other: str("preferences", "expressive_language_other") }));
     else if (id === "multilingual") writes.push(writePrefs({ multilingual_behavior: str("preferences", "multilingual_behavior") }));
     else if (id === "characters") writes.push(writePrefs({ preferred_characters: charactersSelected() }));
@@ -237,7 +257,7 @@
     if (!OB.ev || OB.loading) return;
     Promise.all([
       writeLanguage(),
-      writeSection("culture", merged("culture")),
+      putSection("culture", merged("culture")),
       writePrefs({
         language: currentLanguageValue(),
         communication_style: draftArray("preferences", "communication_style"),
@@ -274,13 +294,13 @@
     var lang = writeLanguageDraft();
     lang.response_language = currentLanguageValue();
     lang.language = lang.response_language;
-    return writeSection("language", lang);
+    return putSection("language", lang);
   }
 
   function writePrefs(patch) {
     var p = merged("preferences");
     for (var k in patch) p[k] = patch[k];
-    return writeSection("preferences", p);
+    return putSection("preferences", p);
   }
 
   function clearPendingFlag() {
@@ -340,9 +360,12 @@
         '</div>' +
         '<div class="ob-body">' +
           '<div class="ob-main">' +
-            '<div class="ob-progress" aria-hidden="true">' +
-              '<div class="ob-progress-track"><div class="ob-progress-fill" style="width:' + progressPct() + '%;"></div></div>' +
-              '<span class="ob-progress-label">Step ' + (OB.step + 1) + ' of ' + STEP_IDS.length + '</span>' +
+            '<div class="ob-ring-wrap" data-progress>' +
+              '<div class="ob-ring" aria-hidden="true">' +
+                '<div class="ob-ring-fill" style="background:conic-gradient(#00d4ff ' + completionPct() + '%, rgba(255,255,255,0.07) 0);"></div>' +
+                '<div class="ob-ring-hole"><span class="ob-ring-num">' + completionPct() + '</span><span class="ob-ring-pct">%</span></div>' +
+              '</div>' +
+              '<div class="ob-ring-label" role="status" aria-live="polite">' + completionBlurb() + '</div>' +
             '</div>' +
             '<div class="ob-content">' + renderStep() + '</div>' +
             '<div class="ob-actions">' + stepActions() + '</div>' +
@@ -354,7 +377,24 @@
     bindAndFocus();
   }
 
-  function progressPct() { return Math.round(((OB.step + 1) / STEP_IDS.length) * 100); }
+  function modelState() {
+    return {
+      setup_status: (OB.ev && OB.ev.setup_status) || "",
+      language: (OB.ev && OB.ev.language) || {},
+      preferences: (OB.ev && OB.ev.preferences) || {},
+      culture: (OB.ev && OB.ev.culture) || {},
+      meta: { charactersSeeded: !!OB._charactersSeeded }
+    };
+  }
+
+  // Completion is DERIVED from the authoritative, persisted preference state
+  // (via the model) — not from the current step index.
+  function completionPct() { return MODEL.percentage(modelState()); }
+
+  function completionBlurb() {
+    var done = MODEL.completedSteps(modelState());
+    return done + ' of ' + MODEL.totalSteps() + ' complete';
+  }
 
   function stepActions() {
     var back = OB.step > 0 ? '<button type="button" class="ob-btn ob-btn-ghost" onclick="prefSetupGo(-1)">Back</button>' : '';
@@ -772,6 +812,22 @@
     if (!_overlay) return;
     var el = _overlay.querySelector(".ob-preview");
     if (el) el.innerHTML = previewHtml();
+    updateProgress();
+  }
+
+  // Re-renders the derived completion ring/label in place (no full re-render
+  // needed) so the indicator reflects state as the user types/toggles live.
+  function updateProgress() {
+    if (!_overlay) return;
+    var wrap = _overlay.querySelector("[data-progress]");
+    if (!wrap || OB.loading) return;
+    var pct = completionPct();
+    var fill = wrap.querySelector(".ob-ring-fill");
+    if (fill) fill.style.background = "conic-gradient(#00d4ff " + pct + "%, rgba(255,255,255,0.07) 0)";
+    var num = wrap.querySelector(".ob-ring-num");
+    if (num) num.textContent = pct;
+    var label = wrap.querySelector(".ob-ring-label");
+    if (label) label.textContent = completionBlurb();
   }
 
   function previewHtml() {
@@ -853,10 +909,13 @@
     ".ob-close:hover{background:rgba(255,255,255,0.12);color:#f8fafc;border-color:rgba(255,255,255,0.2);}",
     ".ob-body{display:flex;flex:1;overflow-y:auto;}",
     ".ob-main{flex:1;max-width:640px;margin:0 auto;padding:26px 24px 18px;display:flex;flex-direction:column;min-width:0;}",
-    ".ob-progress{display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-shrink:0;}",
-    ".ob-progress-track{flex:1;height:6px;border-radius:99px;background:rgba(255,255,255,0.07);overflow:hidden;}",
-    ".ob-progress-fill{height:100%;background:linear-gradient(90deg,#00d4ff,#0ea5e9);border-radius:99px;transition:width 0.3s;}",
-    ".ob-progress-label{color:#64748b;font-size:11px;font-family:'Inter',sans-serif;white-space:nowrap;}",
+    ".ob-ring-wrap{display:flex;flex-direction:column;align-items:center;gap:10px;margin-bottom:18px;flex-shrink:0;pointer-events:none;}",
+    ".ob-ring{position:relative;width:88px;height:88px;border-radius:50%;}",
+    ".ob-ring-fill{position:absolute;inset:0;border-radius:50%;transition:background 0.3s;box-shadow:0 0 22px rgba(0,212,255,0.22);}",
+    ".ob-ring-hole{position:absolute;inset:7px;border-radius:50%;background:rgba(2,6,23,0.98);display:flex;align-items:center;justify-content:center;gap:1px;font-family:'Space Grotesk',sans-serif;}",
+    ".ob-ring-num{color:#f1f5f9;font-size:22px;font-weight:700;line-height:1;}",
+    ".ob-ring-pct{color:#00d4ff;font-size:11px;font-weight:600;line-height:1;}",
+    ".ob-ring-label{color:#94a3b8;font-size:11.5px;font-family:'Inter',sans-serif;letter-spacing:0.02em;}",
     ".ob-content{flex:1;overflow-y:auto;}",
     ".ob-h1{color:#f1f5f9;font-size:22px;font-weight:700;font-family:'Inter',sans-serif;margin:0 0 8px;line-height:1.3;}",
     ".ob-sub{color:#94a3b8;font-size:13.5px;line-height:1.6;margin:0 0 18px;font-family:'Inter',sans-serif;}",
@@ -898,7 +957,7 @@
     ".ob-check-label b{font-weight:600;}",
     ".ob-actions{display:flex;align-items:center;justify-content:space-between;gap:10px;padding-top:16px;margin-top:14px;border-top:1px solid rgba(255,255,255,0.06);flex-shrink:0;}",
     ".ob-actions-left,.ob-actions-right{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}",
-    ".ob-btn{border:none;border-radius:10px;padding:10px 18px;font-size:13px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;transition:all 0.15s;}",
+    ".ob-btn{border:none;border-radius:10px;padding:10px 18px;font-size:13px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;transition:all 0.15s;min-height:40px;display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;}",
     ".ob-btn-primary{background:#00d4ff;color:#003642;}",
     ".ob-btn-primary:hover{opacity:0.88;}",
     ".ob-btn-ghost{background:rgba(255,255,255,0.06);color:#94a3b8;border:1px solid rgba(255,255,255,0.08);}",
@@ -924,7 +983,7 @@
     ".ob-preview-bubble{background:rgba(0,212,255,0.08);border:1px solid rgba(0,212,255,0.2);border-radius:12px;padding:12px 14px;margin-top:14px;color:#a5f3fc;font-size:13px;line-height:1.6;font-family:'Inter',sans-serif;}",
     // ── Responsive ──
     "@media (max-width:820px){.ob-body{flex-direction:column;}.ob-main{max-width:none;padding:20px 16px 14px;}.ob-preview{width:auto;border-left:none;border-top:1px solid rgba(255,255,255,0.06);padding:16px;}.ob-preview-card{position:static;}.ob-card-grid{grid-template-columns:1fr;}.ob-h1{font-size:19px;}.ob-actions{flex-direction:column;align-items:stretch;}.ob-actions-left,.ob-actions-right{justify-content:space-between;}}",
-    "@media (max-width:420px){.ob-brand-name{display:none;}.ob-btn{padding:10px 14px;font-size:12.5px;}}",
+    "@media (max-width:420px){.ob-brand-name{display:none;}.ob-btn{padding:10px 14px;font-size:12.5px;min-height:44px;}.ob-close{width:40px;height:40px;}.ob-chip{min-height:40px;}.ob-card{min-height:44px;}.ob-choice{min-height:44px;}}",
   ].join("\n");
 
 })();
