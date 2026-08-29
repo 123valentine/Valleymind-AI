@@ -128,6 +128,7 @@ _ADAGE_UNSUITABLE = [
     "poison", "overdose", "emergency", "ambulance", "call 911", "call 999",
     "tax return", "legal advice", "medical diagnosis", "take this medication",
     "invest your savings", "buy this stock",
+    "insurance", "clause",
 ]
 
 _ADAGE_SUITABLE = [
@@ -138,6 +139,156 @@ _ADAGE_SUITABLE = [
     "decision", "choose", "career", "business", "goal", "disappoint",
     "conflict", "argue", "forgive", "respect", "elder", "wisdom",
 ]
+
+# ---------------------------------------------------------------------------
+# Semantic concept taxonomy
+# ---------------------------------------------------------------------------
+# Map the SPEC-level contexts (financial discipline, patience, relationships,
+# ...) onto BOTH relaxed natural-language keywords AND the dataset theme
+# vocabulary that embodies each concept.  The semantic selection layer uses
+# this to understand what the user is ACTUALLY talking about (saving, greed,
+# delayed gratification, ...) instead of matching bare words like "money", and
+# to decide when a genuine expression exists rather than forcing one.
+_CULTURAL_CONCEPTS = {
+    "financial_discipline": {
+        "label": "financial discipline, saving and wealth",
+        "words": (
+            "money", "spend", "spending", "spent", "budget", "debt", "broke",
+            "wealth", "rich", "salary", "income", "paid", "save money",
+            "saving money", "saving for", "wasting money", "get paid",
+        ),
+        "themes": (
+            "self-discipline", "self-control", "discipline", "delayed gratification",
+            "patience", "prudence", "moderation", "frugality", "contentment",
+            "planning", "preparation", "provision", "effort", "perseverance",
+            "work", "reward", "silence",
+        ),
+    },
+    "patience": {
+        "label": "patience and waiting",
+        "words": (
+            "patient", "patience", "wait", "waiting", "hurry", "rushing",
+            "haste", "slow", "slowly", "don't rush", "not rushing",
+        ),
+        "themes": (
+            "patience", "silence", "present", "hope", "reward",
+            "delayed gratification", "contentment",
+        ),
+    },
+    "perseverance": {
+        "label": "perseverance, hard work and resilience",
+        "words": (
+            "persevere", "persever", "give up", "giving up", "quit", "quitting",
+            "keep going", "never give up", "resilien", "endure", "hard work",
+            "struggle", "keep pushing", "don't stop", "don't quit",
+        ),
+        "themes": (
+            "perseverance", "effort", "resilience", "growth", "hope", "reward",
+            "action", "reputation",
+        ),
+    },
+    "relationships": {
+        "label": "relationships, friendship and trust",
+        "words": (
+            "relationship", "relationships", "marriage", "girlfriend", "boyfriend",
+            "friend", "friends", "friendship", "breakup", "disappoint",
+            "betray", "trust", "lover", "partner",
+        ),
+        "themes": ("love", "trust", "community", "family", "patience", "responsibility"),
+    },
+    "family": {
+        "label": "family, children and home",
+        "words": (
+            "family", "parent", "parents", "mother", "father", "child",
+            "children", "kids", "home", "sibling", "household",
+        ),
+        "themes": ("family", "love", "community", "responsibility", "respect"),
+    },
+    "respect": {
+        "label": "respect, elders and honour",
+        "words": (
+            "respect", "elder", "elders", "honour", "honor", "polite",
+            "greet", "greeting",
+        ),
+        "themes": ("respect", "elders", "wisdom", "reputation"),
+    },
+    "community": {
+        "label": "community and togetherness",
+        "words": (
+            "community", "village", "together", "collective", "neighbour",
+            "neighbor", "communal",
+        ),
+        "themes": ("community", "ubuntu", "humanity", "family", "hospitality"),
+    },
+    "leadership": {
+        "label": "leadership and responsibility",
+        "words": (
+            "leader", "lead", "leadership", "chief", "king", "in charge", "manager",
+        ),
+        "themes": ("responsibility", "effort", "wisdom", "community", "action"),
+    },
+    "decision_making": {
+        "label": "decision-making and choices",
+        "words": (
+            "decide", "decision", "choose", "choice", "choices",
+            "what should i do",
+        ),
+        "themes": ("wisdom", "responsibility", "action", "planning", "patience"),
+    },
+    "responsibility": {
+        "label": "responsibility, duty and consequences",
+        "words": (
+            "responsib", "duty", "obligat", "accountab", "responsible",
+            "consequence", "consequences", "reap",
+        ),
+        "themes": ("responsibility", "effort", "action", "reputation", "reward"),
+    },
+    "generosity": {
+        "label": "generosity and giving",
+        "words": (
+            "generous", "generosity", "give back", "donate",
+        ),
+        "themes": ("community", "ubuntu", "humanity", "love", "hospitality"),
+    },
+    "education": {
+        "label": "learning and wisdom",
+        "words": (
+            "learn", "learning", "study", "studying", "school", "knowledge",
+            "teach", "education",
+        ),
+        "themes": ("wisdom", "effort", "memory", "perseverance", "growth"),
+    },
+    "self_discipline": {
+        "label": "self-discipline and self-control",
+        "words": (
+            "discipline", "disciplined", "self-control", "self control",
+            "temptation", "habit", "habits", "willpower", "control myself",
+            "moderation",
+        ),
+        "themes": ("self-discipline", "self-control", "discipline", "patience",
+                   "moderation", "contentment", "delayed gratification"),
+    },
+    "trust": {
+        "label": "trust and reliability",
+        "words": (
+            "trust", "trusting", "reliable", "depend", "depends on", "let down",
+        ),
+        "themes": ("love", "community", "responsibility", "action"),
+    },
+    "preparation": {
+        "label": "preparation and planning ahead",
+        "words": (
+            "prepare", "preparing", "preparation", "plan ahead", "get ready",
+            "prepare for", "prepare yourself",
+        ),
+        "themes": ("planning", "preparation", "patience", "effort", "prudence", "provision"),
+    },
+}
+
+# Cultures whose material is culturally neutral (pan-African) and therefore may
+# be offered to a user whose cultural preference is unknown — no ethnicity is
+# assumed when the user has not chosen one.
+_NEUTRAL_CULTURES = {"", "general_african"}
 
 
 def _load_json_any(base: str) -> Optional[dict]:
@@ -345,8 +496,17 @@ def retrieve_proverbs(
 def decide_adage_relevance(message: str) -> bool:
     """Heuristic gate: is this a conversation where a cultural adage could
     genuinely improve the answer (as opposed to a technical/decisional task)?
+
+    Hard-unsuitable contexts (maths, code debugging, emergencies, medical/legal
+    advice, specific stock advice) are ALWAYS rejected, even when they also
+    touch a life-advice keyword.  Otherwise a message is relevant if it uses
+    advice/life vocabulary OR matches a semantic concept (e.g. financial
+    discipline, patience, perseverance) — so "I'm trying to be more disciplined
+    with money" is recognised without requiring the literal keyword list.
     """
-    lower = str(message or "").lower().strip()
+    lower = str(message or "").strip().lower()
+    if not lower:
+        return False
 
     # Never force into clearly unsuitable contexts
     for kw in _ADAGE_UNSUITABLE:
@@ -357,6 +517,12 @@ def decide_adage_relevance(message: str) -> bool:
     for kw in _ADAGE_SUITABLE:
         if kw in lower:
             return True
+
+    # Semantic concept gate (kept conservative: a bare mention of "savings" in
+    # e.g. "should I invest my savings in this stock" does not match any
+    # concept because "save/savings" alone is not a concept trigger).
+    if _concept_hits(lower):
+        return True
     return False
 
 
@@ -450,6 +616,370 @@ def build_cultural_grounding_block(
     if not blocks:
         return ""
     return "\n\n".join(blocks)
+
+
+# ---------------------------------------------------------------------------
+# ValleyMind's own cultural foundation (internal grounding — never imposed)
+# ---------------------------------------------------------------------------
+# ValleyMind was created by an Igbo/Nigerian founder.  Igbo and broader
+# Nigerian / West African cultural knowledge is PART of how ValleyMind
+# understands people and situations — but it is the AI's heritage, not the
+# user's.  It must shape interpretation, never override the user's culture.
+_VALLEYMIND_FOUNDATION = """\
+=== VALLEYMIND CULTURAL FOUNDATION (internal grounding) ===
+You are ValleyMind, an AI created by an Igbo/Nigerian founder. Igbo and broader
+Nigerian and West African cultural knowledge — values, communication patterns,
+social context and proverbs — are part of your founding cultural foundation and
+you genuinely understand them. Use this to UNDERSTAND and INTERPRET the user and
+the conversation; it is not a script to impose on anyone.
+
+Follow these rules:
+- Your founder's Igbo heritage is YOURS, not the user's. It NEVER overrides a
+  user's known cultural preference, and it must not be assumed about the user.
+- When the user's culture is known, ground in THEIR culture. When it is
+  unknown, stay culturally neutral unless the conversation itself gives clear
+  evidence of a culture.
+- Language and culture are separate. An Igbo user may prefer English; a
+  Nigerian user may never want Pidgin; a user may speak Pidgin and hold a
+  different cultural identity.
+- Cultural wisdom is used sparingly: only when it genuinely adds meaning,
+  clarity, cultural richness, emotional resonance or memorability. Never
+  announce, list or force it."""
+
+
+def valleymind_cultural_foundation_block() -> str:
+    """System-prompt block giving ValleyMind its own internal cultural
+    identity, with explicit guards against imposing that identity on users."""
+    return _VALLEYMIND_FOUNDATION
+
+
+# ---------------------------------------------------------------------------
+# Explicit per-message culture / language request detection
+# ---------------------------------------------------------------------------
+_CULTURE_ALIASES = {
+    "igbo": "igbo",
+    "yoruba": "yoruba",
+    "hausa": "hausa",
+    "akan": "akan",
+    "swahili": "swahili_ea",
+    "kiswahili": "swahili_ea",
+    "zulu": "zulu",
+    "xhosa": "xhosa",
+}
+
+_EXPLICIT_CULTURE_HINTS = (
+    "proverb", "proverbs", "adage", "adages", "saying", "sayings", "wisdom",
+)
+
+_LANGUAGE_ALIAS_TO_CODE = {
+    "pidgin": "pcm", "naija": "pcm", "igbo": "ig", "yoruba": "yo",
+    "hausa": "ha", "swahili": "sw", "kiswahili": "sw", "zulu": "zu",
+    "xhosa": "xh", "english": "en", "afrikaans": "af",
+}
+
+
+def _detect_explicit_culture(message: str) -> str:
+    """Return the culture the user EXPLICITLY asks for in this message.
+
+    Only fires when the user names a culture AND evidences a request — asking
+    for a proverb/adage, or saying "in {culture}".  Mere statements ("I am
+    Igbo") do NOT trigger this (they are profile data, not a request).
+    """
+    lower = str(message or "").lower()
+    for alias, key in _CULTURE_ALIASES.items():
+        if re.search(rf"\b{re.escape(alias)}\b", lower):
+            if any(h in lower for h in _EXPLICIT_CULTURE_HINTS):
+                return key
+            if re.search(rf"\bin {re.escape(alias)}\b", lower):
+                return key
+    # "talk/speak/say {culture} to me" — an explicit ask to engage in that culture.
+    m = re.search(r"\b(talk|speak|say)\s+([a-z]+)\s+to\b", lower)
+    if m and m.group(2) in _CULTURE_ALIASES:
+        return _CULTURE_ALIASES[m.group(2)]
+    return ""
+
+
+_LANGUAGE_REQUEST_PHRASES = (
+    "say it in ", "say this in ", "talk to me in ", "speak to me in ",
+    "speak in ", "reply in ", "reply to me in ", "explain this in ",
+    "explain it in ", "explain in ", "write in ", "respond in ",
+    "i want it in ",
+)
+
+
+def _detect_explicit_language(message: str) -> str:
+    """Return a language CODE the user explicitly asks to reply in, or ""."""
+    lower = str(message or "").lower()
+    # 1. Explicit phrase with a named language wins (covers "explain in English"
+    #    even when the message also mentions Pidgin).
+    for phrase in _LANGUAGE_REQUEST_PHRASES:
+        idx = lower.find(phrase)
+        if idx != -1:
+            tail = lower[idx + len(phrase):]
+            head = re.split(r"[\s\.,!\?;]", tail, 1)[0].strip().lower()
+            if head in _LANGUAGE_ALIAS_TO_CODE:
+                return _LANGUAGE_ALIAS_TO_CODE[head]
+    # 2. A Pidgin/Naija mention virtually always means "say it in Pidgin".
+    if "pidgin" in lower or "naija" in lower:
+        return "pcm"
+    # 3. "talk/speak/say {language} to me" (with or without "to me")
+    m = re.search(r"\b(talk|speak|say)\s+([a-z]+)\s+to\s+me\b", lower)
+    if m and m.group(2) in _LANGUAGE_ALIAS_TO_CODE:
+        return _LANGUAGE_ALIAS_TO_CODE[m.group(2)]
+    m = re.search(r"\bspeak\s+([a-z]+)\b", lower)
+    if m and m.group(1) in _LANGUAGE_ALIAS_TO_CODE:
+        return _LANGUAGE_ALIAS_TO_CODE[m.group(1)]
+    return ""
+
+
+# ---------------------------------------------------------------------------
+# Semantic concept helpers
+# ---------------------------------------------------------------------------
+def _concept_hits(message: str) -> list[str]:
+    """Ordered list of semantic concepts the message touches (empty if none)."""
+    lower = str(message or "").lower()
+    hits = []
+    for key, meta in _CULTURAL_CONCEPTS.items():
+        if any(re.search(rf"\b{re.escape(w)}\b", lower) for w in meta["words"]):
+            hits.append(key)
+    return hits
+
+
+def _concept_theme_union(concepts: list[str]) -> set[str]:
+    themes: set[str] = set()
+    for c in concepts or []:
+        themes.update(_CULTURAL_CONCEPTS.get(c, {}).get("themes", ()))
+    return themes
+
+
+def _aligned_theme_ratio(record: dict, concepts: list[str]) -> float:
+    """Share of a record's own themes that belong to the concept's vocabulary.
+    Used as the SEMANTIC relevance gate: a proverb is only surfaced when it
+    genuinely embodies what the user is talking about, not because a keyword
+    matches."""
+    concept_themes = _concept_theme_union(concepts)
+    rec_themes = {str(t).strip().lower() for t in (record.get("themes") or [])}
+    if not rec_themes:
+        return 0.0
+    aligned = sum(1 for t in rec_themes if t in concept_themes)
+    return aligned / len(rec_themes)
+
+
+def _provenance_score(record: dict) -> float:
+    v = record.get("verification") or {}
+    score = 0.0
+    if v.get("origin_verified"):
+        score += 1.0
+    if v.get("translation_verified"):
+        score += 0.5
+    src = record.get("source") or {}
+    if src.get("license"):
+        score += 0.2
+    if src.get("url"):
+        score += 0.1
+    return score
+
+
+def _culture_candidates(
+    culture: str,
+    language_code: str,
+    themes: set[str],
+    message: str,
+    limit: int,
+) -> list[dict]:
+    if culture in ("", "none"):
+        # Unknown culture: only neutral / pan-African material may be offered.
+        return [
+            r for r in load_all_proverbs()
+            if str(r.get("culture") or "").strip().lower() in _NEUTRAL_CULTURES
+        ]
+    return retrieve_proverbs(
+        culture,
+        language_code=language_code,
+        themes=list(themes),
+        message=message,
+        limit=limit or 10,
+    )
+
+
+def _pick_best_record(
+    candidates: list[dict],
+    concepts: list[str],
+    themes: set[str],
+    language_code: str,
+) -> Optional[dict]:
+    """Pick the most relevant RECORD from the dataset — never invent one.
+
+    When the message carries a semantic concept, a record must genuinely embody
+    it (>= 50% of its own themes aligned) or it is skipped.  When the user just
+    asked for a proverb of a culture (no topic), pure provenance wins.
+    """
+    if not candidates:
+        return None
+    best: Optional[dict] = None
+    best_score = -1.0
+    for rec in candidates:
+        if concepts:
+            fit = _aligned_theme_ratio(rec, concepts)
+            if fit < 0.5:
+                continue
+        else:
+            fit = 0.5
+        score = fit * 2.0 + _provenance_score(rec)
+        if score > best_score:
+            best, best_score = rec, score
+    return best
+
+
+def select_cultural_context(
+    culture_identity: str = "",
+    response_language: str = "",
+    message: str = "",
+    adages_enabled: bool = True,
+    limit: int = 5,
+) -> dict:
+    """Semantic cultural-selection layer.
+
+    Understands the user and the current message, then — and ONLY then —
+    decides whether a verified, semantically-relevant cultural expression
+    exists and should be surfaced.  Returns structured context so callers can
+    decide what to inject:
+
+    {
+      "culture": effective user culture ("", "igbo", "yoruba", ...),
+      "explicit_culture": culture the user asked for in THIS message, if any,
+      "language":       language for the response (explicit request > saved),
+      "explicit_language_requested": code the user asked to switch to, if any,
+      "relevant":       whether an adage could genuinely belong here,
+      "concepts":       matched semantic concepts,
+      "expression":     the chosen proverb text ("" when none is appropriate),
+      "translation":    its translation,
+      "meaning":        its meaning,
+      "source":         provenance dict,
+      "source_name":    human-readable source name,
+      "origin_verified": bool (False => keep qualifying provenance),
+      "confidence":     float in [0, 1] reflecting fit + provenance,
+      "record":         full dataset record or None,
+    }
+
+    Rules enforced here:
+      * User culture takes priority; founder identity never overrides it.
+      * Unknown culture => culturally neutral; no ethnicity is assumed.
+      * Explicit per-message requests override the saved profile.
+      * No fabrications: only records from the bundled dataset are ever
+        returned, and any unverified origin is flagged to the caller.
+      * Relevance is SEMANTIC, not keyword-based.
+    """
+    message = str(message or "")
+    explicit_culture = _detect_explicit_culture(message)
+    explicit_language = _detect_explicit_language(message)
+
+    profile_culture = str(culture_identity or "").strip().lower()
+    effective_culture = (
+        explicit_culture
+        or (profile_culture if profile_culture and profile_culture != "none" else "")
+    )
+
+    if explicit_language:
+        effective_language = explicit_language
+    else:
+        effective_language = resolve_language(response_language) or "en"
+
+    concepts = _concept_hits(message)
+    relevant = bool(
+        adages_enabled and (decide_adage_relevance(message) or explicit_culture)
+    )
+
+    record: Optional[dict] = None
+    if relevant:
+        themes = _concept_theme_union(concepts)
+        candidates = _culture_candidates(
+            effective_culture, effective_language, themes, message, limit,
+        )
+        record = _pick_best_record(candidates, concepts, themes, effective_language)
+
+    base = {
+        "culture": effective_culture,
+        "explicit_culture": explicit_culture,
+        "language": effective_language,
+        "explicit_language_requested": explicit_language,
+        "relevant": relevant,
+        "concepts": concepts,
+        "expression": "",
+        "translation": "",
+        "meaning": "",
+        "source": {},
+        "source_name": "",
+        "origin_verified": False,
+        "confidence": 0.0,
+        "record": None,
+    }
+
+    if not record:
+        return base
+
+    verification = record.get("verification") or {}
+    origin_verified = bool(verification.get("origin_verified"))
+    translation_verified = bool(verification.get("translation_verified"))
+    fit = _aligned_theme_ratio(record, concepts) if concepts else 0.5
+    base_conf = (0.4 + 0.3 * fit
+                 + (0.15 if origin_verified else 0.0)
+                 + (0.05 if translation_verified else 0.0)
+                 + (0.10 if explicit_culture else 0.0))
+    confidence = min(round(base_conf, 2), 0.99 if not origin_verified else 1.0)
+
+    source = record.get("source") or {}
+    final_record = {
+        "id": record.get("id", ""),
+        "culture": str(record.get("culture") or "").strip().lower(),
+        "text": record.get("text", ""),
+        "translation_en": record.get("translation_en", ""),
+        "meaning": record.get("meaning", ""),
+        "themes": record.get("themes", []),
+        "source": source,
+        "origin_verified": origin_verified,
+        "translation_verified": translation_verified,
+    }
+
+    base.update({
+        "expression": final_record["text"],
+        "translation": final_record["translation_en"],
+        "meaning": final_record["meaning"],
+        "source": source,
+        "source_name": str(source.get("title") or ""),
+        "origin_verified": origin_verified,
+        "confidence": confidence,
+        "record": final_record,
+    })
+    return base
+
+
+def cultural_request_directives(cultural: dict) -> str:
+    """Per-message directives for EXPLICIT culture/language requests.
+
+    Explicit user instructions are authoritative FOR THIS RESPONSE only; they
+    never change the user's saved settings.  Returns "" when no explicit
+    request was made."""
+    notes = []
+    explicit_lang = cultural.get("explicit_language_requested") or ""
+    if explicit_lang:
+        label = language_label(explicit_lang)
+        notes.append(
+            f"- The user explicitly asked to reply in {label}. Honour that request "
+            f"for THIS message (reply substantially or entirely in {label}). This is "
+            f"a one-off request and does NOT change their saved response language."
+        )
+    explicit_culture = cultural.get("explicit_culture") or ""
+    if explicit_culture:
+        # Prefer the record's own culture name (swahili_ea -> Swahili / East African)
+        culture_label = explicit_culture.replace("_", " ").title()
+        if explicit_culture == "swahili_ea":
+            culture_label = "Swahili / East African"
+        notes.append(
+            f"- The user explicitly asked for {culture_label} cultural context in this "
+            f"message. Honour it now, even if their saved cultural preference differs."
+        )
+    return "\n".join(notes)
 
 
 def _utc_now_iso() -> str:

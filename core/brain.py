@@ -22,9 +22,10 @@ from core.memory import MemorySystem
 from core.memory_manager import MemoryManager
 from core.conversation_recovery import ConversationRecovery
 from core.african_culture import (
+    cultural_request_directives,
     resolve_language,
-    retrieve_proverbs,
-    decide_adage_relevance,
+    select_cultural_context,
+    valleymind_cultural_foundation_block,
     build_cultural_grounding_block,
 )
 
@@ -1236,7 +1237,7 @@ class MarcusBrain:
             sections.append(pref_context)
             sections.append("")
 
-        # ── Response language + cultural grounding (independent concepts) ──
+        # ── Response language + cultural intelligence (independent concepts) ──
         # Response language: set from Settings > Language. Cultural identity:
         # set from Settings > Culture. The two are deliberately kept separate.
         try:
@@ -1247,27 +1248,34 @@ class MarcusBrain:
         except Exception:
             response_lang, reply_language, culture_identity = "", "", ""
             use_adages = True
-        response_code = resolve_language(response_lang) or resolve_language(reply_language) or "en"
 
-        # Retrieved cultural context — only surfaced when a cultural identity is
-        # chosen AND the conversation genuinely benefits from an adage. This keeps
-        # the model from inventing proverbs or forcing them into every reply.
+        # Semantic selection layer — single source of truth for culture,
+        # language and adages.  It applies this order of precedence:
+        #   * explicit per-message culture/language request > saved settings
+        #   * saved user culture > founder identity (never imposed on users)
+        #   * unknown culture  => culturally neutral, no ethnicity assumed
+        # It only surfaces an adage when one is semantically relevant AND
+        # available in the dataset — it never fabricates or forces one.
+        try:
+            cultural = select_cultural_context(
+                culture_identity=culture_identity,
+                response_language=resolve_language(response_lang) or resolve_language(reply_language) or "",
+                message=user_message,
+                adages_enabled=use_adages,
+                limit=3,
+            )
+        except Exception as exc:
+            print(f"[CULTURE] cultural selection failed: {exc}")
+            cultural = {}
+
+        response_code = cultural.get("language") or "en"
         retrieved_records = []
-        if use_adages and culture_identity and culture_identity != "none":
-            try:
-                retrieved_records = retrieve_proverbs(
-                    cultural_identity=culture_identity,
-                    language_code=response_code,
-                    message=user_message,
-                    limit=3,
-                )
-            except Exception as exc:
-                print(f"[CULTURE] cultural retrieval failed: {exc}")
-                retrieved_records = []
+        if cultural.get("relevant") and cultural.get("record"):
+            retrieved_records.append(cultural["record"])
 
         grounding = build_cultural_grounding_block(
             response_language=response_code,
-            cultural_identity=culture_identity,
+            cultural_identity=cultural.get("culture") or culture_identity,
             use_adages=use_adages,
             retrieved=retrieved_records,
             message=user_message,
@@ -1276,6 +1284,21 @@ class MarcusBrain:
             sections.append("=== Response Language & Cultural Grounding ===")
             sections.append(grounding)
             sections.append("")
+
+        # ValleyMind's internal grounding — an interpretation layer telling the
+        # model that its Igbo/Nigerian cultural inheritance is a lens it may use,
+        # never something to impose on a user whose own culture is known or not.
+        sections.append(valleymind_cultural_foundation_block())
+        sections.append("")
+
+        # Per-message explicit requests — authoritative for THIS response only;
+        # they never write back to the user's saved preferences.
+        if cultural.get("explicit_language_requested") or cultural.get("explicit_culture"):
+            directives = cultural_request_directives(cultural)
+            if directives:
+                sections.append("=== Explicit per-message requests (this response only) ===")
+                sections.append(directives)
+                sections.append("")
 
         sections.append("Known user context, if useful:")
         sections.append(f"User name: {user_name}")
