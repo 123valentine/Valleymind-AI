@@ -303,6 +303,30 @@ async function main() {
     await wait(40);
     const afterSkipReopen = captureRender(overlay.innerHTML);
     result.resume = { initial, afterSkipDisplay, afterSkipReopen };
+  } else if (mode === "country-default") {
+    // Fresh user: the wizard seeds Nigeria into the authoritative language
+    // state on init (live preview shows it with NO interaction) but does NOT
+    // fabricate a completed step. A real change (away + back) makes it genuine.
+    const fresh = captureRender(overlay.innerHTML);
+    const freshPreviewNigeria = /ob-preview-row"><span>Country<\/span><b>Nigeria<\/b>/.test(overlay.innerHTML);
+    S.prefSetupCountry("Algeria");
+    await wait(5);
+    const touchedAlgeria = captureRender(overlay.innerHTML);
+    S.prefSetupCountry("Nigeria");
+    await wait(5);
+    const touchedNigeria = captureRender(overlay.innerHTML);
+    // Drive the untouched-default user to the review page (13 Continues from
+    // intro, independent of the resume logic) — Nigeria must already be there.
+    for (let i = 0; i < 13; i++) { S.prefSetupGo(1); await wait(2); }
+    const review = captureRender(overlay.innerHTML);
+    result.country = {
+      freshRing: fresh.ringPct,
+      freshPreviewNigeria,
+      touchedAlgeriaRing: touchedAlgeria.ringPct,
+      touchedNigeriaRing: touchedNigeria.ringPct,
+      reviewShowsNigeria: /ob-review-label">Country<\/span><span class="ob-review-value">Nigeria<\/span>/.test(overlay.innerHTML),
+      reviewHasFinish: review.hasFinish,
+    };
   }
 
   console.log(JSON.stringify(result));

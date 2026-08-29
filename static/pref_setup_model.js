@@ -60,8 +60,14 @@
     { id: "review", label: "Review" },
   ];
 
-  // Each step's completion predicate — existing product validation semantics.
-  var COMPLETE = {
+// The wizard's default country (first option of the country selector). Seeded
+// into the authoritative language state on init so review/preview agree with
+// the visually-selected value — but only this untouched seed is exempt from
+// counting as completion; any real persisted value (Nigeria included) counts.
+var DEFAULT_COUNTRY = "Nigeria";
+
+// Each step's completion predicate — existing product validation semantics.
+var COMPLETE = {
     // Structural pages: complete only when the wizard was really finished.
     intro: finished,
     review: finished,
@@ -76,11 +82,15 @@
       return !!txt((s.preferences || {}).use_case_profile);
     },
 
-    // Languages & region: engaged when any real value was provided.
+    // Languages & region: engaged when any real value was provided.  The
+    // wizard seeds a UI default country (Nigeria) into the authoritative state
+    // on init so review/preview agree with the selector — but like the seeded
+    // characters default, that untouched default is NOT the user's completion.
     lang: function (s) {
       var l = s.language || {};
       var rl = txt(l.response_language);
-      return txt(l.country) !== "" ||
+      var seededDefault = txt(l.country) === DEFAULT_COUNTRY && !!(s.meta && s.meta.countrySeeded);
+      return (txt(l.country) !== "" && !seededDefault) ||
              txt(l.state_province) !== "" ||
              arr(l.native_languages).length > 0 ||
              txt(l.cultural_background) !== "" ||
@@ -190,6 +200,7 @@
     percentage: percentage,
     isComplete: isComplete,
     nextStep: nextStep,
+    defaultCountry: DEFAULT_COUNTRY,
   };
 
   if (typeof window !== "undefined") {

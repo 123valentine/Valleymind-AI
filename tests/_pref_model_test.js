@@ -104,6 +104,20 @@ eq(M.isStepComplete({ setup_status: "not_started", language: {}, preferences: { 
   eq(M.isStepComplete(legacy, 9), true, "legacy comma-string characters are real", legacy.preferences.preferred_characters);
 }
 
+// ── Country: seeded Nigeria default is state truth, not a fabricated step ──
+{
+  const seeded = { setup_status: "not_started", language: { country: "Nigeria" }, preferences: {}, culture: {}, meta: { countrySeeded: true } };
+  eq(M.isStepComplete(seeded, 3), false, "seeded default country does NOT complete lang");
+  eq(M.percentage(seeded), 0, "seeded default keeps fresh user at 0%");
+  const accepted = { setup_status: "not_started", language: { country: "Nigeria" }, preferences: {}, culture: {}, meta: { countrySeeded: false } };
+  eq(M.isStepComplete(accepted, 3), true, "persisted/accepted country completes lang");
+  eq(M.percentage(accepted), 7, "persisted country counts 7%");
+  const changed = { setup_status: "not_started", language: { country: "Algeria" }, preferences: {}, culture: {}, meta: { countrySeeded: true } };
+  eq(M.isStepComplete(changed, 3), true, "even a stale seed flag never hides a real, different value");
+  const regionOnly = { setup_status: "not_started", language: { country: "Nigeria", state_province: "Lagos" }, preferences: {}, culture: {}, meta: { countrySeeded: true } };
+  eq(M.isStepComplete(regionOnly, 3), true, "region/state data still completes lang regardless of seed");
+}
+
 // ── Navigation (pure clamp, no state mutation) ─────────────────────
 eq(M.nextStep(0, -1), 0, "back beyond start clamps to 0");
 eq(M.nextStep(0, 1), 1, "continue advances");

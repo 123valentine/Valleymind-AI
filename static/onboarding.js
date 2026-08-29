@@ -155,6 +155,9 @@
   function routeDirty(key, value) {
     var section = sectionOf(key);
     if (!section || !OB.ev) return;
+    // Any real country interaction (selector or "Other" free text) turns the
+    // seeded Nigeria default into the user's genuine selection.
+    if (key === "country") OB._countrySeeded = false;
     OB.dirty = OB.dirty || {};
     OB.dirty[section] = OB.dirty[section] || {};
     OB.dirty[section][key] = value;
@@ -219,6 +222,15 @@
       if (OB.ev.preferences.preferred_characters === undefined) {
         OB.ev.preferences.preferred_characters = CHARACTER_OPTIONS.slice();
         OB._charactersSeeded = true;
+      }
+      // Country defaults to Nigeria visually (the selector's first option) —
+      // seed that SAME value into the authoritative language state on init so
+      // the review page and live preview reflect it WITHOUT a manual change.
+      // Mirrors the characters seed: not the user's completion until they
+      // genuinely pick/type a country (prefSetupCountry / country free text).
+      if (!OB.ev.language.country) {
+        OB.ev.language.country = MODEL.defaultCountry;
+        OB._countrySeeded = true;
       }
       OB.loading = false;
       // Resume where the user left off (derived from persisted state) instead
@@ -401,7 +413,7 @@
       language: (OB.ev && OB.ev.language) || {},
       preferences: (OB.ev && OB.ev.preferences) || {},
       culture: (OB.ev && OB.ev.culture) || {},
-      meta: { charactersSeeded: !!OB._charactersSeeded }
+      meta: { charactersSeeded: !!OB._charactersSeeded, countrySeeded: !!OB._countrySeeded }
     };
   }
 

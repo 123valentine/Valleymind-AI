@@ -180,6 +180,21 @@ class ProgressIndicatorHarnessTestCase(unittest.TestCase):
         self.assertTrue(r["initial"]["hasFinish"], "completed state (review) shown for all-done user")
         self.assertTrue(r["initial"]["hasBack"], "Back works on the review page")
 
+    @unittest.skipIf(NODE is None, "node is not available")
+    def test_untouched_default_country_is_authoritative(self):
+        # Root-cause regression: Nigeria is the visual default, so it must be
+        # written into the authoritative state on init — review shows it even
+        # if the user NEVER touches the selector, and the user does NOT need to
+        # change the value and change it back.
+        out = run_harness("country-default", {"setup_status": "not_started"})
+        c = out["country"]
+        self.assertEqual(c["freshRing"], "0", "seeded default does not fabricate completion")
+        self.assertTrue(c["freshPreviewNigeria"], "Nigeria in state on init (no interaction)")
+        self.assertEqual(c["touchedAlgeriaRing"], "7", "real pick counts the lang step")
+        self.assertEqual(c["touchedNigeriaRing"], "7", "change-and-back keeps the step")
+        self.assertTrue(c["reviewShowsNigeria"], "review shows Nigeria without touching selector")
+        self.assertTrue(c["reviewHasFinish"], "landed on the review page successfully")
+
 
 class ProgressFrontendStaticTestCase(unittest.TestCase):
     """Static guarantees about the frontend that don't need a browser."""
@@ -254,6 +269,18 @@ class ProgressFrontendStaticTestCase(unittest.TestCase):
         self.assertIn('setup_status === "completed"', html, "banner reads setup-status")
         self.assertIn("showPreferenceBanner()", html, "banner shown when not completed")
         self.assertIn("hidePreferenceBanner()", html, "banner hidden once completed")
+
+    def test_default_country_seeded_into_authoritative_state(self):
+        model = self._js_path("pref_setup_model.js").read_text(encoding="utf-8")
+        self.assertIn('DEFAULT_COUNTRY = "Nigeria"', model, "Nigeria stays the default (single source)")
+        self.assertIn("defaultCountry:", model, "model exposes the default")
+        js = self._js_path("onboarding.js").read_text(encoding="utf-8")
+        self.assertIn("MODEL.defaultCountry", js, "wizard uses the model's default")
+        self.assertIn("OB.ev.language.country = MODEL.defaultCountry", js,
+                      "default written into authoritative state on init")
+        self.assertIn("OB._countrySeeded", js, "seed flag tracked")
+        self.assertIn("countrySeeded", model, "model distinguishes the seeded default")
+        self.assertIn('key === "country"', js, "real country input turns the seed genuine")
 
 
 if __name__ == "__main__":
