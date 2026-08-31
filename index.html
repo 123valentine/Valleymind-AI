@@ -1811,7 +1811,7 @@
 </head>
 <body class="text-on-background font-body-md overflow-hidden">
 
-<div id="brandSplashScreen" style="position:fixed; top:0; left:0; width:100vw; height:100vh; background:#020617; z-index:999999; display:none; flex-direction:column; align-items:center; justify-content:center; gap:20px; transition: opacity 0.5s ease-out;">
+<div id="brandSplashScreen" style="position:fixed; top:0; left:0; width:100vw; height:100vh; background:#020617; z-index:999999; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:20px; transition: opacity 0.5s ease-out;">
   <img src="/static/valleymind-logo.png" alt="Valleymind-AI Logo" style="width:300px;height:auto;max-width:80vw;object-fit:contain; animation: logoIntro 2s cubic-bezier(0.34,1.2,0.4,1) forwards;">
   <h1 style="color:#38bdf8;font-family:'Space Grotesk','Inter',sans-serif;font-size:30px;font-weight:800;letter-spacing:0.14em;margin:0;text-align:center;">ValleyMind AI</h1>
 </div>
@@ -3120,6 +3120,7 @@ const API_BASE_URL = resolveApiBaseUrl();
 const AUTH_TOKEN_KEY = "valleymind_session_token";
 const SESSIONS_CACHE_KEY = "valleymind_sessions_cache";
 const LAST_CHAT_KEY = "valleymind_last_chat_id";
+const CHAT_DRAFTS_KEY = "valleymind_chat_drafts";
 const SESSION_FETCH_MAX_RETRIES = 3;
 const SESSION_FETCH_RETRY_DELAY_MS = 900;
 const VALLEY_DEBUG = false;
@@ -3212,8 +3213,39 @@ function mergeSessionLists(remoteSessions, localSessions) {
     return Object.keys(merged).map(function (id) { return merged[id]; });
 }
 
-function loadLastChatId() {
-    try { return localStorage.getItem(LAST_CHAT_KEY) || ""; } catch (_) { return ""; }
+function loadChatDrafts() {
+    try {
+        var raw = localStorage.getItem(CHAT_DRAFTS_KEY);
+        return raw ? JSON.parse(raw) : {};
+    } catch (_) { return {}; }
+}
+
+function saveChatDraft(chatId) {
+    if (!chatId) return;
+    var input = document.getElementById("chatInput");
+    var text = input ? input.value : "";
+    var drafts = loadChatDrafts();
+    if (text && text.trim()) drafts[chatId] = text;
+    else delete drafts[chatId];
+    try { localStorage.setItem(CHAT_DRAFTS_KEY, JSON.stringify(drafts)); } catch (_) {}
+}
+
+function clearChatDraft(chatId) {
+    if (!chatId) return;
+    var drafts = loadChatDrafts();
+    if (drafts[chatId]) {
+        delete drafts[chatId];
+        try { localStorage.setItem(CHAT_DRAFTS_KEY, JSON.stringify(drafts)); } catch (_) {}
+    }
+}
+
+function restoreChatDraft(chatId) {
+    var input = document.getElementById("chatInput");
+    if (!input) return;
+    var drafts = loadChatDrafts();
+    input.value = (chatId && drafts[chatId]) ? drafts[chatId] : "";
+    autoGrowInput();
+    updateSendButtonDim();
 }
 
 function upsertLocalSession(session) {
@@ -5030,9 +5062,13 @@ async function switchSession(chatId) {
     chatId = String(chatId || "").trim();
     if (!chatId || chatId === currentChatId) return;
     chatHydrationToken++;
+    // Park any unsent draft with the conversation we are leaving, then restore
+    // the target conversation's own draft (if any) into the composer.
+    saveChatDraft(currentChatId);
     currentChatId = chatId;
     saveLastChatId(chatId);
     await hydrateChatMessages(chatId);
+    restoreChatDraft(chatId);
     renderSessionList();
     closeFloatingPanels();
     document.querySelectorAll(".page").forEach(function (el) { el.classList.remove("active"); });
@@ -5049,6 +5085,7 @@ async function deleteSession(chatId) {
             headers: authHeaders()
         });
         if (!res.ok) return;
+        clearChatDraft(chatId);   // drop any unsent draft belonging to the deleted thread
         if (currentChatId === chatId) {
             chatHydrationToken++;
             currentChatId = "";
@@ -5115,6 +5152,7 @@ function openActionDropdown(event, chatId, currentTitle) {
                 headers: authHeaders()
             });
             if (res.ok) {
+                clearChatDraft(chatId);   // drop any unsent draft belonging to the deleted thread
                 if (currentChatId === chatId) {
                     chatHydrationToken++;
                     currentChatId = "";
@@ -5362,6 +5400,15 @@ async function newChat() {
             console.warn("[New Chat] missing chat_id in response:", data.session);
             return;
         }
+
+        // Preserve any unsent draft with the conversation we are leaving so the
+        // user can return to it and continue/send.  The new chat starts empty.
+        var prevChatId = currentChatId;
+        if (prevChatId) saveChatDraft(prevChatId);
+        const newInput = document.getElementById("chatInput");
+        if (newInput) newInput.value = "";
+        resetComposerHeight();
+        if (typeof updateSendButtonDim === "function") updateSendButtonDim();
 
         currentChatId = newId;
         saveLastChatId(newId);
@@ -8853,6 +8900,8 @@ async function checkSession() {
                 clearAuthToken();
                 isAuthenticated = false;
                 setAppVisible(false);
+                var splashNA = document.getElementById("brandSplashScreen");
+                if (splashNA) splashNA.style.display = "none";
                 var statusNeedLogin = document.getElementById("statusText");
                 if (statusNeedLogin) statusNeedLogin.textContent = "Login Required";
                 renderGoogleButton();
@@ -8879,27 +8928,18 @@ async function checkSession() {
 
             renderSessionListSkeleton();
 
-            // Restore last-active chat BEFORE loadSessions so renderSessionList()
-            // inside loadSessions keeps the active session visible (not filtered out).
-            currentChatId = loadLastChatId() || "";
+            // Always open the app on a fresh, empty chat.  Previous conversations
+            // stay listed in the sidebar (loadSessions below) for the user to pick
+            // manually — never auto-restore the last-active thread.
+            currentChatId = "";
+            clearVisibleMessages();
+            messageStore.length = 0;
+            var welcomeFresh = document.getElementById("welcome");
+            if (welcomeFresh) welcomeFresh.style.display = "flex";
 
             // Non-fatal: session loading failure should never prevent sidebar from showing.
             try {
                 await loadSessions({ showLoading: true });
-
-                if (!currentChatId && sessionList.length > 0) {
-                    currentChatId = getSessionId(sessionList[0]);
-                    renderSessionList();
-                }
-
-                if (currentChatId) {
-                    saveLastChatId(currentChatId);
-                    await hydrateChatMessages(currentChatId);
-                } else {
-                    chatHydrationToken++;
-                    clearVisibleMessages();
-                    messageStore.length = 0;
-                }
             } catch (sessionErr) {
                 console.warn("[checkSession] session loading degraded:", sessionErr);
             }
@@ -9741,6 +9781,7 @@ window.send = async function () {
     clearImageUpload();          // clear chips now that they've been sent
     resetComposerHeight();       // shrink box back to single line
     updateSendButtonDim();
+    if (currentChatId) clearChatDraft(currentChatId);   // sent — no longer a draft
     setInputPlaceholder("sending");
     const thinking = addThinkingIndicator();
 
