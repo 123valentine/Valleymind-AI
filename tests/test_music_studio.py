@@ -154,5 +154,90 @@ class MusicApiTestCase(unittest.TestCase):
         self.assertEqual(resp.get_json()["status"], "error")
 
 
+class MusicProjectsSyncTestCase(unittest.TestCase):
+    """Cloud-sync /api/music/projects endpoints."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmpdir = tempfile.TemporaryDirectory()
+        tmp = Path(cls.tmpdir.name)
+        cls._users_file_patch = patch.object(
+            app_module, "_users_file", tmp / "auth_users.json")
+        cls._mp_dir_patch = patch.object(
+            app_module, "_MUSIC_PROJECTS_DIR", tmp / "music_projects")
+        cls._users_coll_patch = patch.object(
+            app_module, "users_collection", lambda: None)
+        cls._auth_coll_patch = patch.object(
+            app_module, "auth_tokens_collection", lambda: None)
+        cls._marcus_patch = patch.object(
+            app_module, "load_marcus", lambda user_id=None: None)
+        for p in (cls._users_file_patch, cls._mp_dir_patch,
+                  cls._users_coll_patch, cls._auth_coll_patch, cls._marcus_patch):
+            p.start()
+
+    @classmethod
+    def tearDownClass(cls):
+        for p in (cls._users_file_patch, cls._mp_dir_patch,
+                  cls._users_coll_patch, cls._auth_coll_patch, cls._marcus_patch):
+            p.stop()
+        cls.tmpdir.cleanup()
+
+    def _auth(self, email="sync@example.com"):
+        user_id = app_module._safe_user_id(email)
+        users = app_module._load_users()
+        users[email] = {
+            "_id": email, "email": email, "user_id": user_id, "email_verified": True,
+        }
+        app_module._save_users(users)
+        client = app_module.app.test_client()
+        with client.session_transaction() as sess:
+            sess["user_id"] = user_id
+            sess["email"] = email
+        return client
+
+    def test_requires_login(self):
+        resp = app_module.app.test_client().get("/api/music/projects")
+        self.assertEqual(resp.status_code, 401)
+
+    def test_post_and_get_roundtrip(self):
+        client = self._auth()
+        payload = {"projects": [
+            {"id": "ms1", "name": "Cloud Song", "mode": "diy", "savedAt": 1000},
+            {"id": "ms2", "name": "Another", "mode": "ai", "savedAt": 2000},
+        ]}
+        resp = client.post("/api/music/projects", json=payload)
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.get_json()["count"], 2)
+
+        resp = client.get("/api/music/projects")
+        self.assertEqual(resp.status_code, 200)
+        proj = resp.get_json()["projects"]
+        self.assertEqual(len(proj), 2)
+        self.assertEqual(proj[0]["name"], "Cloud Song")
+
+    def test_projects_are_user_scoped(self):
+        client_a = self._auth("scoped_a@example.com")
+        client_a.post("/api/music/projects", json={"projects": [{"id": "x1", "name": "A"}]})
+        # A different user must not see user A's projects.
+        client_b = self._auth("scoped_b@example.com")
+        resp = client_b.get("/api/music/projects")
+        self.assertEqual(resp.get_json()["projects"], [])
+
+    def test_delete_single_project(self):
+        client = self._auth("del@example.com")
+        client.post("/api/music/projects", json={"projects": [
+            {"id": "keep", "name": "Keep"}, {"id": "remove", "name": "Remove"}]})
+        resp = client.delete("/api/music/projects/remove")
+        self.assertEqual(resp.status_code, 200)
+        proj = client.get("/api/music/projects").get_json()["projects"]
+        self.assertEqual(len(proj), 1)
+        self.assertEqual(proj[0]["id"], "keep")
+
+    def test_rejects_non_list_payload(self):
+        client = self._auth("bad@example.com")
+        resp = client.post("/api/music/projects", json={"projects": "nope"})
+        self.assertEqual(resp.status_code, 400)
+
+
 if __name__ == "__main__":
     unittest.main()

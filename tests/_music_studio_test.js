@@ -158,6 +158,30 @@ check(html.includes("Midnight"), "AI title renders");
 check(html.includes("Stars above"), "AI lyrics render");
 check(html.includes("future step"), "AI note is honest about pending rendering");
 
+// ── 7. New features: cloud sync, effect chips, beat library ────────────
+check(typeof onShow2 === "function", "vmMusicOnShow still a function");
+html = panel.innerHTML;
+check(html.includes("vmm-chip"), "vocal effect chips render");
+check(html.includes("applyEffect"), "effect chip actions wired");
+check(html.includes("Beat Library"), "Beat Library panel present");
+check(html.includes("vmm-beat"), "beat cards render");
+check(html.includes("Lagos Midnight"), "first curated beat renders");
+check(html.includes("Bayelsa River"), "twentieth curated beat renders");
+check(html.includes("20 African"), "beat library description present");
+check(html.includes("Saved songs follow you"), "cloud-sync projects subtitle present");
+eq(count(html, /<div\b/g), count(html, /<\/div>/g), "chips+beats render div balance");
+
+["applyEffect", "previewBeat", "selectBeat", "stopPreview"]
+  .forEach((k) => check(typeof api2[k] === "function", `api2.${k} is a function`));
+
+// Cloud sync uses apiFetch POST on save (apiFetch stub returns {}).
+api2.onMode("diy");
+elems["vmMusicName"].value = "Cloud Song";
+elems["vmMusicLyrics"].value = "sync me";
+api2.saveSong();
+proj = JSON.parse(store["vmMusicProjects"] || "[]");
+check(proj.length >= 1, "save still persists locally with cloud sync");
+
 // ── summary ────────────────────────────────────────────────────────────
 const out = { passed: passes, failed: failures };
 console.log(JSON.stringify(out));

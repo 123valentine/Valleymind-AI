@@ -1190,6 +1190,81 @@ def api_music():
     })
 
 
+# ── Music Projects Cloud Sync ─────────────────────────────────────────
+# Per-user storage for saved song projects (metadata only — audio blobs
+# stay browser-local).  Follows the same file pattern as settings.
+
+_MUSIC_PROJECTS_DIR = PROJECT_ROOT / "memory_data" / "music_projects"
+
+
+def _music_projects_path(user_id: str) -> Path:
+    p = _MUSIC_PROJECTS_DIR / _safe_user_id(user_id)
+    p.mkdir(parents=True, exist_ok=True)
+    return p / "projects.json"
+
+
+def _load_music_projects(user_id: str) -> list:
+    fpath = _music_projects_path(user_id)
+    try:
+        if fpath.exists():
+            with open(fpath, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, list):
+                return data
+    except (json.JSONDecodeError, OSError):
+        pass
+    return []
+
+
+def _save_music_projects(user_id: str, projects: list):
+    fpath = _music_projects_path(user_id)
+    try:
+        fpath.parent.mkdir(parents=True, exist_ok=True)
+        tmp = str(fpath) + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(projects, f, indent=2)
+        os.replace(tmp, fpath)
+    except OSError as exc:
+        print(f"[ERROR] Failed to save music projects: {exc}")
+
+
+@app.route("/api/music/projects", methods=["GET", "POST"])
+def api_music_projects():
+    """Cloud-synced music project storage.
+
+    GET  → returns the user's saved projects array.
+    POST → full-replace: accepts {"projects": [...]} and overwrites the
+           user's server-side store.  Called by the client after every
+           save/delete so the server is always a mirror of the client
+           state.
+    """
+    user_id, error = _require_login()
+    if error:
+        return error
+    if request.method == "GET":
+        return jsonify({"status": "success", "projects": _load_music_projects(user_id)})
+    body = request.get_json(silent=True) or {}
+    projects = body.get("projects")
+    if not isinstance(projects, list):
+        return jsonify({"status": "error", "message": "projects must be a list"}), 400
+    # Cap at 200 projects to prevent abuse.
+    projects = projects[:200]
+    _save_music_projects(user_id, projects)
+    return jsonify({"status": "success", "count": len(projects)})
+
+
+@app.route("/api/music/projects/<project_id>", methods=["DELETE"])
+def api_music_project_delete(project_id: str):
+    """Delete a single project by id."""
+    user_id, error = _require_login()
+    if error:
+        return error
+    projects = _load_music_projects(user_id)
+    projects = [p for p in projects if p.get("id") != project_id]
+    _save_music_projects(user_id, projects)
+    return jsonify({"status": "success"})
+
+
 @app.route("/login", methods=["POST"])
 @app.route("/auth/login", methods=["POST"])
 def login():

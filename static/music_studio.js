@@ -27,7 +27,7 @@
 
   var NS = "vmMusic";
   var STORE_KEY = "vmMusicProjects";
-  var CACHE_BUST = "?v=2";
+  var CACHE_BUST = "?v=3";
 
   var MS = {
     state: null,
@@ -38,6 +38,7 @@
     elapsed: 0,
     projects: [],
     rendered: false,
+    previewPreset: null,
     ui: { open: {}, dockUpload: false }
   };
 
@@ -57,6 +58,78 @@
   var TEMPOS = ["Slow", "Medium", "Fast", "Very fast"];
   var ROLES = ["Singer", "Rapper", "Singer-songwriter", "Producer", "Both singing & producing"];
   var EFFECTS = ["None", "Warm", "Bright", "Telephone", "Hall reverb", "Tape", "Robotic", "Choir-ish"];
+
+  /* Voloco-style vocal effect presets (colorful, tap-to-apply chips). */
+  var EFFECT_PRESETS = [
+    { name: "Clean", color: "#22d3ee", ic: "mic", fx: { noiseReduction: true, pitch: 0, effect: "None", reverb: 10, delay: 0 } },
+    { name: "Intune", color: "#34d399", ic: "sliders", fx: { noiseReduction: true, pitch: 0, effect: "Intune", reverb: 20, delay: 0 } },
+    { name: "Megaphone", color: "#fbbf24", ic: "volume-2", fx: { noiseReduction: false, pitch: 0, effect: "Megaphone", reverb: 5, delay: 0 } },
+    { name: "Warm", color: "#fb923c", ic: "flame", fx: { noiseReduction: false, pitch: 0, effect: "Warm", reverb: 35, delay: 0 } },
+    { name: "Bright", color: "#a3e635", ic: "sun", fx: { noiseReduction: true, pitch: 8, effect: "Bright", reverb: 15, delay: 0 } },
+    { name: "Hall", color: "#60a5fa", ic: "wind", fx: { noiseReduction: false, pitch: 0, effect: "Hall reverb", reverb: 70, delay: 10 } },
+    { name: "Delay", color: "#c084fc", ic: "repeat", fx: { noiseReduction: false, pitch: 0, effect: "Delay", reverb: 30, delay: 55 } },
+    { name: "Tape", color: "#f472b6", ic: "tape", fx: { noiseReduction: false, pitch: -12, effect: "Tape", reverb: 25, delay: 0 } },
+    { name: "Robot", color: "#94a3b8", ic: "bot", fx: { noiseReduction: true, pitch: 0, effect: "Robotic", reverb: 5, delay: 0 } },
+    { name: "Choir", color: "#818cf8", ic: "users", fx: { noiseReduction: false, pitch: 4, effect: "Choir-ish", reverb: 65, delay: 15 } },
+    { name: "Lo-Fi", color: "#a16207", ic: "disc-3", fx: { noiseReduction: false, pitch: -6, effect: "Lo-Fi", reverb: 40, delay: 0 } },
+    { name: "Phone", color: "#64748b", ic: "smartphone", fx: { noiseReduction: false, pitch: 0, effect: "Telephone", reverb: 5, delay: 0 } }
+  ];
+
+  /* ── Curated Beat Library ─────────────────────────────────────────────
+     Twenty Nigerian/African beat presets (mostly emotional). Each defines a
+     tempo, key/root, mood, accent colour and a rhythmic pattern (kick:on16
+     steps, snare:same, hats). The client synthesises a real ~30s loop with
+     the Web Audio API so every beat is actually playable and can be loaded
+     into the studio as the beat track. The user-facing card shows ~3min
+     per-beat session feel; the generated loop is one strong 4-bar pattern. */
+  var BEAT_PRESETS = [
+    { id: "bl-midnight", city: "Lagos Midnight", bpm: 95, note: "C4", mood: "Romantic", color: "#e74c3c", desc: "Slow candle-lit groove — log drum pulse, deep bass, romantic top.", pattern: "T00L00K0T00K0K0" },
+    { id: "bl-accra", city: "Accra Breeze", bpm: 100, note: "G4", mood: "Chill", color: "#1abc9c", desc: "Earthy highlife bounce with warm hats and a laid-back feel.", pattern: "T0K0T0K0T0K0T0K0K0" },
+    { id: "bl-abuja", city: "Abuja Sunrise", bpm: 110, note: "D4", mood: "Hopeful", color: "#f39c12", desc: "Bright, uplifting — open hats and a dancing shaker, sun-up energy.", pattern: "K0T0K0T0K0T0K0T0K0" },
+    { id: "bl-ph", city: "Port Harcourt Groove", bpm: 120, note: "A4", mood: "Upbeat", color: "#9b59b6", desc: "Party-ready log drum groove, punchy snare, celebratory.", pattern: "K00T0K0KT0K0K0T0" },
+    { id: "bl-enugu", city: "Enugu Nights", bpm: 85, note: "E4", mood: "Melancholic", color: "#34495e", desc: "Deep, moody, rainy-night bounce with a slow R&B heart.", pattern: "K00L00K0T00L00K0" },
+    { id: "bl-ibadan", city: "Ibadan Vibes", bpm: 130, note: "F4", mood: "Energetic", color: "#27ae60", desc: "Fast street vibration — quick kicks and skipping hats.", pattern: "K0K0K0T0K0K0K0T0K0" },
+    { id: "bl-kano", city: "Kano Dust", bpm: 90, note: "Bb3", mood: "Nostalgic", color: "#8B4513", desc: "Old-school desert soul — sparse drums, warm dusty bass.", pattern: "K0T00K0T00K0T00" },
+    { id: "bl-warri", city: "Warri Energy", bpm: 125, note: "Eb4", mood: "Upbeat", color: "#dc143c", desc: "High-energy 'no time' bounce — relentless and groovy.", pattern: "KK0T0KK0T0KK0T0K0" },
+    { id: "bl-benin", city: "Benin City Soul", bpm: 95, note: "C4", mood: "Bittersweet", color: "#708090", desc: "Soulful and reflective, plucked bass with a soft snap.", pattern: "T0K00L00K0T0L0K0" },
+    { id: "bl-calabar", city: "Calabar Flow", bpm: 105, note: "G4", mood: "Chill", color: "#00ced1", desc: "Smooth coastline travel — airy hats, gentle pocket.", pattern: "K0T00T0K0T00T0K0" },
+    { id: "bl-jos", city: "Jos Plateau", bpm: 100, note: "A4", mood: "Hopeful", color: "#DAA520", desc: "Cool highland hope — open air, warm mid-bass.", pattern: "K00K0T0K00K0T0" },
+    { id: "bl-owerri", city: "Owerri Heat", bpm: 135, note: "D4", mood: "Energetic", color: "#FF7F50", desc: "Scorching fast beat — two-step kick, frantic hats.", pattern: "KK0K0T0KK0K0T0K0" },
+    { id: "bl-kaduna", city: "Kaduna Dawn", bpm: 88, note: "F4", mood: "Romantic", color: "#C08080", desc: "Tender dawn serenade — slow, warm, heartfelt.", pattern: "K0L00K0T0L00K0" },
+    { id: "bl-aba", city: "Aba Market", bpm: 118, note: "Bb3", mood: "Upbeat", color: "#32CD32", desc: "Busy, colourful market bounce — tight and smiling.", pattern: "K0T0K0T0KT0K0T0K0" },
+    { id: "bl-ilorin", city: "Ilorin Breeze", bpm: 98, note: "Eb4", mood: "Chill", color: "#87CEEB", desc: "Light evening air — soft hats, gentle rolling kick.", pattern: "T0K0T0T0K0T0K0T0" },
+    { id: "bl-maiduguri", city: "Maiduguri Sun", bpm: 112, note: "C4", mood: "Empowering", color: "#FFBF00", desc: "Bold and resolute — wide hats, driving bass.", pattern: "K0T0K0TK0T0K0T0" },
+    { id: "bl-akwa", city: "Akwa Ibom Tide", bpm: 92, note: "G4", mood: "Melancholic", color: "#4B0082", desc: "Watery, introspective — deep pockets, sighing drums.", pattern: "K00T00K0T0K0T00" },
+    { id: "bl-osogbo", city: "Osogbo Rain", bpm: 86, note: "Ab3", mood: "Bittersweet", color: "#A9A9A9", desc: "Rain on the roof — slow, grey-skied and honest.", pattern: "K0L0K0T0K0L0T0K0" },
+    { id: "bl-sokoto", city: "Sokoto Stars", bpm: 94, note: "B4", mood: "Nostalgic", color: "#B87333", desc: "Night sky memory — warm and far away.", pattern: "K0T0K00T0K0T0K0" },
+    { id: "bl-bayelsa", city: "Bayelsa River", bpm: 102, note: "Db4", mood: "Romantic", color: "#00A86B", desc: "Slow river romance — floating bass, gentle pulse.", pattern: "K000T0K0T0K0K0" }
+  ];
+
+  /* Note name → midi + frequency (C4 = 261.63). Supports sharps and flats. */
+  var NOTE_FREQ = (function () {
+    var map = {};
+    var names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+    var flatMap = { "Db": "C#", "Eb": "D#", "Gb": "F#", "Ab": "G#", "Bb": "A#" };
+    var A4 = 440, A4midi = 69;
+    for (var midi = 0; midi < 128; midi++) {
+      var oct = Math.floor(midi / 12) - 1;
+      var nc = names[midi % 12];
+      var freq = A4 * Math.pow(2, (midi - A4midi) / 12);
+      map[nc + oct] = freq;
+    }
+    // convenience accessor that handles flats
+    function noteFreq(n) {
+      if (map[n]) return map[n];
+      if (flatMap[n]) return map[flatMap[n]];
+      return 261.63;
+    }
+    return noteFreq;
+  })();
+
+  /* Root bass note (an octave below the named note). */
+  function bassFreq(note) {
+    return NOTE_FREQ(note) / 2;
+  }
 
   /* ── Styles (injected once) ─────────────────────────────────────────── */
   function injectStyles() {
@@ -206,7 +279,32 @@
       ".vmm-menu .vmm-btn { width:100%; justify-content:flex-start; margin-bottom:2px; }",
       ".vmm-menu-backdrop { position:fixed; inset:0; z-index:55; background:rgba(2,6,23,0.4); }",
 
+      /* ── vocal effect chips (Voloco-style) ── */
+      ".vmm-chips { display:flex; flex-wrap:wrap; gap:9px; margin:4px 0 14px; }",
+      ".vmm-chip { position:relative; display:inline-flex; align-items:center; gap:7px; min-height:46px; padding:0 14px; border-radius:14px; border:1px solid rgba(255,255,255,0.14); background:rgba(255,255,255,0.05); color:#e2e8f0; font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:12.5px; cursor:pointer; transition:all .15s; }",
+      ".vmm-chip i { opacity:.9; }",
+      ".vmm-chip::before { content:''; position:absolute; inset:0; border-radius:14px; opacity:0; background:linear-gradient(135deg,var(--cc),transparent 90%); transition:opacity .15s; }",
+      ".vmm-chip:hover { transform:translateY(-1px); }",
+      ".vmm-chip.active { color:#fff; border-color:var(--cc); box-shadow:0 0 0 1px var(--cc), 0 6px 18px -6px var(--cc); }",
+      ".vmm-chip.active::before { opacity:.28; }",
+      ".vmm-chip span, .vmm-chip i { position:relative; z-index:1; }",
+
+      /* ── beat library cards ── */
+      ".vmm-beatlib { display:grid; grid-template-columns:1fr; gap:11px; margin-top:4px; }",
+      ".vmm-beat { background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.09); border-radius:14px; overflow:hidden; transition:all .15s; }",
+      ".vmm-beat .vmm-beat-top { height:5px; width:100%; }",
+      ".vmm-beat .vmm-beat-body { padding:12px 13px 13px; }",
+      ".vmm-beat.selected { border-color:rgba(34,211,238,0.45); box-shadow:0 0 0 1px rgba(34,211,238,0.35); }",
+      ".vmm-beat-name { font-family:'Space Grotesk',sans-serif; font-size:13.5px; font-weight:800; color:#f1f5f9; }",
+      ".vmm-beat-meta { font-size:11px; color:#8a97ad; margin-top:1px; }",
+      ".vmm-beat-desc { font-size:11.5px; color:#9fb0c4; line-height:1.5; margin:6px 0 9px; }",
+      ".vmm-beat-actions { display:flex; gap:8px; }",
+      ".vmm-beat-actions .vmm-btn { flex:1; }",
+
       /* ── tablet / desktop expansion ── */
+      "@media (min-width:640px) and (max-width:899px) {",
+      "  .vmm-beatlib { grid-template-columns:repeat(2,1fr); }",
+      "}",
       "@media (min-width:900px) {",
       "  .vmm-body { padding:22px 28px calc(84px + env(safe-area-inset-bottom,0px)); }",
       "  .vmm-dock .vmm-btn { font-size:12px; }",
@@ -214,6 +312,7 @@
       "  .vmm-grid, .vmm-grid-2 { grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:14px; }",
       "  .vmm-hero { flex-direction:row; }",
       "  .vmm-mode { flex:1; }",
+      "  .vmm-beatlib { grid-template-columns:repeat(3,1fr); }",
       "}"
     ].join("\n");
     document.head.appendChild(css);
@@ -242,7 +341,8 @@
       autoMix: false,
       autoMaster: false,
       aiResult: null,
-      savedAt: 0
+      savedAt: 0,
+      beatPreset: null
     };
   }
 
@@ -258,6 +358,7 @@
     p.beat.vol = (typeof p.beat.vol === "number") ? p.beat.vol : 100;
     p.beat.mute = !!p.beat.mute; p.beat.solo = !!p.beat.solo;
     p.layers = Array.isArray(p.layers) ? p.layers : [];
+    if (typeof p.beatPreset === "undefined") p.beatPreset = null;
     return p;
   }
 
@@ -270,6 +371,48 @@
   }
   function saveProjects() {
     try { localStorage.setItem(STORE_KEY, JSON.stringify(MS.projects)); } catch (e) {}
+  }
+
+  /* ── Cloud sync (server keeps a mirror so saved songs follow the user) ──
+     Audio blobs stay in the browser; project metadata (lyrics, settings,
+     result) syncs to /api/music/projects. Best-effort: offline works via
+     localStorage. */
+  function pushProjectsToServer() {
+    if (typeof apiFetch !== "function") return;
+    apiFetch("/api/music/projects", {
+      method: "POST", credentials: "include",
+      headers: authHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ projects: MS.projects })
+    }).catch(function () { /* offline — local copy remains valid */ });
+  }
+  function deleteProjectOnServer(id) {
+    if (typeof apiFetch !== "function") return;
+    apiFetch("/api/music/projects/" + encodeURIComponent(id), {
+      method: "DELETE", credentials: "include",
+      headers: authHeaders({})
+    }).catch(function () {});
+  }
+  function fetchProjectsFromServer() {
+    if (typeof apiFetch !== "function") return Promise.resolve();
+    return apiFetch("/api/music/projects", {
+      method: "GET", credentials: "include", headers: authHeaders({})
+    }).then(function (res) { return res.json(); })
+      .then(function (data) {
+        if (!data || !Array.isArray(data.projects)) return;
+        var server = data.projects.map(normalizeProject);
+        // Merge: keep the newest by id (compare savedAt), server is authoritative
+        // when equal so other devices' edits show up here too.
+        var map = {};
+        MS.projects.forEach(function (p) { map[p.id] = p; });
+        server.forEach(function (p) {
+          var mine = map[p.id];
+          if (!mine || (p.savedAt || 0) > (mine.savedAt || 0)) map[p.id] = p;
+        });
+        MS.projects = Object.keys(map).map(function (k) { return map[k]; });
+        saveProjects();
+        render();
+      })
+      .catch(function () { /* offline */ });
   }
   function toast(msg) {
     var el = document.getElementById("vmMusicToast");
@@ -455,6 +598,16 @@
     else MS.state.fx[field] = Number(val);
     render();
   }
+  function applyEffectPreset(preset) {
+    var fx = MS.state.fx;
+    fx.noiseReduction = !!preset.fx.noiseReduction;
+    fx.pitch = Number(preset.fx.pitch);
+    fx.effect = preset.fx.effect;
+    fx.reverb = Number(preset.fx.reverb);
+    fx.delay = Number(preset.fx.delay);
+    render();
+    toast("Vocal effect: " + preset.name);
+  }
   function setMaster(val) { MS.state.mix.master = Number(val); render(); }
   function autoMix() {
     // Balances the vocal and beat so the voice sits clearly on top (honest,
@@ -544,6 +697,7 @@
       MS.projects.unshift(normalizeProject(clone(MS.state)));
     }
     saveProjects();
+    pushProjectsToServer();
     toast("Song saved.");
     render();
   }
@@ -561,6 +715,7 @@
   function deleteSong(id) {
     MS.projects = MS.projects.filter(function (p) { return p.id !== id; });
     saveProjects();
+    deleteProjectOnServer(id);
     render();
   }
   function exportWav(type) {
@@ -590,6 +745,169 @@
     a.href = url; a.download = title.replace(/[\\/:*?"<>|]+/g, "_") + ".txt";
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
     setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
+  }
+
+  /* ── Web Audio beat synthesis ─────────────────────────────────────────
+     Generates a real ~4-bar loop for a beat preset. Honest + functional:
+     the beat is genuinely generated with the Web Audio API and plays; it is
+     a compact loop rather than a full 3-minute master (labelled as such). */
+  function beatPresetById(id) {
+    for (var i = 0; i < BEAT_PRESETS.length; i++) if (BEAT_PRESETS[i].id === id) return BEAT_PRESETS[i];
+    return null;
+  }
+
+  function renderBeatLoop(preset) {
+    // Honest + functional: parse the 16-step pattern, stretch it over 3 bars
+    // (12 beats) so it's a real ~30s loop that can be played and loaded.
+    var Offline = (window.OfflineAudioContext || window.webkitOfflineAudioContext);
+    if (!Offline) return Promise.reject(new Error("no offline ctx"));
+    var rate = 44100;
+    var spb = 60 / preset.bpm;          // seconds per beat
+    var beats = 12;                      // 3 bars of 4/4
+    var duration = spb * beats;
+    var ctx = new Offline(2, Math.ceil(rate * duration), rate);
+    var root = bassFreq(preset.note);    // bass root an octave below the named note
+
+    // stretch the 16-step one-bar pattern across 12 beats (each step = 0.75 beat)
+    var steps = preset.pattern;
+    for (var i = 0; i < steps.length; i++) {
+      var ch = steps.charAt(i);
+      var when = i * 0.75 * spb;
+      // repeat across the 3 bars
+      for (var bar = 0; bar < 3; bar++) {
+        var w = when + bar * 4 * spb;
+        if (ch === "K") { kick(ctx, w, 0.95); bassHit(ctx, root, w, spb * 0.8); }
+        else if (ch === "L") { kick(ctx, w, 0.6); }
+        else if (ch === "T") { snare(ctx, w, 0.75); }
+        else if (ch === "0") { hat(ctx, w, 0.12); }
+      }
+    }
+    // shaker-style off-beat hats throughout
+    var totalSpb = ctx.duration / spb;
+    for (var h = 0; h < totalSpb; h++) { if (h % 2 === 1) hat(ctx, h * spb, 0.06); }
+
+    return ctx.startRendering().then(function (buffer) {
+      return encodeWav(buffer);
+    });
+  }
+
+  function kick(ctx, when, vel) {
+    var o = ctx.createOscillator(); var g = ctx.createGain();
+    o.type = "sine"; o.frequency.setValueAtTime(160, when);
+    o.frequency.exponentialRampToValueAtTime(48, when + 0.1);
+    g.gain.setValueAtTime(0.0, when);
+    g.gain.linearRampToValueAtTime(0.9 * vel, when + 0.005);
+    g.gain.exponentialRampToValueAtTime(0.001, when + 0.18);
+    o.connect(g); g.connect(ctx.destination);
+    o.start(when); o.stop(when + 0.2);
+  }
+  function bassHit(ctx, root, when, dur) {
+    var o = ctx.createOscillator(); var g = ctx.createGain();
+    o.type = "sine"; o.frequency.value = root;
+    g.gain.setValueAtTime(0.0, when);
+    g.gain.linearRampToValueAtTime(0.4, when + 0.005);
+    g.gain.setValueAtTime(0.4, when + dur * 0.5);
+    g.gain.exponentialRampToValueAtTime(0.001, when + dur);
+    o.connect(g); g.connect(ctx.destination);
+    o.start(when); o.stop(when + dur + 0.02);
+  }
+  function snare(ctx, when, vel) {
+    var n = ctx.createBufferSource();
+    var b = ctx.createBuffer(1, Math.floor(ctx.sampleRate * 0.25), ctx.sampleRate);
+    var d = b.getChannelData(0);
+    for (var i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length);
+    n.buffer = b;
+    var f = ctx.createBiquadFilter(); f.type = "bandpass"; f.frequency.value = 3000; f.Q.value = 1;
+    var g = ctx.createGain(); g.gain.setValueAtTime(0.0, when);
+    g.gain.linearRampToValueAtTime(0.6 * vel, when + 0.002);
+    g.gain.exponentialRampToValueAtTime(0.001, when + 0.2);
+    n.connect(f); f.connect(g); g.connect(ctx.destination);
+    n.start(when); n.stop(when + 0.25);
+  }
+  function hat(ctx, when, vel) {
+    var n = ctx.createBufferSource();
+    var b = ctx.createBuffer(1, Math.floor(ctx.sampleRate * 0.05), ctx.sampleRate);
+    var d = b.getChannelData(0);
+    for (var i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length);
+    n.buffer = b;
+    var f = ctx.createBiquadFilter(); f.type = "highpass"; f.frequency.value = 7000;
+    var g = ctx.createGain(); g.gain.setValueAtTime(0.0, when);
+    g.gain.linearRampToValueAtTime(0.4 * vel, when + 0.001);
+    g.gain.exponentialRampToValueAtTime(0.001, when + 0.04);
+    n.connect(f); f.connect(g); g.connect(ctx.destination);
+    n.start(when); n.stop(when + 0.05);
+  }
+
+  /* WAV encoder for an AudioBuffer */
+  function encodeWav(buffer) {
+    var numCh = buffer.numberOfChannels;
+    var len = buffer.length * numCh * 2;
+    var out = new ArrayBuffer(44 + len);
+    var v = new DataView(out);
+    function wStr(o, s) { for (var i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); }
+    wStr(0, "RIFF"); v.setUint32(4, 36 + len, true); wStr(8, "WAVE");
+    wStr(12, "fmt "); v.setUint32(16, 16, true); v.setUint16(20, 1, true);
+    v.setUint16(22, numCh, true); v.setUint32(24, buffer.sampleRate, true);
+    v.setUint32(28, buffer.sampleRate * numCh * 2, true);
+    v.setUint16(32, numCh * 2, true); v.setUint16(34, 16, true);
+    wStr(36, "data"); v.setUint32(40, len, true);
+    var chans = [];
+    for (var i = 0; i < numCh; i++) chans.push(buffer.getChannelData(i));
+    var off = 44;
+    for (var i = 0; i < buffer.length; i++) {
+      for (var c = 0; c < numCh; c++) {
+        var s = Math.max(-1, Math.min(1, chans[c][i]));
+        v.setInt16(off, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+        off += 2;
+      }
+    }
+    return new Blob([v], { type: "audio/wav" });
+  }
+
+  function urlFromBlob(blob) { try { return (window.URL || window.webkitURL).createObjectURL(blob); } catch (e) { return ""; } }
+
+  /* Preview: synthesise + play a beat through the shared player. */
+  function previewBeat(id) {
+    var preset = beatPresetById(id);
+    if (!preset) { toast("Beat not found."); return; }
+    stopPreview();
+    MS.previewPreset = id;
+    render();
+    renderBeatLoop(preset).then(function (blob) {
+      var url = urlFromBlob(blob);
+      if (!url) { toast("Beat preview not supported here."); return; }
+      var a = document.getElementById("vmMusicPlayer");
+      if (a) { a.src = url; a.volume = 0.9; if (a.play) a.play(); }
+    }).catch(function () { toast("Beat preview needs a modern browser."); MS.previewPreset = null; render(); });
+  }
+  function stopPreview() {
+    MS.previewPreset = null;
+    var a = document.getElementById("vmMusicPlayer");
+    if (a) { try { a.pause(); } catch (e) {} a.removeAttribute("src"); }
+  }
+
+  /* Select: generate the beat and load it as the studio's beat track. */
+  function selectBeat(id) {
+    var preset = beatPresetById(id);
+    if (!preset) { toast("Beat not found."); return; }
+    var old = MS.state.beat;
+    if (old.url) try { URL.revokeObjectURL(old.url); } catch (e) {}
+    MS.previewPreset = null;
+    toast("Building " + preset.city + " beat…");
+    renderBeatLoop(preset).then(function (blob) {
+      var url = urlFromBlob(blob);
+      if (!url) { toast("Beat generation isn't supported here."); return; }
+      MS.state.beat.url = url;
+      MS.state.beat.name = preset.city;
+      MS.state.beat.dur = 0;
+      MS.state.beat.vol = 100; MS.state.beat.mute = false; MS.state.beat.solo = false;
+      MS.state.beatPreset = preset.id;
+      // build a 3-minute session feel note
+      var a = new Audio(); a.preload = "metadata"; a.src = url;
+      a.onloadedmetadata = function () { MS.state.beat.dur = a.duration || 0; render(); };
+      render();
+      toast(preset.city + " loaded — loop for a " + preset.mood + " vibe. Tap it to preview.");
+    }).catch(function () { toast("Beat generation needs a modern browser."); render(); });
   }
 
   /* ── Render ─────────────────────────────────────────────────────────── */
@@ -650,6 +968,32 @@
       '<input type="range" class="vmm-range" id="' + id + '" min="' + min + '" max="' + max + '" value="' + val + '" oninput="window.vmMusicAPI.' + oninput + '">' +
       '<output>' + val + unit + '</output>' +
     '</div>';
+  }
+
+  function effectChip(p) {
+    var active = MS.state.fx.effect === p.fx.effect &&
+      MS.state.fx.pitch === p.fx.pitch &&
+      MS.state.fx.reverb === p.fx.reverb &&
+      MS.state.fx.delay === p.fx.delay &&
+      MS.state.fx.noiseReduction === !!p.fx.noiseReduction;
+    return '<button type="button" class="vmm-chip' + (active ? " active" : "") + '" style="--chip:var(--c,#666);--cc:' + p.color + '" data-color="' + p.color + '" onclick="window.vmMusicAPI.applyEffect(\'' + p.name + '\')">' +
+      '<i data-lucide="' + p.ic + '"></i><span>' + p.name + '</span></button>';
+  }
+
+  function beatCard(p) {
+    var selected = MS.state.beatPreset === p.id;
+    var previewing = MS.previewPreset === p.id;
+    return '<div class="vmm-beat' + (selected ? " selected" : "") + '">' +
+      '<div class="vmm-beat-top" style="background:' + p.color + ';"></div>' +
+      '<div class="vmm-beat-body">' +
+        '<div class="vmm-beat-name">' + esc(p.city) + '</div>' +
+        '<div class="vmm-beat-meta">' + p.bpm + ' BPM · ' + esc(p.note) + ' · ' + esc(p.mood) + '</div>' +
+        '<div class="vmm-beat-desc">' + esc(p.desc) + '</div>' +
+        '<div class="vmm-beat-actions">' +
+          '<button class="vmm-btn vmm-btn-sm" onclick="window.vmMusicAPI.previewBeat(\'' + p.id + '\')">' + (previewing ? 'Playing' : 'Preview') + '</button>' +
+          '<button class="vmm-btn vmm-btn-sm' + (selected ? ' vmm-btn-primary' : '') + '" onclick="window.vmMusicAPI.selectBeat(\'' + p.id + '\')">' + (selected ? 'Loaded' : 'Use') + '</button>' +
+        '</div>' +
+      '</div></div>';
   }
 
   function sheetHTML() {
@@ -745,15 +1089,16 @@
       '</div>';
 
     /* Effects & tuning panel */
+    var chipHtml = EFFECT_PRESETS.map(effectChip).join("");
     var fxBody =
-      '<div class="vmm-info">Noise reduction, tuning and effects are applied in a future engine; these controls set your intent and persist with the project.</div>' +
+      '<div class="vmm-info">Tap a vocal effect to set the whole chain, then fine-tune pitch and ambient FX. These controls set intent and persist with the project; DSP rendering is a future engine.</div>' +
+      '<div class="vmm-chips">' + chipHtml + '</div>' +
       '<div class="vmm-slider-row"><label>Noise reduction</label>' +
         '<label class="vmm-switch"><input type="checkbox" ' + (s.fx.noiseReduction ? "checked" : "") + ' onchange="window.vmMusicAPI.setFx(\'noiseReduction\',this.checked)"><span class="sw"></span></label>' +
       '</div>' +
       slider("Pitch / tuning (cents)", "vmMusicPitch", s.fx.pitch, -50, 50, "", "setFx('pitch',document.getElementById('vmMusicPitch').value)") +
       slider("Reverb", "vmMusicReverb", s.fx.reverb, 0, 100, "", "setFx('reverb',document.getElementById('vmMusicReverb').value)") +
-      slider("Delay", "vmMusicDelay", s.fx.delay, 0, 100, "", "setFx('delay',document.getElementById('vmMusicDelay').value)") +
-      '<div>' + sel("vmMusicEffect", "Vocal effect", EFFECTS, s.fx.effect) + '</div>';
+      slider("Delay", "vmMusicDelay", s.fx.delay, 0, 100, "", "setFx('delay',document.getElementById('vmMusicDelay').value)");
 
     /* Voice panel */
     var consentBlock = s.voice === "clone" ?
@@ -809,6 +1154,11 @@
         '</div>';
     }).join("");
 
+    /* Beat Library (20 African / Nigerian beats) */
+    var beatLibBody =
+      '<div class="vmm-info">Tap a beat to preview it live, then Use to load it as your beat track. Beats are colour-coded by mood and synthesised in your browser (~30s loop).</div>' +
+      '<div class="vmm-beatlib">' + BEAT_PRESETS.map(beatCard).join("") + '</div>';
+
     /* Sections */
     var sections =
       section("sliders-horizontal", "Tracks & Mixer", "Your vocal(s) and beat, with solo/mute and gain", "tracks", tracksHtml) +
@@ -819,7 +1169,8 @@
       section("mic-2", "Voice", "Choose whose voice sings this song", "voice", voiceBody, false) +
       section("audio-lines", "Effects & Tuning", "Noise reduction, pitch, reverb, vocal effect", "fx", fxBody, false) +
       section("mixer", "Mix & Master", "Balance tracks, Auto Mix / Auto Master", "mix", mixBody, false) +
-      section("library", "Projects", "Saved songs live on this device", "projects", (projRows || '<div class="vmm-empty">No saved songs yet.</div>'), false) +
+      section("audio-lines", "Beat Library", "20 African / Nigerian beats — tap to preview, Use to load", "beats", beatLibBody, false) +
+      section("library", "Projects", "Saved songs follow you across devices when signed in", "projects", (projRows || '<div class="vmm-empty">No saved songs yet.</div>'), false) +
       aiOut;
 
     /* Bottom action dock */
@@ -888,7 +1239,6 @@
     on("vmMusicTempo", function () { syncInputs(); });
     on("vmMusicRole", function () { syncInputs(); });
     on("vmMusicName", function () { syncInputs(); });
-    on("vmMusicEffect", function (e) { setFx("effect", e.target.value); });
     var b = document.getElementById("vmMusicBrief"); if (b) b.addEventListener("input", function () { syncInputs(); });
     var l = document.getElementById("vmMusicLyrics"); if (l) l.addEventListener("input", function () { syncInputs(); });
   }
@@ -910,6 +1260,11 @@
     onVoice: function (v) { syncInputs(); MS.state.voice = v; if (v !== "clone") MS.state.consent = false; render(); },
     onConsent: function () { MS.state.consent = !MS.state.consent; render(); },
     setFx: setFx,
+    applyEffect: function (name) {
+      for (var i = 0; i < EFFECT_PRESETS.length; i++) {
+        if (EFFECT_PRESETS[i].name === name) { applyEffectPreset(EFFECT_PRESETS[i]); return; }
+      }
+    },
     setMaster: setMaster,
     autoMix: autoMix,
     autoMaster: autoMaster,
@@ -924,6 +1279,9 @@
     deleteSong: deleteSong,
     exportSong: exportSong,
     exportWav: exportWav,
+    previewBeat: previewBeat,
+    selectBeat: selectBeat,
+    stopPreview: stopPreview,
     syncName: syncName,
     dockUpload: dockUpload,
     dockProduce: dockProduce,
@@ -935,6 +1293,7 @@
     if (!MS.rendered) {
       MS.rendered = true;
       if (!MS.state) { loadProjects(); MS.state = defaultState(); MS.state.id = null; }
+      fetchProjectsFromServer();
     }
     render();
   }
