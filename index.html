@@ -80,6 +80,7 @@
 <script src="/static/settings.js"></script>
 <script src="/static/pref_setup_model.js?v=3"></script>
 <script src="/static/onboarding.js?v=3"></script>
+<script src="/static/music_studio.js?v=1"></script>
 <script src="/static/tutorials.js"></script>
 <script id="tailwind-config">
   tailwind.config = {
@@ -2559,6 +2560,7 @@
     <button class="vm-ws-tab" data-ws="sketch" onclick="vmWsGo('sketch')"><i data-lucide="pencil-ruler"></i> Sketch</button>
     <button class="vm-ws-tab" data-ws="threed" onclick="vmWsGo('threed')"><i data-lucide="box"></i> 3D Studio</button>
     <button class="vm-ws-tab" data-ws="roundtable" onclick="vmWsGo('roundtable')"><i data-lucide="users"></i> Round Table</button>
+    <button class="vm-ws-tab" data-ws="music" onclick="vmWsGo('music')"><i data-lucide="music"></i> Music Studio</button>
     <button class="vm-ws-tab" data-ws="analytics" id="vmWsTabAnalytics" onclick="vmWsGo('analytics')" style="display:none"><i data-lucide="bar-chart-3"></i> Analytics</button>
   </nav>
 
@@ -2915,6 +2917,9 @@
   <audio id="personaPlayer" preload="auto" style="display:none;"></audio>
   </div>
   </div><!-- /Round Table workspace panel -->
+
+  <!-- ── Workspace: Music Studio — sing/hum/record → DIY or AI-produced track ── -->
+  <div class="vm-ws-panel" data-ws-panel="music" id="vmWsPanelMusic"></div>
 
   <div class="vm-ws-panel" data-ws-panel="analytics" id="vmWsPanelAnalytics">
     <div id="studioAnalyticsView"></div>
@@ -6056,6 +6061,7 @@ function vmWsGo(ws) {
     if (ws === "website" && typeof aibOnShow === "function") aibOnShow();
     if (ws === "website" && typeof vmGuideMaybeShow === "function") vmGuideMaybeShow("website");
     if (ws === "analytics" && _vmIsCreator && typeof vmDashRefresh === "function") vmDashRefresh();
+    if (ws === "music" && typeof vmMusicOnShow === "function") vmMusicOnShow();
 }
 
 function closeStudio() {

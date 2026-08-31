@@ -1100,6 +1100,96 @@ def api_roundtable():
     return jsonify({"status": "success", "turns": turns, "models": provider_report()})
 
 
+@app.route("/api/music", methods=["POST"])
+def api_music():
+    """Music Studio — 'Let ValleyMind produce it' stage.
+
+    Turns a brief (which may reference a user-sung/hummed melody recorded in the
+    browser) plus production settings into the creative material for a track:
+    lyrics and an arrangement/production spec. This is the honest, working AI
+    stage of the pipeline: it produces real creative output (lyrics + structure).
+    Rendering the finished audio (beat synthesis, AI vocals, mixing) is a
+    declared future step and is reported as such rather than faked."""
+    user_id, error = _require_login()
+    if error:
+        return error
+    data = request.get_json(silent=True) or {}
+    brief = str(data.get("brief") or "").strip()
+    role = str(data.get("role") or "singer").strip()
+    genre = str(data.get("genre") or "Afrobeats").strip()
+    mood = str(data.get("mood") or "romantic").strip()
+    tempo = str(data.get("tempo") or "medium").strip()
+    key = str(data.get("key") or "").strip()
+    language = str(data.get("language") or "English").strip()
+    voice = str(data.get("voice") or "").strip()
+    user_lyrics = str(data.get("lyrics") or "").strip()
+
+    if not brief and not user_lyrics:
+        return jsonify({"status": "error", "message": "Describe your song or add lyrics first"}), 400
+
+    voice_note = ""
+    if voice == "clone":
+        voice_note = "\nVoice: use the user's recorded voice (they authorized an AI clone of their own voice)."
+    elif voice == "elena":
+        voice_note = "\nVoice: use ValleyMind's approved AI singing voice, Elena."
+    else:
+        voice_note = "\nVoice: keep and gently enhance the user's own recorded vocal."
+
+    lyrics_hint = ("\nUser already wrote lyrics (keep them, refine only where asked):\n"
+                   + user_lyrics) if user_lyrics else (
+                   "\nNo lyrics provided — write full, singable lyrics." )
+
+    system = (
+        "You are ValleyMind's music producer. The user sang or hummed a melody "
+        "and/or described an idea. You create the working creative package for "
+        "the track: complete singable lyrics and a production/arrangement spec. "
+        "Do NOT claim to have rendered audio; the mix is produced later. Be "
+        "specific and musical."
+    )
+    prompt = (
+        "Brief: " + brief + "\n"
+        "Role: " + role + "\n"
+        "Genre: " + genre + "\n"
+        "Mood: " + mood + "\n"
+        "Tempo: " + tempo + "\n"
+        "Key: " + (key or "suggest one") + "\n"
+        "Language: " + language + lyrics_hint + voice_note + "\n\n"
+        "Return JSON exactly like this (no markdown fences):\n"
+        "{\"title\":\"...\",\"lyrics\":\"full song lyrics with hooks and sections\","
+        "\"structure\":\"e.g. Intro-Verse-Chorus-Verse2-Chorus-Bridge-Outro\","
+        "\"arrangement\":\"instruments, beat pattern, tempo BPM, key signature, production notes\","
+        "\"note\":\"what the AI produced now vs. what final audio rendering (future) will add\"}"
+    )
+    try:
+        raw, _ = _call_llm_cluster([
+            {"role": "system", "content": system},
+            {"role": "user", "content": prompt},
+        ], timeout=45)
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"status": "error", "message": f"Music generation failed: {exc}"}), 502
+
+    out = {}
+    try:
+        start = raw.find("{")
+        end = raw.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            out = json.loads(raw[start:end + 1])
+    except Exception:  # noqa: BLE001
+        out = {}
+
+    if not isinstance(out, dict):
+        out = {}
+    return jsonify({
+        "status": "success",
+        "title": out.get("title", ""),
+        "lyrics": out.get("lyrics", ""),
+        "structure": out.get("structure", ""),
+        "arrangement": out.get("arrangement", ""),
+        "note": out.get("note", ""),
+        "generated": bool(out),
+    })
+
+
 @app.route("/login", methods=["POST"])
 @app.route("/auth/login", methods=["POST"])
 def login():
