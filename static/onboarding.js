@@ -322,6 +322,14 @@
 
   function writePrefs(patch) {
     var p = merged("preferences");
+    // Preserve preferences_setup_status across the PUT: the PUT replaces the
+    // entire section, so if the status key is missing from the payload the
+    // server's copy is silently erased — causing the banner to reappear on
+    // next load.  The status lives in OB.ev.setup_status, not in the
+    // preferences dict, so it must be carried forward explicitly.
+    if (OB.ev && OB.ev.setup_status) {
+      p.preferences_setup_status = OB.ev.setup_status;
+    }
     for (var k in patch) p[k] = patch[k];
     return putSection("preferences", p);
   }
@@ -341,6 +349,9 @@
         if (typeof window.hidePreferenceBanner === "function") window.hidePreferenceBanner();
       } catch (_) {}
     }
+    // Update in-memory state so concurrent/superseding writePrefs() calls
+    // carry the correct status and don't erase it via the section-replace PUT.
+    if (OB.ev) OB.ev.setup_status = status;
     try {
       apiFetch("/api/settings/setup-status", {
         method: "POST",

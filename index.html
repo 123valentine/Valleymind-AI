@@ -2066,6 +2066,34 @@
   </div>
 </div>
 
+<!-- Banner responsive overrides: on mobile the sidebar is hidden, so
+     left:280px would waste the entire left portion of the viewport.
+     These rules reset the banners to full-width and let content wrap. -->
+<style>
+  @media (max-width: 768px) {
+    #prefBanner, #verifyBanner {
+      left: 0 !important;
+      padding: 10px 14px !important;
+      flex-wrap: wrap;
+      justify-content: center;
+      text-align: center;
+    }
+    #prefBanner p, #verifyBanner p {
+      flex: 1 1 100%;
+      font-size: 11.5px !important;
+    }
+    #prefBanner > div, #verifyBanner > div {
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    #prefBanner button, #verifyBanner button {
+      font-size: 11px !important;
+      padding: 8px 12px !important;
+      min-height: 36px;
+    }
+  }
+</style>
+
 <!-- SIDEBAR -->
 <aside class="sidebar fixed left-0 top-0 w-[280px] h-full bg-white/10 backdrop-blur-[30px] border-r border-white/10 flex flex-col py-8 z-50 overflow-y-auto shadow-2xl" id="sidebar" style="display:none;">
   <div class="px-8 mb-8">

@@ -2969,9 +2969,13 @@ def api_settings_setup_status():
     prefs = _get_section_settings(user_id, "preferences")
     if request.method == "GET":
         status = prefs.get("preferences_setup_status", "not_started")
-        # Backward compat: users who already have saved preferences but no
-        # explicit status marker are treated as "completed" — they clearly
-        # completed the wizard at some point or configured preferences manually.
+        # Authoritative derivation: if the user has saved any meaningful
+        # preference data but the flag is still absent (legacy accounts where
+        # the setup_status POST was clobbered by a concurrent preferences PUT,
+        # or users who configured preferences manually via Settings without
+        # going through the wizard), treat the setup as completed.  Only
+        # applies when the flag is "not_started" (absent) — an explicit
+        # "skipped" or "completed" is always preserved as-is.
         if status == "not_started":
             has_content = any(
                 prefs.get(k)

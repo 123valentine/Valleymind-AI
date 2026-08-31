@@ -458,6 +458,59 @@ class SettingsApiTestCase(unittest.TestCase):
         self.assertEqual(client.get("/api/settings/setup-status").get_json()["setup_status"],
                          "completed")
 
+    def test_race_condition_completed_then_clobbered_by_write_prefs(self):
+        """Regression: when writePrefs PUT replaces the entire preferences
+        section without including preferences_setup_status, the flag is
+        erased.  The backward-compat content check must detect the saved
+        data and still return 'completed'."""
+        client = self._auth("race_clobber@example.com")
+        # Step 1: User completes the wizard → status is "completed"
+        client.put("/api/settings/preferences", json={
+            "voice_style": "Professional",
+            "use_cases": ["Coding", "Research"],
+            "communication_style": "Direct and concise",
+        })
+        client.post("/api/settings/setup-status", json={"setup_status": "completed"})
+        self.assertEqual(client.get("/api/settings/setup-status").get_json()["setup_status"],
+                         "completed")
+        # Step 2: Simulate the old writePrefs race — PUT replaces the
+        # entire preferences section WITHOUT including setup_status.
+        client.put("/api/settings/preferences", json={
+            "voice_style": "Friendly",
+            "use_cases": ["Coding"],
+            "communication_style": "Direct and concise",
+        })
+        # Step 3: setup_status was clobbered from the section (absent →
+        # "not_started"), but the backward-compat content check must
+        # detect the saved data and derive "completed".
+        self.assertEqual(client.get("/api/settings/setup-status").get_json()["setup_status"],
+                         "completed")
+
+    def test_clobbered_not_started_with_no_content_stays_not_started(self):
+        """Regression: an absent preferences_setup_status with empty
+        preference data must NOT be derived as completed."""
+        client = self._auth("clobber_empty@example.com")
+        # PUT an empty preferences section — no meaningful content
+        client.put("/api/settings/preferences", json={})
+        self.assertEqual(client.get("/api/settings/setup-status").get_json()["setup_status"],
+                         "not_started")
+
+    def test_explicit_skipped_with_content_stays_skipped(self):
+        """Regression: an explicit 'skipped' status must not be overridden
+        to 'completed' even when the user has saved preference data."""
+        client = self._auth("skip_with_data@example.com")
+        client.put("/api/settings/preferences", json={
+            "voice_style": "Formal",
+            "use_cases": ["Writing"],
+            "communication_style": "Poetic",
+            "expressive_language": True,
+            "preferred_characters": "Literary",
+            "multilingual_behavior": "English with occasional Igbo phrases",
+        })
+        client.post("/api/settings/setup-status", json={"setup_status": "skipped"})
+        self.assertEqual(client.get("/api/settings/setup-status").get_json()["setup_status"],
+                         "skipped")
+
     def test_defaults_never_force_completion(self):
         client = self._auth("setup_fresh@example.com")
         self.assertEqual(client.get("/api/settings/setup-status").get_json()["setup_status"],
