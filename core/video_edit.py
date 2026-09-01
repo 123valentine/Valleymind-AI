@@ -405,14 +405,11 @@ def _in_keep(t: float, keep: list) -> bool:
     return any(s <= t <= e for s, e in keep)
 
 
-def _broll_cues(words: list, keep: list, *, limit: int) -> list:
-    """One LLM pass → up to `limit` B-roll cues {start, end, image_prompt}, in
-    ORIGINAL time, chosen from the kept transcript."""
-    if limit <= 0:
-        return []
-    from core.brain import _call_llm_cluster
+def _cue_lines(words: list, keep: list, width: int = 8) -> list:
+    """Group kept transcript words into timestamped lines for an LLM to cue on.
+    Each line: ``[12.3s] some words...`` — timestamps are ORIGINAL time."""
     lines, buf, buf_start = [], [], None
-    for w in words:
+    for w in words or []:
         try:
             s = float(w["start"])
         except (KeyError, TypeError, ValueError):
@@ -422,11 +419,21 @@ def _broll_cues(words: list, keep: list, *, limit: int) -> list:
         if buf_start is None:
             buf_start = s
         buf.append(str(w.get("word", "")).strip())
-        if len(buf) >= 8:
+        if len(buf) >= width:
             lines.append(f"[{buf_start:.1f}s] " + " ".join(buf))
             buf, buf_start = [], None
     if buf:
         lines.append(f"[{buf_start:.1f}s] " + " ".join(buf))
+    return lines
+
+
+def _broll_cues(words: list, keep: list, *, limit: int) -> list:
+    """One LLM pass → up to `limit` B-roll cues {start, end, image_prompt}, in
+    ORIGINAL time, chosen from the kept transcript."""
+    if limit <= 0:
+        return []
+    from core.brain import _call_llm_cluster
+    lines = _cue_lines(words, keep)
     if not lines:
         return []
     system = (
@@ -500,10 +507,19 @@ def _gen_broll(cues: list, workdir: str) -> list:
 
 def overlay_sticker(video_path: str, sticker_path: str, out_path: str, *,
                     position: str = "br", scale: float = 0.28, start: float = 0.0,
-                    end: float | None = None, timeout: int = 600) -> tuple[bool, str]:
+                    end: float | None = None, fade_in: float = 0.0,
+                    timeout: int = 600) -> tuple[bool, str]:
     """Overlay a transparent sticker (PNG/alpha) onto a video at a corner/center
-    for an optional time window. Alpha is preserved by the overlay filter."""
-    from core.video_assembly import ffmpeg_exe, probe_params
+    for an optional time window. Alpha is preserved by the overlay filter. When
+    ``fade_in > 0`` the sticker "pops in" — its alpha ramps 0→1 over that many
+    seconds from the window start (an entrance animation, e.g. for celebrations).
+
+    Implementation note: the single-image input is a one-frame stream, so a fade
+    cannot manipulate it directly (no intermediate frames). We therefore loop it
+    once into a real frame stream (\\.-loop 1\\.) before fading when an entrance
+    animation is requested; the overlay still ends when the base video ends, so
+    nothing hangs."""
+    from core.video_assembly import ffmpeg_exe, probe_params, _probe_duration
     exe = ffmpeg_exe()
     if not exe:
         return False, "ffmpeg not available"
@@ -527,11 +543,26 @@ def overlay_sticker(video_path: str, sticker_path: str, out_path: str, *,
     # holds it for the whole clip. (Avoid -loop 1 + -shortest — that makes the
     # image an infinite input and hangs the encode.) Output length is bounded by
     # the base video [0:v].
-    fc = f"[1:v]scale={sw}:-1[st];[0:v][st]overlay={pos[0]}:{pos[1]}{enable}[v]"
-    cmd = [exe, "-y", "-i", video_path, "-i", sticker_path,
-           "-filter_complex", fc, "-map", "[v]", "-map", "0:a?",
-           "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
-           "-c:a", "aac", "-movflags", "+faststart", out_path]
+    fade_in = max(0.0, float(fade_in))
+    if fade_in > 0:
+        dur = 0.0
+        try:
+            _, dur = _probe_duration(exe, video_path)
+        except Exception:
+            dur = 0.0
+        cmd = [exe, "-y", "-i", video_path]
+        if dur and dur > 0:
+            cmd += ["-loop", "1", "-t", str(dur + 0.5), "-i", sticker_path]
+        else:
+            cmd += ["-loop", "1", "-i", sticker_path]
+        fc = (f"[1:v]scale={sw}:-1,fade=t=in:st={start}:d={fade_in}:alpha=1[st];"
+              f"[0:v][st]overlay={pos[0]}:{pos[1]}{enable}[v]")
+    else:
+        cmd = [exe, "-y", "-i", video_path, "-i", sticker_path]
+        fc = f"[1:v]scale={sw}:-1[st];[0:v][st]overlay={pos[0]}:{pos[1]}{enable}[v]"
+    cmd += ["-filter_complex", fc, "-map", "[v]", "-map", "0:a?",
+            "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-movflags", "+faststart", out_path]
     return _run_cwd(cmd, timeout)
 
 
@@ -597,10 +628,264 @@ def run_sticker_apply(user_id: str, source: str, sticker_url: str, *,
         shutil.rmtree(work, ignore_errors=True)
 
 
-def run_autoedit(user_id: str, source: str, *, on_progress=None, test_mode: bool = False) -> dict:
-    """Full Massive-Edit pipeline for one source video. Returns
-    {"video_url", "stats"} or {"error"}. Never raises. B-roll is skipped in
-    test_mode (keeps a dry run free + fast)."""
+# ── Instruction-driven edit planning ──────────────────────────────────────
+# The user's typed / voice instructions are treated as the PRIMARY editing
+# brief. An LLM pass turns them into a concrete editing plan (trim / slow-mo /
+# sticker windows / captions / music), then the render chain executes it below.
+
+_DEFAULT_PLAN_STEPS = [
+    "Transcribe the clip",
+    "Trim silences and filler words",
+    "Add animated captions",
+    "Add B-roll shots",
+    "Render the vertical short",
+]
+
+
+def _plan_steps(status: str = "planned") -> list:
+    return [{"step": s, "status": status} for s in _DEFAULT_PLAN_STEPS]
+
+
+def build_instruction_plan(*, instruction: str = "", voice_transcript: str = "",
+                           words: list, keep: list, media_assets: list | None = None,
+                           sticker: dict | None = None) -> dict:
+    """Translate the user's instruction into a concrete editing plan.
+
+    Returns a dict the render chain understands::
+      {
+        "steps":      [{"step": str, "status": str}, ...],     # for the UI
+        "captions":   bool,
+        "music":      bool,                                      # use uploaded audio
+        "broll":      {"use_uploads": [index...], "windows": [{"at": sec}]},
+        "slow_motion":{"start": float|None, "end": float|None, "factor": float},
+        "sticker_windows": [{"at": sec, "duration": float, "position": str, "fade": float}],
+      }
+    All timestamps are in ORIGINAL timeline seconds (they are mapped onto the
+    trimmed output timeline downstream). Never raises — falls back to the
+    default plan on any failure so an instruction can never break an edit.
+    """
+    from core.brain import _call_llm_cluster
+
+    lines = _cue_lines(words, keep)
+    brief = "\n".join(p for p in (instruction, voice_transcript) if str(p).strip())
+
+    media_note = ""
+    images_note = "none"
+    audio_note = "none"
+    for i, a in enumerate(media_assets or []):
+        kind = str(a.get("type", "")).strip()
+        name = str(a.get("name", "") or "file").strip()
+        if kind == "image":
+            images_note = f"{name}#{i}"
+        elif kind == "audio":
+            audio_note = f"{name}#{i}"
+    if (media_assets or []) and images_note == "none" and audio_note == "none":
+        media_note = f"{len(media_assets)} additional asset(s) attached."
+
+    sticker_note = "none"
+    if sticker and sticker.get("url"):
+        sn = str(sticker.get("name") or "sticker").strip()
+        sticker_note = f"{sn} (kind: {sticker.get('kind', 'sticker')})"
+
+    system = (
+        "You are the editing brain of 'Massive Editing'. You read a user's editing "
+        "instruction plus a timestamped transcript of the source footage, and you return "
+        "the concrete edit plan as JSON ONLY. Do not describe — return machine-readable JSON.\n"
+        "\nRules:\n"
+        "- Timestamps in 'at', 'start', 'end' MUST be copied (as a number) from the transcript "
+        "lines given. Never invent seconds that are not on a line.\n"
+        "- If the user names a sticker (e.g. 'the fire sticker', 'the crown sticker'), or a "
+        "sticker is selected, set sticker_use=true and put a sticker window at the moment it "
+        "should appear (goal celebration, beginning for ~3s, etc.). Choose the position the "
+        "user implied; default 'br'. Set 'fade' to 0.5 when the user says pop in / entrance / "
+        "animate. If no natural moment exists, place it at the first transcript time for ~3s.\n"
+        "- If the user wants slow motion (e.g. 'slow motion to the goal'), set slow_motion with "
+        "a start/end copy from nearby transcript lines.\n"
+        "- If the user uploaded images and says to use them (as B-roll/insets), list their "
+        "indices under broll.use_uploads and give each an 'at' from the transcript.\n"
+        "- If the user wants music ('energetic music', 'add music') and audio was uploaded, set "
+        "music=true.\n"
+        "- captions default true; false only when the user says no captions/text.\n"
+        "- steps: 3-8 short, human-readable operations that become the visible edit plan.\n"
+        "\nRespond with ONLY this shape:\n"
+        '{"steps":["..."],"captions":true,"music":false,'
+        '"broll":{"use_uploads":[0],"windows":[{"at":12.3}]},'
+        '"slow_motion":{"start":null,"end":null,"factor":2.0},'
+        '"sticker_use":true,"sticker_windows":[{"at":12.3,"duration":3.0,"position":"tr","fade":0.0}],'
+        '"note":"optional"}\n'
+        'Use null start/end for slow_motion when not applying it, and an empty list for '
+        'sticker_windows / broll.windows / broll.use_uploads when not used.'
+    )
+    user = (
+        ("USER INSTRUCTION:\n" + brief + "\n\n") if brief else ""
+        + (f"TRANSCRIPT (original-time lines):\n" + "\n".join(lines[:60]) + "\n\n" if lines
+           else "TRANSCRIPT: (empty)\n\n")
+        + f"UPLOADED MEDIA: {media_note or 'none'}\n"
+        + f"  images: {images_note}\n  audio: {audio_note}\n"
+        + f"SELECTED STICKER: {sticker_note}"
+    )
+    try:
+        raw, _ = _call_llm_cluster(
+            [{"role": "system", "content": system}, {"role": "user", "content": user}],
+            timeout=40)
+        data = _json(raw)
+    except Exception as exc:
+        print(f"[EDIT] instruction plan LLM failed: {exc}")
+        data = {}
+
+    def _fnum(v, default=None):
+        try:
+            if v is None or str(v).strip() == "":
+                return default
+            return round(float(v), 3) if isinstance(v, (int, float)) else round(float(str(v)), 3)
+        except (TypeError, ValueError):
+            return default
+
+    steps = data.get("steps") if isinstance(data, dict) else []
+    if not isinstance(steps, list) or not steps or not all(str(s).strip() for s in steps):
+        steps = list(_DEFAULT_PLAN_STEPS)
+
+    sw = []
+    max_t = float(keep[-1][1]) if isinstance(keep, list) and keep else 0.0
+    for w in (data.get("sticker_windows") if isinstance(data, dict) else []) or []:
+        at = _fnum(w.get("at"))
+        if at is None:
+            continue
+        at = max(0.0, min(at, max_t))
+        sw.append({
+            "at": at,
+            "duration": max(1.0, float(_fnum(w.get("duration"), 3.0) or 3.0)),
+            "position": str(w.get("position") or "br") if str(w.get("position") or "br").lower()
+                        in ("br", "bl", "tr", "tl", "center") else "br",
+            "fade": max(0.0, float(_fnum(w.get("fade"), 0.0) or 0.0)),
+        })
+    # Selection as an authoritative signal: a selected sticker is used even when
+    # the LLM omits windows (fallback: first transcript moment, ~3s).
+    if sticker and sticker.get("url") and not sw:
+        first_at = _fnum((words[0].get("start") if words else None), 0.0) if words else 0.0
+        sw = [{"at": max(0.0, min(first_at, max_t)), "duration": 3.0,
+               "position": str(sticker.get("position") or "br"), "fade": 0.5}]
+
+    sm = data.get("slow_motion") if isinstance(data, dict) else {}
+    slow = {
+        "start": _fnum(sm.get("start")) if isinstance(sm, dict) else None,
+        "end": _fnum(sm.get("end")) if isinstance(sm, dict) else None,
+        "factor": max(1.2, min(4.0, float(_fnum(sm.get("factor"), 2.0) or 2.0)))
+        if isinstance(sm, dict) else 2.0,
+    }
+    if slow["start"] is not None:
+        slow["start"] = max(0.0, min(slow["start"], max_t))
+    if slow["end"] is not None:
+        slow["end"] = max(slow["start"] or 0.0, min(slow["end"], max_t))
+    if slow["start"] is None or slow["end"] is None or slow["end"] - (slow["start"] or 0.0) < 0.4:
+        slow = {"start": None, "end": None, "factor": 2.0}
+
+    bw = data.get("broll") if isinstance(data, dict) else {}
+    use_uploads = []
+    if isinstance(bw, dict):
+        use_uploads = [int(i) for i in (bw.get("use_uploads") or [])
+                       if str(i).isdigit()]
+        if isinstance(bw.get("windows"), list):
+            pass  # windows are original-time; keep line times via cues below
+
+    plan = {
+        "steps": [{"step": str(s).strip(), "status": "planned"} for s in steps],
+        "captions": bool(data.get("captions", True)),
+        "music": bool(data.get("music", False)),
+        "broll": {"use_uploads": use_uploads},
+        "slow_motion": {
+            "start": slow["start"], "end": slow["end"], "factor": slow["factor"],
+        },
+        "sticker_windows": sw,
+    }
+    return plan
+
+
+def map_plan_to_output(plan: dict, keep: list) -> dict:
+    """Map original-time window markers in a plan onto the trimmed OUTPUT
+    timeline using the edit plan's keep segments."""
+    out = dict(plan)
+    sm = dict(plan.get("slow_motion") or {})
+    if sm.get("start") is not None and sm.get("end") is not None:
+        s = map_to_output(float(sm["start"]), keep)
+        e = map_to_output(float(sm["end"]), keep)
+        if e - s < 0.4:
+            e = min(s + 2.0, plan.get("total_out") or s + 2.0)
+        sm["start"] = round(s, 3)
+        sm["end"] = round(e, 3)
+    out["slow_motion"] = sm
+    if plan.get("total_out") is not None:
+        out["total_out"] = plan["total_out"] or 0.0
+    return out
+
+
+def apply_slowmo(src_path: str, out_path: str, *, start: float, end: float,
+                 factor: float = 2.0, timeout: int = 900) -> tuple[bool, str]:
+    """Apply slow-motion to the [start, end) window only. The window is slowed
+    by ``factor`` (video + audio), keeping pitch via atempo; the rest of the
+    clip is untouched. Output duration grows by (end-start)*(factor-1)."""
+    from core.video_assembly import ffmpeg_exe
+    exe = ffmpeg_exe()
+    if not exe:
+        return False, "ffmpeg not available"
+    S = max(0.0, float(start))
+    E = max(S + 0.1, float(end))
+    F = max(1.1, min(4.0, float(factor)))
+    ext = (E - S) * (F - 1.0)
+    new_end = E + ext
+    vf = (
+        f"[0:v]split=3[v0][v1][v2];"
+        f"[v0]trim=start=0:end={S},setpts=PTS[p0];"
+        f"[v1]trim=start={S}:end={E},setpts=PTS-START/TB,setpts=PTS*{F},setpts=PTS+{S}/TB[p1];"
+        f"[v2]trim=start={E},setpts=PTS-START/TB,setpts=PTS+{new_end}/TB[p2];"
+        f"[p0][p1][p2]concat=n=3:v=1:a=0[vout]"
+    )
+    af = (
+        f"[0:a]asplit=3[a0][a1][a2];"
+        f"[a0]atrim=start=0:end={S},asetpts=PTS[a0o];"
+        f"[a1]atrim=start={S}:end={E},asetpts=PTS-START/TB,atempo={1.0 / F},asetpts=PTS+{S}/TB[a1o];"
+        f"[a2]atrim=start={E},asetpts=PTS-START/TB,asetpts=PTS+{new_end}/TB[a2o];"
+        f"[a0o][a1o][a2o]concat=n=3:v=0:a=1,aresample=44100[aout]"
+    )
+    cmd = [exe, "-y", "-i", src_path, "-filter_complex", vf + ";" + af,
+           "-map", "[vout]", "-map", "[aout]",
+           "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
+           "-c:a", "aac", "-ar", "44100", "-movflags", "+faststart", out_path]
+    return _run_cwd(cmd, timeout)
+
+
+def apply_music(video_path: str, music_path: str, out_path: str, *,
+                volume: float = 0.3, timeout: int = 900) -> tuple[bool, str]:
+    """Mix an uploaded music/SFX track under the video's own audio, trimmed to
+    the video length. Real audio mix (amix), no placeholder."""
+    from core.video_assembly import ffmpeg_exe
+    exe = ffmpeg_exe()
+    if not exe:
+        return False, "ffmpeg not available"
+    vol = max(0.0, min(1.0, float(volume)))
+    fc = (
+        f"[1:a]volume={vol},aresample=44100[m];"
+        f"[0:a][m]amix=inputs=2:duration=first:dropout_transition=2:normalize=0,"
+        f"alimiter=limit=0.97[aout]"
+    )
+    cmd = [exe, "-y", "-i", video_path, "-i", music_path,
+           "-filter_complex", fc,
+           "-map", "0:v", "-map", "[aout]",
+           "-c:v", "copy", "-c:a", "aac", "-ar", "44100",
+           "-movflags", "+faststart", out_path]
+    return _run_cwd(cmd, timeout)
+
+
+def run_autoedit(user_id: str, source: str, *, on_progress=None, test_mode: bool = False,
+                 instruction: str = "", voice_transcript: str = "",
+                 media_assets: list | None = None, sticker: dict | None = None,
+                 on_plan=None) -> dict:
+    """Full Massive-Edit pipeline for one source video. The user's typed/voice
+    instruction (when provided) is parsed into a concrete editing plan that this
+    pipeline then executes — trimming, captions, B-roll from uploaded images,
+    slow-motion windows, selected-sticker overlays and an uploaded-music mix.
+    Returns {"video_url", "stats"} or {"error"}. Never raises. B-roll is
+    skipped in test_mode (keeps a dry run free + fast)."""
     import shutil
     import tempfile
     from core.media_manager import get_media_manager, fetch_media_bytes
@@ -655,34 +940,199 @@ def run_autoedit(user_id: str, source: str, *, on_progress=None, test_mode: bool
         if not plan["keep"] or plan["total_out"] < 1.0:
             return {"error": "nothing usable to keep after trimming"}
 
-        # 5. B-roll (skipped in test mode).
+        # 5. Translate the user's instruction into an editing brief (LLM). The
+        # completed plan is surfaced through on_plan so the job can publish it
+        # BEFORE any heavy rendering — the visible "AI Edit Plan" checklist.
+        have_brief = bool(str(instruction or "").strip() or str(voice_transcript or "").strip())
+        user_plan = None
+        if have_brief:
+            user_plan = build_instruction_plan(
+                instruction=instruction, voice_transcript=voice_transcript,
+                words=words, keep=plan["keep"], media_assets=media_assets,
+                sticker=sticker)
+        else:
+            user_plan = {
+                "steps": [{"step": s, "status": "planned"} for s in _DEFAULT_PLAN_STEPS],
+                "captions": True, "music": bool(
+                    any(str(a.get("type", "")).lower() == "audio" for a in (media_assets or []))),
+                "broll": {"use_uploads": []},
+                "slow_motion": {"start": None, "end": None, "factor": 2.0},
+                "sticker_windows": [],
+            }
+        user_plan["total_out"] = plan["total_out"] or 0.0
+        if on_plan:
+            try:
+                on_plan({"plan": user_plan["steps"], "stage": "planned"})
+            except Exception:
+                pass
+
+        # 6. B-roll: prefer the user's OWN uploaded images when the instruction
+        # names them (mapped to the trimmed timeline); otherwise the classic AI
+        # B-roll cues. Skipped in test mode.
         brolls = []
+        upload_images = [a for a in (media_assets or [])
+                         if str(a.get("type", "")).lower() == "image" and a.get("url")]
         if not test_mode and max_broll() > 0:
-            brolls = _gen_broll(_broll_cues(words, plan["keep"], limit=max_broll()), work)
+            if user_plan.get("broll", {}).get("use_uploads") and upload_images:
+                for idx in user_plan["broll"].get("use_uploads", []):
+                    if idx >= len(upload_images):
+                        continue
+                    img = upload_images[idx]
+                    dest = os.path.join(work, f"upimg_{len(brolls)}.png")
+                    if not _download_to(str(img.get("url", "")), dest):
+                        continue
+                    if os.path.exists(dest):
+                        # One ~2.5s window per named upload, timed off the kept
+                        # transcript (first kept moment, staggered by index).
+                        ats = [s for s, _e in plan["keep"]]
+                        at = ats[min(idx, len(ats) - 1)] if ats else 0.0
+                        out_s = map_to_output(at, plan["keep"])
+                        brolls.append({"image": dest, "start": at,
+                                       "end": min(at + 2.5, plan["keep"][-1][1])})
+                        if on_plan:
+                            try:
+                                on_plan({"plan": user_plan["steps"],
+                                         "stage": "broll",
+                                         "message": f"Using your uploaded image #{idx + 1} as B-roll."})
+                            except Exception:
+                                pass
+            else:
+                brolls = _gen_broll(_broll_cues(words, plan["keep"], limit=max_broll()), work)
         beat()
 
-        # 6. Captions + render.
+        # 7. Captions + render.
         _, family = font_file_and_family()
         w, h = output_size()
-        ass = build_ass(plan["kept_words"], fontname=family, play_w=w, play_h=h)
+        ass = build_ass(
+            plan["kept_words"] if user_plan.get("captions", True) else [],
+            fontname=family, play_w=w, play_h=h)
         out = os.path.join(work, "final.mp4")
         ok, err = render_edit(work_src, plan, ass, brolls, out, on_progress=on_progress)
         if not ok:
             return {"error": err}
         beat()
 
-        # 7. Store (R2 via MediaManager).
+        # 8. Sticker overlay: a selected/uploaded sticker is a REAL editing asset.
+        # Windows from the plan are mapped to the trimmed output timeline and
+        # applied as overlays (position + optional pop-in fade).
+        sticker_applied = 0
+        if sticker and sticker.get("url") and user_plan.get("sticker_windows"):
+            stf = os.path.join(work, "plan_sticker.png")
+            if _download_to(sticker["url"], stf):
+                try:
+                    from PIL import Image
+                    with Image.open(stf) as _si:
+                        try:
+                            _si.seek(0)
+                        except (EOFError, ValueError):
+                            pass
+                        _si.convert("RGBA").save(stf, "PNG")
+                except Exception as _ne:
+                    print(f"[EDIT] sticker normalize skipped: {_ne}")
+                # Multiple windows: sequential passes, each on the previous output.
+                cur = out
+                for i, sw_ in enumerate(user_plan.get("sticker_windows", [])):
+                    out_s = map_to_output(float(sw_["at"]), plan["keep"])
+                    out_e = round(out_s + float(sw_.get("duration", 3.0)), 3)
+                    tmp = os.path.join(work, f"stickered_{i}.mp4")
+                    ok2, err2 = overlay_sticker(
+                        cur, stf, tmp,
+                        position=str(sw_.get("position") or "br"),
+                        start=out_s, end=out_e,
+                        fade_in=float(sw_.get("fade", 0.0) or 0.0))
+                    if ok2 and os.path.exists(tmp):
+                        cur = tmp
+                        sticker_applied += 1
+                    if on_plan:
+                        try:
+                            on_plan({"plan": user_plan["steps"],
+                                     "stage": "sticker",
+                                     "message": f"Placed the {sticker.get('name') or 'sticker'} "
+                                                f"sticker at {out_s:.1f}s ({sw_.get('position')})."})
+                        except Exception:
+                            pass
+                if cur != out and os.path.abspath(cur) != os.path.abspath(out):
+                    os.replace(cur, out)
+        if sticker_applied == 0 and sticker and sticker.get("url") and user_plan.get("sticker_windows"):
+            pass  # sticker selected but couldn't be fetched/normalized — non-fatal
+        beat()
+
+        # 9. Slow-motion window (real per-window ffmpeg slow-mo), if planned.
+        sm = user_plan.get("slow_motion") or {}
+        slow_applied = False
+        if sm.get("start") is not None and sm.get("end") is not None:
+            os_ = float(sm["start"]); oe_ = float(sm["end"])
+            sm_out = os.path.join(work, "slowmo.mp4")
+            ok3, err3 = apply_slowmo(out, sm_out, start=os_, end=oe_,
+                                     factor=float(sm.get("factor", 2.0)))
+            if ok3 and os.path.exists(sm_out):
+                out = sm_out
+                slow_applied = True
+            if on_plan:
+                try:
+                    on_plan({"plan": user_plan["steps"], "stage": "slow-motion",
+                             "message": f"Applied {(sm.get('factor') or 2.0)}x slow-motion "
+                                        f"to {os_:.1f}s–{oe_:.1f}s."
+                                        if slow_applied else
+                                        "Slow-motion requested but the target window could not be applied."})
+                except Exception:
+                    pass
+        beat()
+
+        # 10. Music mix: upload an audio track + ask for music → it's really mixed.
+        music_applied = False
+        if user_plan.get("music"):
+            upload_audio = next((a for a in (media_assets or [])
+                                 if str(a.get("type", "")).lower() == "audio" and a.get("url")), None)
+            if upload_audio:
+                mf = os.path.join(work, "plan_music_mixed.mp4")
+                mpath = os.path.join(work, "plan_music.bin")
+                got = False
+                if os.path.exists(upload_audio["url"]):
+                    shutil.copy(upload_audio["url"], mpath)
+                    got = True
+                else:
+                    data = fetch_media_bytes(upload_audio["url"])
+                    if data:
+                        with open(mpath, "wb") as f:
+                            f.write(data)
+                        got = True
+                if got:
+                    ok4, err4 = apply_music(out, mpath, mf)
+                    if ok4 and os.path.exists(mf):
+                        out = mf
+                        music_applied = True
+                if on_plan:
+                    try:
+                        on_plan({"plan": user_plan["steps"], "stage": "music",
+                                 "message": f"Mixed {upload_audio.get('name') or 'music'} "
+                                            "under the edit." if music_applied else
+                                            "Music requested but the audio track could not be mixed."})
+                    except Exception:
+                        pass
+        beat()
+
+        # 11. Store (R2 via MediaManager).
         rec = get_media_manager(user_id).save_media(
             out, media_type="video", prompt="Massive Edit", provider="MassiveEdit",
             chat_id=f"edit_{user_id}")
         if not rec:
             return {"error": "rendered but could not store the video"}
+        if on_plan:
+            try:
+                on_plan({"plan": user_plan["steps"], "stage": "done"})
+            except Exception:
+                pass
         return {"video_url": rec["local_path"], "stats": {
             "source_seconds": round(dur or 0.0, 1),
             "output_seconds": plan["total_out"],
             "removed_words": plan["removed"],
             "brolls": len(brolls),
             "caption_words": len(plan["kept_words"]),
+            "sticker_applied": sticker_applied,
+            "slow_motion": slow_applied,
+            "music": music_applied,
+            "planned": bool(have_brief),
         }}
     except Exception as exc:
         return {"error": f"auto-edit error: {exc}"}

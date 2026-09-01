@@ -483,14 +483,23 @@ def new_single_video_job(user_id: str, *, prompt: str, duration: int | None,
     return job
 
 
-def new_autoedit_job(user_id: str, source_video_url: str, *, test_mode: bool = False) -> dict:
+def new_autoedit_job(user_id: str, source_video_url: str, *, test_mode: bool = False,
+                     instruction: str = "", voice_transcript: str = "",
+                     voice_note: str = "", media_assets: list | None = None,
+                     sticker_source: str = "", sticker_name: str = "",
+                     sticker_pos: str = "br") -> dict:
     """Massive Editing: auto-edit ONE uploaded video into a vertical short.
 
     The heavy work (transcribe → trim → B-roll → captions → render) is pure
     CPU/ffmpeg, so this reuses the studio job engine (background driver, atomic
     finalize claim, heartbeat, watchdog resume, durable terminal write) but runs
     the video_edit pipeline instead of clip generation. Nothing is charged for
-    v1 (Groq Whisper + free B-roll provider)."""
+    v1 (Groq Whisper + free B-roll provider).
+
+    The user's instruction (typed and/or voice-transcribed), the original voice
+    note (kept for review/debugging), any uploaded media assets and the selected
+    sticker are all stored on the job so they reach the actual edit pipeline and
+    influence the rendered video."""
     job = {
         "_id": uuid.uuid4().hex,
         "user_id": user_id,
@@ -498,6 +507,18 @@ def new_autoedit_job(user_id: str, source_video_url: str, *, test_mode: bool = F
         "source": "autoedit",
         "source_video": source_video_url,
         "test_mode": bool(test_mode),
+        "instruction": str(instruction or "").strip(),
+        "voice_transcript": str(voice_transcript or "").strip(),
+        "voice_note": str(voice_note or ""),          # preserved original voice recording
+        "media_assets": [
+            {"type": str(a.get("type", "")), "url": str(a.get("url", "")),
+             "name": str(a.get("name", ""))} for a in (media_assets or [])
+        ],
+        "sticker_source": str(sticker_source or ""),   # /static/... sticker URL
+        "sticker_name": str(sticker_name or ""),
+        "sticker_pos": str(sticker_pos or "br").lower() if str(sticker_pos or "br").lower()
+                       in ("br", "bl", "tr", "tl", "center") else "br",
+        "edit_plan": [],                                # AI Edit Plan checklist for the UI
         "clips": [],
         "final_video": "",
         "stats": None,
@@ -597,11 +618,39 @@ def _run_autoedit(job_id: str) -> None:
             _touch_heartbeat(job_id)
 
     threading.Thread(target=_pulse, daemon=True, name=f"edit-hb-{job_id[:8]}").start()
+
+    def _save_plan(payload: dict, _nonce=[0]):
+        """Persist the AI Edit Plan + progress onto the job so the frontend can
+        show what the AI decided to do before/during rendering."""
+        _nonce[0] += 1
+        j = get_job(job_id) or job
+        steps = (payload or {}).get("plan") or j.get("edit_plan") or []
+        j["edit_plan"] = steps
+        j["edit_plan_note"] = ((payload or {}).get("message") or "").strip()
+        j["edit_plan_stage"] = ((payload or {}).get("stage") or "").strip()
+        j["heartbeat"] = _now_iso()
+        save_job(j)
+
+    def _beat():
+        _touch_heartbeat(job_id)
+
     try:
         import core.video_edit as ve
-        result = ve.run_autoedit(job["user_id"], job.get("source_video", ""),
-                                 on_progress=lambda: _touch_heartbeat(job_id),
-                                 test_mode=bool(job.get("test_mode")))
+        stick = {}
+        if job.get("sticker_source"):
+            stick = {"url": job.get("sticker_source"),
+                     "name": job.get("sticker_name") or "sticker",
+                     "position": job.get("sticker_pos") or "br",
+                     "kind": "sticker"}
+        result = ve.run_autoedit(
+            job["user_id"], job.get("source_video", ""),
+            on_progress=_beat,
+            test_mode=bool(job.get("test_mode")),
+            instruction=job.get("instruction", ""),
+            voice_transcript=job.get("voice_transcript", ""),
+            media_assets=job.get("media_assets") or [],
+            sticker=stick or None,
+            on_plan=_save_plan)
     finally:
         stop.set()
 
@@ -708,6 +757,12 @@ def public_view(job: dict) -> dict:
         "final_video": job.get("final_video", ""),
         "assembly_mode": job.get("assembly_mode", "hard_cut"),
         "stats": job.get("stats"),          # Massive Edit: trim/broll/caption counts
+        "edit_plan": job.get("edit_plan"),  # Massive Edit: AI Edit Plan checklist
+        "edit_plan_stage": job.get("edit_plan_stage", ""),
+        "edit_plan_note": job.get("edit_plan_note", ""),
+        "instruction": job.get("instruction", ""),
+        "voice_transcript": job.get("voice_transcript", ""),
+        "media_assets": job.get("media_assets") or [],
         "cost": {
             "spend_usd": round(job.get("spend_usd", 0.0), 2),
             "est_cost_usd": round(job.get("est_cost_usd", 0.0), 2),

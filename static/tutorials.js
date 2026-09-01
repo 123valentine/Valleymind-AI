@@ -26,6 +26,8 @@
           desc: "Create AI-powered videos from text, images, or templates." },
         { key: "website", title: "Website Builder", icon: "sparkles",
           desc: "Build complete websites using AI with little or no coding." },
+        { key: "editing", title: "Massive Editing", icon: "content-cut",
+          desc: "Tell ValleyMind what to do with a raw clip — type it or record a voice note, drop in extra footage/images/sounds, pick a sticker — then hit Start AI Edit and get a rendered short with an AI edit plan." },
     ];
 
     var activePopup = null;

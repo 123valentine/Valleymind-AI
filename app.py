@@ -4257,13 +4257,124 @@ def _edit_enabled() -> bool:
     return os.getenv("EDIT_ENABLED", "1").strip().lower() not in ("0", "false", "no", "off")
 
 
+@app.route("/api/editing/transcribe", methods=["POST"])
+def api_editing_transcribe():
+    """Transcribe a raw voice-note (or any audio/video upload) into text for a
+    Massive Editing instruction. Reuses the same Groq Whisper pipeline the edit
+    itself uses, so voice instructions carry the SAME weight as typed ones."""
+    user_id, error = _require_login()
+    if error:
+        return error
+    if not _edit_enabled():
+        return jsonify({"status": "error", "message": "Editing is temporarily unavailable."}), 503
+    import core.transcription as tr
+    upload = request.files.get("audio")
+    if not upload or not upload.filename:
+        return jsonify({"status": "error", "message": "Attach a voice note to transcribe."}), 400
+    import tempfile
+    suffix = os.path.splitext(upload.filename)[1][:8] or ".m4a"
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+    tmp_path = tmp.name
+    tmp.close()
+    try:
+        upload.save(tmp_path)
+        res = tr.transcribe(tmp_path, already_audio=True, timeout=120)
+        if res.get("error"):
+            return jsonify({"status": "error", "message": "Transcription failed: " + res["error"]}), 502
+        return jsonify({"status": "success",
+                        "text": res.get("text", "").strip(),
+                        "words": res.get("words", [])})
+    except Exception as exc:
+        return jsonify({"status": "error", "message": f"Transcription error: {exc}"}), 500
+    finally:
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
+
+
+def _edit_collect_uploads(user_id: str) -> tuple[list, dict, str]:
+    """Store every file attached to /api/editing/run (``media`` + legacy
+    ``video`` + ``voice_note``) via the media manager. Returns:
+      (media_assets, primary_video_rec, error_str)
+    ``media_assets`` = one entry per stored non-primary asset
+      {"type": "video"|"image"|"audio", "url": local_path, "name": filename}
+    ``primary_video_rec`` = the media record chosen as the edit source.
+    """
+    mm = get_media_manager(user_id)
+    files = list(request.files.getlist("media"))
+    legacy = request.files.get("video")
+    if legacy and legacy.filename:
+        files.append(legacy)
+    if not files:
+        return [], {}, "Attach at least one video to edit."
+
+    media_assets: list = []
+    primary = None
+    for f in files:
+        if not f or not f.filename:
+            continue
+        kind = _asset_kind(f.mimetype or "", f.filename)
+        import tempfile
+        suffix = os.path.splitext(f.filename)[1][:8] or ".bin"
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+        tmp_path = tmp.name
+        tmp.close()
+        try:
+            f.save(tmp_path)
+            size_mb = os.path.getsize(tmp_path) / 1024 / 1024
+            if size_mb > _max_upload_mb:
+                return [], {}, f"{f.filename} is {size_mb:.0f}MB — the limit is {_max_upload_mb:.0f}MB."
+            name = (f.filename or "asset")[:200]
+            if not kind:
+                return [], {}, f"{f.filename} isn't a supported video/image/audio file."
+            if kind == "video":
+                rec = mm.save_video(tmp_path, prompt=name, provider="EditUpload",
+                                    chat_id=f"edit_{user_id}")
+                if primary is None:
+                    primary = rec
+                elif rec:
+                    media_assets.append({"type": "video", "url": rec["local_path"], "name": name})
+            elif kind == "image":
+                rec = mm.save_image(tmp_path, prompt=name, provider="EditUpload",
+                                    chat_id=f"edit_{user_id}")
+                if rec:
+                    media_assets.append({"type": "image", "url": rec["local_path"], "name": name})
+            elif kind == "audio":
+                rec = mm.save_media(tmp_path, media_type="audio", prompt=name,
+                                    provider="EditUpload", chat_id=f"edit_{user_id}",
+                                    library="edit", category="music")
+                if rec:
+                    media_assets.append({"type": "audio", "url": rec["local_path"], "name": name})
+        finally:
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+    return media_assets, primary or {}, ""
+
+
 @app.route("/api/editing/run", methods=["POST"])
 def api_editing_run():
-    """Massive Editing: accept ONE raw talking-head video, store it, and launch a
-    background auto-edit job (transcribe -> trim silences/fillers -> B-roll ->
-    animated captions -> vertical short). Returns the job to poll via
-    /api/studio/job/<id>. No paid video-generation spend (Groq Whisper + a free
-    B-roll provider + local ffmpeg)."""
+    """Massive Editing (instruction-driven): accept raw footage + the user's
+    typed/voice instruction + optional media assets and a selected sticker, store
+    them, and launch a background job that interprets the instruction into an
+    editing plan and renders the edited video. Returns the job to poll via
+    /api/studio/job/<id>.
+
+    Form fields:
+      instruction       — the primary text instruction ("what do you want me to do")
+      voice_transcript  — text transcription of a recorded voice instruction
+      voice_note        — the recorded voice-note audio itself (kept on the job)
+      media[]           — one or more video/image/audio uploads
+      video             — legacy single-video field (still supported)
+      sticker_url       — a /static/... sticker asset to actually overlay
+      sticker_name      — human label for that sticker
+      test_mode         — "1" for a free dry run (no B-roll spend)
+
+    No paid video-generation spend (Groq Whisper + a free B-roll provider +
+    local ffmpeg). Nothing auto-starts on upload — the job launches here, on
+    this explicit request."""
     user_id, error = _require_login()
     if error:
         return error
@@ -4271,35 +4382,59 @@ def api_editing_run():
         return jsonify({"status": "error", "message": "Editing is temporarily unavailable."}), 503
 
     import core.studio_jobs as sj
-    upload = request.files.get("video")
-    if not upload or not upload.filename:
-        return jsonify({"status": "error", "message": "Upload a video to edit."}), 400
-    test_mode = str(request.form.get("test_mode", "")).strip().lower() in ("1", "true", "yes", "on")
 
-    import tempfile
-    suffix = os.path.splitext(upload.filename)[1][:8] or ".mp4"
-    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
-    tmp_path = tmp.name
-    tmp.close()
-    try:
-        upload.save(tmp_path)
-        size_mb = os.path.getsize(tmp_path) / 1024 / 1024
-        if size_mb > _max_upload_mb:
-            return jsonify({"status": "error",
-                            "message": f"{upload.filename} is {size_mb:.0f}MB — the limit is "
-                                       f"{_max_upload_mb:.0f}MB."}), 413
-        rec = get_media_manager(user_id).save_video(
-            tmp_path, prompt=(upload.filename or "raw")[:200],
-            provider="EditUpload", chat_id=f"edit_{user_id}")
-        if not rec:
-            return jsonify({"status": "error", "message": "Couldn't store the upload."}), 502
-    finally:
+    instruction = str(request.form.get("instruction", "")).strip()
+    voice_transcript = str(request.form.get("voice_transcript", "")).strip()
+    sticker_url = str(request.form.get("sticker_url", "")).strip()
+    sticker_name = str(request.form.get("sticker_name", "")).strip()
+    sticker_pos = str(request.form.get("sticker_pos", "")).strip().lower()
+    if sticker_pos not in ("br", "bl", "tr", "tl", "center"):
+        sticker_pos = "br"
+    if sticker_url and not sticker_url.startswith("/static/"):
+        sticker_url = ""
+
+    media_assets, primary, msg = _edit_collect_uploads(user_id)
+    if not primary:
+        if not media_assets:
+            return jsonify({"status": "error", "message": msg or "Upload a video to edit."}), 400
+        return jsonify({"status": "error",
+                        "message": "Attach a video clip to edit (images/audio alone need a video to be edited on)."}), 400
+
+    # The instruction is the PRIMARY brief — require either typed or spoken text
+    # unless nothing was attached yet, so "Start AI Edit" always sends intent.
+    if not (instruction or voice_transcript or request.files.get("voice_note")):
+        return jsonify({"status": "error",
+                        "message": "Tell the AI what you want before editing — type or record an instruction."}), 400
+
+    voice_note = ""
+    vn = request.files.get("voice_note")
+    if vn and vn.filename:
+        import tempfile
+        suffix = os.path.splitext(vn.filename)[1][:8] or ".webm"
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+        tmp_path = tmp.name
+        tmp.close()
         try:
-            os.remove(tmp_path)
-        except OSError:
-            pass
+            vn.save(tmp_path)
+            vrec = get_media_manager(user_id).save_media(
+                tmp_path, media_type="audio", prompt="Voice instruction for an edit",
+                provider="EditVoice", chat_id=f"edit_{user_id}", library="edit",
+                category="reaction")
+            if vrec:
+                voice_note = vrec["local_path"]
+        finally:
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
 
-    job = sj.new_autoedit_job(user_id, rec["local_path"], test_mode=test_mode)
+    test_mode = str(request.form.get("test_mode", "")).strip().lower() in ("1", "true", "yes", "on")
+    job = sj.new_autoedit_job(
+        user_id, primary["local_path"], test_mode=test_mode,
+        instruction=instruction, voice_transcript=voice_transcript,
+        voice_note=voice_note, media_assets=media_assets,
+        sticker_source=sticker_url, sticker_name=sticker_name,
+        sticker_pos=sticker_pos)
     sj.launch(job["_id"])
     return jsonify({"status": "success", "job": sj.public_view(sj.get_job(job["_id"]))})
 
