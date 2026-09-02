@@ -1265,6 +1265,83 @@ def api_music_project_delete(project_id: str):
     return jsonify({"status": "success"})
 
 
+@app.route("/api/music/ai-edit", methods=["POST"])
+def api_music_ai_edit():
+    """Music Studio AI Edit — incremental refinement.
+
+    Accepts an instruction plus the current project state (lyrics, arrangement,
+    settings) and returns targeted changes. Supports:
+      - Lyrics editing (rewrite, extend, shorten, translate)
+      - Arrangement/instrumentation suggestions
+      - Mood/tempo/key changes
+      - General production direction
+
+    Returns a JSON object with changed fields the client can apply selectively.
+    """
+    user_id, error = _require_login()
+    if error:
+        return error
+    data = request.get_json(silent=True) or {}
+    instruction = str(data.get("instruction") or "").strip()
+    if not instruction:
+        return jsonify({"status": "error", "message": "Instruction is required"}), 400
+
+    current_lyrics = str(data.get("lyrics") or "").strip()
+    current_arrangement = str(data.get("arrangement") or "").strip()
+    current_genre = str(data.get("genre") or "").strip()
+    current_mood = str(data.get("mood") or "").strip()
+    current_tempo = str(data.get("tempo") or "").strip()
+    current_key = str(data.get("key") or "").strip()
+    current_name = str(data.get("name") or "").strip()
+
+    system = (
+        "You are ValleyMind's music producer assistant. The user has an "
+        "existing song project and wants to make specific changes. Analyse "
+        "the instruction and return ONLY the fields that changed. Do NOT "
+        "rewrite unchanged content. Be precise and musical."
+    )
+    context = (
+        "Current project:\n"
+        f"Name: {current_name}\n"
+        f"Genre: {current_genre}\n"
+        f"Mood: {current_mood}\n"
+        f"Tempo: {current_tempo}\n"
+        f"Key: {current_key or 'not set'}\n"
+        f"Arrangement: {current_arrangement or 'not set'}\n"
+        f"Lyrics:\n{current_lyrics or '(none yet)'}\n\n"
+        f"User instruction: {instruction}\n\n"
+        "Return JSON with ONLY the changed fields (no markdown fences):\n"
+        '{"title":"...if changed","lyrics":"...if changed",'
+        '"arrangement":"...if changed","genre":"...if changed",'
+        '"mood":"...if changed","tempo":"...if changed","key":"...if changed",'
+        '"changes_summary":"brief description of what changed"}'
+    )
+    try:
+        raw, _ = _call_llm_cluster([
+            {"role": "system", "content": system},
+            {"role": "user", "content": context},
+        ], timeout=45)
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"status": "error", "message": f"AI edit failed: {exc}"}), 502
+
+    out = {}
+    try:
+        start = raw.find("{")
+        end = raw.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            out = json.loads(raw[start:end + 1])
+    except Exception:  # noqa: BLE001
+        out = {}
+
+    if not isinstance(out, dict):
+        out = {}
+    return jsonify({
+        "status": "success",
+        "changes": out,
+        "summary": out.pop("changes_summary", ""),
+    })
+
+
 @app.route("/login", methods=["POST"])
 @app.route("/auth/login", methods=["POST"])
 def login():
@@ -4437,6 +4514,69 @@ def api_editing_run():
         sticker_pos=sticker_pos)
     sj.launch(job["_id"])
     return jsonify({"status": "success", "job": sj.public_view(sj.get_job(job["_id"]))})
+
+
+@app.route("/api/editing/refine", methods=["POST"])
+def api_editing_refine():
+    """Refine a previous Massive Edit with manual sidebar overrides.
+
+    Accepts the previous job_id plus a JSON ``manual`` payload (trim, speed,
+    rotate, crop, canvas, captions, effects, music, sticker, etc.) and launches
+    a new autoedit job that replays the AI's edit plan with the manual
+    overrides applied on top.  The user can also send a new instruction to
+    modify the AI plan itself.
+
+    JSON body:
+      job_id     — the previous autoedit job to refine
+      manual     — dict of manual overrides (see _normalize_manual in video_edit)
+      instruction — optional new instruction (changes the AI plan)
+      keep_plan  — if true (default), replay the previous AI plan unchanged
+    """
+    user_id, error = _require_login()
+    if error:
+        return error
+    if not _edit_enabled():
+        return jsonify({"status": "error", "message": "Editing is temporarily unavailable."}), 503
+
+    import core.studio_jobs as sj
+    data = request.get_json(silent=True) or {}
+    prev_job_id = str(data.get("job_id", "")).strip()
+    if not prev_job_id:
+        return jsonify({"status": "error", "message": "No previous job to refine."}), 400
+
+    prev_job = sj.get_job(prev_job_id)
+    if not prev_job or prev_job.get("user_id") != user_id:
+        return jsonify({"status": "error", "message": "Previous edit not found."}), 404
+    if not prev_job.get("final_video"):
+        return jsonify({"status": "error", "message": "Previous edit hasn't finished yet."}), 400
+
+    manual = data.get("manual") or {}
+    instruction = str(data.get("instruction", "")).strip()
+    keep_plan = bool(data.get("keep_plan", True))
+    prev_plan_steps = prev_job.get("edit_plan") or []
+    prev_plan = {
+        "steps": prev_plan_steps,
+        "captions": True,
+        "music": bool(prev_job.get("stats", {}).get("music")),
+        "broll": {"use_uploads": []},
+        "slow_motion": {"start": None, "end": None, "factor": 2.0},
+        "sticker_windows": [],
+    }
+
+    new_job = sj.new_autoedit_job(
+        user_id, prev_job["source_video"],
+        test_mode=bool(prev_job.get("test_mode")),
+        instruction=instruction or prev_job.get("instruction", ""),
+        voice_transcript=prev_job.get("voice_transcript", ""),
+        media_assets=prev_job.get("media_assets") or [],
+        sticker_source=prev_job.get("sticker_source", ""),
+        sticker_name=prev_job.get("sticker_name", ""),
+        sticker_pos=prev_job.get("sticker_pos", "br"),
+        manual=manual,
+        keep_plan=keep_plan,
+        prev_plan=prev_plan)
+    sj.launch(new_job["_id"])
+    return jsonify({"status": "success", "job": sj.public_view(sj.get_job(new_job["_id"]))})
 
 
 # ── Editing asset library (user's own funny sounds / music / reactions) ──────

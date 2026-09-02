@@ -168,19 +168,41 @@ def _chunks(kept_words: list, n: int):
         yield line
 
 
+_CAPTION_ALIGN = {"lower": 2, "center": 5, "upper": 8}
+
+
 def build_ass(kept_words: list, *, fontname: str = "Arial", play_w: int = 720,
-              play_h: int = 1280, words_per_line: int = 3, uppercase: bool = True) -> str:
+              play_h: int = 1280, words_per_line: int = 3, uppercase: bool = True,
+              title_text: str = "", title_seconds: float = 3.0,
+              caption_scale: float = 1.0, caption_align: str = "lower") -> str:
     """Build an ASS subtitle track with word-by-word karaoke highlight — the
     Hormozi/Gadzhi look: big, bold, centered in the lower-third; each word turns
     from base white to the highlight colour as it's spoken (``\\kf`` karaoke).
 
     Colours are ASS &HAABBGGRR. PrimaryColour = spoken/active (yellow),
     SecondaryColour = not-yet-spoken (white), OutlineColour = black.
+
+    Optional manual-text overrides (all real, land in the rendered subtitles):
+      ``title_text``     — a title line shown at the top of the frame for the
+                           first ``title_seconds`` (a separate top-aligned style).
+      ``caption_align``  — lower | center | upper (bottom / middle / top band).
+      ``caption_scale``  — relative caption font size (0.7x–1.6x).
     """
     fontsize = max(24, int(play_h * 0.075))
+    try:
+        scale = max(0.6, min(2.0, float(caption_scale or 1.0)))
+    except (TypeError, ValueError):
+        scale = 1.0
+    fontsize = max(18, int(fontsize * scale))
     outline = max(2, int(fontsize * 0.09))
     shadow = max(1, int(fontsize * 0.04))
-    margin_v = int(play_h * 0.20)
+    align = _CAPTION_ALIGN.get(str(caption_align or "lower"), 2)
+    if align == 8:
+        margin_v = int(play_h * 0.06)      # upper band — near the top
+    elif align == 5:
+        margin_v = int(play_h * 0.44)      # centered vertically
+    else:
+        margin_v = int(play_h * 0.20)      # lower third (default)
     try:
         wpl = max(1, int(os.getenv("EDIT_CAPTION_WORDS", str(words_per_line))))
     except (TypeError, ValueError):
@@ -199,12 +221,22 @@ def build_ass(kept_words: list, *, fontname: str = "Arial", play_w: int = 720,
         "BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, "
         "BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n"
         f"Style: Pop,{fontname},{fontsize},&H0000FFFF,&H00FFFFFF,&H00000000,&H80000000,"
-        f"-1,0,0,0,100,100,0,0,1,{outline},{shadow},2,40,40,{margin_v},1\n\n"
+        f"-1,0,0,0,100,100,0,0,1,{outline},{shadow},{align},40,40,{margin_v},1\n"
+        f"Style: Title,{fontname},{max(20, int(play_h * 0.085))},&H0000FFFF,&H00FFFFFF,"
+        f"&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,{max(2, outline)},{shadow},"
+        f"8,40,40,{int(play_h * 0.06)},1\n\n"
         "[Events]\n"
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
     )
 
     lines: list[str] = []
+    title = str(title_text or "").strip()
+    if title:
+        try:
+            ts = max(0.5, min(30.0, float(title_seconds or 3.0)))
+        except (TypeError, ValueError):
+            ts = 3.0
+        lines.append(f"Dialogue: 0,0:00:00.00,{_ass_time(ts)},Title,,0,0,0,,{_ass_escape(title)}")
     for chunk in _chunks(kept_words, wpl):
         start = chunk[0]["out_start"]
         end = max(chunk[-1]["out_end"], start + 0.4)   # min on-screen time
@@ -297,11 +329,22 @@ def _run_cwd(cmd: list, timeout: int, cwd: str | None = None) -> tuple[bool, str
         return False, str(exc)
 
 
+def _color_token(bg: str) -> str:
+    """ffmpeg color token from an '#'-style hex: ``#0a1b2c`` → ``0x0a1b2c``."""
+    hexed = "".join(ch for ch in str(bg or "") if ch in "0123456789abcdefABCDEF")
+    return ("0x" + hexed[:6]) if len(hexed) >= 6 else "0x000000"
+
+
 def render_edit(src_path: str, plan: dict, ass_text: str, brolls: list, out_path: str,
-                *, fps: int = 30, on_progress=None, timeout: int = 900) -> tuple[bool, str]:
+                *, fps: int = 30, on_progress=None, timeout: int = 900,
+                width: int | None = None, height: int | None = None,
+                fit: bool = False, bg: str = "#000000") -> tuple[bool, str]:
     """Two-pass render:
       1. trim to keep-segments (select/aselect + compacting setpts) + center-crop
-         and scale to vertical output size.
+         to the canvas (``width`` × ``height``, default vertical 720×1280). When
+         ``fit`` is set the source is letterboxed onto the canvas instead of
+         center-cropped (the ``bg`` colour fills the bars) — a real "Smart
+         reframe" vs "Fit" canvas choice, not a placeholder.
       2. overlay B-roll stills during their windows + burn the ASS captions.
     Returns (ok, error). Never raises.
     """
@@ -323,14 +366,23 @@ def render_edit(src_path: str, plan: dict, ass_text: str, brolls: list, out_path
             except Exception:
                 pass
 
-    w, h = output_size()
+    dw, dh = output_size()
+    w = int(width) if width else dw
+    h = int(height) if height else dh
+    if w < 16 or h < 16:
+        return False, "invalid canvas size"
     ar = f"({w}/{h})"
     work = tempfile.mkdtemp(prefix="edit_")
     try:
-        # ── Pass 1: trim + vertical ──────────────────────────────────────────
+        # ── Pass 1: trim + canvas ─────────────────────────────────────────
         sel = _select_expr(keep)
-        vf = (f"select='{sel}',setpts=N/FRAME_RATE/TB,"
-              f"crop='min(iw,ih*{ar})':'min(ih,iw/{ar})',scale={w}:{h},setsar=1")
+        if fit:
+            vf = (f"select='{sel}',setpts=N/FRAME_RATE/TB,"
+                  f"scale={w}:{h}:force_original_aspect_ratio=decrease,"
+                  f"pad={w}:{h}:(ow-iw)/2:(oh-ih)/2:color={_color_token(bg)},setsar=1")
+        else:
+            vf = (f"select='{sel}',setpts=N/FRAME_RATE/TB,"
+                  f"crop='min(iw,ih*{ar})':'min(ih,iw/{ar})',scale={w}:{h},setsar=1")
         af = f"aselect='{sel}',asetpts=N/SR/TB"
         edited = os.path.join(work, "edited.mp4")
         cmd1 = [exe, "-y", "-i", src_path, "-vf", vf, "-af", af, "-r", str(fps),
@@ -507,12 +559,13 @@ def _gen_broll(cues: list, workdir: str) -> list:
 
 def overlay_sticker(video_path: str, sticker_path: str, out_path: str, *,
                     position: str = "br", scale: float = 0.28, start: float = 0.0,
-                    end: float | None = None, fade_in: float = 0.0,
+                    end: float | None = None, fade_in: float = 0.0, angle: float = 0.0,
                     timeout: int = 600) -> tuple[bool, str]:
     """Overlay a transparent sticker (PNG/alpha) onto a video at a corner/center
     for an optional time window. Alpha is preserved by the overlay filter. When
     ``fade_in > 0`` the sticker "pops in" — its alpha ramps 0→1 over that many
     seconds from the window start (an entrance animation, e.g. for celebrations).
+    ``angle`` (degrees) rotates the sticker as it is stamped onto the frame.
 
     Implementation note: the single-image input is a one-frame stream, so a fade
     cannot manipulate it directly (no intermediate frames). We therefore loop it
@@ -543,6 +596,11 @@ def overlay_sticker(video_path: str, sticker_path: str, out_path: str, *,
     # holds it for the whole clip. (Avoid -loop 1 + -shortest — that makes the
     # image an infinite input and hangs the encode.) Output length is bounded by
     # the base video [0:v].
+    try:
+        ang = float(angle or 0.0) % 360.0
+    except (TypeError, ValueError):
+        ang = 0.0
+    rot = f",rotate={ang}*PI/180:ow=ceil(iw/2)*2:oh=ceil(ih/2)*2" if ang else ""
     fade_in = max(0.0, float(fade_in))
     if fade_in > 0:
         dur = 0.0
@@ -555,11 +613,11 @@ def overlay_sticker(video_path: str, sticker_path: str, out_path: str, *,
             cmd += ["-loop", "1", "-t", str(dur + 0.5), "-i", sticker_path]
         else:
             cmd += ["-loop", "1", "-i", sticker_path]
-        fc = (f"[1:v]scale={sw}:-1,fade=t=in:st={start}:d={fade_in}:alpha=1[st];"
+        fc = (f"[1:v]scale={sw}:-1{rot},fade=t=in:st={start}:d={fade_in}:alpha=1[st];"
               f"[0:v][st]overlay={pos[0]}:{pos[1]}{enable}[v]")
     else:
         cmd = [exe, "-y", "-i", video_path, "-i", sticker_path]
-        fc = f"[1:v]scale={sw}:-1[st];[0:v][st]overlay={pos[0]}:{pos[1]}{enable}[v]"
+        fc = f"[1:v]scale={sw}:-1{rot}[st];[0:v][st]overlay={pos[0]}:{pos[1]}{enable}[v]"
     cmd += ["-filter_complex", fc, "-map", "[v]", "-map", "0:a?",
             "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
             "-c:a", "aac", "-movflags", "+faststart", out_path]
@@ -855,18 +913,39 @@ def apply_slowmo(src_path: str, out_path: str, *, start: float, end: float,
 
 
 def apply_music(video_path: str, music_path: str, out_path: str, *,
-                volume: float = 0.3, timeout: int = 900) -> tuple[bool, str]:
+                volume: float = 0.3, fade_in: float = 0.0, fade_out: float = 0.0,
+                timeout: int = 900) -> tuple[bool, str]:
     """Mix an uploaded music/SFX track under the video's own audio, trimmed to
-    the video length. Real audio mix (amix), no placeholder."""
-    from core.video_assembly import ffmpeg_exe
+    the video length. Real audio mix (amix), no placeholder. ``volume`` is the
+    mix gain; ``fade_in``/``fade_out`` (seconds) apply afade envelopes on the
+    mixed bus so the backing track enters/exits cleanly."""
+    from core.video_assembly import ffmpeg_exe, _probe_duration
     exe = ffmpeg_exe()
     if not exe:
         return False, "ffmpeg not available"
     vol = max(0.0, min(1.0, float(volume)))
+    posts = []
+    try:
+        fi = max(0.0, min(10.0, float(fade_in or 0.0)))
+    except (TypeError, ValueError):
+        fi = 0.0
+    try:
+        fo = max(0.0, min(10.0, float(fade_out or 0.0)))
+    except (TypeError, ValueError):
+        fo = 0.0
+    if fi > 0:
+        posts.append(f"afade=t=in:st=0:d={fi}")
+    if fo > 0:
+        try:
+            dur = _probe_duration(exe, video_path)[1] or 0.0
+        except Exception:
+            dur = 0.0
+        if dur and dur - fo > 0.1:
+            posts.append(f"afade=t=out:st={max(0.0, dur - fo):.3f}:d={fo}")
     fc = (
         f"[1:a]volume={vol},aresample=44100[m];"
         f"[0:a][m]amix=inputs=2:duration=first:dropout_transition=2:normalize=0,"
-        f"alimiter=limit=0.97[aout]"
+        f"alimiter=limit=0.97" + (",".join(posts) if posts else "") + "[aout]"
     )
     cmd = [exe, "-y", "-i", video_path, "-i", music_path,
            "-filter_complex", fc,
@@ -876,16 +955,374 @@ def apply_music(video_path: str, music_path: str, out_path: str, *,
     return _run_cwd(cmd, timeout)
 
 
+# ── Manual overrides (professional sidebar) ────────────────────────────────
+# The professional editing sidebar lets the user hand-tune the AI result
+# WITHOUT destroying the AI plan: each manual control writes into a small
+# `manual` dict that this engine sanitises and folds into the pipeline below
+# (trim, speed, rotate/flip, crop/resize, captions + title text, effects,
+# fades/transitions, canvas/aspect, music mix, sticker size/rotation/
+# duration/position). No placeholder controls: every key lands in an ffmpeg
+# filter or the plan it overrides.
+
+_CANVAS_PRESETS = {"9:16": (720, 1280), "16:9": (1280, 720), "1:1": (720, 720)}
+_EFFECT_NAMES = {"fade_in", "fade_out", "bw", "vignette", "blur", "boost",
+                 "sepia", "saturated", "reverse"}
+_POSITIONS = ("br", "bl", "tr", "tl", "center")
+
+
+def _num(v, default, lo, hi):
+    try:
+        n = float(v)
+        return max(lo, min(hi, n))
+    except (TypeError, ValueError):
+        return default
+
+
+def _bool(v) -> bool:
+    if isinstance(v, bool):
+        return v
+    return str(v or "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _clean_hex(v) -> str:
+    return "".join(c for c in str(v or "") if c in "0123456789abcdefABCDEF")[:6] or "000000"
+
+
+def _normalize_manual(raw) -> dict:
+    """Sanitise the frontend's manual-overrides payload into a clean dict. Never
+    raises; unknown keys are dropped (whitelist). Returns {} when empty."""
+    if not isinstance(raw, dict):
+        return {}
+    out: dict = {}
+
+    c = raw.get("canvas")
+    if isinstance(c, dict):
+        aspect = str(c.get("aspect") or "9:16")
+        if aspect not in _CANVAS_PRESETS and aspect != "custom":
+            aspect = "9:16"
+        cand = {"aspect": aspect}
+        if aspect == "custom":
+            cand["width"] = max(240, int(_num(c.get("width"), 720, 240, 2000)))
+            cand["height"] = max(240, int(_num(c.get("height"), 1280, 240, 2000)))
+        cand["mode"] = "fit" if str(c.get("mode")) == "fit" else "fill"
+        cand["bg"] = _clean_hex(c.get("bg"))
+        out["canvas"] = cand
+
+    t = raw.get("trim")
+    if isinstance(t, dict):
+        a = _num(t.get("start"), 0.0, 0.0, 1e6)
+        b = t.get("end")
+        b = None if b in (None, "", "0", 0) else _num(b, 0.0, 0.0, 1e6)
+        if a > 0 or (b is not None and b > 0):
+            out["trim"] = {"start": round(a, 3),
+                           "end": None if b is None else round(max(a, b), 3)}
+
+    speed = _num(raw.get("speed"), 1.0, 0.5, 2.0)
+    if abs(speed - 1.0) > 0.001:
+        out["speed"] = round(speed, 2)
+
+    rotate = int(_num(raw.get("rotate"), 0, 0, 4)) * 90 % 360
+    if rotate:
+        out["rotate"] = rotate
+    if _bool(raw.get("flip_h")):
+        out["flip_h"] = True
+    if _bool(raw.get("flip_v")):
+        out["flip_v"] = True
+    if _bool(raw.get("reverse")):
+        out["reverse"] = True
+
+    cr = raw.get("crop")
+    if isinstance(cr, dict):
+        crop = {
+            k: round(_num(cr.get(k), 0.0, 0.0, 0.34), 3) for k in ("left", "right", "top", "bottom")
+        }
+        if any(v > 0 for v in crop.values()):
+            out["crop"] = crop
+
+    rs = _num(raw.get("resize"), 1.0, 0.4, 1.5)
+    if abs(rs - 1.0) > 0.001:
+        out["resize"] = round(rs, 3)
+
+    if raw.get("captions") in (True, False):
+        out["captions"] = bool(raw.get("captions"))
+    title = str(raw.get("title") or "").strip()[:120]
+    if title:
+        out["title"] = title
+        ts = _num(raw.get("title_seconds"), 3.0, 0.8, 20.0)
+        out["title_seconds"] = round(ts, 2)
+    align = str(raw.get("caption_align") or "lower")
+    if align in ("lower", "center", "upper"):
+        out["caption_align"] = align
+    cscale = _num(raw.get("caption_scale"), 1.0, 0.7, 1.6)
+    if abs(cscale - 1.0) > 0.001:
+        out["caption_scale"] = round(cscale, 3)
+
+    effects = [e for e in (raw.get("effects") or []) if e in _EFFECT_NAMES]
+    if effects:
+        out["effects"] = effects
+    fi = _num(raw.get("fade_in"), 0.0, 0.0, 5.0)
+    fo = _num(raw.get("fade_out"), 0.0, 0.0, 5.0)
+    if fi > 0:
+        out["fade_in"] = round(fi, 2)
+    if fo > 0:
+        out["fade_out"] = round(fo, 2)
+
+    m = raw.get("music")
+    if isinstance(m, dict) and str(m.get("url") or "").strip():
+        out["music"] = {
+            "url": str(m["url"]).strip(),
+            "name": str(m.get("name") or "music").strip()[:100],
+            "volume": round(_num(m.get("volume"), 0.3, 0.0, 1.0), 2),
+            "fade_in": round(_num(m.get("fade_in"), 0.0, 0.0, 10.0), 2),
+            "fade_out": round(_num(m.get("fade_out"), 0.0, 0.0, 10.0), 2),
+        }
+
+    st = raw.get("sticker")
+    if isinstance(st, dict):
+        s = {
+            "scale": round(_num(st.get("scale"), 0.28, 0.08, 0.9), 3),
+            "angle": round(_num(st.get("angle"), 0.0, -180.0, 180.0), 1),
+        }
+        d = _num(st.get("duration"), 0.0, 0.0, 20.0)
+        if d > 0:
+            s["duration"] = round(d, 2)
+        pos = str(st.get("pos") or "")
+        if pos in _POSITIONS:
+            s["pos"] = pos
+        anim = str(st.get("anim") or "")
+        if anim == "pop":
+            s["anim"] = "pop"
+        if "scale" in raw or s["scale"] != 0.28 or s["angle"] or "duration" in s or "pos" in s or "anim" in s:
+            # Only keep sticker overrides when the user actually changed something.
+            provided = dict(st)
+            if any(provided.get(k) not in (None, "") for k in
+                   ("scale", "angle", "duration", "pos", "anim")):
+                out["sticker"] = s
+
+    sm = _num(raw.get("slowmo_factor"), 0.0, 0.0, 4.0)
+    if sm and sm > 1.1:
+        out["slowmo_factor"] = round(sm, 2)
+
+    if raw.get("auto_cut") in (True, False):
+        out["auto_cut"] = bool(raw.get("auto_cut"))
+    return out
+
+
+def _clipped_source(exe: str, src_path: str, workdir: str, trim: dict | None) -> str:
+    """Pre-trim the SOURCE to [start, end] (original seconds) before the whole
+    pipeline runs — a real manual trim (the clip is re-transcribed from that
+    window). Returns the trimmed path, or the original when nothing to trim."""
+    if not trim or not isinstance(trim, dict):
+        return src_path
+    a = float(trim.get("start") or 0.0)
+    b = trim.get("end")
+    if a <= 0 and not b:
+        return src_path
+    out = os.path.join(workdir, "manual_trimmed_source.mp4")
+    cmd = [exe, "-y"]
+    if a > 0:
+        cmd += ["-ss", f"{a:.3f}"]
+    if b:
+        cmd += ["-to", f"{b:.3f}"]
+    cmd += ["-i", src_path, "-c", "copy", "-movflags", "+faststart", out]
+    ok, _ = _run_cwd(cmd, 180)
+    return out if ok and os.path.exists(out) else src_path
+
+
+def _build_whole_plan(words: list) -> dict:
+    """'Auto Cut' off: keep the ENTIRE clip (no silence/filler trimming) with a
+    continuous caption track. Real alternative edit plan, not a stub."""
+    kept = []
+    cum = 0.0
+    for i, w in enumerate(words or []):
+        try:
+            ws, we = float(w["start"]), float(w["end"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if we < ws:
+            we = ws
+        kept.append({"text": str(w.get("word", "")).strip(),
+                     "out_start": round(ws, 3), "out_end": round(we, 3), "seg": 0})
+        cum = max(cum, we)
+    return {"keep": [(0.0, round(cum, 3))] if words and cum > 0 else [],
+            "kept_words": [k for k in kept if k["text"]],
+            "total_out": round(cum, 3), "removed": 0}
+
+
+def _finish_passes(in_path: str, workdir: str, manual: dict, *, w: int, h: int,
+                   timeout: int = 900) -> tuple[bool, str]:
+    """One final re-encode applying the manual spatial/speed/effect overrides:
+    rotate, flip, crop, resize, whole-clip speed, reverse, fades and effect
+    filters. Returns (ok, out_path) — ``out_path == in_path`` when untouched
+    (no extra encode)."""
+    from core.video_assembly import ffmpeg_exe, _probe_duration
+    exe = ffmpeg_exe()
+    if not exe:
+        return True, in_path
+
+    vf: list[str] = []
+    af: list[str] = []
+
+    rotate = int(manual.get("rotate") or 0) % 360
+    if rotate == 90:
+        vf.append("transpose=1")
+    elif rotate == 180:
+        vf.append("transpose=1,transpose=1")
+    elif rotate == 270:
+        vf.append("transpose=2")
+    if rotate in (90, 270):
+        vf.append(f"scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h}")
+    if manual.get("flip_h"):
+        vf.append("hflip")
+    if manual.get("flip_v"):
+        vf.append("vflip")
+
+    crop = manual.get("crop")
+    if crop and any(v > 0 for v in crop.values()):
+        lw = crop.get("left", 0.0); rw = crop.get("right", 0.0)
+        tw = crop.get("top", 0.0); bwdt = crop.get("bottom", 0.0)
+        vf.append(f"crop=iw*(1-{lw}-{rw}):ih*(1-{tw}-{bwdt}),"
+                  f"scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h}")
+
+    resize = _num(manual.get("resize"), 1.0, 0.4, 1.5)
+    if abs(resize - 1.0) > 0.001:
+        pw = max(16, int(w * resize) // 2 * 2)
+        ph = max(16, int(h * resize) // 2 * 2)
+        vf.append(f"scale={pw}:{ph}")
+
+    speed = _num(manual.get("speed"), 1.0, 0.5, 2.0)
+    if abs(speed - 1.0) > 0.001:
+        rate = 1.0 / speed
+        at = "atempo=" + f"{rate:.6f}"
+        while rate < 0.5:      # atempo only goes 0.5–2.0; chain below 0.5
+            at = "atempo=0.5," + at
+            rate /= 0.5
+        while rate > 2.0:
+            at = "atempo=2.0," + at
+            rate /= 2.0
+        vf.append(f"setpts=PTS/{speed:.6f}")
+        af.append(at)
+
+    if manual.get("reverse"):
+        vf.append("reverse")
+        af.append("areverse")
+
+    dur = 0.0
+    try:
+        dur = _probe_duration(exe, in_path)[1] or 0.0
+    except Exception:
+        dur = 0.0
+    fi = _num(manual.get("fade_in"), 0.0, 0.0, 5.0)
+    fo = _num(manual.get("fade_out"), 0.0, 0.0, 5.0)
+    if fi > 0:
+        vf.append(f"fade=t=in:st=0:d={fi:.2f}")
+    if fo > 0 and dur and dur - fo > 0.1:
+        vf.append(f"fade=t=out:st={max(0.0, dur - fo):.3f}:d={fo:.2f}")
+
+    for name in (manual.get("effects") or []):
+        if name == "bw":
+            vf.append("format=gray")
+        elif name == "vignette":
+            vf.append("vignette")
+        elif name == "blur":
+            vf.append("gblur=sigma=2")
+        elif name == "boost":
+            vf.append("eq=contrast=1.15:brightness=0.03")
+        elif name == "sepia":
+            vf.append("colorchannelmixer=rr=.393:rg=.769:rb=.189:gr=.349:gg=.686:gb=.168:br=.272:bg=.534:bb=.131")
+        elif name == "saturated":
+            vf.append("eq=saturation=1.4")
+        # fade_in / fade_out handled above; reverse handled above.
+
+    if not vf and not af:
+        return True, in_path
+
+    out = os.path.join(workdir, "manual_finish.mp4")
+    cmd = [exe, "-y", "-i", in_path]
+    if vf:
+        cmd += ["-vf", ",".join(vf)]
+    if af:
+        cmd += ["-af", ",".join(af)]
+    cmd += ["-map", "0:v:0", "-map", "0:a?",
+            "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-ar", "44100", "-movflags", "+faststart", out]
+    ok, err = _run_cwd(cmd, timeout)
+    if not ok or not os.path.exists(out):
+        print(f"[EDIT] finish-pass skipped ({err[:160]})")
+        return True, in_path
+    return True, out
+
+
+def resolve_canvas(manual: dict) -> tuple[int, int, bool, str]:
+    """canvas override → (width, height, fit, bg_hex). Defaults to 9:16 fill."""
+    c = (manual or {}).get("canvas")
+    if not isinstance(c, dict):
+        return output_size()[0], output_size()[1], False, "000000"
+    if c.get("aspect") == "custom":
+        w = int(c.get("width") or 720); h = int(c.get("height") or 1280)
+    else:
+        w, h = _CANVAS_PRESETS.get(c.get("aspect"), output_size())
+    fit = c.get("mode") == "fit"
+    bg = _clean_hex(c.get("bg"))
+    return w, h, fit, bg
+
+
+def build_timeline_meta(*, plan, kept_words, brolls, sticker_windows, slow_motion,
+                        music, total_out) -> dict:
+    """Output-time placement map the frontend draws on its layered timeline:
+    Video (kept segments), Captions (word-block spans), Stickers, B-roll, Slow-mo,
+    Music. Everything is the SAME data the renderer used — the timeline is not
+    decorative."""
+    def blocks(items, start_key="start", end_key="end"):
+        out = []
+        for it in items or []:
+            a = float(it.get(start_key, 0.0)); b = float(it.get(end_key, 0.0))
+            if b - a > 0.05:
+                out.append({"start": round(a, 2), "end": round(b, 2)})
+        return out
+
+    video_blocks = []
+    for s, e in (plan.get("keep") or []):
+        a = map_to_output(s, plan.get("keep") or [])
+        b = map_to_output(e, plan.get("keep") or [])
+        video_blocks.append({"start": round(a, 2), "end": round(b, 2)})
+    cap_blocks = []
+    for kw in kept_words or []:
+        cap_blocks.append({"start": round(kw["out_start"], 2),
+                           "end": round(max(kw["out_end"], kw["out_start"] + 0.3), 2)})
+    sw_blocks = []
+    for sw in sticker_windows or []:
+        sw_blocks.append({"start": round(sw["out_start"], 2),
+                          "end": round(sw["out_end"], 2),
+                          "position": sw.get("position") or "br"})
+    return {
+        "duration": round(float(total_out or 0.0), 2),
+        "video": video_blocks,
+        "captions": cap_blocks,
+        "stickers": sw_blocks,
+        "broll": blocks(brolls, "out_start", "out_end"),
+        "slow_motion": [{"start": round(sw["start"], 2), "end": round(sw["end"], 2)}
+                        for sw in [slow_motion] if sw.get("start") is not None
+                        and sw.get("end") is not None],
+        "music": [{"start": 0.0, "end": round(float(total_out or 0.0), 2)}] if music else [],
+    }
+
+
 def run_autoedit(user_id: str, source: str, *, on_progress=None, test_mode: bool = False,
                  instruction: str = "", voice_transcript: str = "",
                  media_assets: list | None = None, sticker: dict | None = None,
-                 on_plan=None) -> dict:
+                 manual: dict | None = None, keep_plan: bool = False, title: str = "",
+                 prev_plan: dict | None = None, on_plan=None) -> dict:
     """Full Massive-Edit pipeline for one source video. The user's typed/voice
     instruction (when provided) is parsed into a concrete editing plan that this
     pipeline then executes — trimming, captions, B-roll from uploaded images,
     slow-motion windows, selected-sticker overlays and an uploaded-music mix.
-    Returns {"video_url", "stats"} or {"error"}. Never raises. B-roll is
-    skipped in test_mode (keeps a dry run free + fast)."""
+    ``manual`` folds the professional sidebar's hand-tuned overrides into every
+    stage (real controls, see _normalize_manual); ``keep_plan=1`` replays a
+    previous AI plan (``prev_plan``) instead of re-planning so manual refinements
+    never destroy the AI's placement decisions. Returns
+    {"video_url", "stats", "timeline", "edit_plan_meta"} or {"error"}. Never
+    raises. B-roll is skipped in test_mode (keeps a dry run free + fast)."""
     import shutil
     import tempfile
     from core.media_manager import get_media_manager, fetch_media_bytes
@@ -895,6 +1332,7 @@ def run_autoedit(user_id: str, source: str, *, on_progress=None, test_mode: bool
     exe = ffmpeg_exe()
     if not exe:
         return {"error": "ffmpeg not available"}
+    manual = _normalize_manual(manual or {})
 
     def beat():
         if on_progress:
@@ -928,6 +1366,16 @@ def run_autoedit(user_id: str, source: str, *, on_progress=None, test_mode: bool
                 work_src = capped
         beat()
 
+        # 2b. Manual trim (sidebar "Edit → Trim"): cut the SOURCE to the chosen
+        # window BEFORE the pipeline runs, so the clip is re-transcribed from
+        # exactly the range the user kept. A real trim, not a crop mask.
+        if manual.get("trim"):
+            trimmed = _clipped_source(exe, work_src, work, manual["trim"])
+            if trimmed != work_src:
+                work_src = trimmed
+                dur = _probe_duration(exe, work_src)[1] or dur
+        beat()
+
         # 3. Transcribe.
         res = tr.transcribe(work_src)
         if res.get("error"):
@@ -935,17 +1383,30 @@ def run_autoedit(user_id: str, source: str, *, on_progress=None, test_mode: bool
         words = res["words"]
         beat()
 
-        # 4. Edit plan (trim silences/fillers).
-        plan = build_edit_plan(words)
+        # 4. Edit plan (trim silences/fillers). "Auto Cut" off ⇒ keep the whole
+        # clip so nothing is auto-removed (a real alternative edit mode).
+        if manual.get("auto_cut") is False:
+            plan = _build_whole_plan(words)
+        else:
+            plan = build_edit_plan(words)
         if not plan["keep"] or plan["total_out"] < 1.0:
             return {"error": "nothing usable to keep after trimming"}
 
-        # 5. Translate the user's instruction into an editing brief (LLM). The
-        # completed plan is surfaced through on_plan so the job can publish it
-        # BEFORE any heavy rendering — the visible "AI Edit Plan" checklist.
+        # 5. Translate the user's instruction into an editing brief (LLM) — or,
+        # when ``keep_plan`` replays the previous AI plan verbatim so manual
+        # sidebar refinements never scramble the AI's placement decisions. The
+        # completed plan is surfaced through on_plan so the job can publish the
+        # visible "AI Edit Plan" checklist BEFORE any heavy rendering.
         have_brief = bool(str(instruction or "").strip() or str(voice_transcript or "").strip())
         user_plan = None
-        if have_brief:
+        if keep_plan and isinstance(prev_plan, dict) and prev_plan.get("steps"):
+            user_plan = {"steps": list(prev_plan.get("steps") or []),
+                         "captions": bool(prev_plan.get("captions", True)),
+                         "music": bool(prev_plan.get("music", False)),
+                         "broll": dict(prev_plan.get("broll") or {}),
+                         "slow_motion": dict(prev_plan.get("slow_motion") or {}),
+                         "sticker_windows": list(prev_plan.get("sticker_windows") or [])}
+        elif have_brief:
             user_plan = build_instruction_plan(
                 instruction=instruction, voice_transcript=voice_transcript,
                 words=words, keep=plan["keep"], media_assets=media_assets,
@@ -1000,65 +1461,85 @@ def run_autoedit(user_id: str, source: str, *, on_progress=None, test_mode: bool
                 brolls = _gen_broll(_broll_cues(words, plan["keep"], limit=max_broll()), work)
         beat()
 
-        # 7. Captions + render.
+        # 7. Captions + render. Canvas (Video/Canvas section) sets true resolution +
+        # fill/crop mode via render_edit; captions, an optional title, alignment
+        # and caption scale all reach build_ass as real ASS styling.
         _, family = font_file_and_family()
-        w, h = output_size()
+        w, h, fit, bg = resolve_canvas(manual)
+        cap_text = manual.get("captions")
         ass = build_ass(
-            plan["kept_words"] if user_plan.get("captions", True) else [],
-            fontname=family, play_w=w, play_h=h)
+            plan["kept_words"] if cap_text else [],
+            fontname=family, play_w=w, play_h=h,
+            title_text=manual.get("title") or "", title_seconds=manual.get("title_seconds"),
+            caption_scale=manual.get("caption_scale"), caption_align=manual.get("caption_align"))
         out = os.path.join(work, "final.mp4")
-        ok, err = render_edit(work_src, plan, ass, brolls, out, on_progress=on_progress)
+        ok, err = render_edit(work_src, plan, ass, brolls, out, width=w, height=h,
+                              fit=fit, bg=bg, on_progress=on_progress)
         if not ok:
             return {"error": err}
         beat()
 
         # 8. Sticker overlay: a selected/uploaded sticker is a REAL editing asset.
         # Windows from the plan are mapped to the trimmed output timeline and
-        # applied as overlays (position + optional pop-in fade).
+        # applied as overlays. Manual refinements (scale, angle, duration,
+        # position, pop-in) override the AI defaults per applied window.
         sticker_applied = 0
-        if sticker and sticker.get("url") and user_plan.get("sticker_windows"):
-            stf = os.path.join(work, "plan_sticker.png")
-            if _download_to(sticker["url"], stf):
-                try:
-                    from PIL import Image
-                    with Image.open(stf) as _si:
-                        try:
-                            _si.seek(0)
-                        except (EOFError, ValueError):
-                            pass
-                        _si.convert("RGBA").save(stf, "PNG")
-                except Exception as _ne:
-                    print(f"[EDIT] sticker normalize skipped: {_ne}")
-                # Multiple windows: sequential passes, each on the previous output.
-                cur = out
-                for i, sw_ in enumerate(user_plan.get("sticker_windows", [])):
-                    out_s = map_to_output(float(sw_["at"]), plan["keep"])
-                    out_e = round(out_s + float(sw_.get("duration", 3.0)), 3)
-                    tmp = os.path.join(work, f"stickered_{i}.mp4")
-                    ok2, err2 = overlay_sticker(
-                        cur, stf, tmp,
-                        position=str(sw_.get("position") or "br"),
-                        start=out_s, end=out_e,
-                        fade_in=float(sw_.get("fade", 0.0) or 0.0))
-                    if ok2 and os.path.exists(tmp):
-                        cur = tmp
-                        sticker_applied += 1
-                    if on_plan:
-                        try:
-                            on_plan({"plan": user_plan["steps"],
-                                     "stage": "sticker",
-                                     "message": f"Placed the {sticker.get('name') or 'sticker'} "
-                                                f"sticker at {out_s:.1f}s ({sw_.get('position')})."})
-                        except Exception:
-                            pass
-                if cur != out and os.path.abspath(cur) != os.path.abspath(out):
-                    os.replace(cur, out)
-        if sticker_applied == 0 and sticker and sticker.get("url") and user_plan.get("sticker_windows"):
-            pass  # sticker selected but couldn't be fetched/normalized — non-fatal
+        sticker_src = None
+        if sticker and sticker.get("url") and sticker.get("path"):
+            sticker_src = sticker["path"]
+        if sticker and sticker.get("url") and not sticker_src and _download_to(sticker["url"], os.path.join(work, "plan_sticker.png")):
+            sticker_src = os.path.join(work, "plan_sticker.png")
+        if sticker_src:
+            stf = os.path.join(work, "plan_sticker_final.png")
+            try:
+                from PIL import Image
+                with Image.open(sticker_src) as _si:
+                    try:
+                        _si.seek(0)
+                    except (EOFError, ValueError):
+                        pass
+                    _si.convert("RGBA").save(stf, "PNG")
+            except Exception as _ne:
+                print(f"[EDIT] sticker normalize skipped: {_ne}")
+                stf = sticker_src
+            m_scale = float(manual.get("sticker_scale") or 0.0)
+            m_angle = float(manual.get("sticker_angle") or 0.0)
+            m_duration = manual.get("sticker_duration")
+            m_position = manual.get("sticker_position") or ""
+            m_anim = manual.get("sticker_anim") or ""
+            cur = out
+            for i, sw_ in enumerate(user_plan.get("sticker_windows", [])):
+                out_s = map_to_output(float(sw_["at"]), plan["keep"])
+                out_e = round(out_s + float(
+                    m_duration or sw_.get("duration") or 3.0), 3)
+                pos = m_position or str(sw_.get("position") or "br")
+                ok2, err2 = overlay_sticker(
+                    cur, stf, os.path.join(work, f"stickered_{i}.mp4"),
+                    position=pos,
+                    start=out_s, end=out_e,
+                    scale=m_scale if m_scale > 0 else float(sw_.get("scale") or 0.0),
+                    angle=m_angle,
+                    fade_in=float(m_anim if str(m_anim).lower() == "pop" else
+                                  sw_.get("fade", 0.0) or 0.0))
+                if ok2 and os.path.exists(os.path.join(work, f"stickered_{i}.mp4")):
+                    cur = os.path.join(work, f"stickered_{i}.mp4")
+                    sticker_applied += 1
+                if on_plan:
+                    try:
+                        on_plan({"plan": user_plan["steps"],
+                                 "stage": "sticker",
+                                 "message": f"Placed the {sticker.get('name') or 'sticker'} "
+                                            f"sticker at {out_s:.1f}s ({pos})."})
+                    except Exception:
+                        pass
+            if cur != out and os.path.abspath(cur) != os.path.abspath(out):
+                os.replace(cur, out)
         beat()
 
         # 9. Slow-motion window (real per-window ffmpeg slow-mo), if planned.
         sm = user_plan.get("slow_motion") or {}
+        if manual.get("slowmo_factor"):
+            _sm = dict(sm); _sm["factor"] = manual["slowmo_factor"]; sm = _sm
         slow_applied = False
         if sm.get("start") is not None and sm.get("end") is not None:
             os_ = float(sm["start"]); oe_ = float(sm["end"])
@@ -1079,37 +1560,52 @@ def run_autoedit(user_id: str, source: str, *, on_progress=None, test_mode: bool
                     pass
         beat()
 
-        # 10. Music mix: upload an audio track + ask for music → it's really mixed.
+        # 10. Music mix: an uploaded audio track / music override — the audio is
+        # really mixed in. Manual volume and fade-in/out envelopes apply on top.
         music_applied = False
-        if user_plan.get("music"):
+        if user_plan.get("music") or manual.get("music_url"):
             upload_audio = next((a for a in (media_assets or [])
                                  if str(a.get("type", "")).lower() == "audio" and a.get("url")), None)
-            if upload_audio:
+            mvol = float(manual.get("music_volume") or 0.0) or 1.0
+            mfade_in = float(manual.get("music_fade_in") or 0.0)
+            mfade_out = float(manual.get("music_fade_out") or 0.0)
+            murl = manual.get("music_url") or (upload_audio.get("url") if upload_audio else None)
+            mname = manual.get("music_name") or (upload_audio.get("name") if upload_audio else "") or "music"
+            if murl:
                 mf = os.path.join(work, "plan_music_mixed.mp4")
                 mpath = os.path.join(work, "plan_music.bin")
                 got = False
-                if os.path.exists(upload_audio["url"]):
-                    shutil.copy(upload_audio["url"], mpath)
+                if os.path.exists(murl):
+                    shutil.copy(murl, mpath)
                     got = True
                 else:
-                    data = fetch_media_bytes(upload_audio["url"])
+                    data = fetch_media_bytes(murl)
                     if data:
                         with open(mpath, "wb") as f:
                             f.write(data)
                         got = True
                 if got:
-                    ok4, err4 = apply_music(out, mpath, mf)
+                    ok4, err4 = apply_music(out, mpath, mf, volume=mvol,
+                                            fade_in=mfade_in, fade_out=mfade_out)
                     if ok4 and os.path.exists(mf):
                         out = mf
                         music_applied = True
                 if on_plan:
                     try:
                         on_plan({"plan": user_plan["steps"], "stage": "music",
-                                 "message": f"Mixed {upload_audio.get('name') or 'music'} "
-                                            "under the edit." if music_applied else
+                                 "message": f"Mixed {mname} under the edit."
+                                            if music_applied else
                                             "Music requested but the audio track could not be mixed."})
                     except Exception:
                         pass
+        beat()
+
+        # 10.5 Manual finish passes: rotate/flip/crop/resize/speed/reverse/
+        # effects are re-encoded AFTER the edit so they land on the final video
+        # (a real ffmpeg transform chain; no-op if nothing was requested).
+        finished = _finish_passes(exe, out, work, manual)
+        if finished != out:
+            os.replace(finished, out)
         beat()
 
         # 11. Store (R2 via MediaManager).

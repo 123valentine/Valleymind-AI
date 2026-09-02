@@ -51,6 +51,23 @@ class MusicStudioStaticTestCase(unittest.TestCase):
         html = self._index_html()
         self.assertIn('<script src="/static/music_studio.js', html)
 
+    def test_music_studio_has_sidebar_layout(self):
+        """Verify the new music_studio.js defines the sidebar/workspace pattern."""
+        js_path = ROOT / "static" / "music_studio.js"
+        js = js_path.read_text(encoding="utf-8")
+        self.assertIn("ms-editor", js)
+        self.assertIn("ms-sidebar", js)
+        self.assertIn("ms-workspace", js)
+        self.assertIn("ms-sb-sec", js)
+        self.assertIn("ms-ws-player", js)
+        self.assertIn("vmMusicAPI", js)
+        self.assertIn("vmMusicOnShow", js)
+        # Verify all 12 sidebar sections are defined
+        for sid in ("create", "voice", "music", "instruments", "lyrics",
+                     "effects", "mix", "ai-edit", "projects", "memory",
+                     "assets", "ai-tools"):
+            self.assertIn(sid, js)
+
 
 class MusicApiTestCase(unittest.TestCase):
     """Real app + patched isolated storage, exercised via the Flask client."""
@@ -150,6 +167,85 @@ class MusicApiTestCase(unittest.TestCase):
         _llm.side_effect = RuntimeError("provider down")
         client = self._auth("music_err@example.com")
         resp = client.post("/api/music", json={"brief": "a track"})
+        self.assertEqual(resp.status_code, 502)
+        self.assertEqual(resp.get_json()["status"], "error")
+
+
+class MusicAiEditTestCase(unittest.TestCase):
+    """Tests for the POST /api/music/ai-edit incremental refinement route."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmpdir = tempfile.TemporaryDirectory()
+        tmp = Path(cls.tmpdir.name)
+        cls._users_file_patch = patch.object(
+            app_module, "_users_file", tmp / "auth_users.json")
+        cls._users_coll_patch = patch.object(
+            app_module, "users_collection", lambda: None)
+        cls._auth_coll_patch = patch.object(
+            app_module, "auth_tokens_collection", lambda: None)
+        cls._marcus_patch = patch.object(
+            app_module, "load_marcus", lambda user_id=None: None)
+        for p in (cls._users_file_patch, cls._users_coll_patch,
+                  cls._auth_coll_patch, cls._marcus_patch):
+            p.start()
+
+    @classmethod
+    def tearDownClass(cls):
+        for p in (cls._users_file_patch, cls._users_coll_patch,
+                  cls._auth_coll_patch, cls._marcus_patch):
+            p.stop()
+        cls.tmpdir.cleanup()
+
+    def _auth(self, email="edit@example.com"):
+        user_id = app_module._safe_user_id(email)
+        users = app_module._load_users()
+        users[email] = {
+            "_id": email, "email": email, "user_id": user_id, "email_verified": True,
+        }
+        app_module._save_users(users)
+        client = app_module.app.test_client()
+        with client.session_transaction() as sess:
+            sess["user_id"] = user_id
+            sess["email"] = email
+        return client
+
+    def test_requires_login(self):
+        resp = app_module.app.test_client().post(
+            "/api/music/ai-edit", json={"instruction": "make it louder"})
+        self.assertEqual(resp.status_code, 401)
+
+    def test_requires_instruction(self):
+        client = self._auth("edit_empty@example.com")
+        resp = client.post("/api/music/ai-edit", json={})
+        self.assertEqual(resp.status_code, 400)
+
+    @patch.object(app_module, "_call_llm_cluster")
+    def test_returns_targeted_changes(self, _llm):
+        changes_json = json.dumps({
+            "lyrics": "Updated lyrics here",
+            "changes_summary": "Rewrote chorus",
+        })
+        _llm.return_value = (changes_json, {"provider": "mock"})
+        client = self._auth("edit_ok@example.com")
+        resp = client.post("/api/music/ai-edit", json={
+            "instruction": "Rewrite the chorus to be more energetic",
+            "lyrics": "Old lyrics here",
+            "genre": "Afrobeats",
+        })
+        self.assertEqual(resp.status_code, 200)
+        data = resp.get_json()
+        self.assertEqual(data["status"], "success")
+        self.assertIn("changes", data)
+        self.assertEqual(data["changes"]["lyrics"], "Updated lyrics here")
+        self.assertIn("summary", data)
+
+    @patch.object(app_module, "_call_llm_cluster")
+    def test_llm_failure_returns_502(self, _llm):
+        _llm.side_effect = RuntimeError("provider down")
+        client = self._auth("edit_err@example.com")
+        resp = client.post("/api/music/ai-edit", json={
+            "instruction": "Add more bass"})
         self.assertEqual(resp.status_code, 502)
         self.assertEqual(resp.get_json()["status"], "error")
 

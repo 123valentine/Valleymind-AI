@@ -487,7 +487,8 @@ def new_autoedit_job(user_id: str, source_video_url: str, *, test_mode: bool = F
                      instruction: str = "", voice_transcript: str = "",
                      voice_note: str = "", media_assets: list | None = None,
                      sticker_source: str = "", sticker_name: str = "",
-                     sticker_pos: str = "br") -> dict:
+                     sticker_pos: str = "br", manual: dict | None = None,
+                     keep_plan: bool = False, prev_plan: dict | None = None) -> dict:
     """Massive Editing: auto-edit ONE uploaded video into a vertical short.
 
     The heavy work (transcribe → trim → B-roll → captions → render) is pure
@@ -518,6 +519,9 @@ def new_autoedit_job(user_id: str, source_video_url: str, *, test_mode: bool = F
         "sticker_name": str(sticker_name or ""),
         "sticker_pos": str(sticker_pos or "br").lower() if str(sticker_pos or "br").lower()
                        in ("br", "bl", "tr", "tl", "center") else "br",
+        "manual": manual or {},                         # professional sidebar overrides
+        "keep_plan": bool(keep_plan),                   # replay prev AI plan
+        "prev_plan": prev_plan or {},                   # the plan to replay
         "edit_plan": [],                                # AI Edit Plan checklist for the UI
         "clips": [],
         "final_video": "",
@@ -650,6 +654,9 @@ def _run_autoedit(job_id: str) -> None:
             voice_transcript=job.get("voice_transcript", ""),
             media_assets=job.get("media_assets") or [],
             sticker=stick or None,
+            manual=job.get("manual") or None,
+            keep_plan=bool(job.get("keep_plan")),
+            prev_plan=job.get("prev_plan") or None,
             on_plan=_save_plan)
     finally:
         stop.set()
@@ -763,6 +770,7 @@ def public_view(job: dict) -> dict:
         "instruction": job.get("instruction", ""),
         "voice_transcript": job.get("voice_transcript", ""),
         "media_assets": job.get("media_assets") or [],
+        "manual": job.get("manual") or {},
         "cost": {
             "spend_usd": round(job.get("spend_usd", 0.0), 2),
             "est_cost_usd": round(job.get("est_cost_usd", 0.0), 2),
