@@ -51,22 +51,23 @@ class MusicStudioStaticTestCase(unittest.TestCase):
         html = self._index_html()
         self.assertIn('<script src="/static/music_studio.js', html)
 
-    def test_music_studio_has_sidebar_layout(self):
-        """Verify the new music_studio.js defines the sidebar/workspace pattern."""
+    def test_music_studio_has_workspace_layout(self):
+        """Verify music_studio.js defines workspace-first BandLab layout."""
         js_path = ROOT / "static" / "music_studio.js"
         js = js_path.read_text(encoding="utf-8")
-        self.assertIn("ms-editor", js)
-        self.assertIn("ms-sidebar", js)
-        self.assertIn("ms-workspace", js)
-        self.assertIn("ms-sb-sec", js)
-        self.assertIn("ms-ws-player", js)
-        self.assertIn("vmMusicAPI", js)
-        self.assertIn("vmMusicOnShow", js)
-        # Verify all 12 sidebar sections are defined
-        for sid in ("create", "voice", "music", "instruments", "lyrics",
-                     "effects", "mix", "ai-edit", "projects", "memory",
+        self.assertIn("ms-studio", js)
+        self.assertIn("ms-ws", js)
+        self.assertIn("ms-bn", js)
+        self.assertIn("ms-pnl", js)
+        self.assertIn("VMMusic", js)
+        # Verify all 5 bottom nav items
+        for nav_id in ("record", "tracks", "generate", "tools", "projects"):
+            self.assertIn(nav_id, js)
+        # Verify all 10 tool sub-panels are defined
+        for tid in ("voice", "music", "instruments", "lyrics",
+                     "effects", "mix", "ai-edit", "memory",
                      "assets", "ai-tools"):
-            self.assertIn(sid, js)
+            self.assertIn(tid, js)
 
 
 class MusicApiTestCase(unittest.TestCase):
