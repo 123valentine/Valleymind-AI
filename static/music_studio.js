@@ -309,6 +309,7 @@
     return l ? (l.vol / 100) * m : 0;
   }
   function getEffectiveDur(kind) {
+    if (!kind) return 0;
     if (kind === "take") return MS.state.take.dur || 0;
     if (kind === "beat") return MS.state.beatPreset ? 45 * 60 : (MS.state.beat.dur || 0);
     var id = kind.replace("layer_", "");
@@ -1012,6 +1013,13 @@
     setBeatSearch: setBeatSearch,
     newSong: newSong, loadSong: loadSong, deleteSong: deleteSong, saveSong: saveSong, exportSong: exportSong
   };
+
+  /* ── Show hook (wired to index.html vmWsGo("music")) ───────────────── */
+  function onShow() {
+    render();
+  }
+  window.vmMusicOnShow = onShow;
+  if (window.VMMusic) window.VMMusic.onShow = onShow;
 
   /* ── Init ──────────────────────────────────────────────────────────── */
   function init() {
