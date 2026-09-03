@@ -1342,6 +1342,186 @@ def api_music_ai_edit():
     })
 
 
+# ── Music Studio "Sing with AI" / AI Edit ──────────────────────────────
+# Honest AI-assisted production workflow. The backend is the "producer"
+# brain: it analyses the user's raw vocal (analysis gathered in the browser
+# via Web Audio) plus their style choices and returns a concrete production
+# PLAN (bpm, key, structure, instrumentation, energy/dynamics map). The
+# client renders that plan into actual audio using its own synthesis engine,
+# keeps the original vocal and the instruments as separate editable tracks,
+# and supports stepwise refinement. The backend intentionally does NOT claim
+# to have rendered/mastered audio — that step runs client-side today and is
+# exposed behind a provider abstraction so a real server-side audio generator
+# can be added later.
+
+# ── Music Studio "Sing with AI" / AI Edit ──────────────────────────────
+    """Shared helper: run the LLM producer and return a parsed plan dict."""
+    try:
+        raw, _ = _call_llm_cluster([
+            {"role": "system", "content": system},
+            {"role": "user", "content": prompt},
+        ], timeout=timeout)
+    except Exception as exc:  # noqa: BLE001
+        return None, f"AI producer could not be reached: {exc}"
+    out = {}
+    try:
+        start = raw.find("{")
+        end = raw.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            out = json.loads(raw[start:end + 1])
+    except Exception:  # noqa: BLE001
+        out = {}
+    if not isinstance(out, dict):
+        out = {}
+    return out, None
+
+
+@app.route("/api/music/sing", methods=["POST"])
+def api_music_sing():
+    """Sing with AI / AI Edit — turn a raw (possibly beatless) vocal into a
+    complete production plan that the client renders into a real track.
+
+    In:  {analysis, genre, mood, production_style, structure, key_override}
+         analysis is produced browser-side (bpm, key, mood, energy, duration,
+         confidence, sections). It may be partial — the user can override.
+    Out: production plan {title, bpm, key, structure, instruments,
+         arrangement, energy_map, note} plus honest note about rendering.
+    """
+    user_id, error = _require_login()
+    if error:
+        return error
+    data = request.get_json(silent=True) or {}
+    analysis = data.get("analysis") or {}
+    if not isinstance(analysis, dict):
+        analysis = {}
+
+    genre = str(data.get("genre") or "Afrobeats").strip()
+    mood = str(data.get("mood") or "").strip()
+    style_text = str(data.get("production_style") or "").strip()
+    structure = str(data.get("structure") or "").strip()
+    key_override = str(data.get("key_override") or "").strip()
+
+    bpm = analysis.get("bpm")
+    try:
+        bpm = float(bpm) if bpm else 0
+    except (TypeError, ValueError):
+        bpm = 0
+    est_key = str(analysis.get("key") or "").strip()
+    est_mood = str(analysis.get("mood") or "").strip()
+    est_energy = float(analysis.get("energy") or 0.5)
+    est_dur = float(analysis.get("duration") or 0)
+    confidence = float(analysis.get("confidence") or 0)
+    sections = analysis.get("sections")
+
+    if not bpm or bpm <= 0:
+        bpm = 0
+    if not est_energy or est_energy > 1 or est_energy < 0:
+        est_energy = 0.5
+
+    use_key = key_override or est_key
+    use_mood = mood or est_mood
+
+    system = (
+        "You are ValleyMind's AI music producer. A user uploaded a rough, "
+        "possibly beatless vocal or melody idea. You receive an automated "
+        "analysis (browser-computed tempo/key/energy) plus their style choices. "
+        "You produce a concrete, musical PRODUCTION PLAN the client will render "
+        "into actual audio. Be specific and genre-appropriate. Do NOT claim to "
+        "have rendered audio — the client renders it. Return ONLY JSON, no "
+        "markdown fences. If the analysis confidence is low, make sensible "
+        "musical defaults and say so in the note."
+    )
+
+    prompt_parts = []
+    prompt_parts.append("Uploaded vocal analysis:")
+    prompt_parts.append(f"BPM: {int(round(bpm)) if bpm else 'not detected'}")
+    prompt_parts.append(f"Key (estimate): {use_key or 'not detected'}")
+    prompt_parts.append(f"Energy (0..1): {round(est_energy, 2)}")
+    prompt_parts.append(f"Duration (sec): {int(round(est_dur)) if est_dur else 'unknown'}")
+    prompt_parts.append(f"Analysis confidence (0..1): {round(confidence, 2)}")
+    if sections:
+        prompt_parts.append(f"Detected sections (approx time markers): {sections}")
+    prompt_parts.append(f"Song structure (user) : {structure or 'adapt to the vocal'}")
+
+    prompt = "\n".join(prompt_parts) + f"""
+
+User style:
+  Genre        : {genre}
+  Mood         : {use_mood or 'infer from vocal'}
+  Production style description : {style_text or '(none)'}
+
+Produce the production plan as JSON exactly like this:
+{{
+  "title": "a fitting song title",
+  "bpm": 112,
+  "key": "C minor",
+  "structure": "e.g. Intro-Verse-Chorus-Verse2-Chorus-Bridge-Outro (adapt to the vocal, not forced)",
+  "instruments": ["Drums", "Bass", "Keys/Pads", ...],
+  "beatPattern": "a 16-char pattern string using K (kick), L (soft kick), k, T (snare/clap), t, H (open hat), h (closed hat), 0 (hat tick), - (rest)",
+  "bassRoot": "the note letter+octave to center the bass on (must match the key)",
+  "energyMap": "a short note describing where energy builds (verses vs chorus) for the client to arrange",
+  "arrangement": "concise production notes (feel, dynamics, drop/fills, vocal-friendly moments)",
+  "note": "honest note: what is planned now vs. what a future server-side audio renderer would add"
+}}
+Only output the JSON object. Respond with {use_mood or 'an appropriate'} feel."""
+    plan, err = _music_production_plan(system, prompt)
+    if err:
+        return jsonify({"status": "error", "message": err}), 502
+
+    if not plan.get("bpm") and bpm:
+        plan["bpm"] = int(round(bpm))
+    plan["sourceBpm"] = int(round(bpm)) if bpm else plan.get("bpm", 100)
+    return jsonify({"status": "success", "plan": plan})
+
+
+@app.route("/api/music/sing/refine", methods=["POST"])
+def api_music_sing_refine():
+    """Refine/regenerate an existing Sing-with-AI production plan without
+    restarting. Accepts an instruction plus the current plan + analysis and
+    returns an updated plan (changed fields). Keeps the original vocal."""
+    user_id, error = _require_login()
+    if error:
+        return error
+    data = request.get_json(silent=True) or {}
+    instruction = str(data.get("instruction") or "").strip()
+    if not instruction:
+        return jsonify({"status": "error", "message": "Instruction is required"}), 400
+
+    current = data.get("plan") or {}
+    if not isinstance(current, dict):
+        current = {}
+    analysis = data.get("analysis") or {}
+    if not isinstance(analysis, dict):
+        analysis = {}
+    genre = str(data.get("genre") or "").strip()
+
+    system = (
+        "You are ValleyMind's AI music producer refining an existing production "
+        "plan for the user's uploaded vocal. Apply the user's instruction "
+        "(e.g. make it more energetic, cleaner, change genre/mood, new beat) "
+        "and return ONLY the fields that changed. Keep everything else. Return "
+        "ONLY JSON, no markdown fences. Be precise and musical. Do not claim to "
+        "have rendered audio."
+    )
+    context = (
+        f"Current genre: {genre}\n"
+        f"Current plan: {json.dumps(current, ensure_ascii=False, default=str)}\n"
+        f"User instruction: {instruction}\n\n"
+        'Return JSON: {"bpm":"...if changed","key":"...if changed",'
+        '"structure":"...if changed","instruments":"[...] if changed",'
+        '"beatPattern":"...if changed","bassRoot":"...if changed",'
+        '"energyMap":"...if changed","arrangement":"...if changed",'
+        '"summary":"what changed in one line"}'
+    )
+    plan, err = _music_production_plan(system, context)
+    if err:
+        return jsonify({"status": "error", "message": err}), 502
+    if isinstance(plan, dict) and "summary" in plan:
+        summary = str(plan.pop("summary", ""))
+        return jsonify({"status": "success", "changes": plan, "summary": summary})
+    return jsonify({"status": "success", "changes": plan, "summary": ""})
+
+
 @app.route("/login", methods=["POST"])
 @app.route("/auth/login", methods=["POST"])
 def login():

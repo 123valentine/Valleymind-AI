@@ -33,6 +33,7 @@
     { id: "effects", icon: "audio-lines", label: "Effects" },
     { id: "mix", icon: "mixer", label: "Mix" },
     { id: "ai-edit", icon: "brain", label: "AI Edit" },
+    { id: "sing", icon: "sparkles", label: "Sing with AI" },
     { id: "memory", icon: "brain-circuit", label: "Memory" },
     { id: "assets", icon: "library", label: "Assets" },
     { id: "ai-tools", icon: "bot", label: "AI Tools" }
@@ -59,6 +60,22 @@
     { name: "Lo-Fi", fx: { noiseReduction: false, pitch: -6, effect: "Lo-Fi", reverb: 40, delay: 0 } },
     { name: "Phone", fx: { noiseReduction: false, pitch: 0, effect: "Telephone", reverb: 5, delay: 0 } }
   ];
+
+  /* -- Sing with AI / AI Edit ------------------------------------------ */
+  var SING_GENRES = ["Afrobeats", "Afro-R&B", "R&B", "Hip-Hop", "Pop", "Gospel", "Amapiano", "Dancehall", "Trap", "Soul", "Highlife", "Alternative", "Reggae", "Folk", "Jazz", "Electronic"];
+  var SING_MOODS = ["Happy", "Romantic", "Emotional", "Dark", "Energetic", "Chill", "Inspirational", "Melancholic", "Aggressive"];
+  var SING_STAGES = [
+    "Uploading audio...",
+    "Analyzing vocal...",
+    "Detecting tempo and key...",
+    "Understanding song structure...",
+    "Creating instrumental...",
+    "Arranging the song...",
+    "Processing vocals...",
+    "Mixing...",
+    "Your AI-produced song is ready."
+  ];
+  var NOTE_PITCH = { "C": 0, "C#": 1, "D": 2, "D#": 3, "E": 4, "F": 5, "F#": 6, "G": 7, "G#": 8, "A": 9, "A#": 10, "B": 11 };
 
   /* -- 110+ Beat Presets � real synthesis configs ---------------------- */
   var _BS = [
@@ -235,6 +252,7 @@
     state: null,
     recorder: null, recStream: null, chunks: [], timer: null, elapsed: 0,
     projects: [], rendered: false, previewPreset: null,
+    sing: { status: "idle", stage: -1, error: "", originalUrl: "", name: "", analysis: null, plan: null, instrumentalUrl: "", genre: "Afrobeats", mood: "Romantic", style: "", structure: "" },
     ui: { activeNav: "", openTool: "", recording: false, saveState: "", searchBeat: "", beatType: "", beatMood: "" },
     memory: [],
     live: null,
@@ -881,6 +899,332 @@
     }).catch(function () { toast("Couldn't reach the AI editor."); });
   }
 
+  /* ── Sing with AI / AI Edit ────────────────────────────────────────── */
+  /* Provider abstraction: today the "AI producer" renders an instrumental  */
+  /* aligned to the detected tempo/key right in the browser (the same Web   */
+  /* Audio engine used for beat presets), keeping the original vocal intact */
+  /* as a separate track. A future server-side audio generator can replace  */
+  /* this provider without changing the UI.                                  */
+  var SING_PROVIDER = { id: "client-synth", label: "ValleyMind AI (in-browser synth)" };
+
+  function setSingGenre(v) { MS.sing.genre = v; render(); }
+  function setSingMood(v) { MS.sing.mood = v; render(); }
+  function setSingStyle(v) { MS.sing.style = v; render(); }
+  function setSingStructure(v) { MS.sing.structure = v; render(); }
+
+  function onSingFile(input) {
+    var f = input && input.files && input.files[0];
+    if (input) input.value = "";
+    if (!f) return;
+    var ok = /\.(mp3|wav|m4a|aac|flac|ogg|webm|opus|mpeg|oga|wma|aiff|aif|mp4)$/i.test(f.name) || /^audio\//.test(f.type);
+    if (!ok) { MS.sing.error = "Unsupported audio format. Please upload MP3, WAV, M4A, AAC, FLAC or OGG."; MS.sing.status = "error"; render(); return; }
+    if (f.size > 200 * 1024 * 1024) { MS.sing.error = "Audio is too large (max 200 MB)."; MS.sing.status = "error"; render(); return; }
+    MS.sing.status = "analyzing"; MS.sing.stage = 0; MS.sing.error = "";
+    MS.sing.name = f.name;
+    render();
+    var reader = new FileReader();
+    reader.onload = function () { analyzeSingBuffer(reader.result, f.name); };
+    reader.onerror = function () { MS.sing.error = "Couldn't read the audio file."; MS.sing.status = "error"; render(); };
+    reader.readAsArrayBuffer(f);
+  }
+
+  function _goStage(i) { MS.sing.stage = i; render(); }
+
+  function analyzeSingBuffer(arrayBuffer, name) {
+    var Actx = window.AudioContext || window.webkitAudioContext;
+    if (!Actx) { MS.sing.error = "Audio analysis isn't supported in this browser."; MS.sing.status = "error"; render(); return; }
+    var ctx;
+    try { ctx = new Actx(); } catch (e) { MS.sing.error = "Audio analysis isn't supported in this browser."; MS.sing.status = "error"; render(); return; }
+    function fail(msg) { try { ctx.close(); } catch (e) { } MS.sing.error = msg; MS.sing.status = "error"; render(); }
+    ctx.decodeAudioData(arrayBuffer).then(function (ab) {
+      _goStage(1);
+      var mono = ab.getChannelData(0);
+      var dur = ab.duration;
+      var sr = ab.sampleRate;
+      if (dur < 2) { fail("Audio is too short (at least ~2 seconds)."); return; }
+      if (dur > 20 * 60) { fail("Audio is too long (max 20 minutes for AI production)."); return; }
+      _goStage(2);
+      var energy = _rms(mono);
+      var bpm = _detectBpm(mono, sr, dur);
+      _goStage(3);
+      var key = _estimateKey(mono, sr);
+      _goStage(4);
+      var mood = _inferMood(bpm, energy);
+      var confidence = Math.min(0.95, 0.35 + 0.4 * (bpm > 0 ? 1 : 0) + 0.2 * Math.min(1, dur / 120));
+      var sections = _guessSections(dur, energy);
+      var analysis = {
+        bpm: bpm > 0 ? Math.round(bpm) : 0,
+        key: key && key.name ? key.name : "",
+        mood: mood,
+        energy: Number(energy.toFixed(3)),
+        duration: Number(dur.toFixed(2)),
+        sampleRate: sr,
+        confidence: Number(confidence.toFixed(2)),
+        sections: sections
+      };
+      MS.sing.analysis = analysis;
+      if (analysis.key) MS.state.key = analysis.key;
+      if (MS.state.genre && SING_GENRES.indexOf(MS.state.genre) === -1) MS.state.genre = "Afrobeats";
+      MS.sing.originalUrl = URL.createObjectURL(new Blob([arrayBuffer], { type: _mimeForName(name) || "audio/wav" }));
+      MS.sing.status = "ready";
+      MS.sing.stage = -1;
+      MS.sing.error = "";
+      try { ctx.close(); } catch (e) { }
+      render();
+    }).catch(function () { fail("Could not decode this audio file. It may be corrupted or an unsupported format."); });
+  }
+
+  function _mimeForName(name) { var e = (name || "").split(".").pop().toLowerCase(); return { mp3: "audio/mpeg", wav: "audio/wav", m4a: "audio/mp4", aac: "audio/aac", flac: "audio/flac", ogg: "audio/ogg", webm: "audio/webm", opus: "audio/opus" }[e] || "audio/wav"; }
+
+  function _rms(data) { var s = 0, n = data.length; for (var i = 0; i < n; i++) { var v = data[i]; s += v * v; } return Math.sqrt(s / (n || 1)); }
+
+  /* Onset-envelope autocorrelation BPM detection (honest, lightweight). */
+  function _detectBpm(samples, sr, dur) {
+    var hop = Math.floor(sr * 0.02); /* 20ms hops */
+    var frame = 64;
+    var onset = [];
+    var prev = 0;
+    for (var i = frame; i < samples.length; i += hop) {
+      var v = 0;
+      for (var j = i; j < i + frame && j < samples.length; j++) { var s = samples[j]; v += Math.abs(s - (j - frame >= 0 ? samples[j - frame] : 0)); }
+      v /= frame;
+      var d = Math.max(0, v - prev); onset.push(d); prev = v;
+    }
+    if (onset.length < 8) return 0;
+    /* autocorrelation over hop indices corresponding to 60-200 BPM (0.3-1.0s) */
+    var bestLag = 0, bestScore = 0;
+    var minLag = Math.floor(sr * 0.3 / hop), maxLag = Math.floor(sr * 1.0 / hop);
+    for (var lag = minLag; lag <= maxLag && lag < onset.length; lag++) {
+      var score = 0, c = 0;
+      for (var k = 0; k + lag < onset.length; k += lag) { score += onset[k] * onset[k + lag]; c++; }
+      if (!c) continue;
+      score /= c;
+      if (score > bestScore) { bestScore = score; bestLag = lag; }
+    }
+    if (!bestLag) return 0;
+    var period = bestLag * hop; var bpm = 60 / period;
+    /* map to a plausible range */
+    var octaves = 0;
+    while (bpm > 180) { bpm /= 2; octaves++; }
+    while (bpm < 70) { bpm *= 2; octaves++; }
+    return Math.round(bpm);
+  }
+
+  /* Key estimate via Goertzel chroma across time windows, matched to major/minor templates. */
+  function _estimateKey(samples, sr) {
+    var chroma = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    var win = Math.floor(sr * 0.25); /* 250ms windows */
+    if (win < 64) win = 64;
+    function goertzel(data, freq, srRate, start, n) {
+      var k = Math.floor((freq * n) / srRate);
+      if (k <= 0) return 0;
+      var w = 2 * Math.PI * (Math.floor((freq * n) / srRate)) / n;
+      var c = 2 * Math.cos(w), s0 = 0, s1 = 0, s2 = 0;
+      var end = Math.min(start + n, data.length);
+      for (var i = start; i < end; i++) { s0 = data[i] + c * s1 - s2; s2 = s1; s1 = s0; }
+      var pw = s1 * s1 + s2 * s2 - c * s1 * s2;
+      return Math.sqrt(Math.max(0, pw)) / (n || 1);
+    }
+    var A4 = 440;
+    for (var wStart = 0; wStart + win < samples.length; wStart += win) {
+      for (var pc = 0; pc < 12; pc++) {
+        var midi = 57 + pc; /* cover A3..G#7 region via harmonics */
+        var f0 = A4 * Math.pow(2, (midi - 69) / 12);
+        var e1 = goertzel(samples, f0, sr, wStart, win);
+        var e2 = goertzel(samples, f0 * 2, sr, wStart, win);
+        var e3 = goertzel(samples, f0 / 2, sr, wStart, win);
+        chroma[pc] += e1 + e2 * 0.5 + e3 * 0.5;
+      }
+    }
+    var total = 0; for (var i = 0; i < 12; i++) total += chroma[i];
+    if (total <= 0) return null;
+    var majorProfile = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88];
+    var minorProfile = [6.33, 2.68, 3.52, 5.38, 2.6, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17];
+    var names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+    var best = null, bestScore = -1;
+    for (var root = 0; root < 12; root++) {
+      var mScore = 0, miScore = 0;
+      for (var s2 = 0; s2 < 12; s2++) { var idx = (s2 + root) % 12; mScore += chroma[idx] * majorProfile[s2]; miScore += chroma[idx] * minorProfile[s2]; }
+      mScore /= total; miScore /= total;
+      if (mScore > bestScore) { bestScore = mScore; best = { name: names[root] + " major", pc: root, mode: "major" }; }
+      if (miScore > bestScore) { bestScore = miScore; best = { name: names[root] + " minor", pc: root, mode: "minor" }; }
+    }
+    if (bestScore < 0.6) return null; /* low confidence → let user/LLM pick */
+    return best;
+  }
+  function _inferMood(bpm, energy) {
+    if (bpm >= 150 && energy > 0.25) return "Energetic";
+    if (bpm >= 125 && energy > 0.18) return "Upbeat";
+    if (bpm > 0 && bpm >= 90 && bpm < 125 && energy > 0.18) return "Romantic";
+    if (bpm > 0 && bpm < 90 && energy < 0.12) return "Melancholic";
+    if (energy < 0.12) return "Chill";
+    return "Chill";
+  }
+  function _guessSections(dur, avgEnergy) {
+    if (dur <= 0) return "";
+    var long = dur >= 150;
+    /* rough relative time markers (seconds) — the plan/LLM adapts to the vocal */
+    var marks = long ? [0, dur * 0.08, dur * 0.18, dur * 0.32, dur * 0.42, dur * 0.55, dur * 0.66, dur * 0.8, dur * 0.9] : [0, dur * 0.2, dur * 0.4, dur * 0.6, dur * 0.8];
+    var labels = long ? ["Intro", "Verse 1", "Chorus", "Verse 2", "Chorus", "Bridge", "Chorus", "Outro"] : ["Intro", "A section", "B section", "Outro"];
+    var out = [];
+    for (var i = 0; i < labels.length; i++) out.push(labels[i] + " ~" + Math.round(marks[i] || 0) + "s");
+    return out.join("; ");
+  }
+
+  function runSing() {
+    if (!MS.sing.originalUrl) { MS.sing.error = "Upload a vocal first."; MS.sing.status = "error"; render(); return; }
+    if (!MS.sing.analysis) { MS.sing.error = "Analysis is missing. Re-upload your vocal."; MS.sing.status = "error"; render(); return; }
+    MS.sing.status = "processing"; MS.sing.stage = 0; MS.sing.error = "";
+    render();
+    apiFetch("/api/music/sing", {
+      method: "POST", credentials: "include", headers: authHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ analysis: MS.sing.analysis, genre: MS.sing.genre, mood: MS.sing.mood, production_style: MS.sing.style, structure: MS.sing.structure, key_override: MS.state.key }),
+      timeoutMs: 60000
+    }).then(function (r) { return r.json(); }).then(function (d) {
+      if (!d || d.status !== "success" || !d.plan) { MS.sing.error = (d && d.message) || "AI could not create a plan for your vocal."; MS.sing.status = "error"; render(); return; }
+      _goStage(5);
+      return synthesizeProduction(d.plan).then(function (blob) {
+        MS.sing.instrumentalUrl = urlFromBlob(blob);
+        MS.sing.plan = d.plan;
+        MS.sing.status = "done"; MS.sing.stage = 8;
+        _applySingResult();
+        addMemory({ type: "sing", name: d.plan.title || MS.sing.name, summary: d.plan.note || "", date: Date.now() });
+        render(); toast("Your AI-produced song is ready!");
+      });
+    }).catch(function () { MS.sing.error = "Couldn't reach the AI producer. Check your connection and retry."; MS.sing.status = "error"; render(); });
+  }
+
+  function synthesizeProduction(plan) {
+    var Offline = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+    if (!Offline) return Promise.reject(new Error("no offline ctx"));
+    var rate = 44100;
+    var targetDur = (MS.sing.analysis && MS.sing.analysis.duration) || 0;
+    var bpm = Number(plan.bpm) || (MS.sing.analysis && MS.sing.analysis.bpm) || 100;
+    if (bpm < 60) bpm = bpm * 2; if (bpm > 200) bpm = bpm / 2;
+    var spb = 60 / bpm, stepDur = spb / 4, barDur = spb * 4;
+    var totalBars = Math.max(8, Math.ceil((targetDur + 1) / barDur));
+    var samples = Math.ceil(rate * (barDur * totalBars + 1.5));
+    var ctx = new Offline(2, samples, rate);
+    var root = _rootForPlan(plan, rate);
+    var pat = _validPattern(plan.beatPattern);
+    for (var bar = 0; bar < totalBars; bar++) {
+      var barStart = bar * barDur;
+      var section = bar < 1 ? "intro" : (bar >= totalBars - 2 ? "outro" : "main");
+      var isChorus = section === "main" && (bar - 1) % 4 === 3;
+      for (var i = 0; i < pat.length; i++) {
+        var ch = pat.charAt(i);
+        var swing = (i % 2 === 1 && bpm < 160) ? 0.04 : 0;
+        var when = barStart + i * stepDur + swing * stepDur;
+        var vel = (section === "intro" || section === "outro") ? 0.7 : 1;
+        var cut = (section === "intro" || section === "outro") && ch !== "K" && ch !== "L" && ch !== "H" && ch !== "h" && ch !== "0";
+        if (cut) ch = "-";
+        if (ch === "K") { kick(ctx, when, 1.0 * vel); bassFor(ctx, { bassStyle: "pop" }, root, _fifth(ctx, root, 7), when, spb * 0.8, vel); }
+        else if (ch === "k") { kick(ctx, when, 0.7 * vel); }
+        else if (ch === "L") { kick(ctx, when, 0.8 * vel); bassFor(ctx, { bassStyle: "dh" }, root, _fifth(ctx, root, 7), when, spb * 0.9, vel); }
+        else if (ch === "T") { snareFor(ctx, { kit: "afro" }, when, 0.9 * vel); }
+        else if (ch === "t") { snareFor(ctx, { kit: "afro" }, when, 0.5 * vel); }
+        else if (ch === "H") { hatFor(ctx, { kit: "afro" }, when, 0.4); }
+        else if (ch === "h") { hatFor(ctx, { kit: "afro" }, when, 0.18); }
+        else if (ch === "0") { hatFor(ctx, { kit: "afro" }, when, 0.14); }
+      }
+      /* chord pad layer (root + third + fifth) for a fuller, singing-friendly bed */
+      if (section === "main") _addChordPad(ctx, root, barStart, barDur, rate);
+      if (isChorus) for (var f = 0; f < 8; f++) { var fw = barStart + (f / 8) * barDur; if (f % 2 === 0) kick(ctx, fw, 0.5); else snareFor(ctx, { kit: "afro" }, fw, 0.4); }
+    }
+    punchMaster(ctx);
+    return ctx.startRendering().then(function (buffer) { return encodeWav(buffer); });
+  }
+  function _fifth(ctx, root, semis) { var m = mapNoteToMidi(_pitchName(root)); return midiToFreq(m + semis) / 2; }
+  function _pitchName(freq) { var A4 = 440; var midi = Math.round(69 + 12 * Math.log(freq / A4) / Math.log(2)); return _midiName(midi); }
+  function _midiName(m) { var names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]; var oct = Math.floor(m / 12) - 1; return names[((m % 12) + 12) % 12] + oct; }
+  function _rootForPlan(plan, rate) {
+    var bk = String(plan.bassRoot || plan.key || (MS.sing.analysis && MS.sing.analysis.key) || "C").trim();
+    var m = bk.match(/^([A-G](?:#|b)?)/);
+    if (m) return NOTE_FREQ(m[1]) / 2;
+    return NOTE_FREQ("C") / 2;
+  }
+  function _validPattern(p) {
+    var s = String(p || "").replace(/[^KkLtTHh0-]/g, "");
+    return s.length >= 8 ? s : "K00T0K0T00K0T0K0";
+  }
+  function _addChordPad(ctx, root, when, dur, rate) {
+    var base = NOTE_FREQ(_pitchName(root));
+    var chord = [1, 5, 8]; /* root, third, fifth intervals */
+    var g = ctx.createGain();
+    g.gain.setValueAtTime(0, when);
+    g.gain.linearRampToValueAtTime(0.06, when + 0.6);
+    g.gain.setValueAtTime(0.06, when + dur * 0.6);
+    g.gain.linearRampToValueAtTime(0.001, when + dur);
+    var f = ctx.createBiquadFilter(); f.type = "lowpass"; f.frequency.value = 1400; f.Q.value = 0.6;
+    f.connect(g); g.connect(ctx._out || ctx.destination);
+    for (var i = 0; i < chord.length; i++) {
+      var o = ctx.createOscillator(); o.type = "triangle";
+      o.frequency.value = base * Math.pow(2, chord[i] / 12);
+      var og = ctx.createGain(); og.gain.value = 0.7;
+      o.connect(og); og.connect(f);
+      o.start(when); o.stop(when + dur + 0.1);
+    }
+  }
+
+  function _applySingResult() {
+    var p = MS.sing.plan || {};
+    var vocal = MS.state.take;
+    if (vocal.url) try { URL.revokeObjectURL(vocal.url); } catch (e) { }
+    vocal.url = MS.sing.originalUrl;
+    vocal.name = "Original Vocal (" + (MS.sing.name || "take") + ")";
+    vocal.dur = (MS.sing.analysis && MS.sing.analysis.duration) || 0;
+    var beat = MS.state.beat;
+    if (beat.url) try { URL.revokeObjectURL(beat.url); } catch (e) { }
+    beat.url = MS.sing.instrumentalUrl;
+    beat.name = "AI " + (p.title ? "(" + p.title + ") " : "") + "Instrumental";
+    beat.dur = (MS.sing.analysis && MS.sing.analysis.duration) || 0;
+    MS.state.beatPreset = null;
+    if (p.title) MS.state.name = p.title;
+    if (p.bpm) MS.state.tempo = p.bpm <= 89 ? "Slow" : (p.bpm <= 119 ? "Medium" : (p.bpm <= 149 ? "Fast" : "Very fast"));
+    if (p.key) MS.state.key = p.key;
+    if (MS.sing.genre) MS.state.genre = MS.sing.genre;
+    if (MS.sing.mood) MS.state.mood = MS.sing.mood;
+    MS.state.aiResult = MS.state.aiResult || {};
+    if (p.arrangement) MS.state.aiResult.arrangement = p.arrangement;
+    if (p.structure) MS.state.aiResult.structure = p.structure;
+    if (p.instruments) MS.state.aiResult.instruments = p.instruments;
+    storePeaks("take", vocal.url, function () { render(); });
+    storePeaks("beat", beat.url, function () { render(); });
+    autoSaveDebounced();
+  }
+
+  function runSingRefine(instruction) {
+    instruction = String(instruction || "").trim();
+    if (!instruction) { toast("Describe what to change (e.g. more energetic)."); return; }
+    if (!MS.sing.plan) { toast("Produce a song first."); return; }
+    MS.sing.status = "processing"; MS.sing.stage = 0; MS.sing.error = "";
+    render();
+    apiFetch("/api/music/sing/refine", {
+      method: "POST", credentials: "include", headers: authHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ instruction: instruction, plan: MS.sing.plan, analysis: MS.sing.analysis, genre: MS.sing.genre }),
+      timeoutMs: 45000
+    }).then(function (r) { return r.json(); }).then(function (d) {
+      if (!d || d.status !== "success" || !d.changes) { MS.sing.error = (d && d.message) || "Refinement failed."; MS.sing.status = "error"; render(); return; }
+      var ch = d.changes;
+      var merged = {};
+      for (var k in MS.sing.plan) merged[k] = MS.sing.plan[k];
+      for (var c in ch) if (ch[c] !== undefined && ch[c] !== null && ch[c] !== "") merged[c] = ch[c];
+      _goStage(5);
+      return synthesizeProduction(merged).then(function (blob) {
+        MS.sing.instrumentalUrl = urlFromBlob(blob);
+        MS.sing.plan = merged;
+        MS.sing.status = "done"; MS.sing.stage = 8;
+        _applySingResult();
+        addMemory({ type: "sing-refine", instruction: instruction, summary: d.summary || "", date: Date.now() });
+        render(); toast(d.summary || "Refined!");
+      });
+    }).catch(function () { MS.sing.error = "Couldn't reach the AI producer to refine."; MS.sing.status = "error"; render(); });
+  }
+
+  function singPlayOriginal() { if (MS.sing.originalUrl) { MS.state.take.url = MS.sing.originalUrl; if (MS.state.take.name.indexOf("Original") !== 0) MS.state.take.name = "Original Vocal"; storePeaks("take", MS.sing.originalUrl); togglePlay("take"); } }
+  function singPlayAI() { if (MS.sing.instrumentalUrl) { MS.state.beat.url = MS.sing.instrumentalUrl; if (MS.state.beat.name.indexOf("AI") !== 0) MS.state.beat.name = "AI Instrumental"; storePeaks("beat", MS.sing.instrumentalUrl); togglePlay("beat"); } }
+  function singReset() { stopPlayback(); MS.sing = { status: "idle", stage: -1, error: "", originalUrl: "", name: "", analysis: null, plan: null, instrumentalUrl: "", genre: "Afrobeats", mood: "Romantic", style: "", structure: "" }; render(); }
+
   /* -- Save / load / delete / export ---------------------------------- */
   function saveSong() { syncInputs(); MS.state.savedAt = Date.now(); if (!MS.state.id) MS.state.id = "ms" + Date.now(); var found = false; for (var i = 0; i < MS.projects.length; i++) { if (MS.projects[i].id === MS.state.id) { MS.projects[i] = normalizeProject(clone(MS.state)); found = true; break; } } if (!found) MS.projects.unshift(normalizeProject(clone(MS.state))); saveProjects(); pushProjectsToServer(); showSaveState("Saved"); toast("Song saved."); render(); }
   function newSong() { stopPlayback(); MS.state = defaultState(); MS.state.id = null; MS.ui.openTool = ""; MS.ui.activeNav = ""; MS.audio.peaks = {}; render(); }
@@ -891,6 +1235,7 @@
   /* -- Navigation ----------------------------------------------------- */
   function openNav(id) { if (MS.ui.activeNav === id) { MS.ui.activeNav = ""; MS.ui.openTool = ""; } else { MS.ui.activeNav = id; MS.ui.openTool = ""; } render(); }
   function openTool(id) { MS.ui.openTool = (MS.ui.openTool === id) ? "" : id; render(); }
+  function openSing() { MS.ui.activeNav = "tools"; MS.ui.openTool = "sing"; render(); }
   function setVoice(v) { MS.state.voice = v; render(); autoSaveDebounced(); }
   function setConsent(v) { MS.state.consent = !!v; render(); autoSaveDebounced(); }
   function applyEffectPresetByIdx(idx) { if (EFFECT_PRESETS[idx]) applyEffectPreset(EFFECT_PRESETS[idx]); }
@@ -903,6 +1248,7 @@
   function svgPause() { return '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>'; }
   function svgStop() { return '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>'; }
   function svgMic() { return '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>'; }
+  function svgSpark() { return '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v3M12 18v3M5.2 5.2l2.1 2.1M16.7 16.7l2.1 2.1M3 12h3M18 12h3M5.2 18.8l2.1-2.1M16.7 7.3l2.1-2.1"/><path d="M12 7l1.2 2.8L16 11l-2.8 1.2L12 15l-1.2-2.8L8 11l2.8-1.2Z"/></svg>'; }
   function svgX() { return '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" x2="6" y1="6" y2="18"/><line x1="6" x2="18" y1="6" y2="18"/></svg>'; }
   function svgWaveLogo() { return '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#04121f" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12h2M6 12h1M10.5 12H13M17 12h1M20 12h2"/><path d="M8.8 7.5c-.5 3-1.3 6-1.3 9M14.2 6.5c.4 3.6 1.3 7.7 1.3 11.5"/></svg>'; }
   function svgPrev() { return '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h2v14H6z"/><polygon points="8 12 20 5 20 19 8 12" transform="translate(-6 0)"/></svg>'; }
@@ -1032,6 +1378,12 @@
       ".ms-slr label{font-size:12px;color:#7b9cc0;min-width:74px;}",
       ".ms-slr input[type=range]{flex:1;accent-color:#00e5ff;}",
       ".ms-slr span{font-size:11px;color:#5b9dcc;min-width:30px;text-align:right;font-variant-numeric:tabular-nums;}",
+      ".ms-stage-list{margin-top:6px;}.ms-stage{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:8px;font-size:12.5px;color:#64748b;margin-bottom:4px;background:rgba(255,255,255,.015);}.ms-stage .ms-stage-ic{width:18px;height:18px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:11px;border:1px solid rgba(0,229,255,.2);color:#64748b;}.ms-stage.on{color:#bfeaff;background:rgba(0,229,255,.07);}.ms-stage.on .ms-stage-ic{border-color:#00e5ff;color:#00e5ff;}.ms-stage.done{color:#86efac;}.ms-stage.done .ms-stage-ic{border-color:#00f0c8;color:#00f0c8;}",
+      ".ms-stagebar{height:6px;border-radius:99px;background:#0a1420;overflow:hidden;margin:10px 0;}.ms-stagebar-fill{height:100%;width:40%;border-radius:99px;background:linear-gradient(90deg,#00e5ff,#00f0c8);animation:msBar 1.4s ease-in-out infinite;}.ms-stagebar,.ms-stage-list{max-width:100%;}",
+      ".ms-alert{border:1px solid rgba(244,63,94,.4);background:rgba(244,63,94,.08);color:#fda4af;padding:11px 12px;border-radius:9px;font-size:13px;}",
+      ".ms-singcta{padding:12px 14px;border-radius:11px;cursor:pointer;margin-bottom:12px;border:1px solid rgba(0,229,255,.25);background:linear-gradient(135deg,rgba(0,229,255,.1),rgba(0,240,200,.06));transition:all .15s;}.ms-singcta:hover{border-color:#00e5ff;box-shadow:0 0 14px rgba(0,229,255,.2);}.ms-singcta-t{display:flex;align-items:center;gap:8px;font-weight:700;font-size:14px;color:#bfeaff;}.ms-singcta-t svg{color:#00e5ff;}.ms-singcta-s{font-size:12px;color:#8fb0cc;margin-top:4px;}",
+      ".ms-result-meta{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;}.ms-result-meta span{font-size:11px;color:#00e5ff;background:rgba(0,229,255,.08);border:1px solid rgba(0,229,255,.2);padding:2px 8px;border-radius:99px;}",
+      "@keyframes msBar{0%{width:12%}50%{width:80%}100%{width:12%}}",
       /* -- Reused cards / elements -- */
       ".ms-pc{background:linear-gradient(180deg,rgba(13,20,34,.7),rgba(8,13,24,.7));border:1px solid rgba(0,229,255,.14);border-radius:10px;padding:10px;margin-bottom:8px;display:flex;align-items:center;gap:10px;}",
       ".ms-pc:hover{border-color:rgba(0,229,255,.34);}",
@@ -1151,7 +1503,11 @@
   function renderRecordPanel() {
     var s = MS.state;
     var isRec = MS.recorder && MS.recorder.state === "recording";
-    var h = '<div class="ms-rec-big' + (isRec ? ' rec' : '') + '" onclick="VMMusic.toggleRecord()">';
+    var h = '<div class="ms-singcta" onclick="VMMusic.openSing()">' +
+      '<div class="ms-singcta-t">' + svgSpark() + ' AI Edit / Sing with AI</div>' +
+      '<div class="ms-singcta-s">Turn your rough recording into a complete song with AI-assisted production.</div>' +
+      '</div>';
+    h += '<div class="ms-rec-big' + (isRec ? ' rec' : '') + '" onclick="VMMusic.toggleRecord()">';
     h += isRec ? '<svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>' : svgMic();
     h += '</div>';
     h += '<div style="text-align:center;font-size:20px;font-variant-numeric:tabular-nums;margin-bottom:16px;" id="msRecTime">' + fmtTime(MS.elapsed) + '</div>';
@@ -1235,6 +1591,7 @@
       case "effects": return renderFxSub();
       case "mix": return renderMixSub();
       case "ai-edit": return renderAiEditSub();
+      case "sing": return renderSingSub();
       case "memory": return renderMemSub();
       case "assets": return renderAssetsSub();
       case "ai-tools": return renderAiToolsSub();
@@ -1324,6 +1681,91 @@
     h += '<textarea class="ms-fi" id="msAiEditInput" rows="3" placeholder="e.g. Make the chorus more upbeat, add a bridge..."></textarea>';
     h += '<button class="ms-btn pri" style="width:100%;margin-top:8px" onclick="VMMusic.runAiEdit()">Apply changes</button>';
     if (MS.state.lastAiEdit) { h += '<div class="ms-lb" style="margin-top:16px">Last edit</div>'; h += '<div class="ms-mi">' + esc(MS.state.lastAiEdit.instruction) + '<div class="mt">' + esc(MS.state.lastAiEdit.summary || '') + '</div></div>'; }
+    return h;
+  }
+  function renderSingSub() {
+    var sg = MS.sing;
+    if (sg.status === "analyzing") return _singProgress("Analyzing", "Decoding and analyzing your audio...", 1);
+    if (sg.status === "processing") return _singProgress("AI is producing your song", SING_STAGES, -1);
+    if (sg.status === "error") {
+      var h = '<div class="ms-alert">' + esc(sg.error || "Something went wrong.") + '</div>';
+      h += '<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">';
+      h += '<button class="ms-btn sec" onclick="VMMusic.singReset()">Start over</button>';
+      if (sg.originalUrl && sg.analysis && sg.status) h += '<button class="ms-btn pri" onclick="VMMusic.runSing()">Retry</button>';
+      h += '</div>';
+      return h;
+    }
+    if (sg.status === "done") return _singResult(sg);
+    return _singIdle(sg);
+  }
+  function _singIdle(sg) {
+    var h = '<div class="ms-lb" style="font-size:14px;color:' + CYAN + '">Sing with AI / AI Edit</div>';
+    h += '<div style="font-size:12px;color:#8fb0cc;margin-bottom:12px">Turn your rough recording into a complete song with AI-assisted production.</div>';
+    h += '<div style="font-size:12px;color:#64748b;margin-bottom:12px">Upload raw vocals, humming, freestyle, a rough demo or an unfinished song — no beat needed. ValleyMind analyses it and builds a production around it while keeping your original.</div>';
+    h += '<input type="file" accept="audio/*,.mp3,.wav,.m4a,.aac,.flac,.ogg,.webm,.opus" style="display:none" id="msSingFile" onchange="VMMusic.onSingFile(this)">';
+    h += '<button class="ms-btn pri" style="width:100%" onclick="document.getElementById(\'msSingFile\').click()">Upload a vocal / song idea</button>';
+    h += '<div class="ms-lb">Genre</div><select class="ms-fi" onchange="VMMusic.setSingGenre(this.value)">';
+    SING_GENRES.forEach(function (g) { h += '<option' + (sg.genre === g ? ' selected' : '') + '>' + g + '</option>'; });
+    h += '</select>';
+    h += '<div class="ms-lb" style="margin-top:8px">Mood</div><select class="ms-fi" onchange="VMMusic.setSingMood(this.value)">';
+    SING_MOODS.forEach(function (m) { h += '<option' + (sg.mood === m ? ' selected' : '') + '>' + m + '</option>'; });
+    h += '</select>';
+    h += '<div class="ms-lb" style="margin-top:8px">Desired sound (describe it)</div>';
+    h += '<textarea class="ms-fi" rows="2" oninput="VMMusic.setSingStyle(this.value)" placeholder="e.g. Smooth Afrobeats with warm guitars, soft percussion, deep bass and an emotional atmosphere">' + esc(sg.style) + '</textarea>';
+    h += '<div class="ms-lb" style="margin-top:8px">Structure (optional)</div>';
+    h += '<input class="ms-fi" oninput="VMMusic.setSingStructure(this.value)" value="' + esc(sg.structure) + '" placeholder="e.g. Intro-Verse-Chorus-Verse2-Chorus-Bridge-Outro">';
+    h += '<div style="font-size:11px;color:#475569;margin-top:10px">Engine: ' + esc(SING_PROVIDER.label) + ' \u00b7 Your original vocal stays intact as a separate track.</div>';
+    return h;
+  }
+  function _singProgress(title, stages, activeIdx) {
+    var h = '<div class="ms-lb" style="font-size:14px;color:' + CYAN + '">' + esc(title) + '</div>';
+    if (typeof stages === "string") { h += '<div class="ms-stagebar"><div class="ms-stagebar-fill"></div></div>'; h += '<p style="color:#8fb0cc;font-size:13px">' + esc(stages) + '</p>'; }
+    else if (Array.isArray(stages)) {
+      h += '<div class="ms-stage-list">';
+      stages.forEach(function (st, i) {
+        var on = activeIdx >= i;
+        var done = activeIdx > i;
+        h += '<div class="ms-stage' + (done ? ' done' : '') + (on ? ' on' : '') + '"><span class="ms-stage-ic">' + (done ? '&#10003;' : (on ? '&#8226;' : '&middot;')) + '</span>' + esc(st) + '</div>';
+      });
+      h += '</div>';
+    }
+    return h;
+  }
+  function _singResult(sg) {
+    var p = sg.plan || {};
+    var h = '<div class="ms-lb" style="font-size:14px;color:' + CYAN + '">Your AI-produced song is ready</div>';
+    var analysis = sg.analysis || {};
+    h += '<div class="ms-mi" style="border:1px solid ' + CYAN_TEAL + '">';
+    if (p.title) h += '<div class="mt" style="color:' + CYAN + '">' + esc(p.title) + '</div>';
+    h += '<div class="ms-result-meta">';
+    h += '<span>BPM ' + (Number(p.bpm) || analysis.bpm || "-") + '</span>';
+    h += '<span>Key ' + esc(p.key || analysis.key || "-") + '</span>';
+    h += '<span>' + esc(sg.genre) + '</span>';
+    h += '<span>' + esc(sg.mood) + '</span>';
+    h += '</div>';
+    h += '<div style="margin-top:10px;display:flex;gap:8px">';
+    h += '<button class="ms-btn pri" onclick="VMMusic.singPlayAI()">Play AI Version</button>';
+    h += '<button class="ms-btn sec" onclick="VMMusic.singPlayOriginal()">Play Original</button>';
+    h += '</div>';
+    h += '</div>';
+    h += '<div class="ms-lb" style="margin-top:14px">Structure</div><div class="ms-res">' + esc(p.structure || "(adapted to your vocal)") + '</div>';
+    if (p.instruments && p.instruments.length) { h += '<div class="ms-lb" style="margin-top:10px">Instruments</div><div class="ms-res">' + esc(p.instruments.join(", ")) + '</div>'; }
+    if (p.arrangement) { h += '<div class="ms-lb" style="margin-top:10px">Arrangement</div><div class="ms-res">' + esc(p.arrangement) + '</div>'; }
+    if (p.note) h += '<div style="font-size:11px;color:#64748b;margin-top:10px">' + esc(p.note) + '</div>';
+    h += '<div class="ms-lb" style="margin-top:14px">Refine (keeps your vocal)</div>';
+    h += '<div class="ms-rw">';
+    [["More energetic", "Make it more energetic"], ["More emotional", "Make it more emotional"], ["Cleaner vocals", "Clean up and brighten the vocals"], ["Change genre", "Switch to a different genre feel"], ["Change mood", "Shift the mood"], ["Simplify", "Simplify the production"], ["Extend", "Extend the song"]] .forEach(function (q) {
+      h += '<button class="ms-chip" onclick="VMMusic.runSingRefine(\'' + q[1].replace(/'/g, "\\'") + '\')">' + esc(q[0]) + '</button>';
+    });
+    h += '</div>';
+    h += '<div style="margin-top:8px;display:flex;gap:8px">';
+    h += '<input class="ms-fi" id="msSingRefine" placeholder="Custom instruction...">';
+    h += '<button class="ms-btn sec" onclick="VMMusic.runSingRefine(document.getElementById(\'msSingRefine\').value)">Go</button>';
+    h += '</div>';
+    h += '<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">';
+    h += '<button class="ms-btn sec" onclick="VMMusic.exportSong()">Export song</button>';
+    h += '<button class="ms-btn sec" onclick="VMMusic.singReset()">New vocal</button>';
+    h += '</div>';
     return h;
   }
   function renderMemSub() {
@@ -1523,6 +1965,10 @@
     setBeatSearch: setBeatSearch,
     setBeatType: setBeatType,
     setBeatMood: setBeatMood,
+    onSingFile: onSingFile, setSingGenre: setSingGenre, setSingMood: setSingMood, setSingStyle: setSingStyle, setSingStructure: setSingStructure,
+    runSing: runSing, runSingRefine: runSingRefine, singPlayOriginal: singPlayOriginal, singPlayAI: singPlayAI, singReset: singReset,
+    openSing: openSing,
+    singDebug: function (status, plan) { MS.sing.status = status || "idle"; if (plan) MS.sing.plan = plan; if (MS.sing.status === "done" && !MS.sing.analysis) MS.sing.analysis = { bpm: 100, key: "C minor", duration: 30 }; render(); },
     newSong: newSong, loadSong: loadSong, deleteSong: deleteSong, saveSong: saveSong, exportSong: exportSong
   };
 
