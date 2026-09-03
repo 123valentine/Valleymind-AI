@@ -52,15 +52,17 @@ class MusicStudioStaticTestCase(unittest.TestCase):
         self.assertIn('<script src="/static/music_studio.js', html)
 
     def test_music_studio_has_workspace_layout(self):
-        """Verify music_studio.js defines workspace-first BandLab layout."""
+        """Verify music_studio.js defines the waveform-editor Studio layout."""
         js_path = ROOT / "static" / "music_studio.js"
         js = js_path.read_text(encoding="utf-8")
         self.assertIn("ms-studio", js)
-        self.assertIn("ms-ws", js)
-        self.assertIn("ms-bn", js)
+        self.assertIn("mse-top", js)
+        self.assertIn("mse-side", js)
+        self.assertIn("mse-center", js)
+        self.assertIn("mse-status", js)
         self.assertIn("ms-pnl", js)
         self.assertIn("VMMusic", js)
-        # Verify all 5 bottom nav items
+        # Verify all nav items
         for nav_id in ("record", "tracks", "generate", "tools", "projects"):
             self.assertIn(nav_id, js)
         # Verify all 10 tool sub-panels are defined
