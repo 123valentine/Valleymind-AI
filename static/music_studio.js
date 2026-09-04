@@ -253,7 +253,7 @@
     recorder: null, recStream: null, chunks: [], timer: null, elapsed: 0,
     projects: [], rendered: false, previewPreset: null,
     sing: { status: "idle", stage: -1, error: "", originalUrl: "", name: "", analysis: null, plan: null, instrumentalUrl: "", genre: "Afrobeats", mood: "Romantic", style: "", structure: "" },
-    ui: { activeNav: "", openTool: "", recording: false, saveState: "", searchBeat: "", beatType: "", beatMood: "", sideOpen: false },
+    ui: { activeNav: "", openTool: "", recording: false, saveState: "", searchBeat: "", beatType: "", beatMood: "", sideOpen: false, screen: "" },
     memory: [],
     live: null,
     audio: { el: null, playing: null, position: 0, dur: 0, loopDur: 0, loopBase: 0, lastTime: 0, peaks: {}, raf: null }
@@ -702,7 +702,7 @@
   function removeLayer(id) { MS.state.layers = MS.state.layers.filter(function (l) { return l.id !== id; }); render(); autoSaveDebounced(); }
   function setTrack(kind, field, val) { var t = kind === "beat" ? MS.state.beat : MS.state.take; t[field] = (field === "vol") ? Number(val) : !!val; render(); autoSaveDebounced(); }
   function setLayer(id, field, val) { var l = MS.state.layers.filter(function (x) { return x.id === id; })[0]; if (!l) return; l[field] = (field === "vol") ? Number(val) : !!val; render(); autoSaveDebounced(); }
-  function syncInputs() { var get = function (id) { var el = document.getElementById(id); return el ? el.value : ""; }; MS.state.name = get("vmMusicName") || MS.state.name; MS.state.role = get("vmMusicRole") || "Singer"; MS.state.genre = get("vmMusicGenre") || "Afrobeats"; MS.state.mood = get("vmMusicMood") || "Romantic"; MS.state.tempo = get("vmMusicTempo") || "Medium"; MS.state.key = get("vmMusicKey") || ""; MS.state.language = get("vmMusicLanguage") || "English"; MS.state.brief = get("vmMusicBrief") || ""; MS.state.lyrics = get("vmMusicLyrics") || ""; }
+  function syncInputs() { var get = function (id) { var el = document.getElementById(id); return el ? el.value : ""; }; MS.state.name = get("vmMusicName") || MS.state.name; MS.state.role = get("vmMusicRole") || "Singer"; MS.state.genre = get("vmMusicGenre") || "Afrobeats"; MS.state.mood = get("vmMusicMood") || "Romantic"; MS.state.tempo = get("vmMusicTempo") || "Medium"; MS.state.key = get("vmMusicKey") || ""; MS.state.language = get("vmMusicLanguage") || "English"; var _b = get("vmMusicBrief"); if (_b) MS.state.brief = _b; var _l = get("vmMusicLyrics"); if (_l) MS.state.lyrics = _l; }
   function syncName() { var el = document.getElementById("vmMusicName"); if (el) MS.state.name = el.value || MS.state.name; }
 
   /* -- Beat Synthesis ------------------------------------------------- */
@@ -865,7 +865,7 @@
 
   /* -- AI generate + edit --------------------------------------------- */
   function runAI() {
-    syncInputs(); if (!MS.state.consent) { toast("Authorize the voice choice first."); return; }
+    syncInputs(); if (MS.state.voice === "clone" && !MS.state.consent) { toast("Authorize the voice choice first."); return; }
     if (!MS.state.brief.trim() && !MS.state.lyrics.trim()) { toast("Describe your song or add lyrics first."); return; }
     toast("Generating...");
     apiFetch("/api/music", { method: "POST", credentials: "include", headers: authHeaders({ "Content-Type": "application/json" }),
@@ -1227,8 +1227,8 @@
 
   /* -- Save / load / delete / export ---------------------------------- */
   function saveSong() { syncInputs(); MS.state.savedAt = Date.now(); if (!MS.state.id) MS.state.id = "ms" + Date.now(); var found = false; for (var i = 0; i < MS.projects.length; i++) { if (MS.projects[i].id === MS.state.id) { MS.projects[i] = normalizeProject(clone(MS.state)); found = true; break; } } if (!found) MS.projects.unshift(normalizeProject(clone(MS.state))); saveProjects(); pushProjectsToServer(); showSaveState("Saved"); toast("Song saved."); render(); }
-  function newSong() { stopPlayback(); MS.state = defaultState(); MS.state.id = null; MS.ui.openTool = ""; MS.ui.activeNav = ""; MS.audio.peaks = {}; render(); }
-  function loadSong(id) { for (var i = 0; i < MS.projects.length; i++) { if (MS.projects[i].id === id) { stopPlayback(); MS.state = normalizeProject(clone(MS.projects[i])); MS.ui.openTool = ""; MS.ui.activeNav = ""; MS.audio.peaks = {}; render(); toast("Song loaded."); return; } } }
+  function newSong() { stopPlayback(); MS.state = defaultState(); MS.state.id = null; MS.ui.openTool = ""; MS.ui.activeNav = ""; MS.ui.screen = ""; MS.audio.peaks = {}; render(); }
+  function loadSong(id) { for (var i = 0; i < MS.projects.length; i++) { if (MS.projects[i].id === id) { stopPlayback(); MS.state = normalizeProject(clone(MS.projects[i])); MS.ui.openTool = ""; MS.ui.activeNav = ""; MS.ui.screen = "manual"; MS.audio.peaks = {}; render(); toast("Song loaded."); return; } } }
   function deleteSong(id) { MS.projects = MS.projects.filter(function (p) { return p.id !== id; }); saveProjects(); deleteProjectOnServer(id); render(); }
   function exportSong() { syncInputs(); var title = MS.state.name || "Untitled"; var parts = [title, "Genre: " + MS.state.genre + " \u00b7 Mood: " + MS.state.mood + " \u00b7 Tempo: " + MS.state.tempo + (MS.state.key ? " \u00b7 Key: " + MS.state.key : ""), "", ""]; if (MS.state.voice) parts[2] = "Voice: " + (VOICE_LABELS[MS.state.voice] || MS.state.voice); parts.push((MS.state.aiResult && MS.state.aiResult.lyrics) || MS.state.lyrics || "(no lyrics yet)"); if (MS.state.aiResult && MS.state.aiResult.arrangement) { parts.push(""); parts.push("ARRANGEMENT"); parts.push(MS.state.aiResult.arrangement); } var blob = new Blob([parts.join("\n")], { type: "text/plain;charset=utf-8" }); var url = URL.createObjectURL(blob); var a = document.createElement("a"); a.href = url; a.download = title.replace(/[\\/:*?"<>|]+/g, "_") + ".txt"; document.body.appendChild(a); a.click(); document.body.removeChild(a); setTimeout(function () { URL.revokeObjectURL(url); }, 4000); }
 
@@ -1236,6 +1236,48 @@
   function openNav(id) { if (MS.ui.activeNav === id) { MS.ui.activeNav = ""; MS.ui.openTool = ""; } else { MS.ui.activeNav = id; MS.ui.openTool = ""; } closeSide(false); render(); }
   function openTool(id) { MS.ui.openTool = (MS.ui.openTool === id) ? "" : id; closeSide(false); render(); }
   function openSing() { MS.ui.activeNav = "tools"; MS.ui.openTool = "sing"; closeSide(false); render(); }
+  function goCreate() { MS.ui.screen = "create"; MS.ui.activeNav = ""; MS.ui.openTool = ""; closeSide(false); render(); }
+  function goManual() { MS.ui.screen = "manual"; MS.ui.activeNav = ""; MS.ui.openTool = ""; closeSide(false); render(); }
+  function backEntry() { MS.ui.screen = ""; MS.ui.activeNav = ""; MS.ui.openTool = ""; closeSide(false); render(); }
+  function hasAnyAudio() { var s = MS.state; return !!(s && s.take && s.take.url) || !!(s && s.beat && s.beat.url) || !!(s && s.layers && s.layers.length); }
+  function useHint(txt) { MS.state.brief = txt; render(); }
+  function runAIFromCreate() {
+    var ta = document.getElementById("vmMusicBrief2");
+    if (ta) MS.state.brief = ta.value;
+    if (!MS.state.brief.trim() && !MS.state.lyrics.trim()) { toast("Describe your song or add lyrics first."); return; }
+    MS.ui.screen = "manual";
+    MS.ui.activeNav = "generate";
+    MS.ui.openTool = "";
+    closeSide(false);
+    runAI();
+    render();
+  }
+  function uploadFromCreate(kind) {
+    var input = document.createElement("input");
+    input.type = "file";
+    input.accept = "audio/*";
+    input.style.display = "none";
+    input.onchange = function () {
+      if (kind === "take") onTakeFile(input);
+      else if (kind === "beat") onBeatFile(input);
+      input.remove();
+      MS.ui.activeNav = ""; MS.ui.screen = "manual"; render();
+    };
+    document.body.appendChild(input);
+    input.click();
+  }
+  /* AI -> Manual handoff: persist the current generated project through the
+     existing ValleyMind project system, then open it as the active session in
+     Manual Studio. No fake persistence — reuses saveSong()/loadSong(). */
+  function openInStudio() {
+    saveSong();
+    MS.ui.screen = "manual";
+    MS.ui.activeNav = "";
+    MS.ui.openTool = "";
+    closeSide(false);
+    render();
+    toast("Opened in Studio");
+  }
   function toggleSide() { if ((window.innerWidth || 0) >= 769) { openNav("tracks"); return; } if (MS.ui.sideOpen) { closeSide(); return; } MS.ui.sideOpen = true; var sd = document.getElementById("mseSide"); var bd = document.getElementById("mseSideBd"); if (sd) sd.classList.add("open"); if (bd) bd.classList.add("show"); }
   function closeSide(force) { if (MS.ui.sideOpen || force) { MS.ui.sideOpen = false; var sd = document.getElementById("mseSide"); var bd = document.getElementById("mseSideBd"); if (sd) sd.classList.remove("open"); if (bd) bd.classList.remove("show"); } }
   function setVoice(v) { MS.state.voice = v; render(); autoSaveDebounced(); }
@@ -1336,7 +1378,7 @@
       ".mse-eq{height:110px;position:relative;background:linear-gradient(180deg,rgba(0,229,255,.04),transparent);border-radius:8px;}",
       "#mseEq{width:100%;height:100%;display:block;}",
       ".mse-eqctl{display:flex;gap:8px;margin-top:10px;}",
-      ".mse-eqctl input[type=range]{flex:1 1 0%;min-width:0;height:3px;accent-color:#00e5ff;cursor:pointer;}",
+      ".mse-eqctl input[type=range]{flex:1;width:100%;min-width:0;height:3px;accent-color:#00e5ff;cursor:pointer;}",
       /* -- Status bar -- */
       ".mse-status{display:flex;align-items:center;gap:18px;padding:7px 18px;background:rgba(8,13,24,.9);border-top:1px solid rgba(0,229,255,.1);font-size:10px;color:#3f74a0;flex-shrink:0;letter-spacing:.04em;}",
       ".mse-status .mse-stop{color:#7fd3f5;font-weight:600;}",
@@ -1466,6 +1508,90 @@
         ".mse-tp button{width:38px;height:38px;}",
         ".mse-tp button.mse-play{width:44px;height:44px;}",
         ".mse-brand .mse-bs{display:none;}",
+      "}",
+      /* -- Entry / Create-first screens ---------------------------------- */
+      ".ms-floor{height:100%;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;}",
+      ".mse-entry{display:flex;align-items:flex-start;justify-content:center;min-height:100%;padding:clamp(34px,8vh,88px) 22px 48px;}",
+      ".mse-entry-inner{width:100%;max-width:1120px;}",
+      ".mse-entry-eyebrow{display:inline-flex;align-items:center;gap:8px;font-size:12px;font-weight:800;letter-spacing:.14em;color:"+CYAN+";text-transform:uppercase;}",
+      ".mse-entry-eyebrow .dot{width:9px;height:9px;border-radius:50%;background:"+CYAN+";box-shadow:0 0 0 4px rgba(0,229,255,.15);}",
+      ".mse-entry-title{font-size:clamp(38px,6vw,68px);line-height:.98;letter-spacing:-.05em;margin:22px 0 18px;color:#edf6fb;}",
+      ".mse-entry-title span{color:"+CYAN+";}",
+      ".mse-entry-sub{font-size:16px;line-height:1.65;color:#8da2b1;max-width:680px;margin:0;}",
+      ".mse-entry-open{margin-top:18px;}",
+      ".mse-mode-grid{display:grid;grid-template-columns:1.25fr 1fr;gap:16px;margin-top:44px;}",
+      ".mse-mode-card{position:relative;min-height:200px;border:1px solid #1c2b38;border-radius:20px;padding:26px;text-align:left;display:flex;flex-direction:column;align-items:flex-start;justify-content:space-between;background:linear-gradient(145deg,#0d1a25,#0a141d);cursor:pointer;transition:transform .18s ease,border-color .18s ease;color:inherit;font:inherit;}",
+      ".mse-mode-card:hover{transform:translateY(-3px);border-color:#2f4a5c;}",
+      ".mse-mode-icon{width:48px;height:48px;border-radius:14px;display:grid;place-items:center;background:rgba(0,229,255,.12);color:"+CYAN+";font-size:0;}",
+      ".mse-mode-card h2{font-size:26px;margin:14px 0 6px;letter-spacing:-.02em;color:#edf6fb;}",
+      ".mse-mode-card p{color:#8da2b1;margin:0;font-size:13px;line-height:1.55;}",
+      ".mse-mode-arrow{position:absolute;right:24px;bottom:22px;font-size:24px;color:"+CYAN+";font-weight:600;}",
+      ".mse-entry-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:22px;}",
+      ".mse-entry-note{margin-top:20px;color:#718898;font-size:13px;display:flex;align-items:center;gap:8px;}",
+      ".mse-create{padding:clamp(20px,4vh,44px) 20px 48px;min-height:100%;}",
+      ".mse-create-top{max-width:1180px;margin:0 auto;display:flex;align-items:flex-end;gap:18px;margin-bottom:26px;}",
+      ".mse-create-top h1{font-size:clamp(28px,4vw,40px);letter-spacing:-.03em;margin:0 0 4px;color:#edf6fb;}",
+      ".mse-create-sub{margin:0;color:#8da2b1;font-size:14px;}",
+      ".mse-ai-grid{max-width:1180px;margin:0 auto;display:grid;grid-template-columns:1.35fr .9fr;gap:16px;align-items:start;}",
+      ".mse-card{border:1px solid #1c2b38;background:#0b151f;border-radius:18px;overflow:hidden;}",
+      ".mse-prompt-card{padding:20px;}",
+      ".mse-section-label{display:flex;align-items:center;gap:8px;font-size:11px;font-weight:800;letter-spacing:.1em;color:#dbeaf2;text-transform:uppercase;}",
+      ".mse-section-label span{margin-left:auto;color:#667e8c;font-size:9px;font-weight:600;}",
+      ".mse-prompt-ta{width:100%;height:170px;resize:none;background:transparent;border:0;outline:0;color:#edf6fb;font-size:20px;line-height:1.45;padding:18px 2px;font-family:inherit;}",
+      ".mse-prompt-ta::placeholder{color:#536b7a;}",
+      ".mse-hints{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:18px;}",
+      ".mse-hint-chip{border:1px solid #1c2b38;border-radius:999px;padding:7px 11px;color:#91a8b6;background:#0b151e;font-size:12px;font-family:inherit;}",
+      ".mse-hint-chip:hover{border-color:#2f4a5c;color:#dbeaf2;}",
+      ".mse-gen-btn{width:100%;display:flex;justify-content:center;align-items:center;gap:8px;background:"+CYAN+";color:#03121a;font-weight:800;padding:13px 16px;border-radius:11px;font-size:14px;font-family:inherit;cursor:pointer;}",
+      ".mse-gen-btn span{font-size:10px;margin-left:auto;opacity:.6;border:1px solid rgba(3,18,26,.35);border-radius:6px;padding:2px 6px;}",
+      ".mse-create-right{display:flex;flex-direction:column;gap:16px;}",
+      ".mse-input-card{padding:20px;}",
+      ".mse-input-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px;}",
+      ".mse-input-btn{min-height:118px;text-align:left;border:1px solid #1c2b38;background:#0b151e;border-radius:14px;padding:14px;display:flex;flex-direction:column;align-items:flex-start;gap:6px;cursor:pointer;font:inherit;color:inherit;}",
+      ".mse-input-btn:hover{border-color:#2f4a5c;}",
+      ".mse-action-symbol{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;background:#132432;color:"+CYAN+";font-size:0;}",
+      ".mse-input-btn b{font-size:13px;color:#dbeaf2;}",
+      ".mse-input-btn small{color:#708695;line-height:1.3;font-size:11px;}",
+      ".mse-sing-card{margin-top:0;padding:20px;display:flex;flex-direction:column;gap:14px;}",
+      ".mse-sing-main{display:flex;gap:14px;align-items:flex-start;}",
+      ".mse-sing-icon{min-width:44px;height:44px;border-radius:13px;background:rgba(0,229,255,.12);color:"+CYAN+";display:grid;place-items:center;font-size:0;}",
+      ".mse-sing-card h2{margin:4px 0;font-size:21px;color:#edf6fb;}",
+      ".mse-sing-card p{margin:0;color:#8da2b1;font-size:12px;line-height:1.55;}",
+      ".mse-flow{display:flex;align-items:center;flex-wrap:wrap;gap:8px;font-size:11px;color:#9db0bc;}",
+      ".mse-flow b{color:"+CYAN+";}",
+      ".mse-sing-btn{align-self:flex-start;white-space:nowrap;border:1px solid #2f4a5c;border-radius:10px;padding:11px 15px;color:"+CYAN+";background:transparent;font-size:13px;font-weight:700;font-family:inherit;cursor:pointer;}",
+      ".mse-sing-btn:hover{background:rgba(0,229,255,.1);}",
+      ".mse-capability-section{margin-top:6px;padding:20px;border:1px solid #1c2b38;border-radius:18px;background:#0b151f;}",
+      ".mse-section-heading h2{margin:0 0 14px;font-size:18px;letter-spacing:-.01em;color:#edf6fb;}",
+      ".mse-capability-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;}",
+      ".mse-capability{border:1px solid #1c2b38;background:#09141d;border-radius:13px;padding:15px;display:flex;flex-direction:column;gap:10px;}",
+      ".mse-cap-icon{color:"+CYAN+";font-size:0;}",
+      ".mse-capability b{font-size:12px;color:#dbeaf2;}",
+      ".mse-capability small{display:block;color:#708695;line-height:1.4;font-size:11px;}",
+      "@media(max-width:900px){",
+        ".mse-mode-grid{grid-template-columns:1fr;}",
+        ".mse-mode-card{min-height:150px;}",
+        ".mse-ai-grid{grid-template-columns:1fr;}",
+      "}",
+      "@media(max-width:600px){",
+        ".mse-entry{padding:30px 16px 70px;}",
+        ".mse-entry-title{font-size:40px;}",
+        ".mse-entry-sub{font-size:15px;}",
+        ".mse-mode-grid{margin-top:30px;gap:12px;}",
+        ".mse-mode-card{min-height:140px;padding:20px;border-radius:16px;}",
+        ".mse-mode-card h2{font-size:22px;}",
+        ".mse-create{padding:18px 14px 90px;}",
+        ".mse-create-top{flex-direction:column;align-items:flex-start;gap:10px;}",
+        ".mse-prompt-card,.mse-input-card,.mse-sing-card{padding:16px;}",
+        ".mse-prompt-ta{height:140px;font-size:18px;}",
+        ".mse-input-actions{grid-template-columns:1fr 1fr;}",
+        ".mse-input-btn{min-height:104px;padding:12px;}",
+        ".mse-capability-row{grid-template-columns:1fr 1fr;}",
+      "}",
+      "@media(max-width:360px){",
+        ".mse-entry-title{font-size:35px;}",
+        ".mse-input-btn small{font-size:9px;}",
+        ".mse-capability-row{grid-template-columns:1fr;}",
       "}"
     ].join("\n");
     var s = document.createElement("style");
@@ -1610,6 +1736,7 @@
       h += '<div class="ms-mi" style="border:1px solid ' + BLUE_DIM + '"><div class="mt" style="color:' + BLUE_LT + '">GENERATED PACKAGE</div>';
       if (s.aiResult.lyrics) h += '<div style="white-space:pre-wrap;margin-top:4px;max-height:120px;overflow-y:auto">' + esc(s.aiResult.lyrics.substring(0, 400)) + (s.aiResult.lyrics.length > 400 ? '...' : '') + '</div>';
       h += '</div>';
+      h += '<button class="ms-btn pri" style="width:100%;margin-top:10px" onclick="VMMusic.openInStudio()">Open in Studio &rarr;</button>';
     }
     return h;
   }
@@ -1811,6 +1938,7 @@
     h += '<button class="ms-btn sec" onclick="VMMusic.runSingRefine(document.getElementById(\'msSingRefine\').value)">Go</button>';
     h += '</div>';
     h += '<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">';
+    h += '<button class="ms-btn pri" onclick="VMMusic.openInStudio()">Open in Studio &rarr;</button>';
     h += '<button class="ms-btn sec" onclick="VMMusic.exportSong()">Export song</button>';
     h += '<button class="ms-btn sec" onclick="VMMusic.singReset()">New vocal</button>';
     h += '</div>';
@@ -1842,12 +1970,106 @@
     return h;
   }
 
+  /* -- Entry / Create screens ------------------------------------------- */
+  function renderEntry() {
+    var projCount = MS.projects.length;
+    var h = '<div class="mse-entry">';
+    h += '<div class="mse-entry-inner">';
+    h += '<div class="mse-entry-eyebrow"><span class="dot"></span>MUSIC STUDIO</div>';
+    h += '<h1 class="mse-entry-title">Make <span>music</span> your way.</h1>';
+    h += '<p class="mse-entry-sub">Turn a description into a full production, or open the manual studio to record, arrange and mix hands-on. AI is a layer, not a separate studio.</p>';
+    if (projCount) {
+      h += '<div class="mse-entry-open"><button class="ms-btn sec" onclick="VMMusic.openNav(\'projects\');VMMusic.goManual()">Open project (' + projCount + ')</button></div>';
+    }
+    h += '<div class="mse-mode-grid">';
+    h += '<button class="mse-mode-card mse-ai-card" onclick="VMMusic.goCreate()">' +
+      '<div class="mse-mode-icon">' + svgSpark() + '</div>' +
+      '<h2>AI Studio</h2>' +
+      '<p>Describe your idea, choose a genre and mood, and generate a complete production with AI.</p>' +
+      '<span class="mse-mode-arrow">&rarr;</span></button>';
+    h += '<button class="mse-mode-card" onclick="VMMusic.goManual()">' +
+      '<div class="mse-mode-icon">' + svgTool("eq") + '</div>' +
+      '<h2>Manual Studio</h2>' +
+      '<p>Build around vocals, humming or a melody. Record, upload, arrange, mix and master by hand.</p>' +
+      '<span class="mse-mode-arrow">&rarr;</span></button>';
+    h += '</div>';
+    h += '<div class="mse-entry-actions">' +
+      '<button class="ms-btn sec" onclick="VMMusic.goManual()">' + svgMic() + ' Start a blank session</button>' +
+      '<button class="ms-btn sec" onclick="VMMusic.openSing();VMMusic.goManual()">' + svgSpark() + ' Sing with AI</button>' +
+      '</div>';
+    h += '<div class="mse-entry-note">' + svgTool("projects") + ' Start creating in seconds &middot; no app to install</div>';
+    h += '</div>';
+    h += '</div>';
+    return h;
+  }
+
+  function renderCreateScreen() {
+    var s = MS.state;
+    var hints = ["Afrobeat with warm guitars and energetic percussion", "Dark atmospheric R&B with deep bass", "Emotional piano ballad with cinematic strings", "Big cinematic pop anthem", "Smooth lo-fi trap with soft keys"];
+    var hintChips = "";
+    hints.forEach(function (ht) { hintChips += '<button class="mse-hint-chip" onclick="VMMusic.useHint(\'' + esc(ht).replace(/'/g, "\\'") + '\')">' + esc(ht) + '</button>'; });
+    var h = '<div class="mse-create">';
+    h += '<div class="mse-create-top">';
+    h += '<button class="ms-btn sec" onclick="VMMusic.backEntry()">&larr; Back</button>';
+    h += '<div><h1>AI Studio</h1><p class="mse-create-sub">Turn a description into a complete production.</p></div>';
+    h += '</div>';
+    h += '<div class="mse-ai-grid">';
+    /* Left: prompt card */
+    h += '<div class="mse-card mse-prompt-card">';
+    h += '<div class="mse-section-label">MUSIC PROMPT <span>ALL OPTIONAL</span></div>';
+    h += '<textarea id="vmMusicBrief2" class="mse-prompt-ta" placeholder="Describe the music you want to create...">' + esc(s.brief) + '</textarea>';
+    h += '<div class="mse-hints">' + hintChips + '</div>';
+    h += '<button class="mse-gen-btn" onclick="VMMusic.runAIFromCreate()">Generate music <span>AI</span></button>';
+    h += '</div>';
+    /* Right: inputs + sing */
+    h += '<div class="mse-create-right">';
+    h += '<div class="mse-card mse-input-card">';
+    h += '<div class="mse-section-label">INPUT</div>';
+    h += '<div class="mse-input-actions">';
+    h += '<button class="mse-input-btn" onclick="VMMusic.uploadFromCreate(\'take\')"><span class="mse-action-symbol">' + svgTool("trim") + '</span><b>Upload audio</b><small>Bring your own vocal or full track.</small></button>';
+    h += '<button class="mse-input-btn" onclick="VMMusic.openTool(\'music\');VMMusic.goManual()"><span class="mse-action-symbol">' + svgTool("projects") + '</span><b>Import beat</b><small>Pick from the built-in beat library.</small></button>';
+    h += '</div>';
+    h += '</div>';
+    h += '<div class="mse-card mse-sing-card">';
+    h += '<div class="mse-sing-main"><span class="mse-sing-icon">' + svgMic() + '</span><div><h2>Sing with AI</h2><p>Build around vocals, humming or a melody. Record or upload a rough take and we\u2019ll produce it.</p></div></div>';
+    h += '<div class="mse-flow">Record an idea <b>&rarr;</b> Analyze tempo &amp; key <b>&rarr;</b> Produce</div>';
+    h += '<button class="mse-sing-btn" onclick="VMMusic.openSing();VMMusic.goManual()">Start Sing with AI</button>';
+    h += '</div>';
+    /* Capabilities */
+    h += '<div class="mse-capability-section">';
+    h += '<div class="mse-section-heading"><h2>Everything in one layer</h2></div>';
+    h += '<div class="mse-capability-row">';
+    var caps = [
+      { t: "AI Arrangement", d: "Shape intro, verses, chorus, bridge and outro." },
+      { t: "AI Mixing / Mastering", d: "Balance, polish and prepare the final master." },
+      { t: "Vocal Cleanup", d: "Reduce noise and enhance raw recordings." },
+      { t: "Beat library", d: "A built-in library of production-ready beats." },
+      { t: "AI Edit", d: "Refine lyrics, title and structure by instruction." }
+    ];
+    caps.forEach(function (c) { h += '<div class="mse-capability"><span class="mse-cap-icon">' + svgSpark() + '</span><b>' + esc(c.t) + '</b><small>' + esc(c.d) + '</small></div>'; });
+    h += '</div></div>';
+    h += '</div>';
+    h += '</div>';
+    h += '</div>';
+    return h;
+  }
+
   /* -- Main Render ----------------------------------------------------- */
   function render() {
     var panel = document.getElementById("vmWsPanelMusic");
     if (!panel) return;
     injectStyles();
     syncInputs();
+    if (MS.ui.screen === "" && !hasAnyAudio()) {
+      panel.innerHTML = '<div class="ms-studio ms-floor">' + renderEntry() + '</div>';
+      refreshLucide();
+      return;
+    }
+    if (MS.ui.screen === "create") {
+      panel.innerHTML = '<div class="ms-studio ms-floor">' + renderCreateScreen() + '</div>';
+      refreshLucide();
+      return;
+    }
     var s = MS.state;
     var nav = MS.ui.activeNav;
     var tool = MS.ui.openTool;
@@ -1886,7 +2108,7 @@
           '<div><div class="mse-bt">ValleyMind Studio</div><div class="mse-bs">Music Editor</div></div>' +
         '</div>' +
         '<div class="mse-tp">' +
-          '<button onclick="VMMusic.seekN(' + (pos > 0.5 ? -0.05 : -0.05) + ')" title="Previous">' + svgPrev() + '</button>' +
+          '<button onclick="VMMusic.seekN(-0.05)" title="Previous">' + svgPrev() + '</button>' +
           '<button onclick="VMMusic.stopPlayback()" title="Stop">' + svgStop() + '</button>' +
           '<button class="mse-rec' + (isRec ? ' mse-rec' : '') + '" onclick="VMMusic.toggleRecord()" title="Record">' + svgMic() + '</button>' +
           '<button class="mse-play" id="msPlayBtn" onclick="VMMusic.togglePlay(' + (MS.audio.playing ? "'" + MS.audio.playing + "'" : "'take'") + ')" title="Play/Pause">' + playIcon + '</button>' +
@@ -1960,7 +2182,7 @@
       '</div>' +
       /* -- Status bar -- */
       '<div class="mse-status">' +
-        '<span>Format: ' + (hasAudio ? 'WAV' : '�') + '</span>' +
+        '<span>Format: ' + (hasAudio ? 'WAV' : 'None') + '</span>' +
         '<span>Sample Rate: ' + Math.round(((s.take && s.take.sampleRate) || 44100) / 1000) + ' kHz</span>' +
         '<span class="mse-bit">Bit Depth: 32-bit float</span>' +
         '<span>Channels: Mono</span>' +
@@ -2022,6 +2244,8 @@
     onSingFile: onSingFile, setSingGenre: setSingGenre, setSingMood: setSingMood, setSingStyle: setSingStyle, setSingStructure: setSingStructure,
     runSing: runSing, runSingRefine: runSingRefine, singPlayOriginal: singPlayOriginal, singPlayAI: singPlayAI, singReset: singReset,
     openSing: openSing, toggleSide: toggleSide, closeSide: closeSide,
+    goCreate: goCreate, goManual: goManual, backEntry: backEntry, openInStudio: openInStudio,
+    runAIFromCreate: runAIFromCreate, useHint: useHint, uploadFromCreate: uploadFromCreate,
     singDebug: function (status, plan) { MS.sing.status = status || "idle"; if (plan) MS.sing.plan = plan; if (MS.sing.status === "done" && !MS.sing.analysis) MS.sing.analysis = { bpm: 100, key: "C minor", duration: 30 }; render(); },
     newSong: newSong, loadSong: loadSong, deleteSong: deleteSong, saveSong: saveSong, exportSong: exportSong
   };
