@@ -1897,6 +1897,36 @@
   .msg-toolbar button:hover{background:rgba(0,212,255,0.1)}
   .msg-toolbar .up-active{color:#00ff88 !important;background:rgba(0,255,136,0.1) !important}
   .msg-toolbar .down-active{color:#ff6b7a !important;background:rgba(255,45,70,0.1) !important}
+  /* ── Conversation-focused chat workspace ─────────────────────────
+     Conversation first; everything else secondary. More breathing room,
+     lighter bubbles, and a comfortable reading column on wide screens. */
+  #messages{ gap:28px !important; }
+  /* Never let a message grow wider than the container. Without min-width:0,
+     a flex child's min-content (e.g. a long unwrappable code line inside
+     pre with overflow-x:auto) expands the bubble beyond the viewport. */
+  .assistant-message, .user-message{ min-width:0; max-width:100%; }
+  .user-message .bubble{ background:rgba(0,212,255,0.10); border-color:rgba(255,255,255,0.06); }
+  .assistant-message .bubble{ padding:12px 22px; }
+  .msg-toolbar{ opacity:0.72; transition:opacity .15s; }
+  .msg-toolbar:hover{ opacity:1; }
+  /* Comfortable reading width on desktop; center so large monitors don't
+     stretch the conversation edge-to-edge. */
+  @media(min-width:1280px){
+    #messages{ max-width:960px; margin-left:auto; margin-right:auto; }
+  }
+  /* Tablet: give the conversation more room by tightening the sidebar. */
+  @media(min-width:769px) and (max-width:1199px){
+    #sidebar{ width:240px !important; }
+    #topHeader{ left:240px !important; }
+    main{ margin-left:240px !important; }
+    #messages{ max-width:none; }
+  }
+  /* Composer bar: subtle separating line, roomier on phones. */
+  .chat-composer-bar{ border-top:1px solid rgba(255,255,255,0.05); }
+  @media(max-width:768px){
+    .chat-composer-bar{ padding:10px 12px 12px !important; }
+    .chat-composer-bar>div{ max-width:none !important; }
+  }
   /* ── Unified composer (input box) ─────────────────────────────── */
   #composer{
     background:#1a1f2e;border:1px solid rgba(255,255,255,0.1);
@@ -1946,6 +1976,16 @@
     header{left:0!important}
     .mobile-toggle{display:flex!important}
     #messages{padding:22px 14px!important}
+
+    /* Use the dynamic viewport height so the on-screen keyboard never
+       pushes the composer off-screen on mobile browsers. */
+    #mainArea{height:100dvh!important}
+
+    /* Comfortable, touch-friendly composer on phones. */
+    #composer{padding:6px 8px}
+    #plusBtn,#micBtn,#sendBtn{width:40px;height:40px}
+    #sendBtn{margin-left:2px}
+    #personaBtn{height:32px;padding:0 12px;font-size:13px}
 
     /* Settings: sidebar becomes a horizontal scrollable tab bar on top.
        !important is required throughout — the overlay is styled inline. */
@@ -2478,7 +2518,7 @@
     </div>
 
     <!-- INPUT BAR -->
-    <div style="padding:12px 24px 24px;border-top:1px solid rgba(255,255,255,0.08);background:rgba(5,14,24,0.9);">
+    <div class="chat-composer-bar" style="padding:12px 24px 24px;background:linear-gradient(180deg, rgba(5,14,24,0.35), rgba(5,14,24,0.92));box-shadow:0 -24px 50px rgba(0,0,0,0.35);">
       <div style="max-width:900px;margin:0 auto;">
 
         <!-- HIDDEN FILE INPUTS -->

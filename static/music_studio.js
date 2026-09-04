@@ -253,7 +253,7 @@
     recorder: null, recStream: null, chunks: [], timer: null, elapsed: 0,
     projects: [], rendered: false, previewPreset: null,
     sing: { status: "idle", stage: -1, error: "", originalUrl: "", name: "", analysis: null, plan: null, instrumentalUrl: "", genre: "Afrobeats", mood: "Romantic", style: "", structure: "" },
-    ui: { activeNav: "", openTool: "", recording: false, saveState: "", searchBeat: "", beatType: "", beatMood: "" },
+    ui: { activeNav: "", openTool: "", recording: false, saveState: "", searchBeat: "", beatType: "", beatMood: "", sideOpen: false },
     memory: [],
     live: null,
     audio: { el: null, playing: null, position: 0, dur: 0, loopDur: 0, loopBase: 0, lastTime: 0, peaks: {}, raf: null }
@@ -1233,9 +1233,11 @@
   function exportSong() { syncInputs(); var title = MS.state.name || "Untitled"; var parts = [title, "Genre: " + MS.state.genre + " \u00b7 Mood: " + MS.state.mood + " \u00b7 Tempo: " + MS.state.tempo + (MS.state.key ? " \u00b7 Key: " + MS.state.key : ""), "", ""]; if (MS.state.voice) parts[2] = "Voice: " + (VOICE_LABELS[MS.state.voice] || MS.state.voice); parts.push((MS.state.aiResult && MS.state.aiResult.lyrics) || MS.state.lyrics || "(no lyrics yet)"); if (MS.state.aiResult && MS.state.aiResult.arrangement) { parts.push(""); parts.push("ARRANGEMENT"); parts.push(MS.state.aiResult.arrangement); } var blob = new Blob([parts.join("\n")], { type: "text/plain;charset=utf-8" }); var url = URL.createObjectURL(blob); var a = document.createElement("a"); a.href = url; a.download = title.replace(/[\\/:*?"<>|]+/g, "_") + ".txt"; document.body.appendChild(a); a.click(); document.body.removeChild(a); setTimeout(function () { URL.revokeObjectURL(url); }, 4000); }
 
   /* -- Navigation ----------------------------------------------------- */
-  function openNav(id) { if (MS.ui.activeNav === id) { MS.ui.activeNav = ""; MS.ui.openTool = ""; } else { MS.ui.activeNav = id; MS.ui.openTool = ""; } render(); }
-  function openTool(id) { MS.ui.openTool = (MS.ui.openTool === id) ? "" : id; render(); }
-  function openSing() { MS.ui.activeNav = "tools"; MS.ui.openTool = "sing"; render(); }
+  function openNav(id) { if (MS.ui.activeNav === id) { MS.ui.activeNav = ""; MS.ui.openTool = ""; } else { MS.ui.activeNav = id; MS.ui.openTool = ""; } closeSide(false); render(); }
+  function openTool(id) { MS.ui.openTool = (MS.ui.openTool === id) ? "" : id; closeSide(false); render(); }
+  function openSing() { MS.ui.activeNav = "tools"; MS.ui.openTool = "sing"; closeSide(false); render(); }
+  function toggleSide() { if ((window.innerWidth || 0) >= 769) { openNav("tracks"); return; } if (MS.ui.sideOpen) { closeSide(); return; } MS.ui.sideOpen = true; var sd = document.getElementById("mseSide"); var bd = document.getElementById("mseSideBd"); if (sd) sd.classList.add("open"); if (bd) bd.classList.add("show"); }
+  function closeSide(force) { if (MS.ui.sideOpen || force) { MS.ui.sideOpen = false; var sd = document.getElementById("mseSide"); var bd = document.getElementById("mseSideBd"); if (sd) sd.classList.remove("open"); if (bd) bd.classList.remove("show"); } }
   function setVoice(v) { MS.state.voice = v; render(); autoSaveDebounced(); }
   function setConsent(v) { MS.state.consent = !!v; render(); autoSaveDebounced(); }
   function applyEffectPresetByIdx(idx) { if (EFFECT_PRESETS[idx]) applyEffectPreset(EFFECT_PRESETS[idx]); }
@@ -1334,7 +1336,7 @@
       ".mse-eq{height:110px;position:relative;background:linear-gradient(180deg,rgba(0,229,255,.04),transparent);border-radius:8px;}",
       "#mseEq{width:100%;height:100%;display:block;}",
       ".mse-eqctl{display:flex;gap:8px;margin-top:10px;}",
-      ".mse-eqctl input[type=range]{flex:1;height:3px;accent-color:#00e5ff;cursor:pointer;}",
+      ".mse-eqctl input[type=range]{flex:1 1 0%;min-width:0;height:3px;accent-color:#00e5ff;cursor:pointer;}",
       /* -- Status bar -- */
       ".mse-status{display:flex;align-items:center;gap:18px;padding:7px 18px;background:rgba(8,13,24,.9);border-top:1px solid rgba(0,229,255,.1);font-size:10px;color:#3f74a0;flex-shrink:0;letter-spacing:.04em;}",
       ".mse-status .mse-stop{color:#7fd3f5;font-weight:600;}",
@@ -1415,10 +1417,56 @@
       ".ms-se:focus{border-color:#00e5ff;}",
       ".ms-lyr{width:100%;min-height:200px;background:#050a14;border:1px solid rgba(0,229,255,.14);color:#dff3ff;padding:12px;border-radius:10px;font-size:14px;font-family:inherit;line-height:1.8;outline:none;resize:vertical;}",
       ".ms-lyr:focus{border-color:#00e5ff;}",
-      /* -- Responsive -- */
-      "@media(min-width:1025px){.mse-side{display:block;}.mse-right{display:flex;}}",
-      "@media(max-width:1024px){.mse-side{display:none !important;}.mse-right{display:none !important;}.mse-tp .mse-vol{display:none;}}",
-      "@media(max-width:640px){.mse-top{padding:8px 10px;gap:8px;}.mse-tc{font-size:14px;min-width:72px;}.mse-tp button{width:36px;height:36px;}.mse-tp button.mse-play{width:44px;height:44px;}.mse-brand .mse-bs{display:none;}.mse-center{padding:10px;}.mse-ovwrap{height:54px;}.mse-hint{font-size:11px;}}"
+      /* -- Responsive --
+         Layout model:
+           >=1100px  : full 3-panel (inline sidebar + center + right props)
+           769-1099px: tablet — inline narrow sidebar + center (right via tools)
+           <=768px   : mobile — sidebar becomes an off-canvas drawer toggled
+                       by the top-bar menu; panels become bottom sheets. */
+      ".mse-side-bd{position:absolute;left:0;right:0;top:99px;bottom:0;background:rgba(0,0,0,.5);backdrop-filter:blur(2px);z-index:34;opacity:0;visibility:hidden;transition:opacity .22s ease,visibility .22s ease;}",
+      ".mse-side-bd.show{opacity:1;visibility:visible;}",
+      "@media(min-width:1100px){.mse-side{display:block;}.mse-right{display:flex;}.mse-side-bd{display:none;}}",
+      "@media(min-width:769px) and (max-width:1099px){.mse-side{display:block;width:196px;}.mse-right{display:none !important;}.mse-tp .mse-vol{display:none;}.mse-side-bd{display:none;}.mse-center{padding:12px 14px;}}",
+      "@media(max-width:768px){",
+        ".mse-side{position:absolute;left:0;top:0;bottom:0;width:min(264px,84vw);z-index:36;transform:translateX(-102%);transition:transform .26s cubic-bezier(.32,.72,.32,1);display:block;padding-top:16px;border-right:1px solid rgba(0,229,255,.2);box-shadow:24px 0 50px rgba(0,0,0,.55);}",
+        ".mse-side.open{transform:translateX(0);}",
+        ".mse-side-bd{top:0;}",
+        ".mse-top{padding:8px 10px;gap:8px;}",
+        ".mse-top .mse-brand{min-width:0;gap:8px;}",
+        ".mse-brand .mse-logo{width:30px;height:30px;}",
+        ".mse-brand .mse-bt{font-size:12px;}",
+        ".mse-tp{gap:6px;}",
+        ".mse-tp button{width:40px;height:40px;}",
+        ".mse-tp button.mse-play{width:46px;height:46px;}",
+        ".mse-tc{font-size:13px;min-width:0;}",
+        ".mse-menu{width:40px;height:40px;}",
+        ".mse-vol{display:none;}",
+        ".mse-center{padding:10px;}",
+        ".mse-ovwrap{height:52px;margin-top:8px;}",
+        ".mse-hint{font-size:11px;}",
+        ".mse-status{flex-wrap:wrap;gap:5px 14px;padding:7px 12px;}",
+        ".mse-status .mse-bit{display:none;}",
+        ".ms-pnl{left:0;right:0;top:auto;bottom:0;width:auto;height:min(86vh,660px);border-left:none;border-top:1px solid rgba(0,229,255,.18);border-radius:16px 16px 0 0;transform:translateY(102%);box-shadow:0 -20px 60px rgba(0,0,0,.55);}",
+        ".ms-pnl.open{transform:translateY(0);}",
+        ".ms-pnl-h{padding:12px 16px;}",
+        ".ms-pnl-b{padding:12px 14px;}",
+        ".ms-pnl-x{width:32px;height:32px;}",
+        ".ms-sn{padding:8px;gap:6px;-ms-overflow-style:none;scrollbar-width:none;}",
+        ".ms-sn::-webkit-scrollbar{display:none;}",
+        ".ms-sn button{padding:9px 12px;font-size:12px;}",
+        ".ms-fi{padding:11px 12px;}",
+        ".ms-btn{padding:11px 15px;}",
+        ".ms-chip{padding:8px 13px;font-size:12px;}",
+        ".ms-tbtn{padding:11px 12px;font-size:13px;}",
+        ".ms-rw{flex-wrap:wrap;}.ms-rw>*{flex:1 1 45%;}",
+        ".ms-grid{grid-template-columns:repeat(auto-fill,minmax(120px,1fr));}",
+        ".ms-rec-big{width:76px;height:76px;}",
+      "}",
+      "@media(max-width:430px){",
+        ".mse-tp button{width:38px;height:38px;}",
+        ".mse-tp button.mse-play{width:44px;height:44px;}",
+        ".mse-brand .mse-bs{display:none;}",
+      "}"
     ].join("\n");
     var s = document.createElement("style");
     s.id = "ms-css";
@@ -1846,16 +1894,23 @@
         '</div>' +
         '<div class="mse-tc" id="msPlayTime">' + fmtTime(pos) + ' / ' + fmtTime(dur) + '</div>' +
         '<div class="mse-vol">' + svgVol() + '<input type="range" min="0" max="100" value="' + s.mix.master + '" oninput="VMMusic.setMaster(this.value)"></div>' +
-        '<button class="mse-menu" onclick="VMMusic.openNav(\'tracks\')" title="Menu">' + svgMenu() + '</button>' +
+        '<button class="mse-menu" onclick="VMMusic.toggleSide()" title="Menu">' + svgMenu() + '</button>' +
       '</div>' +
       '<div class="mse-body">' +
-        /* -- Left sidebar: FILES / TOOLS / EFFECTS -- */
+        /* -- Left sidebar: primary nav + tools (off-canvas drawer on mobile) -- */
         '<div class="mse-side" id="mseSide">' +
+          '<div class="mse-side-lb">Project</div>' +
+          '<button class="mse-tbtn' + (nav === "record" ? ' active' : '') + '" onclick="VMMusic.openNav(\'record\')"><span class="ic">' + svgMic() + '</span>Record</button>' +
+          '<button class="mse-tbtn' + (nav === "tracks" ? ' active' : '') + '" onclick="VMMusic.openNav(\'tracks\')"><span class="ic">' + svgTool("projects") + '</span>Tracks</button>' +
+          '<button class="mse-tbtn' + (nav === "generate" ? ' active' : '') + '" onclick="VMMusic.openNav(\'generate\')"><span class="ic">' + svgTool("ai") + '</span>AI Create</button>' +
+          '<button class="mse-tbtn' + (nav === "projects" ? ' active' : '') + '" onclick="VMMusic.openNav(\'projects\')"><span class="ic">' + svgTool("projects") + '</span>Projects</button>' +
+          '<button class="mse-tbtn' + (tool === "sing" || nav === "tools" ? ' active' : '') + '" onclick="VMMusic.openSing()"><span class="ic">' + svgSpark() + '</span>Sing with AI</button>' +
           '<div class="mse-side-lb">Files</div>' +
           '<div class="mse-file">' +
             '<div class="mse-fn">' + esc(baseName) + '</div>' +
             '<div class="mse-fm">' + fmtTime(dur) + ' &middot; ' + Math.max(1, Math.round((s.take && s.take.sampleRate) || 44100) / 1000) + ' kHz</div>' +
           '</div>' +
+          '<button class="mse-tbtn' + (nav === "tools" ? ' active' : '') + '" onclick="VMMusic.openNav(\'tools\')"><span class="ic">' + svgTool("eq") + '</span>All Studio Tools</button>' +
           '<div class="mse-side-lb">Tools</div>' +
           '<button class="mse-tbtn' + (tool === "cut" ? ' active' : '') + '" onclick="VMMusic.openTool(\'cut\')"><span class="ic">' + svgTool("cut") + '</span>Cut</button>' +
           '<button class="mse-tbtn' + (tool === "copy" ? ' active' : '') + '" onclick="VMMusic.openTool(\'copy\')"><span class="ic">' + svgTool("copy") + '</span>Copy</button>' +
@@ -1868,9 +1923,8 @@
           '<button class="mse-tbtn' + (tool === "comp" ? ' active' : '') + '" onclick="VMMusic.openTool(\'comp\')"><span class="ic">' + svgTool("comp") + '</span>Compressor</button>' +
           '<button class="mse-tbtn' + (tool === "reverb" ? ' active' : '') + '" onclick="VMMusic.openTool(\'reverb\')"><span class="ic">' + svgTool("reverb") + '</span>Reverb</button>' +
           '<button class="mse-tbtn' + (tool === "delay" ? ' active' : '') + '" onclick="VMMusic.openTool(\'delay\')"><span class="ic">' + svgTool("delay") + '</span>Delay</button>' +
-          '<button class="mse-tbtn' + (nav === "generate" ? ' active' : '') + '" onclick="VMMusic.openNav(\'generate\')"><span class="ic">' + svgTool("ai") + '</span>AI Create</button>' +
-          '<button class="mse-tbtn' + (nav === "projects" ? ' active' : '') + '" onclick="VMMusic.openNav(\'projects\')"><span class="ic">' + svgTool("projects") + '</span>Projects</button>' +
         '</div>' +
+        '<div class="mse-side-bd" id="mseSideBd" onclick="VMMusic.closeSide()"></div>' +
         /* -- Center: waveform editor -- */
         '<div class="mse-center">' +
           '<div class="mse-wave-wrap">' +
@@ -1908,7 +1962,7 @@
       '<div class="mse-status">' +
         '<span>Format: ' + (hasAudio ? 'WAV' : '�') + '</span>' +
         '<span>Sample Rate: ' + Math.round(((s.take && s.take.sampleRate) || 44100) / 1000) + ' kHz</span>' +
-        '<span>Bit Depth: 32-bit float</span>' +
+        '<span class="mse-bit">Bit Depth: 32-bit float</span>' +
         '<span>Channels: Mono</span>' +
         '<span class="mse-stop">' + (isRec ? 'REC' : (isPlaying ? 'PLAYING' : 'STOPPED')) + '</span>' +
         '<span class="mse-saves' + (svCls ? ' ok' : '') + '">' + esc(MS.ui.saveState) + '</span>' +
@@ -1967,7 +2021,7 @@
     setBeatMood: setBeatMood,
     onSingFile: onSingFile, setSingGenre: setSingGenre, setSingMood: setSingMood, setSingStyle: setSingStyle, setSingStructure: setSingStructure,
     runSing: runSing, runSingRefine: runSingRefine, singPlayOriginal: singPlayOriginal, singPlayAI: singPlayAI, singReset: singReset,
-    openSing: openSing,
+    openSing: openSing, toggleSide: toggleSide, closeSide: closeSide,
     singDebug: function (status, plan) { MS.sing.status = status || "idle"; if (plan) MS.sing.plan = plan; if (MS.sing.status === "done" && !MS.sing.analysis) MS.sing.analysis = { bpm: 100, key: "C minor", duration: 30 }; render(); },
     newSong: newSong, loadSong: loadSong, deleteSong: deleteSong, saveSong: saveSong, exportSong: exportSong
   };
