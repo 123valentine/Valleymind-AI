@@ -1635,7 +1635,7 @@ class MarcusBrain:
             print(f"[ERROR] Title generation failed: {exc}")
             return ""
 
-    def respond(self, message: str, chat_id: str = "", image_data: str = "", mongo_history: list = None) -> str:
+    def respond(self, message: str, chat_id: str = "", image_data: str = "", mongo_history: list = None, persist_image_data: bool = True) -> str:
         try:
             self.memory.reload()
 
@@ -1651,11 +1651,13 @@ class MarcusBrain:
             msg_count_before = self.memory.get_message_count(cid)
 
             user_msg = message
-            if image_data:
+            stored_image_data = ""
+            if image_data and persist_image_data:
                 user_msg = message + "\n[Image attached]"
+                stored_image_data = image_data
 
             try:
-                self.memory.add_message(cid, "user", user_msg, timestamp, image_data=image_data)
+                self.memory.add_message(cid, "user", user_msg, timestamp, image_data=stored_image_data)
             except Exception as exc:
                 print(f"[ERROR] Memory add_message (user) failed: {exc}")
 
@@ -1819,7 +1821,7 @@ class MarcusBrain:
             self.last_response_meta = self._metadata(False, True, "local")
             return FALLBACK_RESPONSE
 
-    def stream_respond(self, message: str, chat_id: str = "", image_data: str = "", mongo_history: list = None):
+    def stream_respond(self, message: str, chat_id: str = "", image_data: str = "", mongo_history: list = None, persist_image_data: bool = True):
         try:
             self.memory.reload()
             message = (message or "").strip()
@@ -1833,11 +1835,13 @@ class MarcusBrain:
             msg_count_before = self.memory.get_message_count(cid)
 
             user_msg = message
-            if image_data:
+            stored_image_data = ""
+            if image_data and persist_image_data:
                 user_msg = message + "\n[Image attached]"
+                stored_image_data = image_data
 
             try:
-                self.memory.add_message(cid, "user", user_msg, timestamp, image_data=image_data)
+                self.memory.add_message(cid, "user", user_msg, timestamp, image_data=stored_image_data)
             except Exception as exc:
                 print(f"[ERROR] Memory add_message (user) failed: {exc}")
 

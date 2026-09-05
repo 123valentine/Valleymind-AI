@@ -83,6 +83,10 @@
     <script src="/static/music_studio.js?v=10"></script>
 <script src="/static/massive_editing.js?v=1"></script>
 <script src="/static/tutorials.js"></script>
+<script src="/static/cloud.js?v=1"></script>
+<script src="/static/cloud3d.js?v=1"></script>
+<script src="/static/cloud_voice.js?v=1"></script>
+<script src="/static/cloud_vision.js?v=1"></script>
 <script id="tailwind-config">
   tailwind.config = {
     darkMode: "class",
@@ -2823,6 +2827,7 @@
     <button class="vm-ws-tab" data-ws="threed" onclick="vmWsGo('threed')"><i data-lucide="box"></i> 3D Studio</button>
     <button class="vm-ws-tab" data-ws="roundtable" onclick="vmWsGo('roundtable')"><i data-lucide="users"></i> Round Table</button>
     <button class="vm-ws-tab" data-ws="music" onclick="vmWsGo('music')"><i data-lucide="music"></i> Music Studio</button>
+    <button class="vm-ws-tab" data-ws="cloud" onclick="vmWsGo('cloud')"><i data-lucide="cloud"></i> Cloud</button>
     <button class="vm-ws-tab" data-ws="editing" onclick="vmWsGo('editing')"><i data-lucide="scissors"></i> Massive Editing</button>
     <button class="vm-ws-tab" data-ws="analytics" id="vmWsTabAnalytics" onclick="vmWsGo('analytics')" style="display:none"><i data-lucide="bar-chart-3"></i> Analytics</button>
   </nav>
@@ -3183,6 +3188,9 @@
 
   <!-- ── Workspace: Music Studio — sing/hum/record → DIY or AI-produced track ── -->
   <div class="vm-ws-panel" data-ws-panel="music" id="vmWsPanelMusic"></div>
+
+  <!-- ── Workspace: Cloud — companion body around the existing ValleyMind brain ── -->
+  <div class="vm-ws-panel" data-ws-panel="cloud" id="vmWsPanelCloud"></div>
 
   <div class="vm-ws-panel" data-ws-panel="analytics" id="vmWsPanelAnalytics">
     <div id="studioAnalyticsView"></div>
@@ -3652,6 +3660,19 @@ function setAppVisible(isVisible) {
     }
     document.body.classList.remove("sidebar-collapsed");
     logSidebarState("setAppVisible(" + isVisible + ")");
+
+    // Persistent Cloud companion: show once the user is authenticated and
+    // tear it down (voice, screen share, renderer, listeners) whenever the
+    // app shell disappears (logout/session end).
+    if (isVisible) {
+        if (typeof window.vmCloudCompanionShow === "function") {
+            try { window.vmCloudCompanionShow(); } catch (e) { console.warn("[companion] show failed:", e); }
+        }
+    } else {
+        if (typeof window.vmCloudCompanionCleanup === "function") {
+            try { window.vmCloudCompanionCleanup(); } catch (e) { console.warn("[companion] cleanup failed:", e); }
+        }
+    }
 }
 
 const messageStore = [];
@@ -6301,6 +6322,8 @@ function vmWsGo(ws) {
     if (ws === "website" && typeof vmGuideMaybeShow === "function") vmGuideMaybeShow("website");
     if (ws === "analytics" && _vmIsCreator && typeof vmDashRefresh === "function") vmDashRefresh();
     if (ws === "music" && typeof vmMusicOnShow === "function") vmMusicOnShow();
+    if (ws === "cloud" && typeof vmCloudOnShow === "function") vmCloudOnShow();
+    if (ws !== "cloud" && typeof vmCloudOnHide === "function") vmCloudOnHide();
     if (ws === "editing" && typeof VMEditing !== "undefined" && VMEditing.onShow) VMEditing.onShow();
     if (ws === "editing" && typeof vmGuideMaybeShow === "function") vmGuideMaybeShow("editing");
 }
@@ -9843,6 +9866,12 @@ document.addEventListener("DOMContentLoaded", function () {
 
 
 async function logout() {
+    // Belt-and-suspenders companion teardown: voice, screen share,
+    // 3D renderer, listeners and the floating shell are cleaned up
+    // BEFORE the shell disappears so nothing leaks or stays suspended.
+    if (typeof window.vmCloudCompanionCleanup === "function") {
+        try { window.vmCloudCompanionCleanup(); } catch (e) { console.warn("[companion] logout cleanup failed:", e); }
+    }
     await apiFetch("/auth/logout", {
         method: "POST",
         credentials: "include",

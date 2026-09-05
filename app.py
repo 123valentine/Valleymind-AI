@@ -5,6 +5,7 @@ with the advanced session handling functions from the previous version,
 adapted for Pinecone-backed architecture.
 """
 
+import base64
 import gzip
 import hashlib
 import io
@@ -342,6 +343,34 @@ def _current_auth() -> dict:
 
 def _current_user_id() -> str:
     return str(_current_auth().get("user_id") or "").strip()
+
+
+def _sanitize_screen_frame(value, max_bytes=4 * 1024 * 1024):
+    """Coerce/validate an optional screen-context frame payload.
+
+    Only well-formed 'data:image/*;base64,' data URIs under a hard size cap
+    are accepted. Anything else (empty, wrong scheme, oversize, malformed
+    base64) is rejected by returning "" so the chat request proceeds WITHOUT
+    any frame. The caller passes the result to the existing brain for the
+    current turn only (persist_image_data=False) — frames are never written
+    to long-term memory.
+    """
+    if not value:
+        return ""
+    text = str(value).strip()
+    if not text.lower().startswith("data:image/"):
+        return ""
+    if ";base64," not in text:
+        return ""
+    if len(text) > max_bytes:
+        return ""
+    try:
+        # Validate the base64 payload strictly (validate=True rejects padding,
+        # non-alphabet characters and length violations in a fail-closed way).
+        base64.b64decode(text.split(",", 1)[1], validate=True)
+    except Exception:
+        return ""
+    return text
 
 
 def _require_login_only():
@@ -3361,7 +3390,7 @@ def api_settings(section):
         "appearance", "notifications", "knowledge", "billing",
         "privacy", "language", "culture", "integrations", "extensions",
         "interests", "goals", "accessibility", "security",
-        "connected", "tutorials", "help",
+        "connected", "tutorials", "help", "cloud",
     }
     if section not in allowed:
         return jsonify({"status": "error", "message": "Unknown section"}), 400
@@ -3549,6 +3578,23 @@ def _mirror_settings_to_memory(user_id: str, section: str, body: dict):
                     ucp[:2000],
                     confidence=0.95,
                 )
+        elif section == "cloud":
+            _CLOUD_LABELS = {
+                "presentation": "Cloud character presentation",
+                "personality_style": "Cloud personality style",
+                "voice_preference": "Cloud voice preference",
+                "appearance": "Cloud appearance preference",
+                "accent": "Cloud accent color",
+                "animation_intensity": "Cloud animation intensity",
+                "cloud_name": "Cloud companion name",
+            }
+            for key, label in _CLOUD_LABELS.items():
+                val = body.get(key)
+                if val is None or val == "":
+                    continue
+                if isinstance(val, str) and val.strip().lower() in ("none", "auto", "n/a"):
+                    continue
+                _mirror_preference_to_memory(marcus, f"cloud_{key}", val, label)
         elif section in ("appearance", "notifications", "accessibility", "creator"):
             for key, val in body.items():
                 if val is None or val == "":
@@ -3559,6 +3605,117 @@ def _mirror_settings_to_memory(user_id: str, section: str, body: dict):
                 marcus.memory.remember_preference(f"{section}_{key}", text[:2000])
     except Exception as exc:
         print(f"[SETTINGS] could not mirror {section} into memory: {exc}")
+
+
+# ── Cloud API ────────────────────────────────────────────────────────────
+# ValleyMind Cloud is the companion BODY around the EXISTING brain and
+# memory. Nothing below creates an AI or a memory system: every message is
+# handed to the same MarcusBrain.respond() the normal Chat tab uses, and the
+# Chat's per-user long-term memory does all persistence. Cloud preferences
+# live in the existing settings.json "cloud" section; runtime state lives in
+# the settings-backed "cloud_state" section (deliberately NOT part of the
+# settings API so it does not leak into mr-cleared preference mirroring).
+
+@app.route("/api/cloud/chat", methods=["POST"])
+def api_cloud_chat():
+    try:
+        user_id, error = _require_login()
+        if error:
+            return error
+        data = request.get_json(silent=True) or {}
+        message = str(data.get("message") or "").strip()
+        if not message:
+            return jsonify({"status": "error", "message": "message is required"}), 400
+        chat_id = str(data.get("chat_id") or "").strip()
+        persona = normalize_persona(data.get("persona"))
+        # Optional screen-context frame shared through the EXPLICIT screen-share
+        # flow. Frames are capped in size; invalid payloads are ignored. They are
+        # passed into the EXISTING brain for the current turn only and are never
+        # persisted into long-term memory (see persist_image_data in respond()).
+        image_data = _sanitize_screen_frame(data.get("image_data"))
+
+        from core import cloud as cloud_model
+        prefs = _get_section_settings(user_id, "cloud")
+
+        augmented = cloud_model.augment_cloud_message(message, prefs)
+        marcus = load_persona_brain(user_id, persona)
+        if not marcus:
+            return jsonify({"status": "error", "message": "Cloud companion is not configured"}), 404
+        _initialize_user_memory(marcus, str(_current_auth().get("email", "")).strip())
+
+        if image_data:
+            reply = marcus.respond(
+                augmented, chat_id=chat_id,
+                image_data=image_data, persist_image_data=False,
+            )
+        else:
+            reply = marcus.respond(augmented, chat_id=chat_id)
+        meta = getattr(marcus, "last_response_meta", {}) or {}
+
+        updated_title = None
+        if message and chat_id:
+            try:
+                sessions = _list_user_sessions(user_id)
+                current_title = next(
+                    (str(s.get("title", "") or "") for s in sessions if s.get("chat_id") == chat_id),
+                    None,
+                )
+                if not current_title or current_title in ("New Chat", "Untitled Thread"):
+                    words = message.split()
+                    if len(words) >= 3:
+                        title = " ".join(words[:8]).rstrip(".,!?;:")
+                        if len(title) > 60:
+                            title = title[:60].rsplit(" ", 1)[0] if " " in title[:60] else title[:60]
+                        try:
+                            marcus.memory.set_title(chat_id, title)
+                        except Exception as exc:
+                            print(f"[CLOUD] set_title failed: {exc}")
+                        _upsert_chat_session_meta(user_id, chat_id, title=title)
+                        updated_title = title
+            except Exception as exc:
+                print(f"[WARN] Cloud auto-title failed: {exc}")
+
+        return jsonify({
+            "status": "success",
+            "chat_id": chat_id or f"{getattr(marcus.profile, 'key', 'marcus')}_main_chat",
+            "reply": reply,
+            "personality_style": cloud_model.normalize_personality(prefs.get("personality_style")),
+            "presentation": cloud_model.normalize_presentation(prefs.get("presentation")),
+            "state": cloud_model.cloud_default_state(prefs),
+            "updated_title": updated_title,
+            "sources": list(meta.get("sources") or []),
+            "fallback_used": bool(meta.get("fallback_used")),
+        })
+    except Exception as exc:
+        print(f"[CRITICAL] /api/cloud/chat crashed: {exc}")
+        return jsonify({"status": "error", "message": "Internal server error"}), 500
+
+
+@app.route("/api/cloud/state", methods=["GET", "POST", "PUT"])
+def api_cloud_state():
+    try:
+        user_id, error = _require_login()
+        if error:
+            return error
+        from core import cloud as cloud_model
+        prefs = _get_section_settings(user_id, "cloud")
+        runtime = _get_section_settings(user_id, "cloud_state")
+        if not isinstance(runtime, dict):
+            runtime = {}
+        base = cloud_model.cloud_default_state(prefs)
+        if any(k in runtime for k in cloud_model.STATE_KEYS):
+            base.update({k: runtime[k] for k in cloud_model.STATE_KEYS if k in runtime})
+        if request.method == "GET":
+            return jsonify({"status": "success", "state": base})
+        body = request.get_json(silent=True) or {}
+        if not isinstance(body, dict):
+            return jsonify({"status": "error", "message": "Body must be a JSON object"}), 400
+        state = cloud_model.normalize_state_patch(body, base=base)
+        _put_section_settings(user_id, "cloud_state", state)
+        return jsonify({"status": "success", "state": state})
+    except Exception as exc:
+        print(f"[CRITICAL] /api/cloud/state crashed: {exc}")
+        return jsonify({"status": "error", "message": "Internal server error"}), 500
 
 
 # ── User profile endpoint ──────────────────────────────────────
