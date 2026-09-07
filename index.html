@@ -2818,8 +2818,12 @@
     </div>
   </div>
 
-  <!-- Workspace switcher — one unified creative suite, five workspaces.
-       Clicking a tab swaps the panels below instantly (no page reload). -->
+  <!-- Workspace switcher — one unified creative suite.
+       Clicking a tab swaps the panels below instantly (no page reload).
+       NOTE: Cloud is NOT a workspace in this bar. Cloud is ValleyMind's
+       persistent app-shell companion (see #vmCloudCompanion in cloud.js). The
+       full Cloud surface remains reachable only as an optional secondary
+       interaction surface from the companion's expand button. -->
   <nav class="vm-ws-tabbar" id="vmWsTabbar" aria-label="Studio workspaces">
     <button class="vm-ws-tab active" data-ws="studio" onclick="vmWsGo('studio')"><i data-lucide="clapperboard"></i> ValleyMind Studio</button>
     <button class="vm-ws-tab" data-ws="website" onclick="vmWsGo('website')"><i data-lucide="sparkles"></i> AI Builder</button>
@@ -2827,7 +2831,6 @@
     <button class="vm-ws-tab" data-ws="threed" onclick="vmWsGo('threed')"><i data-lucide="box"></i> 3D Studio</button>
     <button class="vm-ws-tab" data-ws="roundtable" onclick="vmWsGo('roundtable')"><i data-lucide="users"></i> Round Table</button>
     <button class="vm-ws-tab" data-ws="music" onclick="vmWsGo('music')"><i data-lucide="music"></i> Music Studio</button>
-    <button class="vm-ws-tab" data-ws="cloud" onclick="vmWsGo('cloud')"><i data-lucide="cloud"></i> Cloud</button>
     <button class="vm-ws-tab" data-ws="editing" onclick="vmWsGo('editing')"><i data-lucide="scissors"></i> Massive Editing</button>
     <button class="vm-ws-tab" data-ws="analytics" id="vmWsTabAnalytics" onclick="vmWsGo('analytics')" style="display:none"><i data-lucide="bar-chart-3"></i> Analytics</button>
   </nav>

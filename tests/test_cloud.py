@@ -1,9 +1,11 @@
 """ValleyMind Cloud foundation tests.
 
 Covers:
-  1. Static guarantees about the frontend wiring in index.html: the Cloud
-     workspace tab, its panel div, the vmWsGo hook that fires vmCloudOnShow,
-     and the cloud.js script tag.
+  1. Static guarantees about the frontend wiring in index.html: Cloud is a
+     persistent app-shell companion, NOT a primary Studio tab. Its optional
+     secondary workspace panel div, the vmWsGo hooks that fire
+     vmCloudOnShow/vmCloudOnHide, and the cloud.js script tag are present.
+     The companion is small, animated 3D, draggable, and position-persistent.
   2. The canonical Cloud state model in core/cloud.py: emotions, interaction
      states, presentations, personality styles, and the personality-instruction
      adapter used to hand messages to the EXISTING brain.
@@ -40,11 +42,20 @@ class CloudStaticTestCase(unittest.TestCase):
     def _cloud_js(self):
         return (ROOT / "static" / "cloud.js").read_text(encoding="utf-8")
 
-    def test_cloud_workspace_tab_present(self):
+    def test_cloud_not_a_primary_studio_tab(self):
         html = self._index_html()
-        self.assertIn('data-ws="cloud"', html)
-        self.assertIn("Cloud", html)
-        self.assertIn('onclick="vmWsGo(\'cloud\')"', html)
+        tabbar_start = html.index('<nav class="vm-ws-tabbar"')
+        tabbar_end = html.index('data-ws-panel="studio"')
+        tabbar = html[tabbar_start:tabbar_end]
+        # Cloud is NOT a Studio page: it must not appear in the primary
+        # workspace navigation. Cloud is a persistent app-shell companion.
+        self.assertNotIn('data-ws="cloud"', tabbar)
+        self.assertNotIn("vmWsGo('cloud')", tabbar)
+        # The optional secondary/full Cloud surface still exists for the
+        # companion to expand into; it is just not a primary destination.
+        after_tabbar = html[tabbar_end:]
+        self.assertIn('data-ws-panel="cloud"', after_tabbar)
+        self.assertIn('id="vmWsPanelCloud"', after_tabbar)
 
     def test_cloud_workspace_panel_present(self):
         html = self._index_html()
@@ -96,7 +107,9 @@ class CloudStaticTestCase(unittest.TestCase):
     def test_cloud_js_defines_default_prefs_with_name(self):
         js = self._cloud_js()
         self.assertIn('cloud_name: "Cloud"', js)
-        self.assertIn("companion_minimized: false", js)
+        self.assertIn('companion_minimized: true', js)
+        self.assertIn('companion_x: null', js)
+        self.assertIn('companion_y: null', js)
         self.assertIn("function normalizeNameInput(", js)
         self.assertIn('slice(0, 32)', js)
 
@@ -684,6 +697,14 @@ class Cloud3DStaticTestCase(unittest.TestCase):
         self.assertIn('var STAGE_ID = "vmCloudStage"', js)
         self.assertIn('var STATUS_ID = "vmCloud3DStatus"', js)
 
+    def test_cloud3d_frames_tiny_companion_surface(self):
+        js = self._cloud3d_js()
+        # The shared engine zooms its camera for the small companion surface so
+        # the creature stays clearly visible when mini, instead of showing a
+        # static CSS stand-in.
+        self.assertIn("if (w < 140) api.camera.position.z = 6.2;", js)
+        self.assertIn("api.camera.updateProjectionMatrix();", js)
+
 
 class CloudVoiceStaticTestCase(unittest.TestCase):
     """Structural checks for Step 3 voice (static/cloud_voice.js).
@@ -986,6 +1007,60 @@ class CloudCompanionStaticTestCase(unittest.TestCase):
         self.assertIn("VMCloudVision.destroy", js)
         self.assertIn("removeChild(shell)", js)
         self.assertIn("CLOUD.companionActive = false", js)
+
+    def test_companion_mounted_at_app_shell_level(self):
+        js = self._cloud_js()
+        # One fixed companion appended to <body> — independent of any
+        # workspace panel, so it survives Chat → Music → Sketch → Videos →
+        # Website navigation as the SAME instance.
+        self.assertIn('d.id = "vmCloudCompanion"', js)
+        self.assertIn("document.body.appendChild(d)", js)
+        self.assertIn('window.vmCloudCompanionShow', js)
+        self.assertIn('window.vmCloudCompanionCleanup', js)
+
+    def test_mini_state_is_living_3d_not_suspended(self):
+        js = self._cloud_js()
+        self.assertIn('id="vmCloudCompanionMiniStage"', js)
+        self.assertIn('id="vmCloudCompanionMiniOrb"', js)
+        self.assertIn('id="vmCloudMiniStatus"', js)
+        self.assertIn("mount3DAt", js)
+        # The mini state hands the SAME engine a compact stage; it is not a
+        # frozen CSS orb. The workspace surface still re-parents the single
+        # engine, never creating a second WebGL context down here.
+        self.assertIn('mount3DAt("vmCloudCompanionMiniStage"', js)
+        self.assertIn("vmCloudCompanionStage", js)
+        self.assertIn("vmCloudStage", js)
+        self.assertIn("VMCloud3D.suspend", js)
+
+    def test_companion_expands_from_small_surface(self):
+        js = self._cloud_js()
+        # Tapping the creature restores the compact panel; closing it returns
+        # to the small companion — it never destroys Cloud.
+        self.assertIn("function restoreCompanion()", js)
+        self.assertIn("function minimizeCompanion()", js)
+        self.assertIn('surfaceCompanion("mini")', js)
+        self.assertIn('surfaceCompanion("panel")', js)
+        self.assertIn("restoreCompanion()", js)
+
+    def test_companion_is_draggable_and_position_persists(self):
+        js = self._cloud_js()
+        self.assertIn("makeDraggable", js)
+        self.assertIn("pointerdown", js)
+        self.assertIn("pointermove", js)
+        self.assertIn("pointerup", js)
+        self.assertIn("pointercancel", js)
+        self.assertIn("setCompanionPx", js)
+        self.assertIn("applyCompanionPosition", js)
+        self.assertIn("saveCompanionPosition", js)
+        self.assertIn("clampPct", js)
+        self.assertIn("companion_x", js)
+        self.assertIn("companion_y", js)
+        # Position is persisted through the existing settings system, and the
+        # companion is draggable (mobile/touch safe) rather than sidebar-anchored.
+        self.assertIn("touch-action:none", js)
+        self.assertIn("savePrefsLight", js)
+        self.assertNotIn("left:280px", js)
+        self.assertNotIn("localStorage", js)
 
 
 class _FocusedMemory:

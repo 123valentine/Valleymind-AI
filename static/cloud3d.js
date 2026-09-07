@@ -523,7 +523,8 @@
     api.renderer.setSize(w, h, false);
     api.camera.aspect = w / h;
     var aspect = w / h;
-    if (aspect < 0.8) api.camera.position.z = 7.2;
+    if (w < 140) api.camera.position.z = 6.2;      // tiny companion surface: tighter portrait
+    else if (aspect < 0.8) api.camera.position.z = 7.2;
     else if (aspect < 1.2) api.camera.position.z = 7.9;
     else api.camera.position.z = 8.6;
     api.camera.lookAt(0, 0.05, 0);

@@ -80,7 +80,8 @@
     return {
       presentation: "neutral", personality_style: "calm",
       voice_preference: "", appearance: "", accent: "", animation_intensity: 0.5,
-      cloud_name: "Cloud", companion_minimized: false
+      cloud_name: "Cloud", companion_minimized: true,
+      companion_x: null, companion_y: null
     };
   }
 
@@ -223,6 +224,8 @@
     if (typeof p.cloud_name === "string") CLOUD.prefs.cloud_name = normalizeNameInput(p.cloud_name);
     if (typeof p.companion_minimized === "boolean") CLOUD.prefs.companion_minimized = p.companion_minimized;
     else if (p.companion_minimized === "true" || p.companion_minimized === "false") CLOUD.prefs.companion_minimized = p.companion_minimized === "true";
+    if ("companion_x" in p) CLOUD.prefs.companion_x = parsePct(p.companion_x);
+    if ("companion_y" in p) CLOUD.prefs.companion_y = parsePct(p.companion_y);
     CLOUD.state.presentation = CLOUD.prefs.presentation;
     CLOUD.state.intensity = CLOUD.prefs.animation_intensity;
     if (CLOUD.prefs.accent && CLOUD.prefs.accent !== "auto") CLOUD.state.accent = CLOUD.prefs.accent;
@@ -277,6 +280,14 @@
       .replace(/\s+/g, " ")
       .trim();
     return text.slice(0, 32) || "Cloud";
+  }
+
+  function clampPct(v) { return Math.max(0, Math.min(100, Math.round(v * 10) / 10)); }
+
+  function parsePct(v) {
+    if (v === null || v === undefined || v === "") return null;
+    var n = Number(v);
+    return isFinite(n) ? clampPct(n) : null;
   }
 
   function savePrefs() {
@@ -804,7 +815,11 @@
         '</div>' +
       '</div>' +
       '<div class="vmcloud-companion-mini" id="vmCloudCompanionMini" role="button" tabindex="0" aria-label="Open Cloud companion">' +
-        '<div class="vmcloud-companion-mini-orb" id="vmCloudCompanionMiniOrb" aria-hidden="true"></div>' +
+        '<div class="vmcloud-companion-mini-stage" id="vmCloudCompanionMiniStage">' +
+          '<div class="vmcloud-companion-mini-orb" id="vmCloudCompanionMiniOrb" aria-hidden="true"></div>' +
+          '<div class="vmcloud-mini-status" id="vmCloudMiniStatus">Cloud idle</div>' +
+        '</div>' +
+        '<div class="vmcloud-mini-dot" aria-hidden="true"></div>' +
         '<div class="vmcloud-companion-mini-name" id="vmCloudMiniLabel">Cloud</div>' +
       '</div>';
     document.body.appendChild(d);
@@ -819,13 +834,17 @@
     var openWs = $id("vmCloudCompOpenWs");
     if (openWs) openWs.addEventListener("click", function () { if (typeof vmWsGo === "function") vmWsGo("cloud"); });
     var mini = $id("vmCloudCompanionMini");
-    if (mini) mini.addEventListener("click", restoreCompanion);
+    if (mini) mini.addEventListener("click", function () { if (shouldIgnoreClick()) return; restoreCompanion(); });
     if (mini) mini.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); restoreCompanion(); } });
     var orb = $id("vmCloudCompanionOrb");
-    if (orb) orb.addEventListener("click", function () { if (CLOUD.surface === "panel") minimizeCompanion(); else restoreCompanion(); });
+    if (orb) orb.addEventListener("click", function () { if (shouldIgnoreClick()) return; if (CLOUD.surface === "panel") minimizeCompanion(); else restoreCompanion(); });
     if (orb) orb.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); if (CLOUD.surface === "panel") minimizeCompanion(); else restoreCompanion(); } });
     var visionBtn = $id("vmCloudCompVisionBtn");
     if (visionBtn) visionBtn.addEventListener("click", toggleVision);
+    makeDraggable($id("vmCloudCompanionMini"));
+    makeDraggable(d.querySelector(".vmcloud-comp-head"));
+    window.removeEventListener("resize", onWinSizeForCompanion);
+    window.addEventListener("resize", onWinSizeForCompanion);
     if (window.lucide && typeof window.lucide.createIcons === "function") {
       try { window.lucide.createIcons(); } catch (e) { }
     }
@@ -855,33 +874,25 @@
     updateIdentity();
     shell.classList.toggle("hidden", mode === "hidden" || mode === "workspace");
     shell.classList.toggle("minimized", mode === "mini");
+    applyCompanionPosition();
     if (mode === "mini") {
-      if (window.VMCloud3D && typeof window.VMCloud3D.suspend === "function") {
-        try { window.VMCloud3D.suspend(); } catch (e) { }
-      }
+      // The small state IS the living creature: the shared 3D engine keeps
+      // running on a compact stage (single renderer, never duplicated).
+      mount3DAt("vmCloudCompanionMiniStage", "vmCloudMiniStatus", "vmCloudCompanionMiniOrb");
     } else if (mode === "panel") {
       startCompanion3D();
       renderCompanionLog();
       updateMicUI();
       updateVisionUI();
+    } else if (mode === "hidden") {
+      if (window.VMCloud3D && typeof window.VMCloud3D.suspend === "function") {
+        try { window.VMCloud3D.suspend(); } catch (e) { }
+      }
     }
   }
 
   function startCompanion3D() {
-    var stage = $id("vmCloudCompanionStage");
-    if (!stage) return;
-    if (window.VMCloud3D && typeof window.VMCloud3D.attach === "function") {
-      try {
-        window.VMCloud3D.attach(stage, {
-          config: renderConfig(),
-          statusId: "vmCloudCompanionStatus",
-          fallbackId: "vmCloudCompanionOrb"
-        });
-        if (typeof window.VMCloud3D.resume === "function") {
-          window.VMCloud3D.resume(renderConfig());
-        }
-      } catch (e) { }
-    }
+    mount3DAt("vmCloudCompanionStage", "vmCloudCompanionStatus", "vmCloudCompanionOrb");
   }
 
   function savePrefsLight() {
@@ -923,6 +934,130 @@
     }
     log.innerHTML = html;
     log.scrollTop = log.scrollHeight;
+  }
+
+  // ── App-shell companion motion & placement ─────────────────────────────
+  // Cloud is ValleyMind-wide: ONE fixed element at the application-shell
+  // level, freely draggable around the viewport. Position is kept relative
+  // (% of the viewport) so it survives resizes and orientation changes, clamps
+  // back into view, and persists per user through the existing settings system.
+
+  var _dragState = null;
+  var _dragSuppress = false;
+  var POS_MARGIN = 14;
+
+  function shouldIgnoreClick() {
+    if (_dragSuppress) { _dragSuppress = false; return true; }
+    return false;
+  }
+
+  function setCompanionPx(left, top) {
+    var shell = $id("vmCloudCompanion");
+    if (!shell) return;
+    var vw = window.innerWidth || document.documentElement.clientWidth || 0;
+    var vh = window.innerHeight || document.documentElement.clientHeight || 0;
+    var w = shell.offsetWidth || 60;
+    var h = shell.offsetHeight || 60;
+    var maxL = Math.max(POS_MARGIN, vw - w - POS_MARGIN);
+    var maxT = Math.max(POS_MARGIN, vh - h - POS_MARGIN);
+    shell.style.right = "auto";
+    shell.style.bottom = "auto";
+    shell.style.left = Math.round(Math.max(POS_MARGIN, Math.min(maxL, left))) + "px";
+    shell.style.top = Math.round(Math.max(POS_MARGIN, Math.min(maxT, top))) + "px";
+  }
+
+  function applyCompanionPosition() {
+    var shell = $id("vmCloudCompanion");
+    if (!shell) return;
+    var x = CLOUD.prefs.companion_x, y = CLOUD.prefs.companion_y;
+    if (x !== null && x !== undefined && y !== null && y !== undefined &&
+        isFinite(x) && isFinite(y)) {
+      var vw = window.innerWidth || document.documentElement.clientWidth || 0;
+      var vh = window.innerHeight || document.documentElement.clientHeight || 0;
+      setCompanionPx((x / 100) * vw, (y / 100) * vh);
+    } else {
+      shell.style.right = "";
+      shell.style.bottom = "";
+      shell.style.left = "";
+      shell.style.top = "";
+    }
+  }
+
+  function onWinSizeForCompanion() {
+    if (CLOUD.prefs.companion_x == null && CLOUD.prefs.companion_y == null) return;
+    applyCompanionPosition();
+  }
+
+  function saveCompanionPosition() {
+    var shell = $id("vmCloudCompanion");
+    if (!shell) return;
+    var vw = window.innerWidth || document.documentElement.clientWidth || 0;
+    var vh = window.innerHeight || document.documentElement.clientHeight || 0;
+    if (!vw || !vh) return;
+    var rect = shell.getBoundingClientRect();
+    CLOUD.prefs.companion_x = clampPct((rect.left / vw) * 100);
+    CLOUD.prefs.companion_y = clampPct((rect.top / vh) * 100);
+    savePrefsLight();
+  }
+
+  function makeDraggable(zone) {
+    if (!zone || zone.getAttribute("data-vm-drag") === "1") return;
+    zone.setAttribute("data-vm-drag", "1");
+    zone.addEventListener("pointerdown", function (e) {
+      if (e.target && (e.target.closest("button") || e.target.closest("input") ||
+          e.target.closest("select") || e.target.closest("textarea"))) return;
+      var shell = $id("vmCloudCompanion");
+      if (!shell) return;
+      var rect = shell.getBoundingClientRect();
+      _dragState = {
+        startX: e.clientX, startY: e.clientY,
+        baseLeft: rect.left, baseTop: rect.top,
+        moved: false
+      };
+    });
+  }
+
+  function onDragMove(e) {
+    if (!_dragState) return;
+    var dx = e.clientX - _dragState.startX;
+    var dy = e.clientY - _dragState.startY;
+    if (Math.abs(dx) + Math.abs(dy) > 6) _dragState.moved = true;
+    if (!_dragState.moved) return;
+    _dragSuppress = true;
+    setCompanionPx(_dragState.baseLeft + dx, _dragState.baseTop + dy);
+    if (e.cancelable) e.preventDefault();
+  }
+
+  function onDragEnd() {
+    if (!_dragState) return;
+    var moved = _dragState.moved;
+    _dragState = null;
+    if (moved) {
+      saveCompanionPosition();
+    } else {
+      _dragSuppress = false;
+    }
+  }
+
+  document.addEventListener("pointermove", onDragMove);
+  document.addEventListener("pointerup", onDragEnd);
+  document.addEventListener("pointercancel", onDragEnd);
+
+  function mount3DAt(stageId, statusId, fallbackId) {
+    var stage = $id(stageId);
+    if (!stage) return;
+    if (window.VMCloud3D && typeof window.VMCloud3D.attach === "function") {
+      try {
+        window.VMCloud3D.attach(stage, {
+          config: renderConfig(),
+          statusId: statusId,
+          fallbackId: fallbackId
+        });
+        if (typeof window.VMCloud3D.resume === "function") {
+          window.VMCloud3D.resume(renderConfig());
+        }
+      } catch (e) { }
+    }
   }
 
   // ── Explicit screen context (permission-first, throttled, transient) ───
@@ -1006,6 +1141,9 @@
 
   function cleanupCompanion() {
     interruptCloud();
+    window.removeEventListener("resize", onWinSizeForCompanion);
+    _dragState = null;
+    _dragSuppress = false;
     if (window.VMCloudVision && typeof window.VMCloudVision.destroy === "function") {
       try { window.VMCloudVision.destroy(); } catch (e) { }
     }
@@ -1101,7 +1239,7 @@
       ".vmcloud-status-ok{color:#3ddc84;}" +
       "#vmCloudCompanion{position:fixed;right:18px;bottom:18px;z-index:8000;font-family:'Inter',sans-serif;isolation:isolate;}" +
       ".vmcloud-companion-panel{width:310px;max-width:calc(100vw - 24px);max-height:min(72vh,640px);display:flex;flex-direction:column;gap:10px;background:rgba(7,13,24,0.94);border:1px solid rgba(0,212,255,0.22);border-radius:18px;padding:14px;box-shadow:0 18px 50px rgba(0,0,0,0.55),0 0 0 1px rgba(0,212,255,0.05);backdrop-filter:blur(10px);}" +
-      ".vmcloud-comp-head{display:flex;align-items:center;justify-content:space-between;gap:8px;}" +
+      ".vmcloud-comp-head{display:flex;align-items:center;justify-content:space-between;gap:8px;touch-action:none;user-select:none;}" +
       ".vmcloud-comp-id{display:flex;align-items:center;gap:10px;min-width:0;}" +
       ".vmcloud-comp-avatar{flex:0 0 auto;width:46px;height:42px;border-radius:55% 45% 50% 50%;background:radial-gradient(circle at 35% 30%,rgba(255,255,255,0.95),var(--cloud-color,#00d4ff) 48%,rgba(0,80,110,0.5) 78%);box-shadow:0 0 18px var(--cloud-color,#00d4ff);cursor:pointer;border:none;}" +
       ".vmcloud-comp-name{color:#f1f5f9;font-size:14px;font-weight:700;font-family:'Space Grotesk',sans-serif;line-height:1.2;}" +
@@ -1127,12 +1265,14 @@
       ".vmcloud-comp-input-row{display:flex;gap:8px;}" +
       ".vmcloud-comp-input-row input{flex:1;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);color:#e2e8f0;border-radius:10px;padding:9px 12px;font-size:13px;min-width:0;}" +
       ".vmcloud-comp-input-row input:focus{outline:none;border-color:rgba(0,229,255,0.5);}" +
-      ".vmcloud-companion-mini{display:none;flex-direction:row;align-items:center;gap:10px;cursor:pointer;padding:10px 12px;border-radius:999px;background:rgba(7,13,24,0.92);border:1px solid rgba(0,212,255,0.25);box-shadow:0 10px 30px rgba(0,0,0,0.45);backdrop-filter:blur(8px);}" +
+      ".vmcloud-companion-mini{position:relative;display:none;flex-direction:row;align-items:center;gap:10px;cursor:pointer;padding:8px 14px 8px 8px;border-radius:999px;background:rgba(7,13,24,0.92);border:1px solid rgba(0,212,255,0.25);box-shadow:0 10px 30px rgba(0,0,0,0.45);backdrop-filter:blur(8px);touch-action:none;user-select:none;}" +
       ".vmcloud-companion.minimized .vmcloud-companion-panel{display:none;}" +
       ".vmcloud-companion.minimized .vmcloud-companion-mini{display:flex;}" +
       ".vmcloud-companion.hidden{display:none !important;}" +
-      ".vmcloud-companion-mini-orb{position:relative;flex:0 0 auto;width:44px;height:40px;border-radius:55% 45% 50% 50%;background:radial-gradient(circle at 35% 30%,rgba(255,255,255,0.95),var(--cloud-color,#00d4ff) 48%,rgba(0,80,110,0.5) 78%);box-shadow:0 0 16px var(--cloud-color,#00d4ff);}" +
-      ".vmcloud-mini-dot{position:absolute;right:-2px;bottom:-2px;width:12px;height:12px;border-radius:50%;background:#334155;border:2px solid #0b1220;}" +
+      ".vmcloud-companion-mini-stage{position:relative;flex:0 0 auto;width:64px;height:64px;border-radius:50%;overflow:hidden;background:#071019;border:1px solid rgba(0,212,255,0.22);box-shadow:0 0 16px rgba(0,212,255,0.18);isolation:isolate;}" +
+      ".vmcloud-companion-mini-orb{position:absolute;left:50%;top:52%;width:40px;height:36px;border-radius:55% 45% 50% 50%;transform:translate(-50%,-50%);background:radial-gradient(circle at 35% 30%,rgba(255,255,255,0.95),var(--cloud-color,#00d4ff) 48%,rgba(0,80,110,0.5) 78%);box-shadow:0 0 16px var(--cloud-color,#00d4ff);}" +
+      ".vmcloud-mini-status{position:absolute;left:4px;right:4px;bottom:3px;z-index:2;font-size:8px;line-height:1;color:#8fd0ff;text-align:center;letter-spacing:0.04em;text-transform:uppercase;font-family:'Space Grotesk',sans-serif;opacity:0.8;pointer-events:none;}" +
+      ".vmcloud-mini-dot{position:absolute;right:2px;bottom:2px;width:12px;height:12px;border-radius:50%;background:#334155;border:2px solid #0b1220;}" +
       ".vmcloud-companion.sharing .vmcloud-companion-mini-orb{animation:vmcloud-share-pulse 1.6s ease-in-out infinite;}" +
       ".vmcloud-companion.sharing .vmcloud-mini-dot{background:#f8485e;box-shadow:0 0 8px #f8485e;}" +
       "@keyframes vmcloud-share-pulse{0%,100%{box-shadow:0 0 12px var(--cloud-color,#00d4ff);}50%{box-shadow:0 0 26px var(--cloud-color,#00d4ff),0 0 34px rgba(248,72,94,0.5);}}" +
