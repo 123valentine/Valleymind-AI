@@ -5,7 +5,9 @@ Covers:
      persistent app-shell companion, NOT a primary Studio tab. Its optional
      secondary workspace panel div, the vmWsGo hooks that fire
      vmCloudOnShow/vmCloudOnHide, and the cloud.js script tag are present.
-     The companion is small, animated 3D, draggable, and position-persistent.
+      The companion is small, renders the real static/cloud.png character,
+      draggable, and position-persistent. (Visual-first phase: plain image,
+      no animation model yet.)
   2. The canonical Cloud state model in core/cloud.py: emotions, interaction
      states, presentations, personality styles, and the personality-instruction
      adapter used to hand messages to the EXISTING brain.
@@ -19,6 +21,7 @@ adapter must call the same brain the Chat tab uses.
 
 Run with: C:\\Users\\EGBUJIE VALENTINE\\Desktop\\Valleymind-AI\\env311\\Scripts\\python.exe -m pytest tests/test_cloud.py -v
 """
+import re
 import sys
 import tempfile
 import unittest
@@ -999,7 +1002,9 @@ class CloudCompanionStaticTestCase(unittest.TestCase):
         js = self._cloud_js()
         self.assertIn("shell.classList.toggle(\"sharing\"", js)
         self.assertIn(".vmcloud-companion.sharing", js)
-        self.assertIn(".vmcloud-mini-dot", js)
+        # Sharing pulses the on-screen character (the actual cloud.png asset).
+        self.assertIn(".vmcloud-companion.sharing .vmcloud-companion-mini-img", js)
+        self.assertIn("@keyframes vmcloud-share-pulse", js)
 
     def test_naming_form_present(self):
         js = self._cloud_js()
@@ -1053,19 +1058,25 @@ class CloudCompanionStaticTestCase(unittest.TestCase):
         self.assertIn('window.vmCloudCompanionShow', js)
         self.assertIn('window.vmCloudCompanionCleanup', js)
 
-    def test_mini_state_is_living_3d_not_suspended(self):
+    def test_mini_state_renders_actual_cloud_png(self):
         js = self._cloud_js()
         self.assertIn('id="vmCloudCompanionMiniStage"', js)
         self.assertIn('id="vmCloudCompanionMiniOrb"', js)
         self.assertIn('id="vmCloudMiniStatus"', js)
-        self.assertIn("mount3DAt", js)
-        # The mini state hands the SAME engine a compact stage; it is not a
-        # frozen CSS orb. The workspace surface still re-parents the single
-        # engine, never creating a second WebGL context down here.
-        self.assertIn('mount3DAt("vmCloudCompanionMiniStage"', js)
+        # The small companion renders the real character asset directly
+        # (static/cloud.png) as a transparent <img> — it is not the old WebGL
+        # placeholder orb nor a CSS blob, and it is not a horizontal bar.
+        self.assertIn('src="/static/cloud.png"', js)
+        self.assertIn('class="vmcloud-companion-mini-img"', js)
+        self.assertIn("draggable=\"false\"", js)
+        # Mini shows the character (no 3D engine mounted for the small state),
+        # while panel/workspace surfaces still reuse the shared 3D engine.
+        self.assertIn("showMiniCharacter", js)
+        self.assertIn("startCompanion3D", js)
         self.assertIn("vmCloudCompanionStage", js)
         self.assertIn("vmCloudStage", js)
         self.assertIn("VMCloud3D.suspend", js)
+        self.assertNotIn('mount3DAt("vmCloudCompanionMiniStage"', js)
 
     def test_companion_expands_from_small_surface(self):
         js = self._cloud_js()
@@ -1096,6 +1107,41 @@ class CloudCompanionStaticTestCase(unittest.TestCase):
         self.assertIn("savePrefsLight", js)
         self.assertNotIn("left:280px", js)
         self.assertNotIn("localStorage", js)
+
+    def test_cloud_png_asset_is_tall_transparent_character(self):
+        # The exact character is the source of truth for Cloud's appearance.
+        png = ROOT / "static" / "cloud.png"
+        self.assertTrue(png.exists(), "static/cloud.png is required")
+        try:
+            from PIL import Image
+            im = Image.open(str(png))
+            w, h = im.size
+        except Exception:
+            w, h = 433, 577  # known fallback from the committed asset
+        # The character is a standing figure (tall, not a wide horizontal bar)
+        # with transparent background (RGBA) so no white box is shown.
+        self.assertGreater(h, w, "character must be taller than wide")
+        self.assertLess(w / h, 1.1, "character must not be a wide horizontal bar")
+        js = self._cloud_js()
+        self.assertIn("aspect-ratio:433/577", js)
+
+    def test_mini_is_small_not_fullscreen(self):
+        js = self._cloud_js()
+        # The companion shell is a small fixed element — it must never be a
+        # full-width/height container or hide the app with a big invisible box.
+        self.assertIn("#vmCloudCompanion{position:fixed;right:18px;bottom:18px;", js)
+        self.assertIn("width:96px;height:auto", js)
+        # The shell/small-companion rules never use viewport-filling sizes.
+        suppress = re.search(r"\#vmCloudCompanion\{[^}]+\}", js)
+        self.assertIsNotNone(suppress)
+        self.assertNotIn("width:100vw", suppress.group(0))
+        self.assertNotIn("height:100vh", suppress.group(0))
+        self.assertNotIn("inset:0", suppress.group(0))
+        # No full-screen rectangle allowed on the mini stage either.
+        mini = re.search(r"\.vmcloud-companion-mini-stage\{[^}]+\}", js)
+        self.assertIsNotNone(mini)
+        self.assertNotIn("width:100%", mini.group(0))
+        self.assertNotIn("inset:0", mini.group(0))
 
 
 class _FocusedMemory:

@@ -1,6 +1,5 @@
 (function () {
   "use strict";
-  console.log("[CLOUD DEBUG] cloud3d.js loaded");
 
   var THREE_URL = "https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js";
   var STAGE_ID = "vmCloudStage";

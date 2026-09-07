@@ -1,6 +1,5 @@
 (function () {
   "use strict";
-  console.log("[CLOUD DEBUG] cloud.js loaded and executing");
 
   var EMOTIONS = [
     "neutral", "happy", "excited", "thinking", "curious", "concerned", "sad",
@@ -776,7 +775,6 @@
   function ensureCompanionShell() {
     var shell = $id("vmCloudCompanion");
     if (shell) return shell;
-    console.log("[CLOUD DEBUG] ensureCompanionShell: creating new shell — document.body exists:", !!document.body);
     if (!document.body) return null;
     var d = document.createElement("div");
     d.id = "vmCloudCompanion";
@@ -786,8 +784,8 @@
     d.innerHTML =
       '<div class="vmcloud-companion-panel">' +
         '<div class="vmcloud-comp-head">' +
-          '<div class="vmcloud-comp-id">' +
-            '<div class="vmcloud-comp-avatar" id="vmCloudCompanionOrb" tabindex="0" role="button" aria-label="Toggle Cloud companion panel"></div>' +
+            '<div class="vmcloud-comp-id">' +
+            '<img class="vmcloud-comp-avatar-img" id="vmCloudCompanionOrb" src="/static/cloud.png" alt="Cloud" draggable="false" tabindex="0" role="button" aria-label="Toggle Cloud companion panel">' +
             '<div>' +
               '<div class="vmcloud-comp-name" id="vmCloudCompanionName">Cloud</div>' +
               '<div class="vmcloud-comp-orb-label" id="vmCloudCompanionOrbLabel">neutral · idle</div>' +
@@ -819,14 +817,12 @@
       '</div>' +
       '<div class="vmcloud-companion-mini" id="vmCloudCompanionMini" role="button" tabindex="0" aria-label="Open Cloud companion">' +
         '<div class="vmcloud-companion-mini-stage" id="vmCloudCompanionMiniStage">' +
-          '<div class="vmcloud-companion-mini-orb" id="vmCloudCompanionMiniOrb" aria-hidden="true"></div>' +
+          '<img id="vmCloudCompanionMiniOrb" class="vmcloud-companion-mini-img" src="/static/cloud.png" alt="Cloud" draggable="false" aria-hidden="false">' +
           '<div class="vmcloud-mini-status" id="vmCloudMiniStatus">Cloud idle</div>' +
         '</div>' +
-        '<div class="vmcloud-mini-dot" aria-hidden="true"></div>' +
         '<div class="vmcloud-companion-mini-name" id="vmCloudMiniLabel">Cloud</div>' +
       '</div>';
     document.body.appendChild(d);
-    console.log("[CLOUD DEBUG] ensureCompanionShell: shell appended to body — verify:", !!$id("vmCloudCompanion"));
     var input = $id("vmCloudCompanionInput");
     if (input) input.addEventListener("keydown", function (e) { if (e.key === "Enter") { companionSend(); } });
     var sendBtn = $id("vmCloudCompSend");
@@ -872,23 +868,18 @@
   }
 
   function surfaceCompanion(mode) {
-    console.log("[CLOUD DEBUG] surfaceCompanion called with mode:", mode);
     var shell = ensureCompanionShell();
-    if (!shell) { console.warn("[CLOUD DEBUG] surfaceCompanion: shell is NULL"); return; }
+    if (!shell) return;
     CLOUD.surface = mode;
     updateIdentity();
     shell.classList.toggle("hidden", mode === "hidden" || mode === "workspace");
     shell.classList.toggle("minimized", mode === "mini");
     applyCompanionPosition();
-    var cs = window.getComputedStyle ? window.getComputedStyle(shell) : null;
-    console.log("[CLOUD DEBUG] shell classes:", shell.className, "display:", cs ? cs.display : "?", "visibility:", cs ? cs.visibility : "?", "opacity:", cs ? cs.opacity : "?");
-    var rect = shell.getBoundingClientRect ? shell.getBoundingClientRect() : null;
-    console.log("[CLOUD DEBUG] shell rect:", rect ? JSON.stringify({l:Math.round(rect.left),t:Math.round(rect.top),w:Math.round(rect.width),h:Math.round(rect.height)}) : "N/A");
     if (mode === "mini") {
-      console.log("[CLOUD DEBUG] surfaceCompanion: mounting 3D at mini stage");
-      mount3DAt("vmCloudCompanionMiniStage", "vmCloudMiniStatus", "vmCloudCompanionMiniOrb");
+      // Small companion = the actual cloud.png character standing on-screen.
+      // It is a plain <img>, so no 3D engine (WebGL) is mounted here.
+      showMiniCharacter();
     } else if (mode === "panel") {
-      console.log("[CLOUD DEBUG] surfaceCompanion: mounting 3D at panel stage");
       startCompanion3D();
       renderCompanionLog();
       updateMicUI();
@@ -898,7 +889,12 @@
         try { window.VMCloud3D.suspend(); } catch (e) { }
       }
     }
-    console.log("[CLOUD DEBUG] surfaceCompanion done — CLOUD.surface:", CLOUD.surface);
+  }
+
+  function showMiniCharacter() {
+    // The on-screen companion is the actual cloud.png character, already in
+    // the markup as a plain <img>. Nothing more is needed for the visual-first
+    // phase — this hook marks where future animation/behavior will attach.
   }
 
   function startCompanion3D() {
@@ -1054,26 +1050,19 @@
   document.addEventListener("pointercancel", onDragEnd);
 
   function mount3DAt(stageId, statusId, fallbackId) {
-    console.log("[CLOUD DEBUG] mount3DAt:", stageId, "VMCloud3D:", typeof window.VMCloud3D, "attach:", typeof window.VMCloud3D === "object" ? typeof window.VMCloud3D.attach : "N/A");
     var stage = $id(stageId);
-    if (!stage) { console.warn("[CLOUD DEBUG] mount3DAt: stage element", stageId, "NOT FOUND"); return; }
-    console.log("[CLOUD DEBUG] mount3DAt: stage found, stage.children:", stage.children.length, "stage.innerHTML.length:", stage.innerHTML.length);
+    if (!stage) return;
     if (window.VMCloud3D && typeof window.VMCloud3D.attach === "function") {
       try {
-        console.log("[CLOUD DEBUG] mount3DAt: calling VMCloud3D.attach...");
         window.VMCloud3D.attach(stage, {
           config: renderConfig(),
           statusId: statusId,
           fallbackId: fallbackId
         });
-        console.log("[CLOUD DEBUG] mount3DAt: VMCloud3D.attach completed");
         if (typeof window.VMCloud3D.resume === "function") {
           window.VMCloud3D.resume(renderConfig());
-          console.log("[CLOUD DEBUG] mount3DAt: VMCloud3D.resume called");
         }
-      } catch (e) { console.error("[CLOUD DEBUG] mount3DAt: VMCloud3D threw:", e); }
-    } else {
-      console.warn("[CLOUD DEBUG] mount3DAt: VMCloud3D not available — 3D will not render");
+      } catch (e) { }
     }
   }
 
@@ -1143,26 +1132,18 @@
   }
 
   function companionShow() {
-    console.log("[CLOUD DEBUG] companionShow called — isAuthActive:", isAuthActive(), "vmIsAuthenticated:", typeof window.vmIsAuthenticated === "function" ? window.vmIsAuthenticated() : "not defined");
-    if (!isAuthActive()) { console.warn("[CLOUD DEBUG] BLOCKED: isAuthActive() returned false"); return; }
-    if (CLOUD.companionActive) { console.warn("[CLOUD DEBUG] BLOCKED: CLOUD.companionActive already true"); return; }
-    console.log("[CLOUD DEBUG] companionShow proceeding — calling ensureCompanionShell");
+    if (!isAuthActive()) return;
+    if (CLOUD.companionActive) return;
     var shell = ensureCompanionShell();
-    console.log("[CLOUD DEBUG] ensureCompanionShell returned:", shell ? "element#" + shell.id : "NULL");
-    if (!shell) { console.warn("[CLOUD DEBUG] BLOCKED: ensureCompanionShell returned null"); return; }
+    if (!shell) return;
     CLOUD.companionActive = true;
-    console.log("[CLOUD DEBUG] companionShow calling wireVoice/wireVision/updateMicUI");
     wireVoice();
     wireVision();
     updateMicUI();
-    console.log("[CLOUD DEBUG] companionShow calling loadPrefs — then will call surfaceCompanion");
     loadPrefs().then(function () {
-      console.log("[CLOUD DEBUG] loadPrefs resolved — calling surfaceCompanion, companionActive:", CLOUD.companionActive);
       updateIdentity();
-      var mode = isCloudWorkspaceActive() ? "workspace" : (CLOUD.prefs.companion_minimized ? "mini" : "panel");
-      console.log("[CLOUD DEBUG] surfaceCompanion mode:", mode);
-      surfaceCompanion(mode);
-    }).catch(function (e) { console.error("[CLOUD DEBUG] loadPrefs rejected:", e); });
+      surfaceCompanion(isCloudWorkspaceActive() ? "workspace" : (CLOUD.prefs.companion_minimized ? "mini" : "panel"));
+    });
   }
 
   function cleanupCompanion() {
@@ -1267,7 +1248,7 @@
       ".vmcloud-companion-panel{width:310px;max-width:calc(100vw - 24px);max-height:min(72vh,640px);display:flex;flex-direction:column;gap:10px;background:rgba(7,13,24,0.94);border:1px solid rgba(0,212,255,0.22);border-radius:18px;padding:14px;box-shadow:0 18px 50px rgba(0,0,0,0.55),0 0 0 1px rgba(0,212,255,0.05);backdrop-filter:blur(10px);}" +
       ".vmcloud-comp-head{display:flex;align-items:center;justify-content:space-between;gap:8px;touch-action:none;user-select:none;}" +
       ".vmcloud-comp-id{display:flex;align-items:center;gap:10px;min-width:0;}" +
-      ".vmcloud-comp-avatar{flex:0 0 auto;width:46px;height:42px;border-radius:55% 45% 50% 50%;background:radial-gradient(circle at 35% 30%,rgba(255,255,255,0.95),var(--cloud-color,#00d4ff) 48%,rgba(0,80,110,0.5) 78%);box-shadow:0 0 18px var(--cloud-color,#00d4ff);cursor:pointer;border:none;}" +
+      ".vmcloud-comp-avatar-img{flex:0 0 auto;width:46px;height:auto;aspect-ratio:433/577;border-radius:10px;cursor:pointer;user-select:none;-webkit-user-drag:none;filter:drop-shadow(0 4px 8px rgba(0,0,0,0.4));}" +
       ".vmcloud-comp-name{color:#f1f5f9;font-size:14px;font-weight:700;font-family:'Space Grotesk',sans-serif;line-height:1.2;}" +
       ".vmcloud-comp-orb-label{color:#94a3b8;font-size:11px;letter-spacing:0.04em;text-transform:capitalize;}" +
       ".vmcloud-comp-head-btns{display:flex;gap:6px;}" +
@@ -1291,18 +1272,17 @@
       ".vmcloud-comp-input-row{display:flex;gap:8px;}" +
       ".vmcloud-comp-input-row input{flex:1;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);color:#e2e8f0;border-radius:10px;padding:9px 12px;font-size:13px;min-width:0;}" +
       ".vmcloud-comp-input-row input:focus{outline:none;border-color:rgba(0,229,255,0.5);}" +
-      ".vmcloud-companion-mini{position:relative;display:none;flex-direction:row;align-items:center;gap:10px;cursor:pointer;padding:8px 14px 8px 8px;border-radius:999px;background:rgba(7,13,24,0.92);border:1px solid rgba(0,212,255,0.25);box-shadow:0 10px 30px rgba(0,0,0,0.45);backdrop-filter:blur(8px);touch-action:none;user-select:none;}" +
+      ".vmcloud-companion-mini{position:relative;display:none;flex-direction:column;align-items:center;cursor:grab;line-height:0;user-select:none;}" +
       ".vmcloud-companion.minimized .vmcloud-companion-panel{display:none;}" +
       ".vmcloud-companion.minimized .vmcloud-companion-mini{display:flex;}" +
       ".vmcloud-companion.hidden{display:none !important;}" +
-      ".vmcloud-companion-mini-stage{position:relative;flex:0 0 auto;width:64px;height:64px;border-radius:50%;overflow:hidden;background:#071019;border:1px solid rgba(0,212,255,0.22);box-shadow:0 0 16px rgba(0,212,255,0.18);isolation:isolate;}" +
-      ".vmcloud-companion-mini-orb{position:absolute;left:50%;top:52%;width:40px;height:36px;border-radius:55% 45% 50% 50%;transform:translate(-50%,-50%);background:radial-gradient(circle at 35% 30%,rgba(255,255,255,0.95),var(--cloud-color,#00d4ff) 48%,rgba(0,80,110,0.5) 78%);box-shadow:0 0 16px var(--cloud-color,#00d4ff);}" +
-      ".vmcloud-mini-status{position:absolute;left:4px;right:4px;bottom:3px;z-index:2;font-size:8px;line-height:1;color:#8fd0ff;text-align:center;letter-spacing:0.04em;text-transform:uppercase;font-family:'Space Grotesk',sans-serif;opacity:0.8;pointer-events:none;}" +
-      ".vmcloud-mini-dot{position:absolute;right:2px;bottom:2px;width:12px;height:12px;border-radius:50%;background:#334155;border:2px solid #0b1220;}" +
-      ".vmcloud-companion.sharing .vmcloud-companion-mini-orb{animation:vmcloud-share-pulse 1.6s ease-in-out infinite;}" +
-      ".vmcloud-companion.sharing .vmcloud-mini-dot{background:#f8485e;box-shadow:0 0 8px #f8485e;}" +
-      "@keyframes vmcloud-share-pulse{0%,100%{box-shadow:0 0 12px var(--cloud-color,#00d4ff);}50%{box-shadow:0 0 26px var(--cloud-color,#00d4ff),0 0 34px rgba(248,72,94,0.5);}}" +
-      ".vmcloud-companion-mini-name{color:#e2e8f0;font-size:13px;font-weight:600;font-family:'Space Grotesk',sans-serif;}" +
+      ".vmcloud-companion-mini-stage{position:relative;flex:0 0 auto;line-height:0;}" +
+      ".vmcloud-companion-mini-img{display:block;width:96px;height:auto;aspect-ratio:433/577;user-select:none;pointer-events:none;-webkit-user-drag:none;filter:drop-shadow(0 8px 14px rgba(0,0,0,0.45));}" +
+      ".vmcloud-mini-status{position:absolute;left:50%;bottom:1px;transform:translateX(-50%);z-index:2;font-size:8px;line-height:1;color:#bfe3ff;text-align:center;letter-spacing:0.04em;text-transform:uppercase;font-family:'Space Grotesk',sans-serif;opacity:0.9;white-space:nowrap;pointer-events:none;background:rgba(7,13,24,0.55);border-radius:6px;padding:2px 5px;}" +
+      ".vmcloud-companion-mini-name{display:none;}" +
+      ".vmcloud-companion.minimized .vmcloud-companion-mini-stage:hover .vmcloud-companion-mini-img{filter:drop-shadow(0 10px 18px rgba(0,212,255,0.35));}" +
+      ".vmcloud-companion.sharing .vmcloud-companion-mini-img{animation:vmcloud-share-pulse 1.6s ease-in-out infinite;}" +
+      "@keyframes vmcloud-share-pulse{0%,100%{filter:drop-shadow(0 8px 14px rgba(0,0,0,0.45));}50%{filter:drop-shadow(0 8px 14px rgba(0,0,0,0.45)) drop-shadow(0 0 12px rgba(248,72,94,0.6));}}" +
       "@media(max-width:640px){.vmcloud-header{flex-direction:column;text-align:center;}.vmcloud-stage{height:clamp(240px,48vw,340px);}.vmcloud-voice{margin-top:6px;}.vmcloud-pref-row{flex-direction:column;align-items:stretch;}.vmcloud-pref-row label{flex:none;}}";
     // Responsive companion placement: bottom-right, clear of safe areas and
     // mobile nav, no hardcoded off-canvas offsets.
@@ -1365,11 +1345,8 @@
   // authenticated app shell became visible before this module ran, so Cloud
   // initializes automatically without a fresh login or any navigation.
   function vmMaybeAutoMount() {
-    var reason = CLOUD.companionActive ? "already active" : !isAuthActive() ? "not authed" : "proceeding";
-    console.log("[CLOUD DEBUG] vmMaybeAutoMount:", reason);
     if (CLOUD.companionActive || !isAuthActive()) return;
     var main = $id("mainArea");
-    console.log("[CLOUD DEBUG] vmMaybeAutoMount: mainArea:", main ? main.style.display : "NOT FOUND");
     if (main && main.style.display !== "none") companionShow();
   }
   function vmBindAutoMount() {
@@ -1382,43 +1359,4 @@
   } else {
     vmBindAutoMount();
   }
-
-  // ── Diagnostic DOM inspection (temporary) ──────────────────────────────
-  function vmDiagnosticDump() {
-    var shell = $id("vmCloudCompanion");
-    var mini = $id("vmCloudCompanionMini");
-    var miniStage = $id("vmCloudCompanionMiniStage");
-    var log = {
-      vmIsAuthenticated: typeof window.vmIsAuthenticated === "function" ? window.vmIsAuthenticated() : "NOT DEFINED",
-      vmCloudCompanionShow: typeof window.vmCloudCompanionShow,
-      shellExists: !!shell,
-      companionActive: CLOUD.companionActive,
-      surface: CLOUD.surface
-    };
-    if (shell) {
-      var cs = window.getComputedStyle(shell);
-      var rect = shell.getBoundingClientRect();
-      log.shellDisplay = cs.display;
-      log.shellVisibility = cs.visibility;
-      log.shellOpacity = cs.opacity;
-      log.shellZIndex = cs.zIndex;
-      log.shellPosition = cs.position;
-      log.shellRect = { l: Math.round(rect.left), t: Math.round(rect.top), w: Math.round(rect.width), h: Math.round(rect.height) };
-      log.shellClasses = shell.className;
-      log.shellInlineStyle = shell.getAttribute("style") || "(none)";
-      log.hasCanvas = shell.querySelectorAll("canvas").length;
-    }
-    if (mini) {
-      var cs2 = window.getComputedStyle(mini);
-      log.miniDisplay = cs2.display;
-      log.miniRect = (function () { var r = mini.getBoundingClientRect(); return { l: Math.round(r.left), t: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) }; })();
-    }
-    if (miniStage) {
-      log.miniStageChildren = miniStage.children.length;
-      log.miniStageHasCanvas = miniStage.querySelectorAll("canvas").length;
-    }
-    console.log("[CLOUD DIAG] DOM state:", JSON.stringify(log, null, 2));
-  }
-  setTimeout(vmDiagnosticDump, 2500);
-  console.log("[CLOUD DEBUG] cloud.js fully initialized. VMCloud:", typeof window.VMCloud, "vmCloudCompanionShow:", typeof window.vmCloudCompanionShow, "vmCloudCompanionCleanup:", typeof window.vmCloudCompanionCleanup, "VMCloud3D:", typeof window.VMCloud3D);
 })();

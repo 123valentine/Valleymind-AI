@@ -3669,9 +3669,7 @@ function setAppVisible(isVisible) {
     // app shell disappears (logout/session end).
     if (isVisible) {
         if (typeof window.vmCloudCompanionShow === "function") {
-            try { console.log("[CLOUD DEBUG] setAppVisible(true) calling vmCloudCompanionShow"); window.vmCloudCompanionShow(); } catch (e) { console.warn("[companion] show failed:", e); }
-        } else {
-            console.warn("[CLOUD DEBUG] vmCloudCompanionShow is NOT defined — cloud.js may not have loaded or defines it too late");
+            try { window.vmCloudCompanionShow(); } catch (e) { console.warn("[companion] show failed:", e); }
         }
     } else {
         if (typeof window.vmCloudCompanionCleanup === "function") {
