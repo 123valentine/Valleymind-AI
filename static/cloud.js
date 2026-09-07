@@ -1,5 +1,6 @@
 (function () {
   "use strict";
+  console.log("[CLOUD DEBUG] cloud.js loaded and executing");
 
   var EMOTIONS = [
     "neutral", "happy", "excited", "thinking", "curious", "concerned", "sad",
@@ -775,6 +776,7 @@
   function ensureCompanionShell() {
     var shell = $id("vmCloudCompanion");
     if (shell) return shell;
+    console.log("[CLOUD DEBUG] ensureCompanionShell: creating new shell — document.body exists:", !!document.body);
     if (!document.body) return null;
     var d = document.createElement("div");
     d.id = "vmCloudCompanion";
@@ -824,6 +826,7 @@
         '<div class="vmcloud-companion-mini-name" id="vmCloudMiniLabel">Cloud</div>' +
       '</div>';
     document.body.appendChild(d);
+    console.log("[CLOUD DEBUG] ensureCompanionShell: shell appended to body — verify:", !!$id("vmCloudCompanion"));
     var input = $id("vmCloudCompanionInput");
     if (input) input.addEventListener("keydown", function (e) { if (e.key === "Enter") { companionSend(); } });
     var sendBtn = $id("vmCloudCompSend");
@@ -869,18 +872,23 @@
   }
 
   function surfaceCompanion(mode) {
+    console.log("[CLOUD DEBUG] surfaceCompanion called with mode:", mode);
     var shell = ensureCompanionShell();
-    if (!shell) return;
+    if (!shell) { console.warn("[CLOUD DEBUG] surfaceCompanion: shell is NULL"); return; }
     CLOUD.surface = mode;
     updateIdentity();
     shell.classList.toggle("hidden", mode === "hidden" || mode === "workspace");
     shell.classList.toggle("minimized", mode === "mini");
     applyCompanionPosition();
+    var cs = window.getComputedStyle ? window.getComputedStyle(shell) : null;
+    console.log("[CLOUD DEBUG] shell classes:", shell.className, "display:", cs ? cs.display : "?", "visibility:", cs ? cs.visibility : "?", "opacity:", cs ? cs.opacity : "?");
+    var rect = shell.getBoundingClientRect ? shell.getBoundingClientRect() : null;
+    console.log("[CLOUD DEBUG] shell rect:", rect ? JSON.stringify({l:Math.round(rect.left),t:Math.round(rect.top),w:Math.round(rect.width),h:Math.round(rect.height)}) : "N/A");
     if (mode === "mini") {
-      // The small state IS the living creature: the shared 3D engine keeps
-      // running on a compact stage (single renderer, never duplicated).
+      console.log("[CLOUD DEBUG] surfaceCompanion: mounting 3D at mini stage");
       mount3DAt("vmCloudCompanionMiniStage", "vmCloudMiniStatus", "vmCloudCompanionMiniOrb");
     } else if (mode === "panel") {
+      console.log("[CLOUD DEBUG] surfaceCompanion: mounting 3D at panel stage");
       startCompanion3D();
       renderCompanionLog();
       updateMicUI();
@@ -890,6 +898,7 @@
         try { window.VMCloud3D.suspend(); } catch (e) { }
       }
     }
+    console.log("[CLOUD DEBUG] surfaceCompanion done — CLOUD.surface:", CLOUD.surface);
   }
 
   function startCompanion3D() {
@@ -1045,19 +1054,26 @@
   document.addEventListener("pointercancel", onDragEnd);
 
   function mount3DAt(stageId, statusId, fallbackId) {
+    console.log("[CLOUD DEBUG] mount3DAt:", stageId, "VMCloud3D:", typeof window.VMCloud3D, "attach:", typeof window.VMCloud3D === "object" ? typeof window.VMCloud3D.attach : "N/A");
     var stage = $id(stageId);
-    if (!stage) return;
+    if (!stage) { console.warn("[CLOUD DEBUG] mount3DAt: stage element", stageId, "NOT FOUND"); return; }
+    console.log("[CLOUD DEBUG] mount3DAt: stage found, stage.children:", stage.children.length, "stage.innerHTML.length:", stage.innerHTML.length);
     if (window.VMCloud3D && typeof window.VMCloud3D.attach === "function") {
       try {
+        console.log("[CLOUD DEBUG] mount3DAt: calling VMCloud3D.attach...");
         window.VMCloud3D.attach(stage, {
           config: renderConfig(),
           statusId: statusId,
           fallbackId: fallbackId
         });
+        console.log("[CLOUD DEBUG] mount3DAt: VMCloud3D.attach completed");
         if (typeof window.VMCloud3D.resume === "function") {
           window.VMCloud3D.resume(renderConfig());
+          console.log("[CLOUD DEBUG] mount3DAt: VMCloud3D.resume called");
         }
-      } catch (e) { }
+      } catch (e) { console.error("[CLOUD DEBUG] mount3DAt: VMCloud3D threw:", e); }
+    } else {
+      console.warn("[CLOUD DEBUG] mount3DAt: VMCloud3D not available — 3D will not render");
     }
   }
 
@@ -1127,18 +1143,26 @@
   }
 
   function companionShow() {
-    if (!isAuthActive()) return;
-    if (CLOUD.companionActive) return;
+    console.log("[CLOUD DEBUG] companionShow called — isAuthActive:", isAuthActive(), "vmIsAuthenticated:", typeof window.vmIsAuthenticated === "function" ? window.vmIsAuthenticated() : "not defined");
+    if (!isAuthActive()) { console.warn("[CLOUD DEBUG] BLOCKED: isAuthActive() returned false"); return; }
+    if (CLOUD.companionActive) { console.warn("[CLOUD DEBUG] BLOCKED: CLOUD.companionActive already true"); return; }
+    console.log("[CLOUD DEBUG] companionShow proceeding — calling ensureCompanionShell");
     var shell = ensureCompanionShell();
-    if (!shell) return;
+    console.log("[CLOUD DEBUG] ensureCompanionShell returned:", shell ? "element#" + shell.id : "NULL");
+    if (!shell) { console.warn("[CLOUD DEBUG] BLOCKED: ensureCompanionShell returned null"); return; }
     CLOUD.companionActive = true;
+    console.log("[CLOUD DEBUG] companionShow calling wireVoice/wireVision/updateMicUI");
     wireVoice();
     wireVision();
     updateMicUI();
+    console.log("[CLOUD DEBUG] companionShow calling loadPrefs — then will call surfaceCompanion");
     loadPrefs().then(function () {
+      console.log("[CLOUD DEBUG] loadPrefs resolved — calling surfaceCompanion, companionActive:", CLOUD.companionActive);
       updateIdentity();
-      surfaceCompanion(isCloudWorkspaceActive() ? "workspace" : (CLOUD.prefs.companion_minimized ? "mini" : "panel"));
-    });
+      var mode = isCloudWorkspaceActive() ? "workspace" : (CLOUD.prefs.companion_minimized ? "mini" : "panel");
+      console.log("[CLOUD DEBUG] surfaceCompanion mode:", mode);
+      surfaceCompanion(mode);
+    }).catch(function (e) { console.error("[CLOUD DEBUG] loadPrefs rejected:", e); });
   }
 
   function cleanupCompanion() {
@@ -1341,8 +1365,11 @@
   // authenticated app shell became visible before this module ran, so Cloud
   // initializes automatically without a fresh login or any navigation.
   function vmMaybeAutoMount() {
+    var reason = CLOUD.companionActive ? "already active" : !isAuthActive() ? "not authed" : "proceeding";
+    console.log("[CLOUD DEBUG] vmMaybeAutoMount:", reason);
     if (CLOUD.companionActive || !isAuthActive()) return;
     var main = $id("mainArea");
+    console.log("[CLOUD DEBUG] vmMaybeAutoMount: mainArea:", main ? main.style.display : "NOT FOUND");
     if (main && main.style.display !== "none") companionShow();
   }
   function vmBindAutoMount() {
@@ -1355,4 +1382,43 @@
   } else {
     vmBindAutoMount();
   }
+
+  // ── Diagnostic DOM inspection (temporary) ──────────────────────────────
+  function vmDiagnosticDump() {
+    var shell = $id("vmCloudCompanion");
+    var mini = $id("vmCloudCompanionMini");
+    var miniStage = $id("vmCloudCompanionMiniStage");
+    var log = {
+      vmIsAuthenticated: typeof window.vmIsAuthenticated === "function" ? window.vmIsAuthenticated() : "NOT DEFINED",
+      vmCloudCompanionShow: typeof window.vmCloudCompanionShow,
+      shellExists: !!shell,
+      companionActive: CLOUD.companionActive,
+      surface: CLOUD.surface
+    };
+    if (shell) {
+      var cs = window.getComputedStyle(shell);
+      var rect = shell.getBoundingClientRect();
+      log.shellDisplay = cs.display;
+      log.shellVisibility = cs.visibility;
+      log.shellOpacity = cs.opacity;
+      log.shellZIndex = cs.zIndex;
+      log.shellPosition = cs.position;
+      log.shellRect = { l: Math.round(rect.left), t: Math.round(rect.top), w: Math.round(rect.width), h: Math.round(rect.height) };
+      log.shellClasses = shell.className;
+      log.shellInlineStyle = shell.getAttribute("style") || "(none)";
+      log.hasCanvas = shell.querySelectorAll("canvas").length;
+    }
+    if (mini) {
+      var cs2 = window.getComputedStyle(mini);
+      log.miniDisplay = cs2.display;
+      log.miniRect = (function () { var r = mini.getBoundingClientRect(); return { l: Math.round(r.left), t: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) }; })();
+    }
+    if (miniStage) {
+      log.miniStageChildren = miniStage.children.length;
+      log.miniStageHasCanvas = miniStage.querySelectorAll("canvas").length;
+    }
+    console.log("[CLOUD DIAG] DOM state:", JSON.stringify(log, null, 2));
+  }
+  setTimeout(vmDiagnosticDump, 2500);
+  console.log("[CLOUD DEBUG] cloud.js fully initialized. VMCloud:", typeof window.VMCloud, "vmCloudCompanionShow:", typeof window.vmCloudCompanionShow, "vmCloudCompanionCleanup:", typeof window.vmCloudCompanionCleanup, "VMCloud3D:", typeof window.VMCloud3D);
 })();
