@@ -763,6 +763,7 @@
   // ── Persistent companion (single controller over one Cloud state) ──────
 
   function isAuthActive() {
+    if (typeof window.vmIsAuthenticated === "function") return !!window.vmIsAuthenticated();
     return typeof getAuthToken === "function" && !!getAuthToken();
   }
 
@@ -1127,6 +1128,7 @@
 
   function companionShow() {
     if (!isAuthActive()) return;
+    if (CLOUD.companionActive) return;
     var shell = ensureCompanionShell();
     if (!shell) return;
     CLOUD.companionActive = true;
@@ -1333,4 +1335,24 @@
   window.vmCloudOnHide = onHide;
   window.vmCloudCompanionShow = companionShow;
   window.vmCloudCompanionCleanup = cleanupCompanion;
+
+  // Defense-in-depth: the app shell's setAppVisible(true) already drives
+  // companionShow after authentication. This probe covers any path where the
+  // authenticated app shell became visible before this module ran, so Cloud
+  // initializes automatically without a fresh login or any navigation.
+  function vmMaybeAutoMount() {
+    if (CLOUD.companionActive || !isAuthActive()) return;
+    var main = $id("mainArea");
+    if (main && main.style.display !== "none") companionShow();
+  }
+  function vmBindAutoMount() {
+    vmMaybeAutoMount();
+    setTimeout(vmMaybeAutoMount, 600);
+    setTimeout(vmMaybeAutoMount, 1800);
+  }
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", vmBindAutoMount);
+  } else {
+    vmBindAutoMount();
+  }
 })();

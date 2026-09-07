@@ -3678,6 +3678,14 @@ function setAppVisible(isVisible) {
     }
 }
 
+// The application shell is Cloud's lifecycle owner. Cloud reads this flag so
+// it initializes for already-authenticated sessions even when no client-side
+// session token is stored (cookie-authenticated opens, refreshes, new tabs).
+function vmIsAuthenticated() {
+    return isAuthenticated;
+}
+window.vmIsAuthenticated = vmIsAuthenticated;
+
 const messageStore = [];
 
 let isThinking = false;

@@ -72,6 +72,41 @@ class CloudStaticTestCase(unittest.TestCase):
         html = self._index_html()
         self.assertIn('<script src="/static/cloud.js', html)
 
+    def test_app_shell_owns_companion_lifecycle(self):
+        html = self._index_html()
+        # setAppVisible is the single authenticated-app visibility signal: it
+        # shows Cloud (companionShow) when the app shell appears and tears it
+        # down (cleanupCompanion) when the shell disappears (logout/session end).
+        self.assertIn("window.vmCloudCompanionShow();", html)
+        self.assertIn("window.vmCloudCompanionCleanup();", html)
+        # Cloud reads application-shell auth state (not the stored client
+        # token), so already-authenticated cookie sessions still get Cloud on
+        # normal opens, refreshes, and new tabs.
+        self.assertIn("function vmIsAuthenticated()", html)
+        self.assertIn("window.vmIsAuthenticated = vmIsAuthenticated;", html)
+
+    def test_cloud_js_uses_app_shell_auth_state(self):
+        js = self._cloud_js()
+        self.assertIn('typeof window.vmIsAuthenticated === "function"', js)
+        self.assertIn("window.vmIsAuthenticated()", js)
+        self.assertIn("function companionShow()", js)
+        # The probe auto-mounts Cloud when the authenticated app shell is
+        # already visible, independent of login events and navigation.
+        self.assertIn("function vmMaybeAutoMount()", js)
+        self.assertIn('$id("mainArea")', js)
+        self.assertIn("DOMContentLoaded", js)
+
+    def test_companion_initialization_needs_no_cloud_route(self):
+        js = self._cloud_js()
+        block = js[js.index("function companionShow()"):]
+        before_surface = block.index("surfaceCompanion(")
+        # companionShow never navigates nor references the former Cloud page:
+        # it goes straight to the app-shell companion surface.
+        self.assertNotIn("vmWsGo", block[:before_surface])
+        self.assertNotIn('data-ws="cloud"', block[:before_surface])
+        self.assertNotIn("localStorage", block[:before_surface])
+        self.assertIn("surfaceCompanion(", block)
+
     def test_cloud_js_exposes_module(self):
         js = self._cloud_js()
         self.assertIn("window.VMCloud", js)
