@@ -2078,6 +2078,80 @@
 </head>
 <body class="text-on-background font-body-md overflow-hidden">
 
+<!-- Minimal authenticated Cloud character (visual isolation test).
+     Rendered directly from /static/cloud.png, independent of the Cloud
+     lifecycle engine so the browser always shows the exact character. -->
+<img id="vmCloudCharacter"
+     src="/static/cloud.png"
+     alt="Cloud"
+     draggable="false">
+<style>
+#vmCloudCharacter {
+    position: fixed !important;
+    width: 96px !important;
+    height: auto !important;
+    right: 18px !important;
+    bottom: calc(18px + env(safe-area-inset-bottom)) !important;
+    display: block !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    z-index: 99999 !important;
+    pointer-events: auto !important;
+    touch-action: none !important;
+}
+</style>
+<script>
+(function () {
+    var el = document.getElementById("vmCloudCharacter");
+    if (!el) return;
+
+    // Auth-gated visibility. Uses inline style with "important" because the
+    // stylesheet above forces the element visible by default.
+    window.vmCloudCharacterShow = function () {
+        el.style.setProperty("display", "block", "important");
+        el.style.setProperty("visibility", "visible", "important");
+        el.style.setProperty("opacity", "1", "important");
+    };
+    window.vmCloudCharacterHide = function () {
+        el.style.setProperty("visibility", "hidden", "important");
+        el.style.setProperty("opacity", "0", "important");
+    };
+
+    // Direct pointer dragging on the character (positioned via left/top once
+    // the user grabs it; no dependency on any Cloud lifecycle code).
+    var drag = null;
+    el.addEventListener("pointerdown", function (e) {
+        var r = el.getBoundingClientRect();
+        drag = { dx: e.clientX - r.left, dy: e.clientY - r.top };
+        try { el.setPointerCapture(e.pointerId); } catch (err) { }
+    });
+    el.addEventListener("pointermove", function (e) {
+        if (!drag) return;
+        var x = e.clientX - drag.dx;
+        var y = e.clientY - drag.dy;
+        el.style.left = Math.max(0, Math.min(window.innerWidth - 96, x)) + "px";
+        el.style.top = Math.max(0, Math.min(window.innerHeight - el.offsetHeight, y)) + "px";
+        el.style.right = "auto";
+        el.style.bottom = "auto";
+    });
+    el.addEventListener("pointerup", function () { drag = null; });
+    el.addEventListener("pointercancel", function () { drag = null; });
+
+    // Cookie-authenticated refreshes / reopened tabs: show immediately once the
+    // app shell reports auth, without waiting for any companion machinery.
+    function showIfAuthed() {
+        if (typeof window.vmIsAuthenticated === "function" && window.vmIsAuthenticated()) {
+            window.vmCloudCharacterShow();
+        }
+    }
+    if (document.readyState !== "loading") {
+        showIfAuthed();
+    } else {
+        document.addEventListener("DOMContentLoaded", showIfAuthed);
+    }
+})();
+</script>
+
 <div id="brandSplashScreen" style="position:fixed; top:0; left:0; width:100vw; height:100vh; background:#020617; z-index:999999; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:20px; transition: opacity 0.5s ease-out;">
   <img src="/static/valleymind-logo.png" alt="Valleymind-AI Logo" style="width:300px;height:auto;max-width:80vw;object-fit:contain; animation: logoIntro 2s cubic-bezier(0.34,1.2,0.4,1) forwards;">
   <h1 style="color:#38bdf8;font-family:'Space Grotesk','Inter',sans-serif;font-size:30px;font-weight:800;letter-spacing:0.14em;margin:0;text-align:center;">ValleyMind AI</h1>
@@ -3668,10 +3742,17 @@ function setAppVisible(isVisible) {
     // tear it down (voice, screen share, renderer, listeners) whenever the
     // app shell disappears (logout/session end).
     if (isVisible) {
+        // Minimal authenticated Cloud character (visual isolation test).
+        if (typeof window.vmCloudCharacterShow === "function") {
+            try { window.vmCloudCharacterShow(); } catch (e) { console.warn("[cloudcharacter] show failed:", e); }
+        }
         if (typeof window.vmCloudCompanionShow === "function") {
             try { window.vmCloudCompanionShow(); } catch (e) { console.warn("[companion] show failed:", e); }
         }
     } else {
+        if (typeof window.vmCloudCharacterHide === "function") {
+            try { window.vmCloudCharacterHide(); } catch (e) { console.warn("[cloudcharacter] hide failed:", e); }
+        }
         if (typeof window.vmCloudCompanionCleanup === "function") {
             try { window.vmCloudCompanionCleanup(); } catch (e) { console.warn("[companion] cleanup failed:", e); }
         }

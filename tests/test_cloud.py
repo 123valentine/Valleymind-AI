@@ -88,6 +88,33 @@ class CloudStaticTestCase(unittest.TestCase):
         self.assertIn("function vmIsAuthenticated()", html)
         self.assertIn("window.vmIsAuthenticated = vmIsAuthenticated;", html)
 
+    def test_minimal_cloud_character_renders_direct_png_on_auth(self):
+        # Visual isolation pass: a single #vmCloudCharacter <img> sits directly
+        # under <body>, rendering /static/cloud.png with no lifecycle engine, so
+        # the exact character is always visible to authenticated users.
+        html = self._index_html()
+        body = html[html.index("<body"):]
+        img_index = body.index('<img id="vmCloudCharacter"')
+        self.assertLess(img_index, body.index("<script"))
+        self.assertIn('src="/static/cloud.png"', body[img_index:img_index + 300])
+        self.assertIn("draggable=\"false\"", body[img_index:img_index + 300])
+        # The stylesheet forces the small fixed character visible in the
+        # bottom-right corner, responsive (env safe-area) and small (96px).
+        self.assertIn("#vmCloudCharacter {", body)
+        self.assertIn("position: fixed !important", body)
+        self.assertIn("width: 96px !important", body)
+        self.assertIn("bottom: calc(18px + env(safe-area-inset-bottom)) !important", body)
+        # Auth gate lives in the app shell's setAppVisible (not the Cloud
+        # lifecycle), plus an immediate show once auth state reports true.
+        self.assertIn("window.vmCloudCharacterShow();", html)
+        self.assertIn("window.vmCloudCharacterHide();", html)
+        self.assertIn("window.vmIsAuthenticated()", html)
+        # Dragging is attached directly to the character image.
+        self.assertIn('var el = document.getElementById("vmCloudCharacter");', html)
+        self.assertIn('"pointerdown"', html)
+        self.assertIn('"pointermove"', html)
+        self.assertIn('"pointerup"', html)
+
     def test_cloud_js_uses_app_shell_auth_state(self):
         js = self._cloud_js()
         self.assertIn('typeof window.vmIsAuthenticated === "function"', js)
