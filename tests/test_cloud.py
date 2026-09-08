@@ -5,9 +5,10 @@ Covers:
      persistent app-shell companion, NOT a primary Studio tab. Its optional
      secondary workspace panel div, the vmWsGo hooks that fire
      vmCloudOnShow/vmCloudOnHide, and the cloud.js script tag are present.
-      The companion is small, renders the real static/cloud.png character,
-      draggable, and position-persistent. (Visual-first phase: plain image,
-      no animation model yet.)
+The companion is small, renders the real static/cloud.png character,
+       draggable, and position-persistent. An animation/state layer
+       (static/cloud_anim.js) drives whole-character body language and exposes
+       the cloudSetState(...) API the future brain will call.
   2. The canonical Cloud state model in core/cloud.py: emotions, interaction
      states, presentations, personality styles, and the personality-instruction
      adapter used to hand messages to the EXISTING brain.
@@ -1397,3 +1398,160 @@ class CloudScreenPersistenceTestCase(unittest.TestCase):
         user = [m for m in brain.memory.added if m["role"] == "user"]
         self.assertEqual(user[0]["image_data"], "")
         self.assertNotIn("[Image attached]", user[0]["content"])
+
+
+class CloudAnimStaticTestCase(unittest.TestCase):
+    """Static guarantees about static/cloud_anim.js: the centralized
+    whole-character animation/state layer behind cloudSetState().
+
+    The current asset (static/cloud.png) is a single flattened image, so
+    independent eye/brow/mouth/arm/leg motion is NOT claimed: these tests pin
+    the honest capability contract and the architecture the future brain plugs
+    into.
+    """
+
+    def _index_html(self):
+        return (ROOT / "index.html").read_text(encoding="utf-8")
+
+    def _anim_js(self):
+        return (ROOT / "static" / "cloud_anim.js").read_text(encoding="utf-8")
+
+    def test_anim_layer_script_loaded_after_cloud_vision(self):
+        html = self._index_html()
+        vision = re.search(
+            r'<script src="/static/cloud_vision\.js\?v=1"></script>', html)
+        anim = re.search(
+            r'<script src="/static/cloud_anim\.js\?v=1"></script>', html)
+        self.assertIsNotNone(anim, "cloud_anim.js script tag is required")
+        self.assertIsNotNone(vision, "cloud_vision.js script tag is required")
+        self.assertGreater(anim.start(), vision.start(),
+                           "cloud_anim.js must load after cloud_vision.js")
+        self.assertNotIn("defer", anim.group(0))
+        self.assertNotIn("async", anim.group(0))
+
+    def test_anim_layer_loads_last_after_cloud_scripts(self):
+        html = self._index_html()
+        cloud3d = re.search(r'<script src="/static/cloud3d\.js\?v=1"></script>', html)
+        anim = re.search(r'<script src="/static/cloud_anim\.js\?v=1"></script>', html)
+        self.assertIsNotNone(cloud3d)
+        self.assertIsNotNone(anim)
+        self.assertGreater(anim.start(), cloud3d.start())
+
+    def test_api_exports_cloud_set_state_and_vm_cloud_anim(self):
+        src = self._anim_js()
+        self.assertIn("window.cloudSetState", src)
+        self.assertIn("window.vmCloudAnim", src)
+        self.assertIn("setState: setState", src)
+        self.assertIn("getState:", src)
+        self.assertIn("getCapabilities:", src)
+
+    def test_all_emotional_states_are_registered(self):
+        src = self._anim_js()
+        for key in ("idle", "listening", "thinking", "happy", "excited",
+                    "sad", "surprised", "confused", "concerned", "greeting",
+                    "speaking", "sleeping"):
+            self.assertIn('key: "%s"' % key, src,
+                          "state %r must be registered in STATES" % key)
+            self.assertNotIn('key: "%s"' % key, src.replace('key: "%s"' % key, "", 1) + " " * 2,
+                             "state %r must be unique" % key)
+
+    def test_each_state_has_a_pose_with_face_limbs_descriptors(self):
+        src = self._anim_js()
+        for key in ("idle", "listening", "thinking", "happy", "excited",
+                    "sad", "surprised", "confused", "concerned", "greeting",
+                    "speaking", "sleeping"):
+            block = self._pose_block(src, key)
+            self.assertIsNotNone(block, "pose missing for %r" % key)
+            self.assertIn("face:", block)
+            self.assertIn("eyes:", block)
+            self.assertIn("brows:", block)
+            self.assertIn("mouth:", block)
+            self.assertIn("arms:", block)
+            self.assertIn("legs:", block)
+
+    def _pose_block(self, src, key):
+        marker = re.search(r"%s:\s*\{" % re.escape(key) + r"(?:\n|.)*?\n\s*\}",
+                           src, re.MULTILINE)
+        return marker.group(0) if marker else None
+
+    def test_get_capabilities_is_honest_about_flattened_asset(self):
+        src = self._anim_js()
+        self.assertIn("independentEyes: false", src)
+        self.assertIn("independentEyebrows: false", src)
+        self.assertIn("independentMouth: false", src)
+        self.assertIn("independentArms: false", src)
+        self.assertIn("independentLegs: false", src)
+        self.assertIn("wholeBodyArticulation: true", src)
+        self.assertIn("needsPartAssetsForFaceAndLimbs: true", src)
+        self.assertIn('assetType: "single flattened PNG"', src)
+
+    def test_tweening_math_is_available(self):
+        src = self._anim_js()
+        self.assertIn("function easeInOutCubic", src)
+        self.assertIn("function lerp", src)
+        self.assertIn("requestAnimationFrame", src)
+        self.assertIn("performance.now()", src)
+        self.assertIn("translate3d(", src)
+
+    def test_idle_life_is_randomized_within_sane_bounds(self):
+        src = self._anim_js()
+        self.assertIn("Math.random", src)
+        self.assertIn("rand(2600, 6800)", src)
+        self.assertIn("rand(7000, 16000)", src)
+        self.assertIn("rand(11000, 22000)", src)
+        self.assertIn("rand(24000, 50000)", src)
+
+    def test_transient_state_auto_returns_to_stable(self):
+        src = self._anim_js()
+        self.assertIn("transient: true", src)
+        self.assertIn("_returnTimer", src)
+        self.assertIn("setState(_stable)", src)
+        self.assertIn("thinking", src)
+
+    def test_transform_only_never_moves_drag_position(self):
+        src = self._anim_js()
+        self.assertIn(".style.transform =", src)
+        self.assertNotIn(".style.left", src)
+        self.assertNotIn(".style.top", src)
+        self.assertNotIn(".style.right", src)
+        self.assertNotIn(".style.bottom", src)
+
+    def test_never_replaces_or_sets_character_source(self):
+        src = self._anim_js()
+        self.assertNotIn(".src =", src)
+        self.assertNotIn('src="/static/cloud.png"', src)
+        self.assertNotIn("document.createElement", src)
+
+    def test_targets_character_with_mini_orb_fallback(self):
+        src = self._anim_js()
+        self.assertIn('var CHARACTER_ID = "vmCloudCharacter"', src)
+        self.assertIn('var MINI_ORB_ID = "vmCloudCompanionMiniOrb"', src)
+        self.assertIn("getElementById(CHARACTER_ID)", src)
+        self.assertIn("getElementById(MINI_ORB_ID)", src)
+        self.assertIn("50% 100%", src)
+
+    def test_pauses_while_dragging_hidden_or_reduced_motion(self):
+        src = self._anim_js()
+        self.assertIn("_dragging", src)
+        self.assertIn("document.hidden", src)
+        self.assertIn("prefers-reduced-motion", src)
+        self.assertIn("visibilitychange", src)
+
+    def test_no_future_brain_or_voice_apis_yet(self):
+        src = self._anim_js()
+        for banned in ("SpeechRecognition", "getUserMedia", "AudioContext",
+                       "fetch(", "localStorage", "/api/cloud/chat"):
+            self.assertNotIn(banned, src,
+                             "%r is deferred until the brain/voice phase" % banned)
+
+    def test_on_state_change_hook_present_for_brain_phase(self):
+        src = self._anim_js()
+        self.assertIn("onStateChange", src)
+        self.assertIn("function (cb)", src)
+        self.assertIn("_onChangeCb", src)
+
+    def test_demo_cycles_states_without_adding_ui(self):
+        src = self._anim_js()
+        self.assertIn("demo:", src)
+        self.assertIn("setInterval", src)
+        self.assertIn("listStates", src)
