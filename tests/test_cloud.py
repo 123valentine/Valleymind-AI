@@ -101,14 +101,18 @@ class CloudStaticTestCase(unittest.TestCase):
 
     def test_companion_initialization_needs_no_cloud_route(self):
         js = self._cloud_js()
-        block = js[js.index("function companionShow()"):]
-        before_surface = block.index("surfaceCompanion(")
-        # companionShow never navigates nor references the former Cloud page:
-        # it goes straight to the app-shell companion surface.
-        self.assertNotIn("vmWsGo", block[:before_surface])
-        self.assertNotIn('data-ws="cloud"', block[:before_surface])
-        self.assertNotIn("localStorage", block[:before_surface])
-        self.assertIn("surfaceCompanion(", block)
+        block = js[js.index("function companionShow()"):js.index("function cleanupCompanion()")]
+        # companionShow goes straight to the app-shell character: it never
+        # navigates, never references the former Cloud page, and never builds
+        # the old shell/panel/3D surface.
+        self.assertIn("ensureCloudCharacter()", block)
+        self.assertIn("injectStyles()", block)
+        for forbidden in ("vmWsGo", 'data-ws="cloud"', "localStorage",
+                          "ensureCompanionShell(",
+                          "surfaceCompanion(",
+                          "mount3DAt(",
+                          "start3D("):
+            self.assertNotIn(forbidden, block)
 
     def test_cloud_js_exposes_module(self):
         js = self._cloud_js()
@@ -1142,6 +1146,75 @@ class CloudCompanionStaticTestCase(unittest.TestCase):
         self.assertIsNotNone(mini)
         self.assertNotIn("width:100%", mini.group(0))
         self.assertNotIn("inset:0", mini.group(0))
+
+    def test_character_is_direct_body_img(self):
+        js = self._cloud_js()
+        # The on-screen companion is a single direct <img id="vmCloudCharacter">
+        # appended straight to <body> — never boxed inside the workspace,
+        # sidebar, iframe, or any large wrapper.
+        self.assertIn("function ensureCloudCharacter()", js)
+        self.assertIn('el.id = "vmCloudCharacter"', js)
+        self.assertIn('el.src = "/static/cloud.png"', js)
+        self.assertIn("document.body.appendChild(el)", js)
+        self.assertIn("makeDraggable(el)", js)
+        self.assertNotIn('draggable="true"', js[js.index("function ensureCloudCharacter()"):js.index("function companionShow()")])
+
+    def test_character_required_styles(self):
+        js = self._cloud_js()
+        # Inline geometry pins a small, complete character to the bottom-right,
+        # clear of mobile safe areas — no full-screen container, no bar.
+        self.assertIn('el.style.position = "fixed"', js)
+        self.assertIn('el.style.right = "18px"', js)
+        self.assertIn('el.style.bottom = "calc(18px + env(safe-area-inset-bottom))"', js)
+        self.assertIn('el.style.width = "96px"', js)
+        self.assertIn('el.style.height = "auto"', js)
+        self.assertIn('el.style.visibility = "visible"', js)
+        self.assertIn('el.style.opacity = "1"', js)
+        self.assertIn('el.style.touchAction = "none"', js)
+        rule = re.search(r"\#vmCloudCharacter\{[^}]+\}", js)
+        self.assertIsNotNone(rule)
+        self.assertIn("right:18px", rule.group(0))
+        self.assertIn("bottom:calc(18px + env(safe-area-inset-bottom", rule.group(0))
+        self.assertIn("width:96px;height:auto", rule.group(0))
+        self.assertNotIn("width:100%", rule.group(0))
+        self.assertNotIn("width:100vw", rule.group(0))
+        self.assertNotIn("inset:0", rule.group(0))
+
+    def test_character_created_from_auth_lifecycle(self):
+        html = self._index_html()
+        js = self._cloud_js()
+        # The authenticated app-shell visibility signal creates the character:
+        # setAppVisible(true) → vmCloudCompanionShow → companionShow → ensure.
+        self.assertIn("window.vmCloudCompanionShow();", html)
+        block = js[js.index("function companionShow()"):js.index("function cleanupCompanion()")]
+        self.assertIn("ensureCloudCharacter()", block)
+
+    def test_character_dragged_directly_not_wrapped(self):
+        js = self._cloud_js()
+        # Dragging binds directly to #vmCloudCharacter itself, and the move/save
+        # helpers target that same element — never a large draggable parent.
+        ensure = js[js.index("function ensureCloudCharacter()"):js.index("function companionShow()")]
+        self.assertIn("makeDraggable(el)", ensure)
+        motion = js[js.index("function setCompanionPx"):js.index("function onDragMove")]
+        self.assertIn("var el = companionElement();", motion)
+        self.assertIn("companionElement", js)
+        self.assertNotIn("left:280px", js)
+        self.assertNotIn('makeDraggable($id("vmCloudCompanion").parentNode', js)
+
+    def test_logout_removes_character(self):
+        js = self._cloud_js()
+        cleanup = js[js.index("function cleanupCompanion()"):js.index("function start3D()")]
+        self.assertIn('var char = $id("vmCloudCharacter");', cleanup)
+        self.assertIn("removeChild(char)", cleanup)
+
+    def test_one_visible_character_no_second_cloud(self):
+        js = self._cloud_js()
+        block = js[js.index("function companionShow()"):js.index("function cleanupCompanion()")]
+        # The auth path mounts exactly one visible Cloud (the direct character):
+        # it never creates the old shell or a second 3D/panel placeholder.
+        self.assertNotIn("ensureCompanionShell(", block)
+        self.assertNotIn("mount3DAt(", block)
+        self.assertNotIn("document.createElement(\"div\")", block)
 
 
 class _FocusedMemory:

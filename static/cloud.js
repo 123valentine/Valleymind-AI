@@ -721,43 +721,23 @@
   }
 
   function onShow() {
+    // Workspace navigation never controls the on-screen companion: the direct
+    // cloud.png character stays mounted for every workspace. Navigation only
+    // confirms the character exists — nothing here builds the old shell/panel/3D
+    // surface, and nothing can hide or replace the character.
     injectStyles();
-    if (!$id("vmWsPanelCloud")) return;
-    if (!CLOUD.inited || !$id(CLOUD_ORB_ID)) {
-      CLOUD.inited = true;
-      render();
-    }
-    renderTranscript();
-    loadPrefs();
-    syncStateFromServer();
-    wireVoice();
-    wireVision();
-    updateVisionUI();
-    updateMicUI();
-    updateIdentity();
-    // The full workspace is a presentation surface of the same controller:
-    // hide the floating companion shell and relocate the single 3D context.
-    CLOUD.companionActive = true;
-    surfaceCompanion("workspace");
-    start3D();
-    if (window.lucide && typeof window.lucide.createIcons === "function") {
-      try { window.lucide.createIcons(); } catch (e) { }
-    }
+    ensureCloudCharacter();
+    loadPrefs().then(function () {
+      updateIdentity();
+      applyCompanionPosition();
+    });
   }
 
   function onHide() {
-    stopVoice();
-    if (CLOUD.companionActive) {
-      // Full workspaces and the companion are two surfaces of the SAME Cloud
-      // state/controller. Leaving the Cloud workspace restores the floating
-      // companion instead of destroying the engine.
-      var isWs = isCloudWorkspaceActive();
-      surfaceCompanion(isWs ? "hidden" : (CLOUD.prefs.companion_minimized ? "mini" : "panel"));
-      return;
-    }
-    if (window.VMCloud3D && typeof window.VMCloud3D.detach === "function") {
-      try { window.VMCloud3D.detach(); } catch (e) { }
-    }
+    // Leaving a workspace never removes the companion: it is body-level and
+    // independent of navigation, so it simply stays where the user leaves it.
+    ensureCloudCharacter();
+    applyCompanionPosition();
   }
 
   // ── Persistent companion (single controller over one Cloud state) ──────
@@ -868,12 +848,13 @@
   }
 
   function surfaceCompanion(mode) {
-    var shell = ensureCompanionShell();
-    if (!shell) return;
+    // Visual-first: the companion IS the direct cloud.png character and always
+    // stays visible. The old shell/panel/3D surface is kept defined-but-dormant
+    // (no longer mounted anywhere), so the single shared controller can later
+    // re-connect to a presentation surface without any architectural change.
     CLOUD.surface = mode;
     updateIdentity();
-    shell.classList.toggle("hidden", mode === "hidden" || mode === "workspace");
-    shell.classList.toggle("minimized", mode === "mini");
+    ensureCloudCharacter();
     applyCompanionPosition();
     if (mode === "mini") {
       // Small companion = the actual cloud.png character standing on-screen.
@@ -957,24 +938,28 @@
     return false;
   }
 
+  function companionElement() {
+    return $id("vmCloudCharacter");
+  }
+
   function setCompanionPx(left, top) {
-    var shell = $id("vmCloudCompanion");
-    if (!shell) return;
+    var el = companionElement();
+    if (!el) return;
     var vw = window.innerWidth || document.documentElement.clientWidth || 0;
     var vh = window.innerHeight || document.documentElement.clientHeight || 0;
-    var w = shell.offsetWidth || 60;
-    var h = shell.offsetHeight || 60;
+    var w = el.offsetWidth || 96;
+    var h = el.offsetHeight || 96;
     var maxL = Math.max(POS_MARGIN, vw - w - POS_MARGIN);
     var maxT = Math.max(POS_MARGIN, vh - h - POS_MARGIN);
-    shell.style.right = "auto";
-    shell.style.bottom = "auto";
-    shell.style.left = Math.round(Math.max(POS_MARGIN, Math.min(maxL, left))) + "px";
-    shell.style.top = Math.round(Math.max(POS_MARGIN, Math.min(maxT, top))) + "px";
+    el.style.right = "auto";
+    el.style.bottom = "auto";
+    el.style.left = Math.round(Math.max(POS_MARGIN, Math.min(maxL, left))) + "px";
+    el.style.top = Math.round(Math.max(POS_MARGIN, Math.min(maxT, top))) + "px";
   }
 
   function applyCompanionPosition() {
-    var shell = $id("vmCloudCompanion");
-    if (!shell) return;
+    var el = companionElement();
+    if (!el) return;
     var x = CLOUD.prefs.companion_x, y = CLOUD.prefs.companion_y;
     if (x !== null && x !== undefined && y !== null && y !== undefined &&
         isFinite(x) && isFinite(y)) {
@@ -982,10 +967,10 @@
       var vh = window.innerHeight || document.documentElement.clientHeight || 0;
       setCompanionPx((x / 100) * vw, (y / 100) * vh);
     } else {
-      shell.style.right = "";
-      shell.style.bottom = "";
-      shell.style.left = "";
-      shell.style.top = "";
+      el.style.right = "";
+      el.style.bottom = "";
+      el.style.left = "";
+      el.style.top = "";
     }
   }
 
@@ -995,12 +980,12 @@
   }
 
   function saveCompanionPosition() {
-    var shell = $id("vmCloudCompanion");
-    if (!shell) return;
+    var el = companionElement();
+    if (!el) return;
     var vw = window.innerWidth || document.documentElement.clientWidth || 0;
     var vh = window.innerHeight || document.documentElement.clientHeight || 0;
     if (!vw || !vh) return;
-    var rect = shell.getBoundingClientRect();
+    var rect = el.getBoundingClientRect();
     CLOUD.prefs.companion_x = clampPct((rect.left / vw) * 100);
     CLOUD.prefs.companion_y = clampPct((rect.top / vh) * 100);
     savePrefsLight();
@@ -1012,9 +997,9 @@
     zone.addEventListener("pointerdown", function (e) {
       if (e.target && (e.target.closest("button") || e.target.closest("input") ||
           e.target.closest("select") || e.target.closest("textarea"))) return;
-      var shell = $id("vmCloudCompanion");
-      if (!shell) return;
-      var rect = shell.getBoundingClientRect();
+      // The zone IS the element being dragged (the character image itself when
+      // bound by ensureCloudCharacter) — never a wrapping draggable container.
+      var rect = zone.getBoundingClientRect();
       _dragState = {
         startX: e.clientX, startY: e.clientY,
         baseLeft: rect.left, baseTop: rect.top,
@@ -1131,18 +1116,55 @@
     setStatus("vmCloudCompVisionStatus");
   }
 
+  function ensureCloudCharacter() {
+    var el = $id("vmCloudCharacter");
+    if (el) return el;
+    if (!document.body) return null;
+    el = document.createElement("img");
+    el.id = "vmCloudCharacter";
+    el.className = "vmcloud-character";
+    el.src = "/static/cloud.png";
+    el.alt = "Cloud";
+    el.draggable = false;
+    el.setAttribute("role", "button");
+    el.setAttribute("aria-label", "Cloud companion");
+    // Explicit inline geometry so no shell/workspace CSS can rebox or stretch
+    // it: always the small complete character, pinned bottom-right in view.
+    el.style.position = "fixed";
+    el.style.right = "18px";
+    el.style.bottom = "calc(18px + env(safe-area-inset-bottom))";
+    el.style.zIndex = "8000";
+    el.style.display = "block";
+    el.style.visibility = "visible";
+    el.style.opacity = "1";
+    el.style.width = "96px";
+    el.style.height = "auto";
+    el.style.aspectRatio = "433 / 577";
+    el.style.pointerEvents = "auto";
+    el.style.touchAction = "none";
+    el.style.cursor = "grab";
+    el.style.userSelect = "none";
+    el.style.webkitUserDrag = "none";
+    el.style.filter = "drop-shadow(0 8px 14px rgba(0,0,0,0.45))";
+    document.body.appendChild(el);
+    makeDraggable(el);
+    window.removeEventListener("resize", onWinSizeForCompanion);
+    window.addEventListener("resize", onWinSizeForCompanion);
+    return el;
+  }
+
   function companionShow() {
     if (!isAuthActive()) return;
     if (CLOUD.companionActive) return;
-    var shell = ensureCompanionShell();
-    if (!shell) return;
     CLOUD.companionActive = true;
-    wireVoice();
-    wireVision();
-    updateMicUI();
+    // The companion is the direct cloud.png character on <body>, created from
+    // the authenticated app-shell lifecycle. It needs no 3D engine, panel or
+    // workspace to be visible, and navigation can never remove it.
+    injectStyles();
+    ensureCloudCharacter();
     loadPrefs().then(function () {
       updateIdentity();
-      surfaceCompanion(isCloudWorkspaceActive() ? "workspace" : (CLOUD.prefs.companion_minimized ? "mini" : "panel"));
+      applyCompanionPosition();
     });
   }
 
@@ -1170,6 +1192,8 @@
     CLOUD.prefs = defaultPrefs();
     var shell = $id("vmCloudCompanion");
     if (shell && shell.parentNode) shell.parentNode.removeChild(shell);
+    var char = $id("vmCloudCharacter");
+    if (char && char.parentNode) char.parentNode.removeChild(char);
   }
 
   function start3D() {
@@ -1245,6 +1269,7 @@
       ".vmcloud-chat-hint{color:#475569;font-size:11px;text-transform:none;letter-spacing:normal;}" +
       ".vmcloud-status-ok{color:#3ddc84;}" +
       "#vmCloudCompanion{position:fixed;right:18px;bottom:18px;z-index:8000;font-family:'Inter',sans-serif;isolation:isolate;}" +
+      "#vmCloudCharacter{position:fixed;right:18px;bottom:calc(18px + env(safe-area-inset-bottom,0px));z-index:8000;display:block;visibility:visible;opacity:1;width:96px;height:auto;aspect-ratio:433/577;pointer-events:auto;touch-action:none;cursor:grab;user-select:none;-webkit-user-drag:none;filter:drop-shadow(0 8px 14px rgba(0,0,0,0.45));}" +
       ".vmcloud-companion-panel{width:310px;max-width:calc(100vw - 24px);max-height:min(72vh,640px);display:flex;flex-direction:column;gap:10px;background:rgba(7,13,24,0.94);border:1px solid rgba(0,212,255,0.22);border-radius:18px;padding:14px;box-shadow:0 18px 50px rgba(0,0,0,0.55),0 0 0 1px rgba(0,212,255,0.05);backdrop-filter:blur(10px);}" +
       ".vmcloud-comp-head{display:flex;align-items:center;justify-content:space-between;gap:8px;touch-action:none;user-select:none;}" +
       ".vmcloud-comp-id{display:flex;align-items:center;gap:10px;min-width:0;}" +
