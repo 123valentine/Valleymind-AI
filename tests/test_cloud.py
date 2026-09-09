@@ -90,15 +90,18 @@ class CloudStaticTestCase(unittest.TestCase):
         self.assertIn("window.vmIsAuthenticated = vmIsAuthenticated;", html)
 
     def test_minimal_cloud_character_renders_direct_png_on_auth(self):
-        # Visual isolation pass: a single #vmCloudCharacter <img> sits directly
-        # under <body>, rendering /static/cloud.png with no lifecycle engine, so
-        # the exact character is always visible to authenticated users.
+        # Visual isolation pass: a #vmCloudCharacter container sits directly
+        # under <body> holding the flattened static/cloud.png <img> fallback
+        # plus the animated rig-mount overlay, with no lifecycle engine, so the
+        # exact character is always visible to authenticated users.
         html = self._index_html()
         body = html[html.index("<body"):]
-        img_index = body.index('<img id="vmCloudCharacter"')
-        self.assertLess(img_index, body.index("<script"))
-        self.assertIn('src="/static/cloud.png"', body[img_index:img_index + 300])
-        self.assertIn("draggable=\"false\"", body[img_index:img_index + 300])
+        char_index = body.index('<div id="vmCloudCharacter"')
+        self.assertLess(char_index, body.index("<script"))
+        self.assertIn('src="/static/cloud.png"', body[char_index:char_index + 600])
+        self.assertIn("draggable=\"false\"", body[char_index:char_index + 600])
+        self.assertIn('class="vmcloud-fallback"', body[char_index:char_index + 600])
+        self.assertIn('class="vmcloud-rig-mount"', body[char_index:char_index + 600])
         # The stylesheet forces the small fixed character visible in the
         # bottom-right corner, responsive (env safe-area) and small (96px).
         self.assertIn("#vmCloudCharacter {", body)
@@ -110,7 +113,7 @@ class CloudStaticTestCase(unittest.TestCase):
         self.assertIn("window.vmCloudCharacterShow();", html)
         self.assertIn("window.vmCloudCharacterHide();", html)
         self.assertIn("window.vmIsAuthenticated()", html)
-        # Dragging is attached directly to the character image.
+        # Dragging is attached directly to the character container.
         self.assertIn('var el = document.getElementById("vmCloudCharacter");', html)
         self.assertIn('"pointerdown"', html)
         self.assertIn('"pointermove"', html)
@@ -1402,12 +1405,12 @@ class CloudScreenPersistenceTestCase(unittest.TestCase):
 
 class CloudAnimStaticTestCase(unittest.TestCase):
     """Static guarantees about static/cloud_anim.js: the centralized
-    whole-character animation/state layer behind cloudSetState().
+    animation/state layer behind cloudSetState() and the future Brain API.
 
-    The current asset (static/cloud.png) is a single flattened image, so
-    independent eye/brow/mouth/arm/leg motion is NOT claimed: these tests pin
-    the honest capability contract and the architecture the future brain plugs
-    into.
+    static/cloud.png remains the single flattened source of truth and the
+    standing fallback; independent eye/brow/mouth/arm/leg motion is provided by
+    the layered vector rig (static/cloud_rig.js), never by the PNG itself. The
+    rig keeps the design faithful (same palette, proportions and silhouette).
     """
 
     def _index_html(self):
@@ -1474,16 +1477,22 @@ class CloudAnimStaticTestCase(unittest.TestCase):
                            src, re.MULTILINE)
         return marker.group(0) if marker else None
 
-    def test_get_capabilities_is_honest_about_flattened_asset(self):
+    def test_get_capabilities_is_honest_about_layered_rig(self):
         src = self._anim_js()
-        self.assertIn("independentEyes: false", src)
-        self.assertIn("independentEyebrows: false", src)
-        self.assertIn("independentMouth: false", src)
-        self.assertIn("independentArms: false", src)
-        self.assertIn("independentLegs: false", src)
+        # The layered SVG rig (static/cloud_rig.js) redraws static/cloud.png as
+        # separately addressable parts, so the animation layer can honestly
+        # claim independent face/limb motion — the flattened PNG is the source
+        # of truth and the standing fallback, not the animatable surface.
+        self.assertIn("independentEyes: true", src)
+        self.assertIn("independentEyebrows: true", src)
+        self.assertIn("independentMouth: true", src)
+        self.assertIn("independentArms: true", src)
+        self.assertIn("independentLegs: true", src)
         self.assertIn("wholeBodyArticulation: true", src)
-        self.assertIn("needsPartAssetsForFaceAndLimbs: true", src)
-        self.assertIn('assetType: "single flattened PNG"', src)
+        self.assertIn("needsPartAssetsForFaceAndLimbs: false", src)
+        self.assertIn("asset: \"static/cloud_rig.js\"", src)
+        self.assertIn("assetType: \"layered SVG rig (faithful redraw of static/cloud.png)\"", src)
+        self.assertIn("standingAssetFallback: \"static/cloud.png\"", src)
 
     def test_tweening_math_is_available(self):
         src = self._anim_js()
@@ -1508,13 +1517,20 @@ class CloudAnimStaticTestCase(unittest.TestCase):
         self.assertIn("setState(_stable)", src)
         self.assertIn("thinking", src)
 
-    def test_transform_only_never_moves_drag_position(self):
+    def test_rig_animation_uses_transform_walking_repositions(self):
+        # Rig/whole-body animation is pure transform (never fights the drag
+        # position). The only left/top writes live in placeElement, which is the
+        # walking controller deliberately moving Cloud on screen.
         src = self._anim_js()
         self.assertIn(".style.transform =", src)
-        self.assertNotIn(".style.left", src)
-        self.assertNotIn(".style.top", src)
-        self.assertNotIn(".style.right", src)
-        self.assertNotIn(".style.bottom", src)
+        self.assertIn("function placeElement(", src)
+        self.assertIn("_el.style.left", src)
+        self.assertIn('"auto"', src)
+        transform_block = src[src.index("function renderBody("):src.index("function boot(")]
+        self.assertNotIn(".style.left", transform_block)
+        self.assertNotIn(".style.top", transform_block)
+        self.assertNotIn(".style.right", transform_block)
+        self.assertNotIn(".style.bottom", transform_block)
 
     def test_never_replaces_or_sets_character_source(self):
         src = self._anim_js()
@@ -1555,3 +1571,131 @@ class CloudAnimStaticTestCase(unittest.TestCase):
         self.assertIn("demo:", src)
         self.assertIn("setInterval", src)
         self.assertIn("listStates", src)
+
+    # ── New capability layer (Layer 3 / 4) ──────────────────────────────
+    def test_explicit_gaze_api_present(self):
+        src = self._anim_js()
+        self.assertIn("function lookToward(", src)
+        self.assertIn("function lookAt(", src)
+        self.assertIn("function clearLook(", src)
+        self.assertIn("_lookTarget", src)
+        self.assertIn("_lookHoldUntil", src)
+
+    def test_blink_variants_present(self):
+        src = self._anim_js()
+        self.assertIn('speed === "quick"', src)
+        self.assertIn('speed === "slow"', src)
+        self.assertIn("triggerBlink(r < 0.70", src)
+
+    def test_one_shot_arm_gestures_present(self):
+        src = self._anim_js()
+        self.assertIn("function triggerArmGesture(", src)
+        self.assertIn('KIND === "wave"', src)
+        self.assertIn('KIND === "welcome"', src)
+        self.assertIn('KIND === "point_up"', src)
+        self.assertIn('KIND === "point_l"', src)
+        self.assertIn('KIND === "point_r"', src)
+        self.assertIn('KIND === "point_down"', src)
+        self.assertIn("function wave(", src)
+        self.assertIn("function point(", src)
+        self.assertIn("function welcome(", src)
+
+    def test_emotional_walking_profiles_present(self):
+        src = self._anim_js()
+        self.assertIn("var WALK_PROFILES = {", src)
+        for state in ("thinking", "happy", "excited", "sad", "sleepy", "surprised"):
+            self.assertIn("%s:" % state, src)
+        self.assertIn("walkProfile()", src)
+        self.assertIn("pr.cadence", src)
+
+    def test_head_follows_gaze_coordination_present(self):
+        src = self._anim_js()
+        self.assertIn("lookX += _walk.dir", src)
+        self.assertIn("headTxT", src)
+        self.assertIn("_cur.hdRot", src)
+        self.assertIn("rigPartTransform(p.head", src)
+
+    def test_future_brain_surface_present_but_not_wired(self):
+        src = self._anim_js()
+        self.assertIn("BrainAPI: {", src)
+        for verb in ("setEmotion", "startThinking", "startSpeaking",
+                     "stopSpeaking", "walkTo", "lookToward", "lookAt",
+                     "wave", "point", "welcome", "stop"):
+            self.assertIn(verb, src)
+        # Honest scoping: the anim surface animates, no brain is integrated.
+        self.assertIn("no Brain wiring today", src)
+        self.assertNotIn("/api/cloud/chat", src)
+        self.assertNotIn("fetch(", src)
+
+
+class CloudRigStaticTestCase(unittest.TestCase):
+    """Static guarantees about static/cloud_rig.js — the faithful layered
+    vector rig that redraws static/cloud.png as separately addressable parts.
+
+    The flattened PNG stays the source of truth and the standing fallback;
+    the rig is how independent eyes/brows/mouth/arms/legs can be animated at
+    all without redesigning the character.
+    """
+
+    def _index_html(self):
+        return (ROOT / "index.html").read_text(encoding="utf-8")
+
+    def _rig_js(self):
+        return (ROOT / "static" / "cloud_rig.js").read_text(encoding="utf-8")
+
+    def _anim_js(self):
+        return (ROOT / "static" / "cloud_anim.js").read_text(encoding="utf-8")
+
+    def test_rig_script_loaded_before_anim(self):
+        html = self._index_html()
+        rig = re.search(r'<script src="/static/cloud_rig\.js\?v=1"></script>', html)
+        anim = re.search(r'<script src="/static/cloud_anim\.js\?v=1"></script>', html)
+        self.assertIsNotNone(rig, "cloud_rig.js script tag is required")
+        self.assertIsNotNone(anim)
+        self.assertLess(rig.start(), anim.start(),
+                        "rig must load before the animation engine")
+
+    def test_rig_exposes_public_api(self):
+        src = self._rig_js()
+        self.assertIn("window.VMCloudRig = {", src)
+        self.assertIn("mount: mount", src)
+        self.assertIn("build: build", src)
+        self.assertIn("collectRig: collectRig", src)
+        self.assertIn("mountRoot: mountRoot", src)
+
+    def test_rig_declares_faithful_not_redesign(self):
+        src = self._rig_js()
+        self.assertIn("faithful", src)
+        self.assertIn("NOT a redesign", src)
+        self.assertIn("static/cloud.png", src)
+
+    def test_rig_palette_sampled_from_png(self):
+        src = self._rig_js()
+        self.assertIn('headTop: "#E5EAE8"', src)
+        self.assertIn('face:    "#788286"', src)
+        self.assertIn('leg:     "#40464A"', src)
+        self.assertIn('ink:     "#010409"', src)
+
+    def test_rig_exposes_all_addressable_parts(self):
+        src = self._rig_js()
+        # Every addressable part is labeled (either an inline label or a
+        # builder invocation) and routed through the generic data-part marker.
+        self.assertIn('data-part", "%s"' % "body", src)
+        self.assertIn('data-part", "%s"' % "head", src)
+        for part in ("body", "head", "leftEyebrow", "rightEyebrow", "leftEye",
+                     "rightEye", "mouth", "leftArm", "rightArm", "leftLeg",
+                     "rightLeg", "shadow"):
+            self.assertIn('"%s"' % part, src)
+        self.assertIn("attr(g, \"data-part\", id)", src)
+
+    def test_rig_pivots_per_part(self):
+        src = self._rig_js()
+        self.assertIn("transformOrigin = xPct", src)
+        self.assertIn('g.style.transformBox = "fill-box"', src)
+        self.assertIn("leftShoulder", src)
+        self.assertIn("leftHip", src)
+
+    def test_rig_keeps_png_fallback(self):
+        src = self._rig_js()
+        self.assertIn('img.src = "/static/cloud.png"', src)
+        self.assertIn('vmcloud-fallback', src)

@@ -1117,36 +1117,52 @@
   }
 
   function ensureCloudCharacter() {
-    var el = $id("vmCloudCharacter");
-    if (el) return el;
+    var existing = $id("vmCloudCharacter");
+    if (existing) {
+      // The canonical character is a layered SVG rig (faithful redraw of the
+      // flattened static/cloud.png) so parts can move independently. If it was
+      // created before the rig module loaded (or is a bare element), mount the
+      // rig overlay now. whole-body animation applies to the container either way.
+      if (window.VMCloudRig && typeof window.VMCloudRig.mount === "function") {
+        try { window.VMCloudRig.mount(existing); } catch (e) { }
+      }
+      makeDraggable(existing);
+      window.removeEventListener("resize", onWinSizeForCompanion);
+      window.addEventListener("resize", onWinSizeForCompanion);
+      return existing;
+    }
     if (!document.body) return null;
-    el = document.createElement("img");
-    el.id = "vmCloudCharacter";
-    el.className = "vmcloud-character";
-    el.src = "/static/cloud.png";
-    el.alt = "Cloud";
-    el.draggable = false;
-    el.setAttribute("role", "button");
-    el.setAttribute("aria-label", "Cloud companion");
-    // Explicit inline geometry so no shell/workspace CSS can rebox or stretch
-    // it: always the small complete character, pinned bottom-right in view.
-    el.style.position = "fixed";
-    el.style.right = "18px";
-    el.style.bottom = "calc(18px + env(safe-area-inset-bottom))";
-    el.style.zIndex = "8000";
-    el.style.display = "block";
-    el.style.visibility = "visible";
-    el.style.opacity = "1";
-    el.style.width = "96px";
-    el.style.height = "auto";
-    el.style.aspectRatio = "433 / 577";
-    el.style.pointerEvents = "auto";
-    el.style.touchAction = "none";
-    el.style.cursor = "grab";
-    el.style.userSelect = "none";
-    el.style.webkitUserDrag = "none";
-    el.style.filter = "drop-shadow(0 8px 14px rgba(0,0,0,0.45))";
-    document.body.appendChild(el);
+    var el = null;
+    if (window.VMCloudRig && typeof window.VMCloudRig.mountRoot === "function") {
+      el = window.VMCloudRig.mountRoot(); // creates #vmCloudCharacter (fallback + rig)
+    }
+    if (!el) {
+      el = document.createElement("img");
+      el.id = "vmCloudCharacter";
+      el.className = "vmcloud-character";
+      el.src = "/static/cloud.png";
+      el.alt = "Cloud";
+      el.draggable = false;
+      // Explicit inline geometry so no shell/workspace CSS can rebox or stretch
+      // it: always the small complete character, pinned bottom-right in view.
+      el.style.position = "fixed";
+      el.style.right = "18px";
+      el.style.bottom = "calc(18px + env(safe-area-inset-bottom))";
+      el.style.zIndex = "8000";
+      el.style.display = "block";
+      el.style.visibility = "visible";
+      el.style.opacity = "1";
+      el.style.width = "96px";
+      el.style.height = "auto";
+      el.style.aspectRatio = "433 / 577";
+      el.style.pointerEvents = "auto";
+      el.style.touchAction = "none";
+      el.style.cursor = "grab";
+      el.style.userSelect = "none";
+      el.style.webkitUserDrag = "none";
+      el.style.filter = "drop-shadow(0 8px 14px rgba(0,0,0,0.45))";
+      document.body.appendChild(el);
+    }
     makeDraggable(el);
     window.removeEventListener("resize", onWinSizeForCompanion);
     window.addEventListener("resize", onWinSizeForCompanion);
@@ -1270,6 +1286,9 @@
       ".vmcloud-status-ok{color:#3ddc84;}" +
       "#vmCloudCompanion{position:fixed;right:18px;bottom:18px;z-index:8000;font-family:'Inter',sans-serif;isolation:isolate;}" +
       "#vmCloudCharacter{position:fixed;right:18px;bottom:calc(18px + env(safe-area-inset-bottom,0px));z-index:8000;display:block;visibility:visible;opacity:1;width:96px;height:auto;aspect-ratio:433/577;pointer-events:auto;touch-action:none;cursor:grab;user-select:none;-webkit-user-drag:none;filter:drop-shadow(0 8px 14px rgba(0,0,0,0.45));}" +
+      ".vmcloud-character .vmcloud-fallback,.vmcloud-character.vmcloud-fallback{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;pointer-events:none;user-select:none;-webkit-user-drag:none;}" +
+      ".vmcloud-rig-mount{position:absolute;inset:0;pointer-events:none;overflow:visible;}" +
+      ".vmcloud-rig-mount svg{display:block;width:100%;height:100%;}" +
       ".vmcloud-companion-panel{width:310px;max-width:calc(100vw - 24px);max-height:min(72vh,640px);display:flex;flex-direction:column;gap:10px;background:rgba(7,13,24,0.94);border:1px solid rgba(0,212,255,0.22);border-radius:18px;padding:14px;box-shadow:0 18px 50px rgba(0,0,0,0.55),0 0 0 1px rgba(0,212,255,0.05);backdrop-filter:blur(10px);}" +
       ".vmcloud-comp-head{display:flex;align-items:center;justify-content:space-between;gap:8px;touch-action:none;user-select:none;}" +
       ".vmcloud-comp-id{display:flex;align-items:center;gap:10px;min-width:0;}" +

@@ -87,6 +87,7 @@
 <script src="/static/cloud3d.js?v=1"></script>
 <script src="/static/cloud_voice.js?v=1"></script>
 <script src="/static/cloud_vision.js?v=1"></script>
+<script src="/static/cloud_rig.js?v=1"></script>
 <script src="/static/cloud_anim.js?v=1"></script>
 <script id="tailwind-config">
   tailwind.config = {
@@ -2080,17 +2081,26 @@
 <body class="text-on-background font-body-md overflow-hidden">
 
 <!-- Minimal authenticated Cloud character (visual isolation test).
-     Rendered directly from /static/cloud.png, independent of the Cloud
-     lifecycle engine so the browser always shows the exact character. -->
-<img id="vmCloudCharacter"
-     src="/static/cloud.png"
-     alt="Cloud"
-     draggable="false">
+     A faithful layered vector rig (static/cloud_rig.js) is mounted into the
+     .vmcloud-rig-mount overlay so Cloud's eyes, brows, mouth, arms and legs
+     can genuinely move independently, while the flattened static/cloud.png
+     remains as the static fallback <img>. Rendered directly, independent of
+     the Cloud lifecycle engine, so the browser always shows the character. -->
+<div id="vmCloudCharacter"
+     role="button"
+     aria-label="Cloud companion">
+  <img class="vmcloud-fallback"
+       src="/static/cloud.png"
+       alt="Cloud"
+       draggable="false">
+  <div class="vmcloud-rig-mount"></div>
+</div>
 <style>
 #vmCloudCharacter {
     position: fixed !important;
     width: 96px !important;
     height: auto !important;
+    aspect-ratio: 433 / 577 !important;
     right: 18px !important;
     bottom: calc(18px + env(safe-area-inset-bottom)) !important;
     display: block !important;
@@ -2099,7 +2109,25 @@
     z-index: 99999 !important;
     pointer-events: auto !important;
     touch-action: none !important;
+    cursor: grab !important;
+    user-select: none !important;
+    -webkit-user-drag: none !important;
+    filter: drop-shadow(0 8px 14px rgba(0,0,0,0.45)) !important;
 }
+.vmcloud-fallback {
+    position: absolute !important; inset: 0;
+    width: 100% !important; height: 100% !important;
+    object-fit: contain !important;
+    pointer-events: none !important;
+    user-select: none !important;
+    -webkit-user-drag: none !important;
+}
+.vmcloud-rig-mount {
+    position: absolute !important; inset: 0;
+    pointer-events: none !important;
+    overflow: visible !important;
+}
+.vmcloud-rig-mount svg { display: block; width: 100%; height: 100%; }
 </style>
 <script>
 (function () {
@@ -2118,8 +2146,9 @@
         el.style.setProperty("opacity", "0", "important");
     };
 
-    // Direct pointer dragging on the character (positioned via left/top once
-    // the user grabs it; no dependency on any Cloud lifecycle code).
+    // Direct pointer dragging on the character container (positioned via
+    // left/top once the user grabs it; the rig overlay stays pointer-transparent
+    // so the whole character is draggable without any Cloud lifecycle code).
     var drag = null;
     el.addEventListener("pointerdown", function (e) {
         var r = el.getBoundingClientRect();
