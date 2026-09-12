@@ -14,7 +14,7 @@
 
   var CACHE_BUST = "?v=2";
   var MAX_FILE_MB = 100;
-  var STAGES = ["planned","broll","sticker","slow-motion","music","done"];
+  var STAGES = ["analysis","planned","broll","sticker","slow-motion","camera","transitions","sfx","music","done"];
   var POSITIONS = [
     {v:"tl",l:"Top left"},{v:"tr",l:"Top right"},
     {v:"center",l:"Center"},{v:"bl",l:"Bottom left"},{v:"br",l:"Bottom right"}
@@ -48,8 +48,8 @@
       timeline: null, stats: null, duration: 0,
       openSection: "ai-edit",
       stickerLibrary: [], recentStickers: [], uploadedStickers: [],
-      manual: {
-        canvas: {aspect:"9:16",mode:"fill",bg:"000000"},
+manual: {
+        canvas: {aspect:"9:16",mode:"fill",bg:"000000",reframe:"smart"},
         trim: {start:0, end:null}, speed: 1.0, rotate: 0,
         flipH: false, flipV: false, reverse: false,
         crop: {left:0,right:0,top:0,bottom:0}, resize: 1.0,
@@ -61,6 +61,8 @@
         stickerScale: 0.28, stickerAngle: 0, stickerDuration: 3,
         stickerPos: "br", stickerAnim: "",
         slowmoFactor: 0, autoCut: true,
+        intensity: "medium", transitionsMode: "auto",
+        camera: true, sfx: true,
       _aiInstruction: "", timelineZoom: 1,
         textLayers: []
       }
@@ -306,8 +308,9 @@
   }
 
   /* ── AI Edit Section ────────────────────────────────────────────────── */
-  function renderAIEditSection() {
+function renderAIEditSection() {
     var m = ME.editor.manual;
+    var iv = m.intensity || "medium";
     return '<div class="me-sb-label-sm">What do you want AI to do?</div>' +
       '<textarea id="meSbAIInput" class="me-sb-textarea" placeholder="Tell AI how you want this video edited..." style="min-height:100px">' + E(ME.editor._aiInstruction || '') + '</textarea>' +
       '<div class="me-sb-row" style="margin-top:10px">' +
@@ -315,6 +318,17 @@
       '  <button class="me-sb-btn primary" onclick="VMEditing.applyAIEdit()">Apply AI Edit</button>' +
       '</div>' +
       '<div id="meSbAIRecBox" style="display:none"></div>' +
+      '<div class="me-sb-label-sm" style="margin-top:12px">Editing Intensity</div>' +
+      '<div class="me-sb-chips">' +
+      '  <span class="me-sb-chip'+(iv==="low"?' active':'')+'" onclick="VMEditing.setManual(\'intensity\',\'low\')">Low</span>' +
+      '  <span class="me-sb-chip'+(iv==="medium"?' active':'')+'" onclick="VMEditing.setManual(\'intensity\',\'medium\')">Medium</span>' +
+      '  <span class="me-sb-chip'+(iv==="high"?' active':'')+'" onclick="VMEditing.setManual(\'intensity\',\'high\')">High</span>' +
+      '</div>' +
+      '<p style="color:#64748b;font-size:11px;margin:6px 0 0;line-height:1.4">Low = clean/minimal, Medium = modern social edit, High = energetic viral-style edit.</p>' +
+      '<div class="me-sb-row" style="margin-top:10px">' +
+      '  <label class="me-sb-toggle"><input type="checkbox" '+(m.camera!==false?'checked':'')+' onchange="VMEditing.setManual(\'camera\',this.checked)"><span>Camera effects</span></label>' +
+      '  <label class="me-sb-toggle"><input type="checkbox" '+(m.sfx!==false?'checked':'')+' onchange="VMEditing.setManual(\'sfx\',this.checked)"><span>Sound effects</span></label>' +
+      '</div>' +
       '<div class="me-sb-label-sm" style="margin-top:12px">Upload Media</div>' +
       '<div class="me-sb-upload-zone" onclick="$(\'meSbMediaInput\').click()">' +
       '  <div class="me-sb-uz-text">'+icon("upload")+' Upload video, image, or audio</div>' +
@@ -593,13 +607,17 @@
     renderTimelineTracks(dur, tlMeta);
   }
 
-  function renderTimelineTracks(dur, meta) {
+function renderTimelineTracks(dur, meta) {
     var tracks = $("meTlTracks"); if (!tracks) return;
     var tracks_def = [
       {id:"video",label:"Video",color:"#00d4ff",blocks: meta ? meta.video : [{start:0,end:dur}]},
       {id:"captions",label:"Captions",color:"#10b981",blocks: meta ? meta.captions : []},
       {id:"stickers",label:"Stickers",color:"#f59e0b",blocks: meta ? meta.stickers : []},
-      {id:"broll",label:"B-Roll",color:"#a855f7",blocks: meta ? meta.broll : []},
+      {id:"camera",label:"Camera",color:"#f97316",blocks: meta ? meta.camera : []},
+      {id:"transitions",label:"Transitions",color:"#eab308",blocks: meta ? meta.transitions : []},
+      {id:"sfx",label:"SFX",color:"#ec4899",blocks: meta ? meta.sfx : []},
+      {id:"emphasis",label:"Text",color:"#a855f7",blocks: meta ? meta.emphasis : []},
+      {id:"broll",label:"B-Roll",color:"#8b5cf6",blocks: meta ? meta.broll : []},
       {id:"slowmo",label:"Slow-mo",color:"#ef4444",blocks: meta ? meta.slow_motion : []},
       {id:"music",label:"Music",color:"#3b82f6",blocks: meta ? meta.music : []}
     ];
@@ -609,9 +627,20 @@
         '<div class="me-tl-track-label">'+tr.label+'</div>' +
         '<div class="me-tl-track-content">';
       (tr.blocks||[]).forEach(function(b) {
-        var left = ((b.start||0)/dur*100).toFixed(2);
-        var width = (((b.end||b.start||0)-(b.start||0))/dur*100).toFixed(2);
-        html += '<div class="me-tl-block '+tr.id+'" style="left:'+left+'%;width:'+Math.max(0.5,width)+'%" title="'+fmtTime(b.start)+' - '+fmtTime(b.end)+'"></div>';
+        var left, width, title;
+        if (b.start != null && b.end != null) {
+          left = ((b.start||0)/dur*100).toFixed(2);
+          width = (((b.end||b.start||0)-(b.start||0))/dur*100).toFixed(2);
+          title = fmtTime(b.start)+" - "+fmtTime(b.end);
+        } else {
+          var at = (b.at||0), w = Math.max(0.3, 0.2);
+          left = (at/dur*100).toFixed(2);
+          width = (w/dur*100).toFixed(2);
+          title = fmtTime(at);
+        }
+        var effect = b.effect || b.kind || "";
+        if (effect) title += " ("+effect+")";
+        html += '<div class="me-tl-block '+tr.id+'" style="left:'+left+'%;width:'+Math.max(0.5,width)+'%" title="'+E(title)+'"></div>';
       });
       html += '</div></div>';
     });
@@ -772,16 +801,36 @@
     renderSidebarSection("ai-edit");
   }
 
-  function smartReframe() {
-    ME.editor.manual.canvas.aspect = "9:16";
-    ME.editor.manual.canvas.mode = "fill";
-    setManual("canvas", ME.editor.manual.canvas);
+function smartReframe() {
+    var m = ME.editor.manual;
+    m.canvas.aspect = "9:16";
+    m.canvas.mode = "fill";
+    m.canvas.reframe = "smart";
+    m.camera = true;
     renderSidebarSection("canvas");
-    showToast("Smart reframe set to 9:16 vertical fill.");
+    refineManualOnly("Auto-reframed to 9:16 with subject-tracking (re-rendering).");
   }
 
   function aiSuggestTransitions() {
-    showToast("AI will suggest transitions based on the edit plan when re-rendered.");
+    var m = ME.editor.manual;
+    m.transitionsMode = "auto";
+    m.camera = true;
+    renderSidebarSection("transitions");
+    refineManualOnly("AI transitions enabled at the best change points (re-rendering).");
+  }
+
+  function refineManualOnly(toastMsg) {
+    if (!ME.editor.jobId) { showToast("Edit a clip first, then re-render."); return; }
+    pushUndo();
+    var body = { job_id: ME.editor.jobId, manual: buildManualPayload(), instruction: "", keep_plan: true };
+    var cb = function(r){return r.json();};
+    var done = function(d){ handleRefineResult(d, ""); };
+    if (typeof apiFetch === "function") {
+      apiFetch("/api/editing/refine",{method:"POST",body:JSON.stringify(body)}).then(cb).then(done);
+      return;
+    }
+    postJSON("/api/editing/refine",{method:"POST", headers:{}, timeoutMs: 60000, body: JSON.stringify(body)})
+      .then(cb).then(function(d){ done(d); if (toastMsg) showToast(toastMsg); });
   }
 
   /* ── Undo / Redo ────────────────────────────────────────────────────── */
@@ -845,10 +894,11 @@
 
   function P(unused){}
 
-  function buildManualPayload() {
+function buildManualPayload() {
     var m = ME.editor.manual;
     return {
-      canvas: m.canvas || {aspect:"9:16",mode:"fill",bg:"000000"},
+      canvas: {aspect: m.canvas.aspect||"9:16", mode: m.canvas.mode||"fill",
+               bg: m.canvas.bg||"000000", reframe: m.canvas.reframe||"smart"},
       trim: {start: m.trim.start||0, end: m.trim.end||0},
       speed: m.speed||1,
       rotate: m.rotate||0,
@@ -864,7 +914,9 @@
         scale: m.stickerScale||0.28, angle: m.stickerAngle||0,
         duration: m.stickerDuration||3, pos: m.stickerPos||"br", anim: m.stickerAnim||""
       },
-      slowmo_factor: m.slowmoFactor||0, auto_cut: m.autoCut!==false
+      slowmo_factor: m.slowmoFactor||0, auto_cut: m.autoCut!==false,
+      intensity: m.intensity||"medium", transitions: m.transitionsMode||"auto",
+      camera: !!m.camera, sfx: !!m.sfx
     };
   }
 
@@ -1173,10 +1225,11 @@
           return;
         }
         if(ME.timer){window.clearInterval(ME.timer);ME.timer=null;}
-        if(job.status==="done"&&job.final_video){
+if(job.status==="done"&&job.final_video){
           ME.editor.jobId=job.job_id;
           ME.editor.resultVideo=job.final_video;
           ME.editor.stats=job.stats||{};
+          ME.editor.timeline=job.edit_timeline||null;
           enterEditor();
         } else {
           ME.jobFailMsg=job.error||"Editing didn't finish -- try another clip.";
@@ -1211,10 +1264,11 @@
           return;
         }
         if(ME.timer){window.clearInterval(ME.timer);ME.timer=null;}
-        if(job.status==="done"&&job.final_video){
+if(job.status==="done"&&job.final_video){
           ME.editor.resultVideo=job.final_video;
           ME.editor.stats=job.stats||{};
           ME.editor.jobId=job.job_id;
+          ME.editor.timeline=job.edit_timeline||null;
           enterEditor();
           showToast("Updated video is ready.");
         } else {
@@ -1241,9 +1295,10 @@
 
   function goToInput(){ME.mode="intro";renderBody();updateGo();}
 
-  function stageLabel(stage){
-    var map={planned:"Planning your edit...",broll:"Adding B-roll...",sticker:"Applying the sticker...",
-      "slow-motion":"Applying slow motion...",music:"Mixing in the music...",done:"Wrapping up..."};
+function stageLabel(stage){
+    var map={analysis:"Analyzing your video...",planned:"Planning your edit...",broll:"Adding B-roll...",sticker:"Applying the sticker...",
+      "slow-motion":"Applying slow motion...",camera:"Applying camera effects...",transitions:"Adding transitions...",sfx:"Adding sound effects...",
+      music:"Mixing in the music...",done:"Wrapping up..."};
     return map[stage]||(stage?"Editing...":"Planning your edit...");
   }
 

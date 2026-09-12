@@ -160,7 +160,7 @@ def _chunks(kept_words: list, n: int):
     hard cut (segment boundary)."""
     line: list = []
     for w in kept_words:
-        if line and (w["seg"] != line[-1]["seg"] or len(line) >= n):
+        if line and (w.get("seg") != line[-1].get("seg") or len(line) >= n):
             yield line
             line = []
         line.append(w)
@@ -174,7 +174,8 @@ _CAPTION_ALIGN = {"lower": 2, "center": 5, "upper": 8}
 def build_ass(kept_words: list, *, fontname: str = "Arial", play_w: int = 720,
               play_h: int = 1280, words_per_line: int = 3, uppercase: bool = True,
               title_text: str = "", title_seconds: float = 3.0,
-              caption_scale: float = 1.0, caption_align: str = "lower") -> str:
+              caption_scale: float = 1.0, caption_align: str = "lower",
+              emphasis: list | None = None) -> str:
     """Build an ASS subtitle track with word-by-word karaoke highlight — the
     Hormozi/Gadzhi look: big, bold, centered in the lower-third; each word turns
     from base white to the highlight colour as it's spoken (``\\kf`` karaoke).
@@ -187,6 +188,9 @@ def build_ass(kept_words: list, *, fontname: str = "Arial", play_w: int = 720,
                            first ``title_seconds`` (a separate top-aligned style).
       ``caption_align``  — lower | center | upper (bottom / middle / top band).
       ``caption_scale``  — relative caption font size (0.7x–1.6x).
+      ``emphasis``       — contextual text beats [{"at", "text"}] rendered as a
+                           big centered "exclamation" event on the beat it hits
+                           (e.g. "NO WAY", "CLUTCH").
     """
     fontsize = max(24, int(play_h * 0.075))
     try:
@@ -224,7 +228,10 @@ def build_ass(kept_words: list, *, fontname: str = "Arial", play_w: int = 720,
         f"-1,0,0,0,100,100,0,0,1,{outline},{shadow},{align},40,40,{margin_v},1\n"
         f"Style: Title,{fontname},{max(20, int(play_h * 0.085))},&H0000FFFF,&H00FFFFFF,"
         f"&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,{max(2, outline)},{shadow},"
-        f"8,40,40,{int(play_h * 0.06)},1\n\n"
+        f"8,40,40,{int(play_h * 0.06)},1\n"
+        f"Style: PopBig,{fontname},{max(28, int(play_h * 0.115))},&H0000FFFF,&H00FFFFFF,"
+        f"&H00000000,&H80000000,-1,0,0,0,100,100,6,0,1,{max(3, int(play_h * 0.013))},"
+        f"{max(1, int(play_h * 0.005))},5,40,40,{int(play_h * 0.42)},1\n\n"
         "[Events]\n"
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
     )
@@ -246,6 +253,15 @@ def build_ass(kept_words: list, *, fontname: str = "Arial", play_w: int = 720,
             txt = w["text"].upper() if uppercase else w["text"]
             parts.append(f"{{\\kf{dur_cs}}}{_ass_escape(txt)}")
         lines.append(f"Dialogue: 0,{_ass_time(start)},{_ass_time(end)},Pop,,0,0,0,,{' '.join(parts)}")
+    for em in emphasis or []:
+        try:
+            e_at = max(0.0, float(em.get("at", 0.0) or 0.0))
+        except (TypeError, ValueError):
+            continue
+        e_txt = _ass_escape(str(em.get("text") or "")).upper()
+        if e_txt:
+            lines.append(f"Dialogue: 0,{_ass_time(e_at)},{_ass_time(e_at + 1.4)},"
+                         f"PopBig,,0,0,0,,{e_txt}")
     return header + "\n".join(lines) + "\n"
 
 
@@ -269,12 +285,12 @@ _FAMILY = {
 
 
 def output_size() -> tuple[int, int]:
-    raw = os.getenv("EDIT_OUTPUT", "720x1280").lower()
+    raw = os.getenv("EDIT_OUTPUT", "1080x1920").lower()
     try:
         w, h = raw.split("x")
         return int(w), int(h)
     except (ValueError, AttributeError):
-        return 720, 1280
+        return 1080, 1920
 
 
 def font_file_and_family() -> tuple[str, str]:
@@ -338,13 +354,14 @@ def _color_token(bg: str) -> str:
 def render_edit(src_path: str, plan: dict, ass_text: str, brolls: list, out_path: str,
                 *, fps: int = 30, on_progress=None, timeout: int = 900,
                 width: int | None = None, height: int | None = None,
-                fit: bool = False, bg: str = "#000000") -> tuple[bool, str]:
+                fit: bool = False, bg: str = "#000000", focus: float = 0.5) -> tuple[bool, str]:
     """Two-pass render:
-      1. trim to keep-segments (select/aselect + compacting setpts) + center-crop
-         to the canvas (``width`` × ``height``, default vertical 720×1280). When
-         ``fit`` is set the source is letterboxed onto the canvas instead of
-         center-cropped (the ``bg`` colour fills the bars) — a real "Smart
-         reframe" vs "Fit" canvas choice, not a placeholder.
+      1. trim to keep-segments (select/aselect + compacting setpts) + smart crop
+         to the canvas (``width`` × ``height``, default vertical 1080×1920).
+         ``focus`` (0..1, default 0.5) shifts the crop horizontally toward the
+         on-screen subject — the "smart" 9:16 reframe (pass 0.5 for a centred
+         crop). When ``fit`` is set the source is letterboxed onto the canvas
+         instead of being cropped (the ``bg`` colour fills the bars).
       2. overlay B-roll stills during their windows + burn the ASS captions.
     Returns (ok, error). Never raises.
     """
@@ -381,8 +398,10 @@ def render_edit(src_path: str, plan: dict, ass_text: str, brolls: list, out_path
                   f"scale={w}:{h}:force_original_aspect_ratio=decrease,"
                   f"pad={w}:{h}:(ow-iw)/2:(oh-ih)/2:color={_color_token(bg)},setsar=1")
         else:
+            fx = max(0.0, min(1.0, float(focus or 0.5)))
             vf = (f"select='{sel}',setpts=N/FRAME_RATE/TB,"
-                  f"crop='min(iw,ih*{ar})':'min(ih,iw/{ar})',scale={w}:{h},setsar=1")
+                  f"crop='min(iw,ih*{ar})':'min(ih,iw/{ar})':x='(iw-ow)*{fx}':y='(ih-oh)/2',"
+                  f"scale={w}:{h},setsar=1")
         af = f"aselect='{sel}',asetpts=N/SR/TB"
         edited = os.path.join(work, "edited.mp4")
         cmd1 = [exe, "-y", "-i", src_path, "-vf", vf, "-af", af, "-r", str(fps),
@@ -692,12 +711,23 @@ def run_sticker_apply(user_id: str, source: str, sticker_url: str, *,
 # sticker windows / captions / music), then the render chain executes it below.
 
 _DEFAULT_PLAN_STEPS = [
-    "Transcribe the clip",
+    "Understand the clip (scenes, mood, moments)",
     "Trim silences and filler words",
     "Add animated captions",
     "Add B-roll shots",
     "Render the vertical short",
 ]
+
+_INTENSITIES = ("low", "medium", "high")
+_INTENSITY_CAPS = {
+    "low": {"stickers": 1, "camera": 1, "transitions": 0, "sfx": 0, "emphasis": 1},
+    "medium": {"stickers": 3, "camera": 2, "transitions": 2, "sfx": 2, "emphasis": 3},
+    "high": {"stickers": 6, "camera": 4, "transitions": 4, "sfx": 4, "emphasis": 5},
+}
+_STICKER_ANIMS = {"pop", "bounce", "scale", "slide", "shake", "rotate", "fade"}
+_CAM_EFFECTS = {"punch_in", "shake", "freeze", "speed_ramp"}
+_TRANSITION_TYPES = {"cut", "zoom", "flash", "fade"}
+_SFX_TYPES = {"whoosh", "boom", "pop", "ding", "applause", "laugh"}
 
 
 def _plan_steps(status: str = "planned") -> list:
@@ -706,26 +736,47 @@ def _plan_steps(status: str = "planned") -> list:
 
 def build_instruction_plan(*, instruction: str = "", voice_transcript: str = "",
                            words: list, keep: list, media_assets: list | None = None,
-                           sticker: dict | None = None) -> dict:
-    """Translate the user's instruction into a concrete editing plan.
+                           sticker: dict | None = None,
+                           analysis: dict | None = None) -> dict:
+    """Translate the user's instruction plus the clip's CONTENT ANALYSIS into a
+    concrete editing plan.
 
     Returns a dict the render chain understands::
       {
         "steps":      [{"step": str, "status": str}, ...],     # for the UI
         "captions":   bool,
         "music":      bool,                                      # use uploaded audio
+        "intensity":  "low" | "medium" | "high",
+        "reframe":    "smart" | "center",
         "broll":      {"use_uploads": [index...], "windows": [{"at": sec}]},
         "slow_motion":{"start": float|None, "end": float|None, "factor": float},
-        "sticker_windows": [{"at": sec, "duration": float, "position": str, "fade": float}],
+        "moments":    [{"at", "kind", "reason"}...],            # why these beats matter
+        "sticker_windows": [{"at", "duration", "position", "fade", "anim", "reason"}],
+        "sticker_captions": [{"at", "text", "reason"}...],      # contextual text ("NO WAY")
+        "camera_windows":   [{"start", "end", "effect", "reason"}...],
+        "transitions":      [{"at", "type", "duration", "reason"}...],
+        "sfx":              [{"at", "type", "reason"}...],
       }
     All timestamps are in ORIGINAL timeline seconds (they are mapped onto the
-    trimmed output timeline downstream). Never raises — falls back to the
+    trimmed output timeline downstream). ``analysis`` is the content pass from
+    core.edit_analysis — its high-energy moments anchor effect placement when an
+    instruction gives no explicit timestamp. Never raises — falls back to the
     default plan on any failure so an instruction can never break an edit.
     """
     from core.brain import _call_llm_cluster
 
     lines = _cue_lines(words, keep)
     brief = "\n".join(p for p in (instruction, voice_transcript) if str(p).strip())
+
+    analysis_note = ""
+    if isinstance(analysis, dict):
+        try:
+            from core.edit_analysis import analysis_brief
+            analysis_note = analysis_brief(analysis, words)
+        except Exception as exc:
+            print(f"[EDIT] analysis brief failed: {exc}")
+    if analysis_note:
+        analysis_note = "CLIP ANALYSIS:\n" + analysis_note + "\n"
 
     media_note = ""
     images_note = "none"
@@ -747,16 +798,40 @@ def build_instruction_plan(*, instruction: str = "", voice_transcript: str = "",
 
     system = (
         "You are the editing brain of 'Massive Editing'. You read a user's editing "
-        "instruction plus a timestamped transcript of the source footage, and you return "
-        "the concrete edit plan as JSON ONLY. Do not describe — return machine-readable JSON.\n"
+        "instruction plus a timestamped transcript and the clip's content analysis "
+        "(context, high-energy moments, held frames), and you return the concrete edit "
+        "plan as JSON ONLY. Do not describe — return machine-readable JSON.\n"
+        "\nCore principle: understand first, edit appropriately. Every sticker, zoom, "
+        "shake, freeze and transition must land on a real reason (a joke lands, a reveal, "
+        "a loud peak, a reaction). Do NOT pile effects everywhere — use them sparingly and "
+        "with intent. Fewer, motivated effects beat ten random ones.\n"
         "\nRules:\n"
         "- Timestamps in 'at', 'start', 'end' MUST be copied (as a number) from the transcript "
-        "lines given. Never invent seconds that are not on a line.\n"
+        "lines OR the CLIP ANALYSIS high-energy moments. Never invent seconds that are on neither.\n"
+        "- Choose 'intensity' from the user's tone: subtle/polish/low-key → 'low'; normal → "
+        "'medium'; hype/energetic/viral → 'high'. Default 'medium'.\n"
         "- If the user names a sticker (e.g. 'the fire sticker', 'the crown sticker'), or a "
         "sticker is selected, set sticker_use=true and put a sticker window at the moment it "
-        "should appear (goal celebration, beginning for ~3s, etc.). Choose the position the "
-        "user implied; default 'br'. Set 'fade' to 0.5 when the user says pop in / entrance / "
-        "animate. If no natural moment exists, place it at the first transcript time for ~3s.\n"
+        "should appear (goal celebration, punchline, beginning for ~3s, etc.). Choose the position "
+        "the user implied; default 'br'. Set 'fade' to 0.5 when the user says pop in / entrance / "
+        "animate, and give each window an 'anim' (pop/bounce/scale/slide/shake/rotate/fade) that "
+        "matches the energy at that moment. If no natural moment exists, place it at the first "
+        "transcript/analysis time for ~3s.\n"
+        "- camera_windows: punch_in (zoom onto the subject for emphasis), shake (impact moment), "
+        "freeze (hold a key frame — works well at highs and reveals), speed_ramp (accelerate into "
+        "a moment). Short windows (0.5-1.5s), synced to the action;\n Note 'freeze' best at analysis "
+        "'held frames' or just before a big reveal.\n"
+        "- transitions: choose NONE, or at most a few at significant beats (a new section starting, "
+        "a reaction hitting). Cut = no effect (the default between cuts). zoom = quick punch-in at "
+        "the join; flash = white flash overlay; fade = quick crossfade. Never put a transition between "
+        "every cut.\n"
+        "- sticker_captions: a punchy CONTEXTUAL text overlay (e.g. \"NO WAY\", \"CLUTCH\") placed at "
+        "exactly the beat where it fits (reaction, goal, joke) — 1-3 words, screaming energy. Only "
+        "when the moment genuinely calls for it.\n"
+        "- sfx: use uploaded audio assets as sound effects at moments (whoosh/boom/pop/ding/applause/"
+        "laugh) ONLY when a beat calls for one.\n"
+        "- reframe: 'smart' keeps the subject in frame; 'center' is the plain center crop. Prefer "
+        "'smart' when the analysis names an off-center subject.\n"
         "- If the user wants slow motion (e.g. 'slow motion to the goal'), set slow_motion with "
         "a start/end copy from nearby transcript lines.\n"
         "- If the user uploaded images and says to use them (as B-roll/insets), list their "
@@ -766,16 +841,23 @@ def build_instruction_plan(*, instruction: str = "", voice_transcript: str = "",
         "- captions default true; false only when the user says no captions/text.\n"
         "- steps: 3-8 short, human-readable operations that become the visible edit plan.\n"
         "\nRespond with ONLY this shape:\n"
-        '{"steps":["..."],"captions":true,"music":false,'
+        '{"steps":["..."],"captions":true,"music":false,"intensity":"medium",'
+        '"reframe":"smart","moments":[{"at":12.3,"kind":"goal","reason":"winning goal"}],'
         '"broll":{"use_uploads":[0],"windows":[{"at":12.3}]},'
         '"slow_motion":{"start":null,"end":null,"factor":2.0},'
-        '"sticker_use":true,"sticker_windows":[{"at":12.3,"duration":3.0,"position":"tr","fade":0.0}],'
+        '"sticker_use":true,"sticker_windows":[{"at":12.3,"duration":3.0,"position":"tr",'
+        '"fade":0.5,"anim":"pop","reason":"celebration"}],'
+        '"sticker_captions":[{"at":12.3,"text":"CLUTCH","reason":"winner"}],'
+        '"camera_windows":[{"start":12.0,"end":13.2,"effect":"punch_in","reason":"focus the goal"}],'
+        '"transitions":[{"at":11.5,"type":"zoom","duration":0.4,"reason":"new section"}],'
+        '"sfx":[{"at":12.3,"type":"boom","reason":"impact"}],'
         '"note":"optional"}\n'
-        'Use null start/end for slow_motion when not applying it, and an empty list for '
-        'sticker_windows / broll.windows / broll.use_uploads when not used.'
+        "Use null start/end for slow_motion when not applying it, and empty lists for "
+        "everything not used."
     )
     user = (
         ("USER INSTRUCTION:\n" + brief + "\n\n") if brief else ""
+        + (analysis_note or "")
         + (f"TRANSCRIPT (original-time lines):\n" + "\n".join(lines[:60]) + "\n\n" if lines
            else "TRANSCRIPT: (empty)\n\n")
         + f"UPLOADED MEDIA: {media_note or 'none'}\n"
@@ -803,26 +885,42 @@ def build_instruction_plan(*, instruction: str = "", voice_transcript: str = "",
     if not isinstance(steps, list) or not steps or not all(str(s).strip() for s in steps):
         steps = list(_DEFAULT_PLAN_STEPS)
 
-    sw = []
     max_t = float(keep[-1][1]) if isinstance(keep, list) and keep else 0.0
+
+    def _clamp_time(v, lo=0.0, hi=None):
+        return max(lo, min(float(v), max_t if hi is None else hi))
+
+    intensity = str((data.get("intensity") if isinstance(data, dict) else "") or "").lower()
+    if intensity not in _INTENSITIES:
+        intensity = "medium"
+    caps = _INTENSITY_CAPS[intensity]
+
+    sw = []
     for w in (data.get("sticker_windows") if isinstance(data, dict) else []) or []:
         at = _fnum(w.get("at"))
         if at is None:
             continue
-        at = max(0.0, min(at, max_t))
+        at = _clamp_time(at)
+        anim = str(w.get("anim") or "fade").lower()
+        if anim not in _STICKER_ANIMS:
+            anim = "fade" if intensity == "low" else "pop"
         sw.append({
             "at": at,
             "duration": max(1.0, float(_fnum(w.get("duration"), 3.0) or 3.0)),
             "position": str(w.get("position") or "br") if str(w.get("position") or "br").lower()
                         in ("br", "bl", "tr", "tl", "center") else "br",
             "fade": max(0.0, float(_fnum(w.get("fade"), 0.0) or 0.0)),
+            "anim": anim,
+            "reason": str(w.get("reason") or "")[:120],
         })
     # Selection as an authoritative signal: a selected sticker is used even when
     # the LLM omits windows (fallback: first transcript moment, ~3s).
     if sticker and sticker.get("url") and not sw:
         first_at = _fnum((words[0].get("start") if words else None), 0.0) if words else 0.0
-        sw = [{"at": max(0.0, min(first_at, max_t)), "duration": 3.0,
-               "position": str(sticker.get("position") or "br"), "fade": 0.5}]
+        sw = [{"at": _clamp_time(first_at), "duration": 3.0,
+               "position": str(sticker.get("position") or "br"), "fade": 0.5,
+               "anim": "pop", "reason": ""}]
+    sw = sw[:max(1, caps["stickers"])]
 
     sm = data.get("slow_motion") if isinstance(data, dict) else {}
     slow = {
@@ -832,9 +930,9 @@ def build_instruction_plan(*, instruction: str = "", voice_transcript: str = "",
         if isinstance(sm, dict) else 2.0,
     }
     if slow["start"] is not None:
-        slow["start"] = max(0.0, min(slow["start"], max_t))
+        slow["start"] = _clamp_time(slow["start"])
     if slow["end"] is not None:
-        slow["end"] = max(slow["start"] or 0.0, min(slow["end"], max_t))
+        slow["end"] = max(slow["start"] or 0.0, _clamp_time(slow["end"]))
     if slow["start"] is None or slow["end"] is None or slow["end"] - (slow["start"] or 0.0) < 0.4:
         slow = {"start": None, "end": None, "factor": 2.0}
 
@@ -846,34 +944,153 @@ def build_instruction_plan(*, instruction: str = "", voice_transcript: str = "",
         if isinstance(bw.get("windows"), list):
             pass  # windows are original-time; keep line times via cues below
 
+    def _dedupe_times(items, min_gap=1.0, key="at"):
+        items.sort(key=lambda x: x[key])
+        out = []
+        for it in items:
+            if not out or abs(it[key] - out[-1][key]) >= min_gap:
+                out.append(it)
+        return out
+
+    moments = []
+    for m in (data.get("moments") if isinstance(data, dict) else []) or []:
+        if not isinstance(m, dict):
+            continue
+        at = _fnum(m.get("at"))
+        if at is None:
+            continue
+        moments.append({"at": _clamp_time(at), "kind": str(m.get("kind") or "peak")[:30],
+                        "reason": str(m.get("reason") or "")[:120]})
+    moments = _dedupe_times(moments)[:9]
+
+    cam_w = []
+    for cw in (data.get("camera_windows") if isinstance(data, dict) else []) or []:
+        if not isinstance(cw, dict):
+            continue
+        s, e = _fnum(cw.get("start")), _fnum(cw.get("end"))
+        if s is None or e is None:
+            continue
+        s = _clamp_time(s)
+        e = max(s + 0.2, _clamp_time(e))
+        if e - s < 0.25:
+            continue
+        effect = str(cw.get("effect") or "punch_in").lower()
+        if effect not in _CAM_EFFECTS:
+            effect = "punch_in"
+        cam_w.append({"start": s, "end": e, "effect": effect,
+                      "reason": str(cw.get("reason") or "")[:120]})
+    cam_w.sort(key=lambda c: c["start"])
+    final_cam = []
+    for c in cam_w:
+        if not final_cam or c["start"] >= final_cam[-1]["end"] - 0.05:
+            final_cam.append(c)
+    cam_w = final_cam[:caps["camera"]]
+
+    transitions = []
+    for tr_ in (data.get("transitions") if isinstance(data, dict) else []) or []:
+        if not isinstance(tr_, dict):
+            continue
+        at = _fnum(tr_.get("at"))
+        if at is None:
+            continue
+        at = _clamp_time(at)
+        if at < 0.15 or at > max_t - 0.2:
+            continue
+        typ = str(tr_.get("type") or "cut").lower()
+        if typ not in _TRANSITION_TYPES:
+            typ = "cut"
+        dur = max(0.1, min(1.0, float(_fnum(tr_.get("duration"), 0.4) or 0.4)))
+        transitions.append({"at": at, "type": typ, "duration": dur,
+                            "reason": str(tr_.get("reason") or "")[:120]})
+    transitions = [t for t in transitions if t["type"] != "cut"]
+    transitions = _dedupe_times(transitions)[:max(0, caps["transitions"])]
+
+    sfx = []
+    for s_ in (data.get("sfx") if isinstance(data, dict) else []) or []:
+        if not isinstance(s_, dict):
+            continue
+        at = _fnum(s_.get("at"))
+        if at is None:
+            continue
+        typ = str(s_.get("type") or "pop").lower()
+        if typ not in _SFX_TYPES:
+            typ = "pop"
+        sfx.append({"at": _clamp_time(at), "type": typ,
+                    "reason": str(s_.get("reason") or "")[:120]})
+    sfx = _dedupe_times(sfx)[:max(0, caps["sfx"])]
+
+    emphasis = []
+    for em in (data.get("sticker_captions") if isinstance(data, dict) else []) or []:
+        if not isinstance(em, dict):
+            continue
+        at = _fnum(em.get("at"))
+        txt = str(em.get("text") or "").strip()
+        if at is None or not txt:
+            continue
+        emphasis.append({"at": _clamp_time(at), "text": txt[:24],
+                         "reason": str(em.get("reason") or "")[:120]})
+    emphasis = _dedupe_times(emphasis)[:max(0, caps["emphasis"])]
+
+    reframe = str((data.get("reframe") if isinstance(data, dict) else "") or "").lower()
+    if reframe not in ("smart", "center"):
+        subj = (analysis or {}).get("subject_focus")
+        try:
+            off = abs(float(subj or 0.5) - 0.5)
+        except (TypeError, ValueError):
+            off = 0.0
+        reframe = "smart" if off >= 0.1 else "center"
+    if intensity == "low":
+        reframe = "center"
+
     plan = {
         "steps": [{"step": str(s).strip(), "status": "planned"} for s in steps],
         "captions": bool(data.get("captions", True)),
         "music": bool(data.get("music", False)),
+        "intensity": intensity,
+        "reframe": reframe,
+        "moments": moments,
         "broll": {"use_uploads": use_uploads},
         "slow_motion": {
             "start": slow["start"], "end": slow["end"], "factor": slow["factor"],
         },
         "sticker_windows": sw,
+        "sticker_captions": emphasis,
+        "camera_windows": cam_w,
+        "transitions": transitions,
+        "sfx": sfx,
     }
     return plan
 
 
 def map_plan_to_output(plan: dict, keep: list) -> dict:
     """Map original-time window markers in a plan onto the trimmed OUTPUT
-    timeline using the edit plan's keep segments."""
+    timeline using the edit plan's keep segments (slow-mo windows, camera
+    windows, transitions, SFX, contextual text, moments)."""
     out = dict(plan)
+    total_out = float(plan.get("total_out") or 0.0)
     sm = dict(plan.get("slow_motion") or {})
     if sm.get("start") is not None and sm.get("end") is not None:
         s = map_to_output(float(sm["start"]), keep)
         e = map_to_output(float(sm["end"]), keep)
         if e - s < 0.4:
-            e = min(s + 2.0, plan.get("total_out") or s + 2.0)
+            e = min(s + 2.0, total_out or s + 2.0)
         sm["start"] = round(s, 3)
         sm["end"] = round(e, 3)
     out["slow_motion"] = sm
-    if plan.get("total_out") is not None:
-        out["total_out"] = plan["total_out"] or 0.0
+
+    def _map_win(items):
+        return [dict(it, start=round(map_to_output(float(it["start"]), keep), 3),
+                     end=round(map_to_output(float(it["end"]), keep), 3))
+                if "start" in it and "end" in it else
+                dict(it, at=round(map_to_output(float(it.get("at", 0.0)), keep), 3))
+                for it in items]
+
+    out["camera_windows"] = _map_win(plan.get("camera_windows") or [])
+    out["transitions"] = _map_win(plan.get("transitions") or [])
+    out["sfx"] = _map_win(plan.get("sfx") or [])
+    out["sticker_captions"] = _map_win(plan.get("sticker_captions") or [])
+    out["moments"] = _map_win(plan.get("moments") or [])
+    out["total_out"] = total_out
     return out
 
 
@@ -886,27 +1103,28 @@ def apply_slowmo(src_path: str, out_path: str, *, start: float, end: float,
     exe = ffmpeg_exe()
     if not exe:
         return False, "ffmpeg not available"
+    from core.video_assembly import probe_params
+    fps = float((probe_params(src_path) or {}).get("fps") or 30.0) or 30.0
     S = max(0.0, float(start))
     E = max(S + 0.1, float(end))
     F = max(1.1, min(4.0, float(factor)))
-    ext = (E - S) * (F - 1.0)
-    new_end = E + ext
     vf = (
         f"[0:v]split=3[v0][v1][v2];"
-        f"[v0]trim=start=0:end={S},setpts=PTS[p0];"
-        f"[v1]trim=start={S}:end={E},setpts=PTS-START/TB,setpts=PTS*{F},setpts=PTS+{S}/TB[p1];"
-        f"[v2]trim=start={E},setpts=PTS-START/TB,setpts=PTS+{new_end}/TB[p2];"
+        f"[v0]trim=start=0:end={S},setpts=N/FRAME_RATE/TB[p0];"
+        f"[v1]trim=start={S}:end={E},setpts=N/FRAME_RATE/TB,setpts=PTS*{F}[p1];"
+        f"[v2]trim=start={E},setpts=N/FRAME_RATE/TB[p2];"
         f"[p0][p1][p2]concat=n=3:v=1:a=0[vout]"
     )
     af = (
         f"[0:a]asplit=3[a0][a1][a2];"
-        f"[a0]atrim=start=0:end={S},asetpts=PTS[a0o];"
-        f"[a1]atrim=start={S}:end={E},asetpts=PTS-START/TB,atempo={1.0 / F},asetpts=PTS+{S}/TB[a1o];"
-        f"[a2]atrim=start={E},asetpts=PTS-START/TB,asetpts=PTS+{new_end}/TB[a2o];"
+        f"[a0]atrim=start=0:end={S},asetpts=N/SR/TB[a0o];"
+        f"[a1]atrim=start={S}:end={E},asetpts=N/SR/TB,atempo={1.0 / F}[a1o];"
+        f"[a2]atrim=start={E},asetpts=N/SR/TB[a2o];"
         f"[a0o][a1o][a2o]concat=n=3:v=0:a=1,aresample=44100[aout]"
     )
     cmd = [exe, "-y", "-i", src_path, "-filter_complex", vf + ";" + af,
            "-map", "[vout]", "-map", "[aout]",
+           "-r", str(fps),
            "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
            "-c:a", "aac", "-ar", "44100", "-movflags", "+faststart", out_path]
     return _run_cwd(cmd, timeout)
@@ -914,11 +1132,13 @@ def apply_slowmo(src_path: str, out_path: str, *, start: float, end: float,
 
 def apply_music(video_path: str, music_path: str, out_path: str, *,
                 volume: float = 0.3, fade_in: float = 0.0, fade_out: float = 0.0,
-                timeout: int = 900) -> tuple[bool, str]:
+                duck: bool = False, timeout: int = 900) -> tuple[bool, str]:
     """Mix an uploaded music/SFX track under the video's own audio, trimmed to
     the video length. Real audio mix (amix), no placeholder. ``volume`` is the
     mix gain; ``fade_in``/``fade_out`` (seconds) apply afade envelopes on the
-    mixed bus so the backing track enters/exits cleanly."""
+    mixed bus so the backing track enters/exits cleanly. With ``duck`` the music
+    is sidechain-compressed under the video's own dialogue so speech stays
+    intelligible (music swell under the talk, big when it stops)."""
     from core.video_assembly import ffmpeg_exe, _probe_duration
     exe = ffmpeg_exe()
     if not exe:
@@ -942,17 +1162,345 @@ def apply_music(video_path: str, music_path: str, out_path: str, *,
             dur = 0.0
         if dur and dur - fo > 0.1:
             posts.append(f"afade=t=out:st={max(0.0, dur - fo):.3f}:d={fo}")
-    fc = (
-        f"[1:a]volume={vol},aresample=44100[m];"
-        f"[0:a][m]amix=inputs=2:duration=first:dropout_transition=2:normalize=0,"
-        f"alimiter=limit=0.97" + (",".join(posts) if posts else "") + "[aout]"
-    )
+    if duck:
+        fc = (
+            f"[1:a]volume={vol},aresample=44100[m];"
+            f"[0:a]asplit=2[vd][vc];"
+            f"[m][vc]sidechaincompress=threshold=0.005:ratio=5:attack=10:release=280:makeup=1[mduck];"
+            f"[vd][mduck]amix=inputs=2:duration=first:dropout_transition=2:normalize=0,"
+            f"alimiter=limit=0.97" + (",".join(posts) if posts else "") + "[aout]"
+        )
+    else:
+        fc = (
+            f"[1:a]volume={vol},aresample=44100[m];"
+            f"[0:a][m]amix=inputs=2:duration=first:dropout_transition=2:normalize=0,"
+            f"alimiter=limit=0.97" + (",".join(posts) if posts else "") + "[aout]"
+        )
     cmd = [exe, "-y", "-i", video_path, "-i", music_path,
            "-filter_complex", fc,
            "-map", "0:v", "-map", "[aout]",
            "-c:v", "copy", "-c:a", "aac", "-ar", "44100",
            "-movflags", "+faststart", out_path]
     return _run_cwd(cmd, timeout)
+
+
+# ── Dynamic camera effects + contextual transitions ─────────────────────────
+
+_CAM_ZOOM = 0.15
+
+
+def _window_pass(src_path: str, out_path: str, *, start: float, end: float,
+                 vmid: str = "", amid: str = "", new_end: float | None = None,
+                 width: int | None = None, height: int | None = None,
+                 timeout: int = 900) -> tuple[bool, str]:
+    """Apply a filter ONLY inside [start, end) using the trim/pre-post concat
+    shape. Every branch is rebased to start at 0 (frame/sample-indexed setpts)
+    so the ``concat`` filter aligns them exactly. ``vmid``/``amid`` own their
+    mid-chain and must end with their own rebase (see _punch_vmid); a
+    duration-modifying effect (freeze tpad, speed-ramp) changes the window span
+    and concat re-times the rest of the clip automatically. ``new_end`` is
+    accepted for backwards compatibility and ignored. Never raises."""
+    from core.video_assembly import ffmpeg_exe, probe_params
+    exe = ffmpeg_exe()
+    if not exe:
+        return False, "ffmpeg not available"
+    S = max(0.0, float(start))
+    E = max(S + 0.1, float(end))
+    p = probe_params(src_path)
+    w = int(width) if width else int(p.get("width", 720))
+    h = int(height) if height else int(p.get("height", 1280))
+    fps = float(p.get("fps") or 30.0) or 30.0
+    has_audio = bool(p.get("has_audio", True))
+    vf = (
+        f"[0:v]split=3[v0][v1][v2];"
+        f"[v0]trim=start=0:end={S},setpts=N/FRAME_RATE/TB[p0];"
+        f"[v1]trim=start={S}:end={E},"
+        + (vmid if vmid else "setpts=N/FRAME_RATE/TB")
+        + f"[p1];"
+        f"[v2]trim=start={E},setpts=N/FRAME_RATE/TB[p2];"
+        f"[p0][p1][p2]concat=n=3:v=1:a=0[vout]"
+    )
+    parts = [vf]
+    amap: tuple = ()
+    if has_audio:
+        af = (
+            f"[0:a]asplit=3[a0][a1][a2];"
+            f"[a0]atrim=start=0:end={S},asetpts=N/SR/TB[a0o];"
+            f"[a1]atrim=start={S}:end={E},"
+            + (amid if amid else "asetpts=N/SR/TB")
+            + f"[a1o];"
+            f"[a2]atrim=start={E},asetpts=N/SR/TB[a2o];"
+            f"[a0o][a1o][a2o]concat=n=3:v=0:a=1,aresample=44100[aout]"
+        )
+        parts.append(af)
+        amap = ("-map", "[aout]")
+    cmd = [exe, "-y", "-i", src_path, "-filter_complex", ";".join(parts),
+           "-map", "[vout]"] + list(amap) + [
+           "-r", str(fps),
+           "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
+           "-c:a", "aac", "-ar", "44100", "-movflags", "+faststart", out_path]
+    return _run_cwd(cmd, timeout)
+
+
+def _punch_vmid(width, height, fps=30):
+    z = _CAM_ZOOM
+    n = max(8, int(round(0.45 * max(1, fps))))
+    return (f"zoompan=z='if(lte(in,0),1,min(1+{z}*(in/{n}),1+{z}))':"
+            f"d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
+            f"s={width}x{height}:fps={fps},setpts=N/FRAME_RATE/TB")
+
+
+def _shake_vmid(width, height, fps=30):
+    return (f"zoompan=z=1.06:d=1:"
+            f"x='iw/2-(iw/zoom/2)+iw*0.02*sin(in*{6.28 * max(1, fps) / 1.2})':"
+            f"y='ih/2-(ih/zoom/2)+ih*0.012*cos(in*{6.28 * max(1, fps) / 1.4})':"
+            f"s={width}x{height}:fps={fps},setpts=N/FRAME_RATE/TB")
+
+
+def apply_camera_effects(src_path: str, out_path: str, windows: list, *,
+                         width: int | None = None, height: int | None = None,
+                         timeout: int = 900) -> tuple[bool, str, float]:
+    """Apply plan camera windows (punch_in/shake/freeze/speed_ramp) as chained
+    window passes. Returns (ok, error, duration_delta) — the delta keeps later
+    windows on the correct OUTPUT timeline as freezes/ramps shift duration."""
+    from core.video_assembly import ffmpeg_exe, probe_params
+    exe = ffmpeg_exe()
+    if not exe:
+        return False, "ffmpeg not available", 0.0
+    p = probe_params(src_path)
+    w = int(width) if width else int(p.get("width", 720))
+    h = int(height) if height else int(p.get("height", 1280))
+    try:
+        fps = max(1.0, float(p.get("fps") or 0.0)) or 30.0
+    except (TypeError, ValueError):
+        fps = 30.0
+    cur = src_path
+    total = 0.0
+    import tempfile, os as _os, shutil as _shutil
+    tmpdir = tempfile.mkdtemp(prefix="cameff_")
+    try:
+        windows = [x for x in (windows or []) if isinstance(x, dict)]
+        for i, win in enumerate(windows):
+            s = float(win.get("start", 0.0)) + total
+            e = float(win.get("end", s + 0.5)) + total
+            eff = str(win.get("effect") or "punch_in")
+            nxt = out_path if i == len(windows) - 1 else _os.path.join(tmpdir, f"cam_{i}.mp4")
+            new_end = None
+            vmid, amid = "", ""
+            if eff == "punch_in":
+                vmid = _punch_vmid(w, h, fps)
+            elif eff == "shake":
+                vmid = _shake_vmid(w, h, fps)
+            elif eff == "freeze":
+                hold = 0.45
+                vmid = (f"tpad=start_mode=clone:start_duration={hold},"
+                        f"setpts=N/FRAME_RATE/TB")
+                new_end = e + hold
+                total += hold
+            elif eff == "speed_ramp":
+                f = 1.35
+                vmid = f"setpts=N/FRAME_RATE/TB,setpts=PTS/{f}"
+                amid = "asetpts=N/SR/TB,atempo=" + str(f)
+                new_end = s + (e - s) / f
+                total += new_end - e
+            else:
+                continue
+            ok, err = _window_pass(cur, nxt, start=s, end=e, vmid=vmid,
+                                   amid=amid, new_end=new_end, width=w, height=h,
+                                   timeout=timeout)
+            if not ok or not _os.path.exists(nxt):
+                return False, err or f"camera effect {eff} failed", total
+            cur = nxt
+        if cur != out_path and _os.path.abspath(cur) != _os.path.abspath(out_path):
+            _shutil.copy2(cur, out_path)
+        return True, "", total
+    finally:
+        _shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def apply_flash(src_path: str, out_path: str, *, at: float, duration: float = 0.12,
+                color: str = "white", width: int | None = None,
+                height: int | None = None, timeout: int = 900) -> tuple[bool, str]:
+    """A short full-frame colour pulse (white flash / fade-through) at ``at`` —
+    a real contextual transition, not a filter over the whole clip."""
+    from core.video_assembly import ffmpeg_exe, probe_params
+    exe = ffmpeg_exe()
+    if not exe:
+        return False, "ffmpeg not available"
+    p = probe_params(src_path)
+    w = int(width) if width else int(p.get("width", 720))
+    h = int(height) if height else int(p.get("height", 1280))
+    a = max(0.0, float(at))
+    d = max(0.05, min(1.0, float(duration)))
+    fc = f"[0:v][1:v]overlay=0:0:enable='between(t,{a},{a + d})'[v]"
+    cmd = [exe, "-y", "-i", src_path,
+           "-f", "lavfi", "-t", "1", "-i", f"color=c={color}:s={w}x{h}:r=30",
+           "-filter_complex", fc, "-map", "[v]", "-map", "0:a?",
+           "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
+           "-c:a", "aac", "-ar", "44100", "-movflags", "+faststart", out_path]
+    return _run_cwd(cmd, timeout)
+
+
+def apply_transitions(src_path: str, out_path: str, transitions: list, *,
+                      width: int | None = None, height: int | None = None,
+                      timeout: int = 900) -> tuple[bool, str]:
+    """Apply contextual transition markers (cut/zoom/flash/fade) at OUTPUT
+    times. Cut and zoom share the punch-in window shape; flash/fade are white
+    pulses. Chained so each marker lands on the evolving timeline."""
+    import tempfile, os as _os, shutil as _shutil
+    from core.video_assembly import ffmpeg_exe, probe_params
+    exe = ffmpeg_exe()
+    if not exe:
+        return False, "ffmpeg not available"
+    p = probe_params(src_path)
+    w = int(width) if width else int(p.get("width", 720))
+    h = int(height) if height else int(p.get("height", 1280))
+    try:
+        fps = max(1.0, float(p.get("fps") or 0.0)) or 30.0
+    except (TypeError, ValueError):
+        fps = 30.0
+    cur = src_path
+    transitions = [t for t in (transitions or []) if isinstance(t, dict)
+                   and str(t.get("type", "cut")) != "cut"]
+    if not transitions:
+        return True, ""
+    tmpdir = tempfile.mkdtemp(prefix="edit_trans_")
+    try:
+        for i, t in enumerate(transitions):
+            at = max(0.15, float(t.get("at", 0.0)))
+            typ = str(t.get("type") or "flash")
+            dur = max(0.1, min(1.0, float(t.get("duration", 0.4) or 0.4)))
+            nxt = out_path if i == len(transitions) - 1 else _os.path.join(tmpdir, f"tr_{i}.mp4")
+            ok, err = True, ""
+            if typ == "zoom":
+                ok, err = _window_pass(cur, nxt, start=max(0.0, at - 0.25),
+                                       end=at + 0.25,
+                                       vmid=_punch_vmid(w, h, fps),
+                                       width=w, height=h, timeout=timeout)
+            else:
+                ok, err = apply_flash(cur, nxt, at=at, duration=dur,
+                                      color="white", width=w, height=h, timeout=timeout)
+            if not ok or not _os.path.exists(nxt):
+                return False, err or f"transition {typ} failed"
+            cur = nxt
+        if cur != out_path and _os.path.abspath(cur) != _os.path.abspath(out_path):
+            _shutil.copy2(cur, out_path)
+        return True, ""
+    finally:
+        _shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def polish_audio(src_path: str, out_path: str, *, normalize: bool = True,
+                 noise_reduce: bool = True, timeout: int = 900) -> tuple[bool, str]:
+    """A gentle dialogue-safe audio polish pass: loudnorm to -14 LUFS and a soft
+    afftdn noise floor. Applied AFTER music/SFX so the polished, ducked mix is
+    the final heard audio. Best-effort — returns (True, src) when skipped."""
+    from core.video_assembly import ffmpeg_exe, probe_params
+    exe = ffmpeg_exe()
+    if not exe:
+        return True, ""
+    if not bool(probe_params(src_path).get("has_audio", False)):
+        return True, ""
+    posts = []
+    if normalize:
+        posts.append("loudnorm=I=-14:TP=-1.5:LRA=11")
+    if noise_reduce:
+        posts.append("afftdn=nf=-22")
+    cmd = [exe, "-y", "-i", src_path,
+           "-filter_complex",
+           ",".join(posts) + "[aout]", "-map", "0:v", "-map", "[aout]",
+           "-c:v", "copy", "-c:a", "aac", "-ar", "44100",
+           "-movflags", "+faststart", out_path]
+    ok, err = _run_cwd(cmd, timeout)
+    if not ok or not os.path.exists(out_path):
+        return True, src_path
+    return True, out_path
+
+
+def _pick_sfx(assets: list, kind: str) -> str | None:
+    """Best-effort match of an sfx cue to an uploaded audio asset (by name
+    keyword, else the first audio). Returns a local path or None."""
+    from core.media_manager import fetch_media_bytes
+    import tempfile
+    audios = [a for a in (assets or [])
+              if str(a.get("type", "")).lower() == "audio" and a.get("url")]
+    if not audios:
+        return None
+    import re as _re
+    pat = _re.compile(re.escape(kind), _re.IGNORECASE)
+    pick = next((a for a in audios if pat.search(str(a.get("name", "")))), audios[0])
+    rec_url = str(pick.get("url", ""))
+    if os.path.exists(rec_url):
+        return rec_url
+    tmp = os.path.join(tempfile.mkdtemp(prefix="sfx_"), "sfx.bin")
+    try:
+        data = fetch_media_bytes(rec_url)
+        if not data:
+            return None
+        with open(tmp, "wb") as f:
+            f.write(data)
+        return tmp
+    except Exception:
+        return None
+
+
+def apply_sfx(src_path: str, out_path: str, cues: list, assets: list, *,
+              timeout: int = 900) -> tuple[bool, str]:
+    """Mix short SFX bursts (user's uploaded audio assets) at planned output
+    moments, under the original audio. Real mix, best-effort per cue."""
+    from core.video_assembly import ffmpeg_exe
+    exe = ffmpeg_exe()
+    if not exe:
+        return False, "ffmpeg not available"
+    cues = [c for c in (cues or []) if isinstance(c, dict)]
+    if not cues:
+        return True, ""
+    import shutil as _shutil
+    import tempfile as _tmp
+    work = _tmp.mkdtemp(prefix="edit_sfx_")
+    inputs = ["-i", src_path]
+    parts = []
+    used = []
+    idx_map = {}
+    try:
+        for ck, cue in enumerate(cues):
+            at = max(0.0, float(cue.get("at", 0.0)))
+            kind = str(cue.get("type") or "pop")
+            path = _pick_sfx([a for a in assets if str(a.get("url", "")) not in used], kind)
+            if not path:
+                continue
+            if str(path) not in used:
+                flat = os.path.join(work, f"sfx_{ck}.m4a")
+                ok, err = _run_cwd([exe, "-y", "-i", path, "-ac", "1",
+                                    "-ar", "44100", flat], 120)
+                if not ok or not os.path.exists(flat):
+                    continue
+                inputs += ["-i", flat]
+                n_in = len(inputs) // 2 - 1
+                idx_map[str(path)] = n_in
+                used.append(str(path))
+            idx = idx_map.get(str(path), 0)
+            n = len(parts)
+            dur = min(1.6, max(0.3, float(cue.get("duration", 1.0) or 1.0)))
+            parts.append(
+                f"[{idx}:a]atrim=start=0:end={dur},asetpts=PTS-STARTPTS,"
+                f"adelay={int(at * 1000)}|{int(at * 1000)},volume=0.9[fx{n}];"
+            )
+        if not used:
+            return True, ""
+        labels = ["[0:a]"] + [f"[fx{i}]" for i in range(len(parts))]
+        fc = "".join(parts) + "".join(labels) + \
+            f"amix=inputs={len(parts) + 1}:duration=first:dropout_transition=2:normalize=0,alimiter=limit=0.97[aout]"
+        cmd = [exe, "-y", *inputs, "-filter_complex", fc,
+               "-map", "0:v", "-map", "[aout]",
+               "-c:v", "copy", "-c:a", "aac", "-ar", "44100",
+               "-movflags", "+faststart", out_path]
+        ok, err = _run_cwd(cmd, timeout)
+        if not ok or not os.path.exists(out_path):
+            return False, err or "sfx mix failed"
+        return True, ""
+    finally:
+        _shutil.rmtree(work, ignore_errors=True)
 
 
 # ── Manual overrides (professional sidebar) ────────────────────────────────
@@ -964,7 +1512,7 @@ def apply_music(video_path: str, music_path: str, out_path: str, *,
 # duration/position). No placeholder controls: every key lands in an ffmpeg
 # filter or the plan it overrides.
 
-_CANVAS_PRESETS = {"9:16": (720, 1280), "16:9": (1280, 720), "1:1": (720, 720)}
+_CANVAS_PRESETS = {"9:16": (1080, 1920), "16:9": (1920, 1080), "1:1": (1080, 1080)}
 _EFFECT_NAMES = {"fade_in", "fade_out", "bw", "vignette", "blur", "boost",
                  "sepia", "saturated", "reverse"}
 _POSITIONS = ("br", "bl", "tr", "tl", "center")
@@ -1089,9 +1637,9 @@ def _normalize_manual(raw) -> dict:
         pos = str(st.get("pos") or "")
         if pos in _POSITIONS:
             s["pos"] = pos
-        anim = str(st.get("anim") or "")
-        if anim == "pop":
-            s["anim"] = "pop"
+        anim = str(st.get("anim") or "").lower()
+        if anim in _STICKER_ANIMS:
+            s["anim"] = anim
         if "scale" in raw or s["scale"] != 0.28 or s["angle"] or "duration" in s or "pos" in s or "anim" in s:
             # Only keep sticker overrides when the user actually changed something.
             provided = dict(st)
@@ -1105,6 +1653,20 @@ def _normalize_manual(raw) -> dict:
 
     if raw.get("auto_cut") in (True, False):
         out["auto_cut"] = bool(raw.get("auto_cut"))
+
+    iv = str(raw.get("intensity") or "").strip().lower()
+    if iv in _INTENSITIES:
+        out["intensity"] = iv
+    canv = raw.get("canvas")
+    if isinstance(canv, dict) and str(canv.get("reframe")) in ("smart", "center"):
+        out["reframe"] = str(canv["reframe"])
+    tm = str(raw.get("transitions") or "").strip().lower()
+    if tm in ("auto", "none", "off"):
+        out["transitions_mode"] = "off" if tm in ("none", "off") else "auto"
+    if isinstance(raw.get("camera"), bool):
+        out["camera"] = bool(raw.get("camera"))
+    if isinstance(raw.get("sfx"), bool):
+        out["sfx"] = bool(raw.get("sfx"))
     return out
 
 
@@ -1267,11 +1829,26 @@ def resolve_canvas(manual: dict) -> tuple[int, int, bool, str]:
     return w, h, fit, bg
 
 
+def _analysis_notice(analysis: dict) -> str:
+    """One-line human summary of the content analysis shown in the UI stage bar."""
+    vis = (analysis or {}).get("vision") or {}
+    ctx = str(vis.get("context") or "").strip()
+    if ctx:
+        return f"Analysis: {ctx}"
+    moments = (analysis or {}).get("moments") or []
+    scenes = (analysis or {}).get("scenes") or []
+    if moments or scenes:
+        return f"Analysis: {len(scenes)} scenes, {len(moments)} high-energy moments"
+    return "Analysis: content scanned"
+
+
 def build_timeline_meta(*, plan, kept_words, brolls, sticker_windows, slow_motion,
-                        music, total_out) -> dict:
+                        music, total_out, camera_windows=None,
+                        transitions=None, sfx=None, emphasis=None) -> dict:
     """Output-time placement map the frontend draws on its layered timeline:
-    Video (kept segments), Captions (word-block spans), Stickers, B-roll, Slow-mo,
-    Music. Everything is the SAME data the renderer used — the timeline is not
+    Video (kept segments), Captions (word-block spans), Stickers, B-roll,
+    Slow-mo, Camera effects, Transitions, SFX, Contextual text, Music.
+    Everything is the SAME data the renderer used — the timeline is not
     decorative."""
     def blocks(items, start_key="start", end_key="end"):
         out = []
@@ -1295,6 +1872,15 @@ def build_timeline_meta(*, plan, kept_words, brolls, sticker_windows, slow_motio
         sw_blocks.append({"start": round(sw["out_start"], 2),
                           "end": round(sw["out_end"], 2),
                           "position": sw.get("position") or "br"})
+    at_markers = (lambda items, kind: [
+        {"at": round(float(it.get("at", 0.0)), 2), "kind": str(kind)}
+        for it in (items or [])
+    ])
+    cam_blocks = []
+    for cw in camera_windows or []:
+        a = float(cw.get("start", 0.0)); b = float(cw.get("end", a + 0.5))
+        cam_blocks.append({"start": round(a, 2), "end": round(b, 2),
+                           "effect": str(cw.get("effect") or "punch_in")})
     return {
         "duration": round(float(total_out or 0.0), 2),
         "video": video_blocks,
@@ -1304,6 +1890,10 @@ def build_timeline_meta(*, plan, kept_words, brolls, sticker_windows, slow_motio
         "slow_motion": [{"start": round(sw["start"], 2), "end": round(sw["end"], 2)}
                         for sw in [slow_motion] if sw.get("start") is not None
                         and sw.get("end") is not None],
+        "camera": cam_blocks,
+        "transitions": at_markers(transitions, "transition"),
+        "sfx": at_markers(sfx, "sfx"),
+        "emphasis": at_markers(emphasis, "text"),
         "music": [{"start": 0.0, "end": round(float(total_out or 0.0), 2)}] if music else [],
     }
 
@@ -1392,6 +1982,24 @@ def run_autoedit(user_id: str, source: str, *, on_progress=None, test_mode: bool
         if not plan["keep"] or plan["total_out"] < 1.0:
             return {"error": "nothing usable to keep after trimming"}
 
+        # 4b. Understand the clip (scenes, mood, moments, subject focus) BEFORE
+        # writing the brief, so the plan is content-aware — energy curves, freezes,
+        # quiet pockets and (when vision is available) Qwen3-VL's read on what's
+        # happening. Never blocks the edit: heuristics always return something.
+        try:
+            from core import edit_analysis as ea
+            analysis = ea.analyze_clip(work_src, work, use_vision=True, on_progress=beat)
+            beat()
+        except Exception as _ae:
+            print(f"[EDIT] analysis skipped: {_ae}")
+            analysis = {}
+        if on_plan and analysis:
+            try:
+                on_plan({"stage": "analysis",
+                         "message": _analysis_notice(analysis)})
+            except Exception:
+                pass
+
         # 5. Translate the user's instruction into an editing brief (LLM) — or,
         # when ``keep_plan`` replays the previous AI plan verbatim so manual
         # sidebar refinements never scramble the AI's placement decisions. The
@@ -1405,12 +2013,19 @@ def run_autoedit(user_id: str, source: str, *, on_progress=None, test_mode: bool
                          "music": bool(prev_plan.get("music", False)),
                          "broll": dict(prev_plan.get("broll") or {}),
                          "slow_motion": dict(prev_plan.get("slow_motion") or {}),
-                         "sticker_windows": list(prev_plan.get("sticker_windows") or [])}
+                         "sticker_windows": list(prev_plan.get("sticker_windows") or []),
+                         "intensity": str(prev_plan.get("intensity") or "medium"),
+                         "reframe": str(prev_plan.get("reframe") or "smart"),
+                         "moments": list(prev_plan.get("moments") or []),
+                         "camera_windows": list(prev_plan.get("camera_windows") or []),
+                         "transitions": list(prev_plan.get("transitions") or []),
+                         "sfx": list(prev_plan.get("sfx") or []),
+                         "sticker_captions": list(prev_plan.get("sticker_captions") or [])}
         elif have_brief:
             user_plan = build_instruction_plan(
                 instruction=instruction, voice_transcript=voice_transcript,
                 words=words, keep=plan["keep"], media_assets=media_assets,
-                sticker=sticker)
+                sticker=sticker, analysis=analysis)
         else:
             user_plan = {
                 "steps": [{"step": s, "status": "planned"} for s in _DEFAULT_PLAN_STEPS],
@@ -1419,8 +2034,12 @@ def run_autoedit(user_id: str, source: str, *, on_progress=None, test_mode: bool
                 "broll": {"use_uploads": []},
                 "slow_motion": {"start": None, "end": None, "factor": 2.0},
                 "sticker_windows": [],
+                "intensity": "medium", "reframe": "smart",
+                "moments": [], "camera_windows": [], "transitions": [],
+                "sfx": [], "sticker_captions": [],
             }
         user_plan["total_out"] = plan["total_out"] or 0.0
+        mapped = map_plan_to_output(user_plan, plan["keep"])
         if on_plan:
             try:
                 on_plan({"plan": user_plan["steps"], "stage": "planned"})
@@ -1467,14 +2086,21 @@ def run_autoedit(user_id: str, source: str, *, on_progress=None, test_mode: bool
         _, family = font_file_and_family()
         w, h, fit, bg = resolve_canvas(manual)
         cap_text = manual.get("captions")
+        reframe = manual.get("reframe") or str(user_plan.get("reframe") or "smart")
+        try:
+            subj_focus = float((analysis or {}).get("subject_focus") or 0.5)
+        except (TypeError, ValueError):
+            subj_focus = 0.5
+        focus = 0.5 if reframe == "center" else max(0.0, min(1.0, subj_focus))
         ass = build_ass(
             plan["kept_words"] if cap_text else [],
             fontname=family, play_w=w, play_h=h,
             title_text=manual.get("title") or "", title_seconds=manual.get("title_seconds"),
-            caption_scale=manual.get("caption_scale"), caption_align=manual.get("caption_align"))
+            caption_scale=manual.get("caption_scale"), caption_align=manual.get("caption_align"),
+            emphasis=mapped.get("sticker_captions"))
         out = os.path.join(work, "final.mp4")
         ok, err = render_edit(work_src, plan, ass, brolls, out, width=w, height=h,
-                              fit=fit, bg=bg, on_progress=on_progress)
+                              fit=fit, bg=bg, focus=focus, on_progress=on_progress)
         if not ok:
             return {"error": err}
         beat()
@@ -1484,6 +2110,8 @@ def run_autoedit(user_id: str, source: str, *, on_progress=None, test_mode: bool
         # applied as overlays. Manual refinements (scale, angle, duration,
         # position, pop-in) override the AI defaults per applied window.
         sticker_applied = 0
+        applied_sticker_windows = []
+        t_off = 0.0
         sticker_src = None
         if sticker and sticker.get("url") and sticker.get("path"):
             sticker_src = sticker["path"]
@@ -1524,6 +2152,12 @@ def run_autoedit(user_id: str, source: str, *, on_progress=None, test_mode: bool
                 if ok2 and os.path.exists(os.path.join(work, f"stickered_{i}.mp4")):
                     cur = os.path.join(work, f"stickered_{i}.mp4")
                     sticker_applied += 1
+                    applied_sticker_windows.append(
+                        {"out_start": round(out_s, 3), "out_end": round(out_e, 3),
+                         "position": pos,
+                         "anim": str(m_anim or sw_.get("anim") or "pop")[:20],
+                         "fade": float(m_anim if str(m_anim).lower() == "pop" else
+                                       sw_.get("fade", 0.0) or 0.0)})
                 if on_plan:
                     try:
                         on_plan({"plan": user_plan["steps"],
@@ -1549,6 +2183,7 @@ def run_autoedit(user_id: str, source: str, *, on_progress=None, test_mode: bool
             if ok3 and os.path.exists(sm_out):
                 out = sm_out
                 slow_applied = True
+                t_off += round((oe_ - os_) * (float(sm.get("factor", 2.0)) - 1.0), 3)
             if on_plan:
                 try:
                     on_plan({"plan": user_plan["steps"], "stage": "slow-motion",
@@ -1558,6 +2193,74 @@ def run_autoedit(user_id: str, source: str, *, on_progress=None, test_mode: bool
                                         "Slow-motion requested but the target window could not be applied."})
                 except Exception:
                     pass
+        beat()
+
+        # 9.5 Real camera moves — punch-in / shake / freeze / speed-ramp windows
+        # from the plan (output time, offset for the slow-motion stretch). Manual
+        # "Camera effects" toggle off disables; concrete windows only.
+        cam_applied = 0
+        if test_mode or manual.get("camera") is False:
+            pass
+        else:
+            cams = list(mapped.get("camera_windows") or [])
+            if cams:
+                okc, erc, cdlt = apply_camera_effects(
+                    out, os.path.join(work, "camera.mp4"), cams)
+                if okc and os.path.exists(os.path.join(work, "camera.mp4")):
+                    out = os.path.join(work, "camera.mp4")
+                    cam_applied = len(cams)
+                    t_off += cdlt or 0.0
+                if on_plan:
+                    try:
+                        on_plan({"plan": user_plan["steps"], "stage": "camera",
+                                 "message": f"Applied {cam_applied} camera move{'s' if cam_applied != 1 else ''}."
+                                            if cam_applied else
+                                            "Camera effects requested but could not be applied."})
+                    except Exception:
+                        pass
+        beat()
+
+        # 9.6 Transitions at the planned kept-segment joins (zoom / white flash).
+        trs_applied = 0
+        if test_mode or manual.get("transitions_mode") == "off":
+            pass
+        else:
+            trs = list(mapped.get("transitions") or [])
+            if trs:
+                okt, ert = apply_transitions(out, os.path.join(work, "trans.mp4"), trs)
+                if okt and os.path.exists(os.path.join(work, "trans.mp4")):
+                    out = os.path.join(work, "trans.mp4")
+                    trs_applied = len(trs)
+                if on_plan:
+                    try:
+                        on_plan({"plan": user_plan["steps"], "stage": "transitions",
+                                 "message": f"Added {trs_applied} transition{'s' if trs_applied != 1 else ''}."
+                                            if trs_applied else
+                                            "Transitions requested but could not be applied."})
+                    except Exception:
+                        pass
+        beat()
+
+        # 9.7 SFX hits on the planned moments (uploaded audio assets, best effort).
+        sfx_applied = 0
+        if test_mode or manual.get("sfx") is False:
+            pass
+        else:
+            cues = list(mapped.get("sfx") or [])
+            if cues:
+                oks, ers = apply_sfx(out, os.path.join(work, "sfx.mp4"),
+                                     cues, assets=media_assets or [])
+                if oks and os.path.exists(os.path.join(work, "sfx.mp4")):
+                    out = os.path.join(work, "sfx.mp4")
+                    sfx_applied = len(cues)
+                if on_plan:
+                    try:
+                        on_plan({"plan": user_plan["steps"], "stage": "sfx",
+                                 "message": f"Added {sfx_applied} sound effect hit{'s' if sfx_applied != 1 else ''}."
+                                            if sfx_applied else
+                                            "SFX requested but could not be applied."})
+                    except Exception:
+                        pass
         beat()
 
         # 10. Music mix: an uploaded audio track / music override — the audio is
@@ -1586,7 +2289,8 @@ def run_autoedit(user_id: str, source: str, *, on_progress=None, test_mode: bool
                         got = True
                 if got:
                     ok4, err4 = apply_music(out, mpath, mf, volume=mvol,
-                                            fade_in=mfade_in, fade_out=mfade_out)
+                                            fade_in=mfade_in, fade_out=mfade_out,
+                                            duck=user_plan.get("intensity") in ("medium", "high"))
                     if ok4 and os.path.exists(mf):
                         out = mf
                         music_applied = True
@@ -1600,12 +2304,40 @@ def run_autoedit(user_id: str, source: str, *, on_progress=None, test_mode: bool
                         pass
         beat()
 
+        # 10.3 Automatic audio polish (levels + denoise) after every mix pass so
+        # the finished edit's audio is loud, clean and consistent.
+        polished = False
+        if not test_mode:
+            okp, erp = polish_audio(out, os.path.join(work, "polished.mp4"))
+            if okp and os.path.exists(os.path.join(work, "polished.mp4")) \
+                    and os.path.abspath(erp) != os.path.abspath(out):
+                out = os.path.join(work, "polished.mp4")
+                polished = True
+        beat()
+
         # 10.5 Manual finish passes: rotate/flip/crop/resize/speed/reverse/
         # effects are re-encoded AFTER the edit so they land on the final video
         # (a real ffmpeg transform chain; no-op if nothing was requested).
-        finished = _finish_passes(exe, out, work, manual)
-        if finished != out:
+        finished = _finish_passes(out, work, manual, w=w, h=h)
+        okf, finished = finished if isinstance(finished, tuple) else (True, finished)
+        if okf and finished != out and os.path.exists(finished):
             os.replace(finished, out)
+        beat()
+
+        # 10.6 Output-time timeline for the frontend editor (VIDEO/CAPTION/
+        # STICKER/B-ROLL/SLOWMO/CAMERA/TRANSITION/SFX/TEXT/MUSIC layers) built
+        # from the exact windows every pass applied — the editor is not decorative.
+        final_dur = round(_probe_duration(exe, out)[1] or plan["total_out"] or 0.0, 2)
+        timeline = build_timeline_meta(
+            plan=plan, kept_words=plan["kept_words"], brolls=brolls,
+            sticker_windows=applied_sticker_windows,
+            slow_motion=user_plan.get("slow_motion") or {},
+            music=bool(user_plan.get("music")),
+            total_out=final_dur,
+            camera_windows=mapped.get("camera_windows"),
+            transitions=mapped.get("transitions"),
+            sfx=mapped.get("sfx"),
+            emphasis=mapped.get("sticker_captions"))
         beat()
 
         # 11. Store (R2 via MediaManager).
@@ -1619,15 +2351,22 @@ def run_autoedit(user_id: str, source: str, *, on_progress=None, test_mode: bool
                 on_plan({"plan": user_plan["steps"], "stage": "done"})
             except Exception:
                 pass
-        return {"video_url": rec["local_path"], "stats": {
+        return {"video_url": rec["local_path"], "timeline": timeline,
+                "plan": mapped, "stats": {
             "source_seconds": round(dur or 0.0, 1),
-            "output_seconds": plan["total_out"],
+            "output_seconds": final_dur,
             "removed_words": plan["removed"],
             "brolls": len(brolls),
             "caption_words": len(plan["kept_words"]),
             "sticker_applied": sticker_applied,
             "slow_motion": slow_applied,
             "music": music_applied,
+            "camera": cam_applied,
+            "transitions": trs_applied,
+            "sfx": sfx_applied,
+            "polished": polished,
+            "intensity": user_plan.get("intensity", "medium"),
+            "reframe": reframe,
             "planned": bool(have_brief),
         }}
     except Exception as exc:

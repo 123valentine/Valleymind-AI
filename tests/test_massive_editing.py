@@ -401,6 +401,107 @@ class PlanEngineTestCase(unittest.TestCase):
         self.assertIsNone(plan["slow_motion"]["start"])
 
     @patch.object(brain_module, "_call_llm_cluster")
+    def test_intensity_high_caps_effect_counts(self, _llm):
+        words = self._words(60)
+        raw = json.dumps({
+            "steps": ["Trim"], "captions": True, "music": False, "intensity": "high",
+            "reframe": "smart",
+            "sticker_windows": [{"at": 1.0 + i, "duration": 3, "position": "br", "fade": 0.5}
+                                for i in range(8)],
+            "sticker_captions": [{"at": 2.0 + i, "text": f"BOOM{i}"} for i in range(8)],
+            "camera_windows": [{"start": 3.0 + i * 2, "end": 4.2 + i * 2, "effect": "punch_in"}
+                               for i in range(8)],
+            "transitions": [{"at": 5.0 + i, "type": "zoom", "duration": 0.4} for i in range(8)],
+            "sfx": [{"at": 6.0 + i, "type": "whoosh"} for i in range(8)],
+        })
+        # 30 line-gap keep allows transitions before max_t - 0.2 (transitions
+        # between 5.0 and 12.0 stay valid; keep ends at 29.5).
+        _llm.return_value = (raw, {"provider": "mock"})
+        plan = ve.build_instruction_plan(
+            instruction="viral short", words=words, keep=[(0.0, 29.5)], media_assets=[])
+        self.assertEqual(plan["intensity"], "high")
+        self.assertEqual(plan["reframe"], "smart")
+        self.assertEqual(len(plan["sticker_windows"]), 6)   # high cap
+        self.assertEqual(len(plan["sticker_captions"]), 5)  # high cap
+        self.assertEqual(len(plan["camera_windows"]), 4)    # high cap
+        self.assertEqual(len(plan["transitions"]), 4)       # high cap
+        self.assertEqual(len(plan["sfx"]), 4)               # high cap
+
+    @patch.object(brain_module, "_call_llm_cluster")
+    def test_intensity_low_caps_and_forces_center_reframe(self, _llm):
+        words = self._words(40)
+        raw = json.dumps({
+            "steps": ["Trim"], "captions": True, "music": False, "intensity": "low",
+            "reframe": "smart",
+            "sticker_windows": [{"at": 1.0 + i, "duration": 3} for i in range(5)],
+            "sticker_captions": [{"at": 2.0 + i, "text": "X"} for i in range(5)],
+            "camera_windows": [{"start": 3.0 + i, "end": 4.0 + i, "effect": "shake"} for i in range(5)],
+            "transitions": [{"at": 5.0 + i, "type": "flash"} for i in range(5)],
+            "sfx": [{"at": 6.0 + i, "type": "pop"} for i in range(5)],
+        })
+        _llm.return_value = (raw, {"provider": "mock"})
+        plan = ve.build_instruction_plan(
+            instruction="clean minimal polish", words=words, keep=[(0.0, 19.5)], media_assets=[])
+        self.assertEqual(plan["intensity"], "low")
+        self.assertEqual(plan["reframe"], "center")          # low forces center
+        self.assertEqual(len(plan["sticker_windows"]), 1)
+        self.assertEqual(len(plan["camera_windows"]), 1)
+        self.assertEqual(len(plan["transitions"]), 0)
+        self.assertEqual(len(plan["sfx"]), 0)
+        self.assertEqual(len(plan["sticker_captions"]), 1)
+
+    @patch.object(brain_module, "_call_llm_cluster")
+    def test_reframe_defaults_from_subject_focus(self, _llm):
+        raw = json.dumps({
+            "steps": ["Trim"], "captions": True, "music": False,
+            "sticker_windows": [], "sticker_captions": [],
+            "camera_windows": [], "transitions": [], "sfx": [],
+        })
+        _llm.return_value = (raw, {"provider": "mock"})
+        # analysis says the subject sits far off-center → smart reframe.
+        plan = ve.build_instruction_plan(
+            instruction="reframe it", words=self._words(),
+            keep=[(0.0, 9.5)], media_assets=[],
+            analysis={"subject_focus": 0.12})
+        self.assertEqual(plan["reframe"], "smart")
+
+    def test_normalize_manual_new_fields(self):
+        m = ve._normalize_manual({
+            "canvas": {"aspect": "9:16", "mode": "fill", "reframe": "center"},
+            "intensity": "high", "transitions": "off", "camera": True, "sfx": False,
+        })
+        self.assertEqual(m["intensity"], "high")
+        self.assertEqual(m["reframe"], "center")
+        self.assertEqual(m["transitions_mode"], "off")
+        self.assertTrue(m["camera"])
+        self.assertFalse(m["sfx"])
+        m2 = ve._normalize_manual({"transitions": "auto", "intensity": "wild"})
+        self.assertEqual(m2.get("transitions_mode"), "auto")
+        self.assertNotIn("intensity", m2)  # unknown intensity dropped
+
+    def test_analysis_notice_uses_vision_context(self):
+        note = ve._analysis_notice({"vision": {"context": "Street football trick"}})
+        self.assertIn("Street football trick", note)
+        note2 = ve._analysis_notice({"moments": [{"at": 1.0}], "scenes": [{"start": 0.0}]})
+        self.assertIn("1 scenes, 1 high-energy moments", note2)
+        self.assertTrue(ve._analysis_notice({}))
+        self.assertTrue(ve._analysis_notice(None))
+
+    def test_build_timeline_meta_includes_new_layers(self):
+        meta = ve.build_timeline_meta(
+            plan={"keep": [(0.0, 4.0)]}, kept_words=[],
+            brolls=[], sticker_windows=[], slow_motion={}, music=False, total_out=4.0,
+            camera_windows=[{"start": 1.0, "end": 1.8, "effect": "punch_in"}],
+            transitions=[{"at": 2.5}], sfx=[{"at": 3.0}],
+            emphasis=[{"at": 0.5, "text": "NO WAY"}])
+        for key in ("video", "captions", "stickers", "broll", "slow_motion",
+                    "camera", "transitions", "sfx", "emphasis", "music"):
+            self.assertIn(key, meta)
+        self.assertEqual(meta["duration"], 4.0)
+        self.assertEqual(meta["camera"][0]["effect"], "punch_in")
+        self.assertTrue(any(b["kind"] == "text" for b in meta["emphasis"]))
+
+    @patch.object(brain_module, "_call_llm_cluster")
     def test_normal_plan_shape(self, _llm):
         raw = json.dumps({
             "steps": ["Trim", "Add captions", "Fire sticker"],

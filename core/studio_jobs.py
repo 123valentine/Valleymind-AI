@@ -670,6 +670,8 @@ def _run_autoedit(job_id: str) -> None:
     if result.get("video_url"):
         job["final_video"] = result["video_url"]
         job["stats"] = result.get("stats")
+        job["edit_timeline"] = result.get("timeline")
+        job["edit_plan_data"] = result.get("plan")
         job["status"] = "done"
         job["error"] = ""
     else:
@@ -765,6 +767,8 @@ def public_view(job: dict) -> dict:
         "assembly_mode": job.get("assembly_mode", "hard_cut"),
         "stats": job.get("stats"),          # Massive Edit: trim/broll/caption counts
         "edit_plan": job.get("edit_plan"),  # Massive Edit: AI Edit Plan checklist
+        "edit_timeline": job.get("edit_timeline"),  # Massive Edit: output-time layers
+        "edit_plan_data": job.get("edit_plan_data"),  # Massive Edit: final plan+pipeline keys
         "edit_plan_stage": job.get("edit_plan_stage", ""),
         "edit_plan_note": job.get("edit_plan_note", ""),
         "instruction": job.get("instruction", ""),
