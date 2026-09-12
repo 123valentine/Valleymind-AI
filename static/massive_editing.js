@@ -1,18 +1,22 @@
-﻿/* ValleyMind — Massive Editing (Professional Sidebar Editor)
+﻿/* ValleyMind — Massive Studio (AI Video Studio)
    -----------------------------------------------------------
-   Studio → Music Studio → Massive Editing. The user uploads footage,
-   types or records a voice instruction, picks a sticker, then hits
-   "Start AI Edit". The AI creates the edit; the professional sidebar
-   then exposes every manual control the backend supports.
+   Studio -> Massive Editing. The user uploads footage, types or
+   records an AI instruction, picks a sticker, then hits
+   "Start AI Edit". The AI creates the edit; the studio then exposes
+   every manual control the backend supports.
 
-   Modes: intro → working → editor
-   Sidebar sections: AI Edit | Edit | Text | Stickers | Effects |
-                     Audio | Transitions | Canvas | AI Tools
+   Layout: left tools rail (Media/Stickers/Effects/Text/Audio/
+   Filters/Adjustments) + center stage (preview + timeline) + right
+   "Tell Massive what you want" AI panel. Mobile: compact top, large
+   preview, bottom AI bar + tool sheets. Tablet: intermediate.
+
+   All engine/API behaviour is unchanged -- this is presentation only.
+   Modes: intro -> working -> editor
 */
 (function () {
   "use strict";
 
-  var CACHE_BUST = "?v=2";
+  var CACHE_BUST = "?v=3";
   var MAX_FILE_MB = 100;
   var STAGES = ["analysis","planned","broll","sticker","slow-motion","camera","transitions","sfx","music","done"];
   var POSITIONS = [
@@ -25,17 +29,27 @@
     {label:"1:1",v:"1:1",sub:"Square"}
   ];
   var FONTS = ["Arial","Helvetica","Georgia","Impact","Courier New","Verdana","Trebuchet MS"];
-  var SIDEBAR_SECTIONS = [
-    {id:"ai-edit",icon:"sparkles",label:"AI Edit"},
-    {id:"edit",icon:"scissors",label:"Edit"},
-    {id:"text",icon:"type",label:"Text"},
+  var TOOLS = [
+    {id:"media",icon:"film",label:"Media"},
     {id:"stickers",icon:"smile-plus",label:"Stickers"},
     {id:"effects",icon:"wand-2",label:"Effects"},
+    {id:"text",icon:"type",label:"Text"},
     {id:"audio",icon:"volume-2",label:"Audio"},
-    {id:"transitions",icon:"flip-horizontal",label:"Transitions"},
-    {id:"canvas",icon:"frame",label:"Canvas"},
-    {id:"ai-tools",icon:"brain",label:"AI Tools"}
+    {id:"filters",icon:"palette",label:"Filters"},
+    {id:"adjustments",icon:"sliders-h",label:"Adjustments"}
   ];
+  var FILTER_LOOK = {
+    bw: "linear-gradient(135deg,#3f3f46,#1b1e28)",
+    vignette: "radial-gradient(circle at 50% 35%, #334155 0%, #080d17 74%)",
+    blur: "radial-gradient(circle at 50% 50%, #475569 0%, #0f172a 62%)",
+    boost: "linear-gradient(135deg,#ff5d5d,#ffb84d,#7dd3fc)",
+    sepia: "linear-gradient(135deg,#7c5a3a,#c99a4a,#ead9b0)",
+    saturated: "linear-gradient(135deg,#ff2e63,#ff8f3f,#35d0ba)",
+    fade_in: "linear-gradient(180deg,#0b1222,#9fb4cc)",
+    fade_out: "linear-gradient(180deg,#9fb4cc,#0b1222)"
+  };
+  var EFFECT_LABELS = {bw:"Black & White",vignette:"Vignette",blur:"Blur",boost:"Color Boost",
+    sepia:"Sepia",saturated:"Saturated",fade_in:"Fade In",fade_out:"Fade Out"};
 
   var ME = {
     rendered: false, mode: "intro",
@@ -46,9 +60,9 @@
     editor: {
       jobId: "", sourceVideo: "", resultVideo: "",
       timeline: null, stats: null, duration: 0,
-      openSection: "ai-edit",
+      openTool: "media",
       stickerLibrary: [], recentStickers: [], uploadedStickers: [],
-manual: {
+      manual: {
         canvas: {aspect:"9:16",mode:"fill",bg:"000000",reframe:"smart"},
         trim: {start:0, end:null}, speed: 1.0, rotate: 0,
         flipH: false, flipV: false, reverse: false,
@@ -63,7 +77,7 @@ manual: {
         slowmoFactor: 0, autoCut: true,
         intensity: "medium", transitionsMode: "auto",
         camera: true, sfx: true,
-      _aiInstruction: "", timelineZoom: 1,
+        _aiInstruction: "", timelineZoom: 1,
         textLayers: []
       }
     }
@@ -76,6 +90,9 @@ manual: {
       .replace(/>/g,"&gt;").replace(/"/g,"&quot;");
   }
   function $(id) { return document.getElementById(id); }
+  function isSmall() {
+    return window.matchMedia && window.matchMedia("(max-width:700px)").matches;
+  }
 
   function apiHeaders(o) {
     if (typeof authHeaders === "function") return authHeaders(o);
@@ -95,6 +112,13 @@ manual: {
   function svgIcon(name) {
     var icons = {
       sparkles:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/><path d="M5 3v4"/><path d="M19 17v4"/><path d="M3 5h4"/><path d="M17 19h4"/></svg>',
+      film:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="2.18"/><line x1="7" x2="7" y1="2" y2="22"/><line x1="17" x2="17" y1="2" y2="22"/><line x1="2" x2="22" y1="12" y2="12"/><line x1="2" x2="7" y1="7" y2="7"/><line x1="2" x2="7" y1="17" y2="17"/><line x1="17" x2="22" y1="17" y2="17"/><line x1="17" x2="22" y1="7" y2="7"/></svg>',
+      image:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>',
+      palette:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13.5" cy="6.5" r=".5"/><circle cx="17.5" cy="10.5" r=".5"/><circle cx="8.5" cy="7.5" r=".5"/><circle cx="6.5" cy="12.5" r=".5"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/></svg>',
+      'sliders-h':'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="21" x2="14" y1="4" y2="4"/><line x1="10" x2="3" y1="4" y2="4"/><line x1="21" x2="12" y1="12" y2="12"/><line x1="8" x2="3" y1="12" y2="12"/><line x1="21" x2="16" y1="20" y2="20"/><line x1="12" x2="3" y1="20" y2="20"/><line x1="14" x2="14" y1="2" y2="6"/><line x1="8" x2="8" y1="10" y2="14"/><line x1="16" x2="16" y1="18" y2="22"/></svg>',
+      music:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>',
+      x:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>',
+      layers:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/></svg>',
       scissors:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"/><path d="M8.12 8.12 12 12"/><path d="M20 4 8.12 15.88"/><circle cx="6" cy="18" r="3"/><path d="M14.8 14.8 20 20"/></svg>',
       type:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" x2="15" y1="20" y2="20"/><line x1="12" x2="12" y1="4" y2="20"/></svg>',
       'smile-plus':'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" x2="9.01" y1="9" y2="9"/><line x1="15" x2="15.01" y1="9" y2="9"/><path d="M16 5h6v6"/></svg>',
@@ -112,14 +136,14 @@ manual: {
       redo:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 7v6h-6"/><path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3L21 13"/></svg>',
       download:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>',
       refresh:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>',
-      'mic':'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>',
+      mic:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>',
       'stop-circle':'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><rect x="9" y="9" width="6" height="6"/></svg>',
       upload:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>'
     };
     return icons[name] || "";
   }
   function icon(name, cls) {
-    return '<span class="me-sb-icon' + (cls ? ' ' + cls : '') + '">' + svgIcon(name) + '</span>';
+    return '<span class="me-ic' + (cls ? ' ' + cls : '') + '">' + svgIcon(name) + '</span>';
   }
 
   /* ── Entry points ───────────────────────────────────────────────────── */
@@ -162,22 +186,42 @@ manual: {
     renderShell(); renderBody();
     fetchStickers();
     document.addEventListener("visibilitychange", function(){if(document.hidden)stopRec();});
+    window.addEventListener("resize", function(){
+      if (ME.mode === "editor" && !isSmall()) {
+        var f = $("meToolPanel"); if (f) f.classList.remove("open");
+        var p = $("meAiPanel"); if (p) p.classList.remove("open");
+        var sc = $("meScrim"); if (sc) sc.classList.remove("show");
+      }
+    });
   }
 
   function renderShell() {
     rootEl.innerHTML =
-      '<div class="me-topbar">' +
-      '  <h2>Massive Editing</h2>' +
-      '  <span class="me-sub" id="meTopSub">Instruction -> plan -> rendered short</span>' +
-      '  <button class="me-close" onclick="VMEditing.toDashboard()">&larr; Back to Studio</button>' +
-      '</div>' +
-      '<div class="me-body"><div class="me-inner" id="meInner"></div></div>' +
-      '<div class="me-editor" id="meEditor"></div>';
+      '<div class="me-topbar" id="meTopbar"></div>' +
+      '<div id="meToast" class="me-toast" style="display:none"></div>' +
+      '<div id="meInner" class="me-studio" style="display:none"></div>' +
+      '<div id="meEditor" class="me-studio" style="display:none"></div>' +
+      '<div class="me-scrim" id="meScrim"></div>';
+    renderTopbar();
+  }
+
+  function renderTopbar() {
+    var tb = $("meTopbar"); if (!tb) return;
+    var edit = ME.mode === "editor";
+    tb.innerHTML =
+      '<h2>Massive</h2>' +
+      '<span class="me-top-sub">AI Video Studio</span>' +
+      '<div class="me-top-actions">' +
+        '<button class="me-etb-btn me-only-small" onclick="VMEditing.toggleAIPanel()">'+icon("sparkles")+' AI</button>' +
+        (edit ? '<button class="me-etb-btn me-only-small" onclick="VMEditing.goToInput()">New</button>' : '') +
+        '<button class="me-close" onclick="VMEditing.toDashboard()">&larr; <span>Back to Studio</span></button>' +
+      '</div>';
   }
 
   function renderBody() {
     var inner = $("meInner");
     var editor = $("meEditor");
+    renderTopbar();
     if (ME.mode === "working") { if(inner){inner.style.display="";inner.innerHTML=workingHTML();} if(editor)editor.style.display="none"; return; }
     if (ME.mode === "editor") { if(inner)inner.style.display="none"; renderEditor(); return; }
     if (editor) editor.style.display = "none";
@@ -185,193 +229,294 @@ manual: {
       if(ME.files.length&&!hasVideo(ME.files))showToast("Add a video clip -- that's what gets edited."); }
   }
 
+  /* ── Shared studio frame: rail + stage + AI panel ───────────────────── */
+  function railHTML() {
+    var html = '<div class="me-rail" id="meRail">' +
+      '<div class="me-rail-brand">'+icon("sparkles")+'</div>';
+    TOOLS.forEach(function(t){
+      var active = (ME.mode==="editor") && (ME.editor.openTool===t.id);
+      html += '<button class="me-rail-item'+(active?' active':'')+'" data-tool="'+t.id+'" title="'+t.label+'" onClick="VMEditing.railClick(\''+t.id+'\')">' +
+        icon(t.icon) + '<span>'+t.label+'</span></button>';
+    });
+    return html + '</div>';
+  }
+
+  function aiFloatbar(text) {
+    return '<div class="me-ai-floatbar" onClick="VMEditing.toggleAIPanel(true)"><span>'+icon("sparkles") + "</span><b>" + text + "</b></div>";
+  }
+
+  function aiPanelHead(title, sub) {
+    return '<div class="me-ai-head"><span class="me-ai-head-ic">'+icon("sparkles")+'</span>' +
+      '<div><div class="me-ai-title">'+title+'</div>' +
+      (sub ? '<div class="me-ai-sub">'+sub+'</div>' : '') + '</div></div>';
+  }
+
+  /* ── Intro (creation) mode ──────────────────────────────────────────── */
   function introHTML() {
-    return '<div id="meToast" class="me-toast" style="display:none"></div>' +
-      '<div class="me-card">' +
-      '  <div class="me-q">What do you want AI to do with this clip?</div>' +
-      '  <p class="me-sub">Type it or say it. Like: "Hype reel -- captions on, slow-mo the celebration, fire sticker when he scores, use the uploaded beat as music."</p>' +
-      '  <textarea id="meText" class="me-text" placeholder="Tell AI how you want this video edited..."></textarea>' +
-      '  <div class="me-voice-row">' +
-      '    <button id="meVoiceBtn" class="me-btn" onclick="VMEditing.toggleRec()">'+icon("mic")+' Record voice instruction</button>' +
-      '    <span class="me-sub">Speech is transcribed into the instruction.</span>' +
+    return railHTML() +
+      '<div class="me-stage me-stage-create" id="meCreateStage">' +
+      '  <div class="me-create-inner">' +
+      '    <div class="me-create-title">Start creating</div>' +
+      '    <p class="me-create-sub">Upload your clip, describe the video you want, and let Massive build it. Then tweak anything in the studio and export.</p>' +
+      '    <div class="me-upload-actions">' +
+      '      <button class="me-upload-action primary" onclick="VMEditing.pickFiles(\'video/*\')">'+icon("film")+' <span>Upload Video</span></button>' +
+      '      <button class="me-upload-action" onclick="VMEditing.pickFiles(\'image/*\')">'+icon("image")+' <span>+ Add Photos</span></button>' +
+      '      <button class="me-upload-action" onclick="VMEditing.pickFiles(\'audio/*\')">'+icon("music")+' <span>+ Add Assets</span></button>' +
+      '    </div>' +
+      '    <div id="meUploadDrop" class="me-upload-drop">' +
+      '      <div class="me-u-icon">'+icon("upload")+'</div>' +
+      '      <div class="me-u-title">or drop files anywhere in this box</div>' +
+      '      <div class="me-u-sub">video / image / audio &mdash; up to '+MAX_FILE_MB+'MB each</div>' +
+      '      <input type="file" id="meFilesInput" accept="video/*,image/*,audio/*" multiple style="display:none">' +
+      '    </div>' +
+      '    <div id="meUploads" class="me-uploads"></div>' +
+      '    <div class="me-sticker-card">' +
+      '      <div class="me-sticker-card-head"><span class="me-scc-ic">'+icon("smile-plus")+'</span>' +
+      '        <div><div class="me-scc-title">Sticker</div><div class="me-scc-sub">Pick one and Massive pops it in at the right moment.</div></div>' +
+      '      </div>' +
+      '      <div id="meStickers" class="me-sticker-row"><span class="me-sub">Loading sticker library...</span></div>' +
+      '      <div id="mePosRow" class="me-pos-row" style="display:none"></div>' +
+      '      <div id="meStickerSel"></div>' +
+      '    </div>' +
       '  </div>' +
-      '  <div id="meVoiceBox" style="display:none"></div>' +
       '</div>' +
-      '<div class="me-card">' +
-      '  <div class="me-q">Source footage &amp; media</div>' +
-      '  <p class="me-sub">The first video is what gets edited. Add extra shots, images or sounds too.</p>' +
-      '  <div id="meUploadDrop" class="me-upload-drop">' +
-      '    <div class="me-u-icon">'+icon("upload")+'</div>' +
-      '    <div class="me-u-title">Tap or drag files in</div>' +
-      '    <div class="me-u-sub">video / image / audio -- up to '+MAX_FILE_MB+'MB each</div>' +
-      '    <input type="file" id="meFilesInput" accept="video/*,image/*,audio/*" multiple style="display:none">' +
-      '  </div>' +
-      '  <div id="meUploads" class="me-uploads"></div>' +
+      '<div class="me-ai-panel" id="meAiPanel">' +
+        aiPanelHead("Tell Massive what you want", "Upload &rarr; describe &rarr; AI creates &rarr; review &rarr; adjust &rarr; export") +
+        '<textarea id="meText" class="me-ai-input" placeholder="Describe the video you want&hellip;"></textarea>' +
+        '<div class="me-ai-row">' +
+        '  <button id="meVoiceBtn" class="me-sb-btn" onclick="VMEditing.toggleRec()">'+icon("mic")+' Record voice instruction</button>' +
+        '</div>' +
+        '<div id="meVoiceBox" style="display:none"></div>' +
+        '<button id="meGoBtn" class="me-ai-go" onclick="VMEditing.submit()" disabled>'+icon("sparkles")+' <span>Start AI Edit</span></button>' +
+        '<label class="me-testmode me-ai-extras"><input type="checkbox" id="meTestMode"> Test mode (skip AI B-roll)</label>' +
       '</div>' +
-      '<div class="me-card">' +
-      '  <div class="me-q">Sticker (optional)</div>' +
-      '  <p class="me-sub">Pick one and say when it should appear. The AI places it at the right moment.</p>' +
-      '  <div id="meStickers" class="me-sticker-row"><span class="me-sub">Loading sticker library...</span></div>' +
-      '  <div id="mePosRow" class="me-pos-row" style="display:none"></div>' +
-      '  <div id="meStickerSel"></div>' +
-      '</div>' +
-      '<div class="me-start-bar">' +
-      '  <button id="meGoBtn" class="me-go" onclick="VMEditing.submit()" disabled>'+icon("sparkles")+' Start AI Edit</button>' +
-      '  <label class="me-testmode"><input type="checkbox" id="meTestMode"> Test mode (skip AI B-roll)</label>' +
-      '</div>';
+      aiFloatbar("Tell Massive what you want&hellip;");
   }
 
+  /* ── Working mode ───────────────────────────────────────────────────── */
   function workingHTML() {
-    return '<div class="me-plan">' +
-      '  <div class="me-plan-title">'+icon("sparkles")+' AI Edit Plan</div>' +
-      '  <div id="mePlanList"><div class="me-plan-item"><span class="me-pic"></span>Reading your instruction...</div></div>' +
-      '  <div id="mePlanNote" class="me-plan-note"></div>' +
+    return railHTML() +
+      '<div class="me-stage me-stage-working">' +
+      '  <div class="me-working-card">' +
+      '    <div class="me-plan">' +
+      '      <div class="me-plan-title">'+icon("sparkles")+' AI Edit Plan</div>' +
+      '      <div id="mePlanList"><div class="me-plan-item"><span class="me-pic"></span>Reading your instruction...</div></div>' +
+      '      <div id="mePlanNote" class="me-plan-note"></div>' +
+      '    </div>' +
+      '    <div class="me-progress">' +
+      '      <div class="me-spinner"></div>' +
+      '      <div class="me-phase" id="mePhase">Planning your edit...</div>' +
+      '      <div class="me-sub" id="meSub"></div>' +
+      '    </div>' +
+      '  </div>' +
       '</div>' +
-      '<div class="me-progress">' +
-      '  <div class="me-spinner"></div>' +
-      '  <div class="me-phase" id="mePhase">Planning your edit...</div>' +
-      '  <div class="me-sub" id="meSub"></div>' +
-      '</div>';
+      '<div class="me-ai-panel" id="meAiPanel">' +
+        aiPanelHead("Massive is creating", "Your edit runs safely in the background.") +
+        '<div class="me-working-note"><span class="me-wn-ic">'+icon("sparkles")+'</span>' +
+        '  <span>Following your instruction &mdash; trimming, captions, stickers, camera moves, transitions and sound.</span></div>' +
+      '</div>' +
+      aiFloatbar("Massive is working on your edit&hellip;");
   }
 
-  /* ── Editor Layout ──────────────────────────────────────────────────── */
+  /* ── Editor (studio) mode ───────────────────────────────────────────── */
   function renderEditor() {
     var ed = $("meEditor");
     if (!ed) return;
     var e = ME.editor;
     ed.innerHTML =
-      '<div class="me-editor-topbar">' +
-      '  <h2>Massive Editing</h2>' +
-      '  <div class="me-etb-actions">' +
-      '    <button class="me-etb-btn" onclick="VMEditing.undoAction()" title="Undo">'+icon("undo")+' Undo</button>' +
-      '    <button class="me-etb-btn" onclick="VMEditing.redoAction()" title="Redo">'+icon("redo")+' Redo</button>' +
-      '    <button class="me-etb-btn" onclick="VMEditing.goToInput()">New Instruction</button>' +
-      '    <button class="me-etb-btn primary" onclick="VMEditing.applyManual()">'+icon("refresh")+' Apply Changes</button>' +
-      '    ' + (e.resultVideo ? '<a class="me-etb-btn primary" href="'+E(e.resultVideo)+'" download="massive-edit.mp4">'+icon("download")+' Export</a>' : '') +
-      '  </div>' +
-      '</div>' +
-      '<div class="me-editor-body">' +
-      '  <div class="me-sidebar" id="meSidebar"></div>' +
-      '  <div class="me-workspace">' +
-      '    <div class="me-canvas-wrap" id="meCanvasWrap">' +
-      '      <div class="me-canvas-container" id="meCanvasContainer">' +
-      '        <video id="meCanvasVideo" class="me-canvas-video" playsinline preload="metadata"></video>' +
-      '      </div>' +
-      '      <div class="me-canvas-controls" id="meCanvasControls"></div>' +
-      '    </div>' +
-      '    <div class="me-timeline" id="meTimeline"></div>' +
-      '  </div>' +
+      '<div class="me-studio-body">' +
+        railHTML() +
+        '<div class="me-flyout" id="meToolPanel"></div>' +
+        '<div class="me-stage">' +
+        '  <div class="me-canvas-wrap" id="meCanvasWrap">' +
+        '    <div class="me-canvas-container" id="meCanvasContainer">' +
+        '      <video id="meCanvasVideo" class="me-canvas-video" playsinline preload="metadata"></video>' +
+        '    </div>' +
+        '    <div class="me-canvas-controls" id="meCanvasControls"></div>' +
+        '  </div>' +
+        '  <div class="me-timeline" id="meTimeline"></div>' +
+        '</div>' +
+        aiPanelEditor() +
+        aiFloatbar("Ask Massive to change anything&hellip;") +
       '</div>';
-    renderSidebar();
+    renderToolPanel();
     renderCanvasControls();
     renderTimeline();
     bindCanvasVideo();
     if (typeof lucide !== "undefined") { try{lucide.createIcons();}catch(e){} }
   }
 
-  function renderSidebar() {
-    var sb = $("meSidebar"); if (!sb) return;
-    var html = "";
-    SIDEBAR_SECTIONS.forEach(function(sec) {
-      var isOpen = ME.editor.openSection === sec.id;
-      html += '<div class="me-sb-section' + (isOpen ? " open" : "") + '" data-sb="' + sec.id + '">' +
-        '<div class="me-sb-header" onclick="VMEditing.toggleSection(\'' + sec.id + '\')">' +
-        icon(sec.icon) +
-        '<span class="me-sb-label">' + sec.label + '</span>' +
-        icon("chevron-right", "me-sb-arrow") +
-        '</div>' +
-        '<div class="me-sb-body" id="meSbBody_' + sec.id + '">' +
-        (isOpen ? renderSidebarSection(sec.id) : '') +
-        '</div></div>';
-    });
-    sb.innerHTML = html;
+  function aiPanelEditor() {
+    var m = ME.editor.manual;
+    var e = ME.editor;
+    var iv = m.intensity || "medium";
+    var chips = ["low","medium","high"].map(function(v){
+      return '<span class="me-sb-chip'+(iv===v?' active':'')+'" onclick="VMEditing.setManual(\'intensity\',\''+v+'\')">' +
+        (v==="low"?"Low":v==="medium"?"Medium":"High") + '</span>';
+    }).join("");
+    return '<div class="me-ai-panel" id="meAiPanel">' +
+      aiPanelHead("Tell Massive what you want", "Type or record it &mdash; Massive creates the edit.") +
+      '<textarea id="meSbAIInput" class="me-ai-input" placeholder="Describe the video you want&hellip;">'+E(ME.editor._aiInstruction||'')+'</textarea>' +
+      '<div class="me-ai-row">' +
+      '  <button class="me-sb-btn" id="meSbAIRecBtn" onclick="VMEditing.aiRecord()">'+icon("mic")+' Voice</button>' +
+      '  <button class="me-sb-btn primary" style="flex:1" onclick="VMEditing.applyAIEdit()">'+icon("sparkles")+' Apply AI Edit</button>' +
+      '</div>' +
+      '<div id="meVoiceBox" style="display:none"></div>' +
+      '<div class="me-ai-group me-ai-extras"><div class="me-sb-label-sm">Intensity</div>' +
+      '  <div class="me-sb-chips">'+chips+'</div>' +
+      '  <p class="me-muted" style="margin-top:6px">Low = clean &amp; minimal &middot; Medium = modern social &middot; High = energetic viral.</p>' +
+      '</div>' +
+      '<div class="me-ai-group me-ai-extras"><div class="me-sb-label-sm">AI Set</div>' +
+      '  <label class="me-sb-toggle"><input type="checkbox" '+(m.autoCut!==false?'checked':'')+' onclick="VMEditing.toggleAITool(\'auto-cut\',this.checked)"><span>Auto-cut silences</span></label>' +
+      '  <label class="me-sb-toggle"><input type="checkbox" '+(m.captions!==false?'checked':'')+' onclick="VMEditing.toggleAITool(\'auto-captions\',this.checked)"><span>Auto animated captions</span></label>' +
+      '</div>' +
+      '<div class="me-ai-group me-ai-extras"><div class="me-sb-label-sm">Quick AI Actions</div>' +
+      '  <div class="me-ai-actions">' +
+      '    <button class="me-sb-btn" onclick="VMEditing.smartReframe()">'+icon("frame")+' Reframe to 9:16</button>' +
+      '    <button class="me-sb-btn" onclick="VMEditing.aiSuggestTransitions()">'+icon("sparkles")+' AI transitions</button>' +
+      '  </div>' +
+      '</div>' +
+      '<div class="me-ai-cta">' +
+        (e.resultVideo ?
+          '<a class="me-ai-go" href="'+E(e.resultVideo)+'" download="massive-edit.mp4">'+icon("download")+' <span>Export MP4</span></a>' +
+          '<button class="me-ai-apply" onclick="VMEditing.applyManual()">'+icon("refresh")+' <span>Apply manual changes</span></button>'
+         : '<button class="me-ai-apply" onclick="VMEditing.applyManual()">'+icon("refresh")+' <span>Apply changes</span></button>') +
+      '</div>' +
+      '</div>';
   }
 
-  function toggleSection(id) {
-    ME.editor.openSection = (ME.editor.openSection === id) ? "" : id;
-    renderSidebar();
+  /* ── Tools rail + flyout panels ─────────────────────────────────────── */
+  function toolById(id) {
+    for (var i=0;i<TOOLS.length;i++) if (TOOLS[i].id===id) return TOOLS[i];
+    return TOOLS[0];
   }
 
-  function renderSidebarSection(id) {
+  function railClick(id) {
+    if (ME.mode==="working") { showToast("Massive is still working on your edit..."); return; }
+    if (ME.mode==="intro") {
+      if (id==="media") { var d=$("meUploadDrop"); if(d)try{d.scrollIntoView({behavior:"smooth",block:"center"});}catch(e){d.scrollIntoView();} }
+      else if (id==="stickers") { var s=$("meStickers"); if(s)try{s.scrollIntoView({behavior:"smooth",block:"center"});}catch(e){s.scrollIntoView();} }
+      else showToast("Upload a video, describe it, and start your AI edit to unlock the studio tools.");
+      return;
+    }
+    openTool(id);
+  }
+
+  function openTool(id) {
+    ME.editor.openTool = (id&&toolById(id))? id : "media";
+    renderToolPanel();
+    if (isSmall()) openScrim();
+  }
+
+  function closeTool() {
+    var b = $("meToolPanel"); if (!b) return;
+    if (isSmall()) { ME.editor.openTool = ""; b.classList.remove("open"); b.innerHTML=""; syncScrim(); }
+  }
+
+  function toggleSection(id) { openTool(id); }
+
+  function renderToolPanel() {
+    var box = $("meToolPanel"); if (!box) return;
+    var id = ME.editor.openTool || "media";
+    var tool = toolById(id);
+    box.innerHTML =
+      '<div class="me-tool-head">' +
+      '  <div class="me-tool-title">'+icon(tool.icon)+' <span>'+tool.label+'</span></div>' +
+      (isSmall() ? '<button class="me-tool-close" onclick="VMEditing.closeTool()">'+icon("x")+'</button>' : '') +
+      '</div>' +
+      '<div class="me-tool-body">'+renderToolBody(id)+'</div>';
+    box.classList.add("open");
+  }
+
+  function renderToolBody(id) {
     switch(id) {
-      case "ai-edit": return renderAIEditSection();
-      case "edit": return renderEditSection();
-      case "text": return renderTextSection();
+      case "media": return renderMediaPanel();
       case "stickers": return renderStickersSection();
-      case "effects": return renderEffectsSection();
+      case "effects": return renderEffectsPanel();
+      case "text": return renderTextSection();
       case "audio": return renderAudioSection();
-      case "transitions": return renderTransitionsSection();
-      case "canvas": return renderCanvasSection();
-      case "ai-tools": return renderAIToolsSection();
+      case "filters": return renderFiltersPanel();
+      case "adjustments": return renderAdjustmentsPanel();
     }
     return "";
   }
 
-  /* ── AI Edit Section ────────────────────────────────────────────────── */
-function renderAIEditSection() {
-    var m = ME.editor.manual;
-    var iv = m.intensity || "medium";
-    return '<div class="me-sb-label-sm">What do you want AI to do?</div>' +
-      '<textarea id="meSbAIInput" class="me-sb-textarea" placeholder="Tell AI how you want this video edited..." style="min-height:100px">' + E(ME.editor._aiInstruction || '') + '</textarea>' +
-      '<div class="me-sb-row" style="margin-top:10px">' +
-      '  <button class="me-sb-btn" onclick="VMEditing.aiRecord()" id="meSbAIRecBtn">'+icon("mic")+' Voice</button>' +
-      '  <button class="me-sb-btn primary" onclick="VMEditing.applyAIEdit()">Apply AI Edit</button>' +
-      '</div>' +
-      '<div id="meSbAIRecBox" style="display:none"></div>' +
-      '<div class="me-sb-label-sm" style="margin-top:12px">Editing Intensity</div>' +
-      '<div class="me-sb-chips">' +
-      '  <span class="me-sb-chip'+(iv==="low"?' active':'')+'" onclick="VMEditing.setManual(\'intensity\',\'low\')">Low</span>' +
-      '  <span class="me-sb-chip'+(iv==="medium"?' active':'')+'" onclick="VMEditing.setManual(\'intensity\',\'medium\')">Medium</span>' +
-      '  <span class="me-sb-chip'+(iv==="high"?' active':'')+'" onclick="VMEditing.setManual(\'intensity\',\'high\')">High</span>' +
-      '</div>' +
-      '<p style="color:#64748b;font-size:11px;margin:6px 0 0;line-height:1.4">Low = clean/minimal, Medium = modern social edit, High = energetic viral-style edit.</p>' +
-      '<div class="me-sb-row" style="margin-top:10px">' +
-      '  <label class="me-sb-toggle"><input type="checkbox" '+(m.camera!==false?'checked':'')+' onchange="VMEditing.setManual(\'camera\',this.checked)"><span>Camera effects</span></label>' +
-      '  <label class="me-sb-toggle"><input type="checkbox" '+(m.sfx!==false?'checked':'')+' onchange="VMEditing.setManual(\'sfx\',this.checked)"><span>Sound effects</span></label>' +
-      '</div>' +
-      '<div class="me-sb-label-sm" style="margin-top:12px">Upload Media</div>' +
-      '<div class="me-sb-upload-zone" onclick="$(\'meSbMediaInput\').click()">' +
+  function renderMediaPanel() {
+    return '<div class="me-sb-upload-zone" onclick="$(\'meSbMediaInput\').click()">' +
       '  <div class="me-sb-uz-text">'+icon("upload")+' Upload video, image, or audio</div>' +
       '  <input type="file" id="meSbMediaInput" accept="video/*,image/*,audio/*" multiple style="display:none" onchange="VMEditing.sbUploadMedia(this.files)">' +
       '</div>' +
-      (ME.files.length ? '<div style="margin-top:8px;color:#64748b;font-size:11px">'+ME.files.length+' file(s) attached</div>' : '');
+      '<div class="me-sb-label-sm" style="margin-top:12px">Project Files</div>' +
+      '<div id="meUploads" class="me-uploads"></div>' +
+      (ME.files.length
+        ? '<p class="me-muted">'+ME.files.length+' file(s) attached. Remove any you don\'t need, then apply changes to re-render.</p>'
+        : '<p class="me-muted">The source clip drives the edit. Add b-roll, stills or music here for the AI to weave in.</p>');
   }
 
-  /* ── Edit Section ───────────────────────────────────────────────────── */
-  function renderEditSection() {
+  function renderEffectsPanel() {
     var m = ME.editor.manual;
-    var speed = m.speed || 1.0;
-    var rotate = m.rotate || 0;
-    return '<div class="me-sb-label-sm">Trim</div>' +
-      '<div class="me-sb-row"><label>Start</label>' +
-      '  <input type="range" class="me-sb-slider" min="0" max="' + (ME.editor.duration||60) + '" step="0.1" value="' + (m.trim.start||0) + '" oninput="VMEditing.setManual(\'trim.start\',this.value)">' +
-      '  <span class="me-sb-val" id="meTrimStart">' + (m.trim.start||0).toFixed(1) + 's</span></div>' +
-      '<div class="me-sb-row"><label>End</label>' +
-      '  <input type="range" class="me-sb-slider" min="0" max="' + (ME.editor.duration||60) + '" step="0.1" value="' + (m.trim.end||ME.editor.duration||60) + '" oninput="VMEditing.setManual(\'trim.end\',this.value)">' +
-      '  <span class="me-sb-val" id="meTrimEnd">' + (m.trim.end||ME.editor.duration||0).toFixed(1) + 's</span></div>' +
-      '<div class="me-sb-label-sm">Speed</div>' +
-      '<div class="me-sb-row"><label>Speed</label>' +
-      '  <input type="range" class="me-sb-slider" min="0.5" max="2.0" step="0.1" value="' + speed + '" oninput="VMEditing.setManual(\'speed\',this.value)">' +
-      '  <span class="me-sb-val" id="meSpeedVal">' + speed.toFixed(1) + 'x</span></div>' +
-      '<div class="me-sb-label-sm">Transform</div>' +
+    var slow = m.slowmoFactor || 0;
+    return '<div class="me-sb-label-sm">Motion</div>' +
+      '<div class="me-motion-cards">' +
+      '  <div class="me-motion-card'+(m.camera!==false?' on':'')+'">' +
+      '    <label class="me-sb-toggle"><input type="checkbox" '+(m.camera!==false?'checked':'')+' onchange="VMEditing.setManual(\'camera\',this.checked)"><span>Camera effects</span></label>' +
+      '    <p class="me-muted">Punch-in, shake and freeze at the best moments.</p></div>' +
+      '  <div class="me-motion-card'+(m.sfx!==false?' on':'')+'">' +
+      '    <label class="me-sb-toggle"><input type="checkbox" '+(m.sfx!==false?'checked':'')+' onchange="VMEditing.setManual(\'sfx\',this.checked)"><span>Sound effects</span></label>' +
+      '    <p class="me-muted">Whooshes, pops, dings and laughs timed to the action.</p></div>' +
+      '</div>' +
+      '<div class="me-sb-label-sm" style="margin-top:12px">Slow Motion</div>' +
       '<div class="me-sb-chips">' +
-      '  <span class="me-sb-chip' + (rotate===0?' active':'') + '" onclick="VMEditing.setManual(\'rotate\',0)">0&deg;</span>' +
-      '  <span class="me-sb-chip' + (rotate===90?' active':'') + '" onclick="VMEditing.setManual(\'rotate\',90)">90&deg;</span>' +
-      '  <span class="me-sb-chip' + (rotate===180?' active':'') + '" onclick="VMEditing.setManual(\'rotate\',180)">180&deg;</span>' +
-      '  <span class="me-sb-chip' + (rotate===270?' active':'') + '" onclick="VMEditing.setManual(\'rotate\',270)">270&deg;</span>' +
+      '  '+[["Slow-mo off",0],["Half speed",0.5],["Light slow-mo",0.75]].map(function(o){
+        return '<span class="me-sb-chip'+(slow===o[1]?' active':'')+'" onclick="VMEditing.setManual(\'slowmoFactor\','+o[1]+')">'+o[0]+'</span>';
+      }).join("") +
       '</div>' +
-      '<div class="me-sb-row" style="margin-top:6px">' +
-      '  <label class="me-sb-toggle"><input type="checkbox" '+(m.flipH?'checked':'')+' onchange="VMEditing.setManual(\'flipH\',this.checked)"><span>Flip H</span></label>' +
-      '  <label class="me-sb-toggle"><input type="checkbox" '+(m.flipV?'checked':'')+' onchange="VMEditing.setManual(\'flipV\',this.checked)"><span>Flip V</span></label>' +
-      '  <label class="me-sb-toggle"><input type="checkbox" '+(m.reverse?'checked':'')+' onchange="VMEditing.setManual(\'reverse\',this.checked)"><span>Reverse</span></label>' +
+      '<div class="me-sb-label-sm" style="margin-top:14px">Transitions</div>' +
+      '<button class="me-sb-btn" onclick="VMEditing.aiSuggestTransitions()">'+icon("sparkles")+' Let AI choose transitions</button>' +
+      '<p class="me-muted">The engine cuts between segments and AI picks the change points. More styles arrive with the rendering engine.</p>';
+  }
+
+  function renderFiltersPanel() {
+    var m = ME.editor.manual;
+    var active = m.effects || [];
+    var visual = ["bw","vignette","blur","boost","sepia","saturated"];
+    var fades = ["fade_in","fade_out"];
+    return '<div class="me-sb-label-sm">Filters</div>' +
+      '<div class="me-filter-grid">' +
+      visual.map(function(e){
+        return '<div class="me-filter-card'+(active.indexOf(e)>=0?' active':'')+'" onclick="VMEditing.toggleEffect(\''+e+'\')">' +
+          '<div class="me-filter-swatch" style="background:'+(FILTER_LOOK[e]||"#1f2937")+'">'+(active.indexOf(e)>=0?'<span class="me-filter-on">'+icon("check")+'</span>':'')+'</div>' +
+          '<span class="me-filter-name">'+(EFFECT_LABELS[e]||e)+'</span></div>';
+      }).join("") +
       '</div>' +
-      '<div class="me-sb-label-sm">Crop</div>' +
-      '<div class="me-sb-row"><label>Left</label><input type="range" class="me-sb-slider" min="0" max="0.3" step="0.01" value="'+(m.crop.left||0)+'" oninput="VMEditing.setManual(\'crop.left\',this.value)"><span class="me-sb-val">'+((m.crop.left||0)*100).toFixed(0)+'%</span></div>' +
-      '<div class="me-sb-row"><label>Right</label><input type="range" class="me-sb-slider" min="0" max="0.3" step="0.01" value="'+(m.crop.right||0)+'" oninput="VMEditing.setManual(\'crop.right\',this.value)"><span class="me-sb-val">'+((m.crop.right||0)*100).toFixed(0)+'%</span></div>' +
-      '<div class="me-sb-row"><label>Top</label><input type="range" class="me-sb-slider" min="0" max="0.3" step="0.01" value="'+(m.crop.top||0)+'" oninput="VMEditing.setManual(\'crop.top\',this.value)"><span class="me-sb-val">'+((m.crop.top||0)*100).toFixed(0)+'%</span></div>' +
-      '<div class="me-sb-row"><label>Bottom</label><input type="range" class="me-sb-slider" min="0" max="0.3" step="0.01" value="'+(m.crop.bottom||0)+'" oninput="VMEditing.setManual(\'crop.bottom\',this.value)"><span class="me-sb-val">'+((m.crop.bottom||0)*100).toFixed(0)+'%</span></div>' +
-      '<div class="me-sb-label-sm">Resize</div>' +
-      '<div class="me-sb-row"><label>Scale</label><input type="range" class="me-sb-slider" min="0.4" max="1.5" step="0.05" value="'+(m.resize||1)+'" oninput="VMEditing.setManual(\'resize\',this.value)"><span class="me-sb-val">'+(m.resize||1).toFixed(1)+'x</span></div>';
+      '<div class="me-sb-label-sm" style="margin-top:14px">Fades</div>' +
+      '<div class="me-sb-chips">' +
+      fades.map(function(e){
+        return '<span class="me-sb-chip'+(active.indexOf(e)>=0?' active':'')+'" onclick="VMEditing.toggleEffect(\''+e+'\')">'+(EFFECT_LABELS[e]||e)+'</span>';
+      }).join("") +
+      '</div>' +
+      '<div class="me-sb-row" style="margin-top:10px"><label>Fade In</label><input type="range" class="me-sb-slider" min="0" max="5" step="0.1" value="'+(m.fadeIn||0)+'" oninput="VMEditing.setManual(\'fadeIn\',this.value)"><span class="me-sb-val">'+(m.fadeIn||0)+'s</span></div>' +
+      '<div class="me-sb-row"><label>Fade Out</label><input type="range" class="me-sb-slider" min="0" max="5" step="0.1" value="'+(m.fadeOut||0)+'" oninput="VMEditing.setManual(\'fadeOut\',this.value)"><span class="me-sb-val">'+(m.fadeOut||0)+'s</span></div>';
+  }
+
+  function renderAdjustmentsPanel() {
+    var m = ME.editor.manual;
+    var c = m.canvas || {aspect:"9:16",mode:"fill",bg:"000000"};
+    return renderEditSection() +
+      '<div class="me-sb-label-sm" style="margin-top:14px">Canvas Format</div>' +
+      '<div class="me-sb-chips">' +
+      CANVAS_PRESETS.map(function(p){
+        return '<span class="me-sb-chip'+(c.aspect===p.v?' active':'')+'" onclick="VMEditing.setCanvasAspect(\''+p.v+'\')">'+p.label+' <em>'+p.sub+'</em></span>';
+      }).join("") +
+      '</div>' +
+      '<div class="me-sb-chips" style="margin-top:6px">' +
+      '  <span class="me-sb-chip'+(c.mode==='fill'?' active':'')+'" onclick="VMEditing.setCanvasMode(\'fill\')">Fill (crop)</span>' +
+      '  <span class="me-sb-chip'+(c.mode==='fit'?' active':'')+'" onclick="VMEditing.setCanvasMode(\'fit\')">Fit (letterbox)</span>' +
+      '</div>' +
+      '<div class="me-sb-row" style="margin-top:10px"><label>Background</label>' +
+      '  <input type="color" value="#'+E(c.bg||'000000')+'" style="width:32px;height:28px;border:none;background:none;cursor:pointer" oninput="VMEditing.setCanvasBg(this.value)">' +
+      '  <span class="me-sb-val">#'+E(c.bg||'000000')+'</span></div>' +
+      '<button class="me-sb-btn" style="margin-top:10px" onclick="VMEditing.smartReframe()">'+icon("sparkles")+' Smart reframe to 9:16</button>';
   }
 
   /* ── Text Section ───────────────────────────────────────────────────── */
@@ -421,25 +566,25 @@ function renderAIEditSection() {
     return '<div class="me-sb-label-sm">Recently Used</div>' +
       '<div class="me-sb-recent" id="meSbRecent">' +
       (ME.editor.recentStickers.length ? ME.editor.recentStickers.map(function(s){
-        return '<img src="'+E(s.url)+CACHE_BUST+'" title="'+E(s.name)+'" onclick="VMEditing.pickEditorSticker(\''+E(s.url)+'\',\''+E(s.name)+'\')"'+(sel&&sel.url===s.url?' class="selected"':'')+'>';
+        return '<img src="'+E(s.url)+CACHE_BUST+'" title="'+E(s.name)+'" onclick="VMEditing.pickEditorSticker(\''+E(s.url).replace(/'/g,"\\'")+'\',\''+E(s.name).replace(/'/g,"\\'")+'\')"'+(sel&&sel.url===s.url?' class="selected"':'')+'>';
       }).join("") : '<span style="color:#475569;font-size:11px">None yet</span>') +
       '</div>' +
       '<div class="me-sb-label-sm">Sticker Library</div>' +
       '<input type="text" class="me-sb-input" placeholder="Search stickers..." oninput="VMEditing.filterStickers(this.value)" style="margin-bottom:8px">' +
       '<div class="me-sb-grid" id="meSbStickerGrid">' +
       (ME.editor.stickerLibrary.length ? ME.editor.stickerLibrary.map(function(s){
-        return '<img class="me-sb-sticker'+(sel&&sel.url===s.url?' selected':'')+'" src="'+E(s.url)+CACHE_BUST+'" title="'+E(s.name)+'" onclick="VMEditing.pickEditorSticker(\''+E(s.url)+'\',\''+E(s.name)+'\')" loading="lazy">';
+        return '<img class="me-sb-sticker'+(sel&&sel.url===s.url?' selected':'')+'" src="'+E(s.url)+CACHE_BUST+'" title="'+E(s.name)+'" onclick="VMEditing.pickEditorSticker(\''+E(s.url).replace(/'/g,"\\'")+'\',\''+E(s.name).replace(/'/g,"\\'")+'\')" loading="lazy">';
       }).join("") : '<span style="color:#64748b;font-size:11px">Loading...</span>') +
       '</div>' +
       (sel ? '<div style="margin-top:8px;color:#00d4ff;font-size:11px;font-weight:700">Selected: '+E(sel.name)+'</div>' : '') +
-      '<div class="me-sb-label-sm" style="margin-top:10px">Upload Custom Sticker</div>' +
+      '<div class="me-sb-label-sm" style="margin-top:10px">Upload Your Own Sticker</div>' +
       '<div class="me-sb-upload-zone" onclick="$(\'meSbStickerUpload\').click()">' +
-      '  <div class="me-sb-uz-text">Upload a custom sticker and use it in your edit.</div>' +
+      '  <div class="me-sb-uz-text">Upload a custom sticker to use in your edit.</div>' +
       '  <input type="file" id="meSbStickerUpload" accept="image/*" style="display:none" onchange="VMEditing.uploadCustomSticker(this.files)">' +
       '</div>' +
       (ME.editor.uploadedStickers.length ? '<div class="me-sb-grid" style="margin-top:8px">' +
         ME.editor.uploadedStickers.map(function(s){
-          return '<img class="me-sb-sticker'+(sel&&sel.url===s.url?' selected':'')+'" src="'+E(s.url)+CACHE_BUST+'" title="'+E(s.name)+'" onclick="VMEditing.pickEditorSticker(\''+E(s.url)+'\',\''+E(s.name)+'\')">';
+          return '<img class="me-sb-sticker'+(sel&&sel.url===s.url?' selected':'')+'" src="'+E(s.url)+CACHE_BUST+'" title="'+E(s.name)+'" onclick="VMEditing.pickEditorSticker(\''+E(s.url).replace(/'/g,"\\'")+'\',\''+E(s.name).replace(/'/g,"\\'")+'\')">';
         }).join("") + '</div>' : '') +
       '<div class="me-sb-label-sm" style="margin-top:10px">Sticker Settings</div>' +
       '<div class="me-sb-row"><label>Position</label><select class="me-sb-select" onchange="VMEditing.setManual(\'stickerPos\',this.value)">' +
@@ -449,23 +594,6 @@ function renderAIEditSection() {
       '<div class="me-sb-row"><label>Rotation</label><input type="range" class="me-sb-slider" min="-180" max="180" step="5" value="'+(m.stickerAngle||0)+'" oninput="VMEditing.setManual(\'stickerAngle\',this.value)"><span class="me-sb-val">'+(m.stickerAngle||0)+'&deg;</span></div>' +
       '<div class="me-sb-row"><label>Duration</label><input type="range" class="me-sb-slider" min="0.5" max="20" step="0.5" value="'+(m.stickerDuration||3)+'" oninput="VMEditing.setManual(\'stickerDuration\',this.value)"><span class="me-sb-val">'+(m.stickerDuration||3)+'s</span></div>' +
       '<label class="me-sb-toggle" style="margin-top:4px"><input type="checkbox" '+(m.stickerAnim==="pop"?"checked":"")+' onchange="VMEditing.setManual(\'stickerAnim\',this.checked?\'pop\':\'\')"><span>Pop-in animation</span></label>';
-  }
-
-  /* ── Effects Section ────────────────────────────────────────────────── */
-  function renderEffectsSection() {
-    var m = ME.editor.manual;
-    var active = m.effects || [];
-    var labels = {bw:"Black & White",vignette:"Vignette",blur:"Blur",boost:"Color Boost",
-      sepia:"Sepia",saturated:"Saturated",fade_in:"Fade In",fade_out:"Fade Out"};
-    return '<div class="me-sb-label-sm">Visual Effects</div>' +
-      '<div class="me-sb-chips">' +
-      EFFECT_LIST.map(function(e){
-        return '<span class="me-sb-chip'+(active.indexOf(e)>=0?' active':'')+'" onclick="VMEditing.toggleEffect(\''+e+'\')">'+(labels[e]||e)+'</span>';
-      }).join("") +
-      '</div>' +
-      '<div class="me-sb-label-sm" style="margin-top:12px">Fade</div>' +
-      '<div class="me-sb-row"><label>Fade In</label><input type="range" class="me-sb-slider" min="0" max="5" step="0.1" value="'+(m.fadeIn||0)+'" oninput="VMEditing.setManual(\'fadeIn\',this.value)"><span class="me-sb-val">'+(m.fadeIn||0)+'s</span></div>' +
-      '<div class="me-sb-row"><label>Fade Out</label><input type="range" class="me-sb-slider" min="0" max="5" step="0.1" value="'+(m.fadeOut||0)+'" oninput="VMEditing.setManual(\'fadeOut\',this.value)"><span class="me-sb-val">'+(m.fadeOut||0)+'s</span></div>';
   }
 
   /* ── Audio Section ──────────────────────────────────────────────────── */
@@ -487,57 +615,41 @@ function renderAIEditSection() {
       '</div>';
   }
 
-  /* ── Transitions Section ────────────────────────────────────────────── */
-  function renderTransitionsSection() {
-    return '<div class="me-sb-label-sm">Transition Style</div>' +
-      '<div class="me-sb-chips">' +
-      '  <span class="me-sb-chip active">Hard Cut</span>' +
-      '  <span class="me-sb-chip" style="opacity:0.5;cursor:not-allowed">Crossfade (soon)</span>' +
-      '  <span class="me-sb-chip" style="opacity:0.5;cursor:not-allowed">Fade to Black (soon)</span>' +
-      '  <span class="me-sb-chip" style="opacity:0.5;cursor:not-allowed">Wipe (soon)</span>' +
-      '</div>' +
-      '<p style="color:#64748b;font-size:11px;margin-top:8px;line-height:1.5">The current render pipeline uses hard cuts between segments. Additional transition styles will be added as the rendering engine evolves.</p>' +
-      '<div class="me-sb-label-sm" style="margin-top:12px">AI Suggest</div>' +
-      '<button class="me-sb-btn" onclick="VMEditing.aiSuggestTransitions()">'+icon("sparkles")+' Let AI choose transitions</button>';
-  }
-
-  /* ── Canvas Section ─────────────────────────────────────────────────── */
-  function renderCanvasSection() {
+  /* ── Edit / Adjustments core ────────────────────────────────────────── */
+  function renderEditSection() {
     var m = ME.editor.manual;
-    var c = m.canvas || {aspect:"9:16",mode:"fill",bg:"000000"};
-    return '<div class="me-sb-label-sm">Aspect Ratio</div>' +
+    var speed = m.speed || 1.0;
+    var rotate = m.rotate || 0;
+    return '<div class="me-sb-label-sm">Trim</div>' +
+      '<div class="me-sb-row"><label>Start</label>' +
+      '  <input type="range" class="me-sb-slider" min="0" max="' + (ME.editor.duration||60) + '" step="0.1" value="' + (m.trim.start||0) + '" oninput="VMEditing.setManual(\'trim.start\',this.value)">' +
+      '  <span class="me-sb-val" id="meTrimStart">' + (m.trim.start||0).toFixed(1) + 's</span></div>' +
+      '<div class="me-sb-row"><label>End</label>' +
+      '  <input type="range" class="me-sb-slider" min="0" max="' + (ME.editor.duration||60) + '" step="0.1" value="' + (m.trim.end||ME.editor.duration||60) + '" oninput="VMEditing.setManual(\'trim.end\',this.value)">' +
+      '  <span class="me-sb-val" id="meTrimEnd">' + (m.trim.end||ME.editor.duration||0).toFixed(1) + 's</span></div>' +
+      '<div class="me-sb-label-sm">Speed</div>' +
+      '<div class="me-sb-row"><label>Speed</label>' +
+      '  <input type="range" class="me-sb-slider" min="0.5" max="2.0" step="0.1" value="' + speed + '" oninput="VMEditing.setManual(\'speed\',this.value)">' +
+      '  <span class="me-sb-val" id="meSpeedVal">' + speed.toFixed(1) + 'x</span></div>' +
+      '<div class="me-sb-label-sm">Transform</div>' +
       '<div class="me-sb-chips">' +
-      CANVAS_PRESETS.map(function(p){
-        return '<span class="me-sb-chip'+(c.aspect===p.v?' active':'')+'" onclick="VMEditing.setCanvasAspect(\''+p.v+'\')">'+p.label+' <span style="color:#64748b;font-size:9px">'+p.sub+'</span></span>';
-      }).join("") +
+      '  <span class="me-sb-chip' + (rotate===0?' active':'') + '" onclick="VMEditing.setManual(\'rotate\',0)">0&deg;</span>' +
+      '  <span class="me-sb-chip' + (rotate===90?' active':'') + '" onclick="VMEditing.setManual(\'rotate\',90)">90&deg;</span>' +
+      '  <span class="me-sb-chip' + (rotate===180?' active':'') + '" onclick="VMEditing.setManual(\'rotate\',180)">180&deg;</span>' +
+      '  <span class="me-sb-chip' + (rotate===270?' active':'') + '" onclick="VMEditing.setManual(\'rotate\',270)">270&deg;</span>' +
       '</div>' +
-      '<div class="me-sb-label-sm" style="margin-top:10px">Size Mode</div>' +
-      '<div class="me-sb-chips">' +
-      '  <span class="me-sb-chip'+(c.mode==='fill'?' active':'')+'" onclick="VMEditing.setCanvasMode(\'fill\')">Fill (crop)</span>' +
-      '  <span class="me-sb-chip'+(c.mode==='fit'?' active':'')+'" onclick="VMEditing.setCanvasMode(\'fit\')">Fit (letterbox)</span>' +
+      '<div class="me-sb-row" style="margin-top:6px">' +
+      '  <label class="me-sb-toggle"><input type="checkbox" '+(m.flipH?'checked':'')+' onchange="VMEditing.setManual(\'flipH\',this.checked)"><span>Flip H</span></label>' +
+      '  <label class="me-sb-toggle"><input type="checkbox" '+(m.flipV?'checked':'')+' onchange="VMEditing.setManual(\'flipV\',this.checked)"><span>Flip V</span></label>' +
+      '  <label class="me-sb-toggle"><input type="checkbox" '+(m.reverse?'checked':'')+' onchange="VMEditing.setManual(\'reverse\',this.checked)"><span>Reverse</span></label>' +
       '</div>' +
-      '<div class="me-sb-row" style="margin-top:10px"><label>Background</label>' +
-      '  <input type="color" value="#'+E(c.bg||'000000')+'" style="width:32px;height:28px;border:none;background:none;cursor:pointer" oninput="VMEditing.setCanvasBg(this.value)">' +
-      '  <span class="me-sb-val">#'+E(c.bg||'000000')+'</span></div>' +
-      '<div class="me-sb-label-sm" style="margin-top:12px">Smart Reframe</div>' +
-      '<button class="me-sb-btn" onclick="VMEditing.smartReframe()">'+icon("sparkles")+' Auto-reframe to 9:16</button>' +
-      '<p style="color:#64748b;font-size:11px;margin-top:6px;line-height:1.5">Centers the most important area of the video for vertical format.</p>';
-  }
-
-  /* ── AI Tools Section ───────────────────────────────────────────────── */
-  function renderAIToolsSection() {
-    var tools = [
-      {id:"auto-cut",label:"Auto Cut",desc:"Automatically removes silences and filler words.",active:ME.editor.manual.autoCut!==false},
-      {id:"auto-captions",label:"Auto Captions",desc:"Generates word-by-word animated captions.",active:ME.editor.manual.captions!==false}
-    ];
-    return '<div class="me-sb-label-sm">AI-Powered Tools</div>' +
-      tools.map(function(t){
-        return '<div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:10px;padding:10px;margin-bottom:8px">' +
-          '<label class="me-sb-toggle"><input type="checkbox" '+(t.active?'checked':'')+' onchange="VMEditing.toggleAITool(\''+t.id+'\',this.checked)"><span style="font-weight:700">'+t.label+'</span></label>' +
-          '<p style="color:#64748b;font-size:11px;margin:4px 0 0;line-height:1.4">'+t.desc+'</p></div>';
-      }).join("") +
-      '<div class="me-sb-label-sm" style="margin-top:8px">More Tools</div>' +
-      '<p style="color:#475569;font-size:11px;line-height:1.5">Highlight Detection, Scene Detection, Beat Sync, Background Removal, and Object Tracking are planned for future releases and will connect to the real backend when available.</p>';
+      '<div class="me-sb-label-sm">Crop</div>' +
+      '<div class="me-sb-row"><label>Left</label><input type="range" class="me-sb-slider" min="0" max="0.3" step="0.01" value="'+(m.crop.left||0)+'" oninput="VMEditing.setManual(\'crop.left\',this.value)"><span class="me-sb-val">'+((m.crop.left||0)*100).toFixed(0)+'%</span></div>' +
+      '<div class="me-sb-row"><label>Right</label><input type="range" class="me-sb-slider" min="0" max="0.3" step="0.01" value="'+(m.crop.right||0)+'" oninput="VMEditing.setManual(\'crop.right\',this.value)"><span class="me-sb-val">'+((m.crop.right||0)*100).toFixed(0)+'%</span></div>' +
+      '<div class="me-sb-row"><label>Top</label><input type="range" class="me-sb-slider" min="0" max="0.3" step="0.01" value="'+(m.crop.top||0)+'" oninput="VMEditing.setManual(\'crop.top\',this.value)"><span class="me-sb-val">'+((m.crop.top||0)*100).toFixed(0)+'%</span></div>' +
+      '<div class="me-sb-row"><label>Bottom</label><input type="range" class="me-sb-slider" min="0" max="0.3" step="0.01" value="'+(m.crop.bottom||0)+'" oninput="VMEditing.setManual(\'crop.bottom\',this.value)"><span class="me-sb-val">'+((m.crop.bottom||0)*100).toFixed(0)+'%</span></div>' +
+      '<div class="me-sb-label-sm">Resize</div>' +
+      '<div class="me-sb-row"><label>Scale</label><input type="range" class="me-sb-slider" min="0.4" max="1.5" step="0.05" value="'+(m.resize||1)+'" oninput="VMEditing.setManual(\'resize\',this.value)"><span class="me-sb-val">'+(m.resize||1).toFixed(1)+'x</span></div>';
   }
 
   /* ── Canvas Controls (play/pause/skip) ──────────────────────────────── */
@@ -607,7 +719,7 @@ function renderAIEditSection() {
     renderTimelineTracks(dur, tlMeta);
   }
 
-function renderTimelineTracks(dur, meta) {
+  function renderTimelineTracks(dur, meta) {
     var tracks = $("meTlTracks"); if (!tracks) return;
     var tracks_def = [
       {id:"video",label:"Video",color:"#00d4ff",blocks: meta ? meta.video : [{start:0,end:dur}]},
@@ -717,6 +829,8 @@ function renderTimelineTracks(dur, meta) {
     };
     Object.keys(els).forEach(function(k){ var e=$(k); if(e)e.textContent=els[k]; });
     renderTextLayers();
+    var ai = $("meSbAIInput");
+    if (ai) ME.editor._aiInstruction = ai.value;
   }
 
   function toggleEffect(name) {
@@ -724,17 +838,18 @@ function renderTimelineTracks(dur, meta) {
     var idx = m.effects.indexOf(name);
     if (idx >= 0) m.effects.splice(idx, 1);
     else m.effects.push(name);
-    renderSidebarSection("effects");
+    renderToolPanel();
   }
 
   function toggleAITool(id, on) {
     if (id==="auto-cut") ME.editor.manual.autoCut = !!on;
     else if (id==="auto-captions") ME.editor.manual.captions = !!on;
+    renderToolPanel();
   }
 
-  function setCanvasAspect(v) { ME.editor.manual.canvas.aspect = v; renderSidebarSection("canvas"); }
-  function setCanvasMode(v) { ME.editor.manual.canvas.mode = v; renderSidebarSection("canvas"); }
-  function setCanvasBg(v) { ME.editor.manual.canvas.bg = v.replace("#",""); renderSidebarSection("canvas"); }
+  function setCanvasAspect(v) { ME.editor.manual.canvas.aspect = v; renderToolPanel(); }
+  function setCanvasMode(v) { ME.editor.manual.canvas.mode = v; renderToolPanel(); }
+  function setCanvasBg(v) { ME.editor.manual.canvas.bg = v.replace("#",""); renderToolPanel(); }
 
   function addTextLayer() {
     if (!ME.editor.manual.textLayers) ME.editor.manual.textLayers = [];
@@ -754,7 +869,7 @@ function renderTimelineTracks(dur, meta) {
     ME.sticker = {url:url, name:name||"sticker"};
     var m = ME.editor.manual;
     m.stickerPos = m.stickerPos || "br";
-    renderSidebarSection("stickers");
+    renderToolPanel();
   }
 
   function filterStickers(q) {
@@ -764,7 +879,7 @@ function renderTimelineTracks(dur, meta) {
       return (s.name||"").toLowerCase().indexOf(q)>=0;
     }) : ME.editor.stickerLibrary;
     grid.innerHTML = filtered.map(function(s){
-      return '<img class="me-sb-sticker'+(ME.sticker&&ME.sticker.url===s.url?' selected':'')+'" src="'+E(s.url)+CACHE_BUST+'" title="'+E(s.name)+'" onclick="VMEditing.pickEditorSticker(\''+E(s.url)+'\',\''+E(s.name)+'\')" loading="lazy">';
+      return '<img class="me-sb-sticker'+(ME.sticker&&ME.sticker.url===s.url?' selected':'')+'" src="'+E(s.url)+CACHE_BUST+'" title="'+E(s.name)+'" onclick="VMEditing.pickEditorSticker(\''+E(s.url).replace(/'/g,"\\'")+'\',\''+E(s.name).replace(/'/g,"\\'")+'\')" loading="lazy">';
     }).join("");
   }
 
@@ -775,7 +890,7 @@ function renderTimelineTracks(dur, meta) {
     var url = URL.createObjectURL(f);
     ME.editor.uploadedStickers.push({url:url, name:f.name});
     pickEditorSticker(url, f.name);
-    renderSidebarSection("stickers");
+    renderToolPanel();
   }
 
   function uploadAudio(files) {
@@ -785,29 +900,29 @@ function renderTimelineTracks(dur, meta) {
     ME.editor.manual.musicUrl = url;
     ME.editor.manual.musicName = f.name;
     ME.editor.manual.musicVolume = 0.3;
-    renderSidebarSection("audio");
+    renderToolPanel();
   }
 
   function removeMusic() {
     ME.editor.manual.musicUrl = "";
     ME.editor.manual.musicName = "";
-    renderSidebarSection("audio");
+    renderToolPanel();
   }
 
   function uploadVoiceOver(files) { showToast("Voice-over upload recorded. Will be mixed in the next render."); }
   function sbUploadMedia(files) {
     if (!files) return;
     for (var i=0;i<files.length;i++) addFiles([files[i]]);
-    renderSidebarSection("ai-edit");
+    renderToolPanel();
   }
 
-function smartReframe() {
+  function smartReframe() {
     var m = ME.editor.manual;
     m.canvas.aspect = "9:16";
     m.canvas.mode = "fill";
     m.canvas.reframe = "smart";
     m.camera = true;
-    renderSidebarSection("canvas");
+    renderToolPanel();
     refineManualOnly("Auto-reframed to 9:16 with subject-tracking (re-rendering).");
   }
 
@@ -815,7 +930,7 @@ function smartReframe() {
     var m = ME.editor.manual;
     m.transitionsMode = "auto";
     m.camera = true;
-    renderSidebarSection("transitions");
+    renderToolPanel();
     refineManualOnly("AI transitions enabled at the best change points (re-rendering).");
   }
 
@@ -843,20 +958,21 @@ function smartReframe() {
     if (!ME.undoStack.length) { showToast("Nothing to undo."); return; }
     ME.redoStack.push(JSON.stringify(ME.editor.manual));
     ME.editor.manual = JSON.parse(ME.undoStack.pop());
-    renderSidebar();
+    renderToolPanel();
   }
   function redoAction() {
     if (!ME.redoStack.length) { showToast("Nothing to redo."); return; }
     ME.undoStack.push(JSON.stringify(ME.editor.manual));
     ME.editor.manual = JSON.parse(ME.redoStack.pop());
-    renderSidebar();
+    renderToolPanel();
   }
 
-  /* ── Apply AI Edit (new instruction from sidebar) ───────────────────── */
+  /* ── Apply AI Edit (new instruction from the AI panel) ──────────────── */
   function applyAIEdit() {
     var input = $("meSbAIInput");
     var instruction = (input && input.value || "").trim();
     var voiceText = (ME.voice && (ME.voice.text||"").trim()) || "";
+    if (input) ME.editor._aiInstruction = input.value;
     if (!instruction && !voiceText && !(ME.voice && ME.voice.blob)) {
       showToast("Type or record an AI instruction first.");
       return;
@@ -894,7 +1010,7 @@ function smartReframe() {
 
   function P(unused){}
 
-function buildManualPayload() {
+  function buildManualPayload() {
     var m = ME.editor.manual;
     return {
       canvas: {aspect: m.canvas.aspect||"9:16", mode: m.canvas.mode||"fill",
@@ -955,8 +1071,7 @@ function buildManualPayload() {
     }).catch(function(){showToast("Microphone unavailable.");});
   }
 
-
-  /* ── Voice recording (shared by intro + sidebar) ────────────────────── */
+  /* ── Voice recording (shared by intro + AI panel) ───────────────────── */
   function stopRec() {
     if (ME.rec.recorder && ME.rec.recorder.state!=="inactive") {
       try{ME.rec.recorder.stop();}catch(e){}
@@ -1053,6 +1168,11 @@ function buildManualPayload() {
     return "";
   }
   function hasVideo(files){return files.some(function(f){return f.kind==="video";});}
+  function pickFiles(accept) {
+    var input=$("meFilesInput"); if(!input)return;
+    try{input.accept = accept||"video/*,image/*,audio/*";}catch(e){}
+    input.click();
+  }
   function addFiles(list){
     if(!list)return;
     for(var i=0;i<list.length;i++){
@@ -1107,7 +1227,7 @@ function buildManualPayload() {
             box.appendChild(btn);
           });
         }
-        renderSidebar();
+        if (ME.mode==="editor") renderToolPanel();
       })
       .catch(function(){var box=$("meStickers");if(box)box.innerHTML='<span class="me-sub">Couldn\'t load the sticker library.</span>';});
   }
@@ -1225,7 +1345,7 @@ function buildManualPayload() {
           return;
         }
         if(ME.timer){window.clearInterval(ME.timer);ME.timer=null;}
-if(job.status==="done"&&job.final_video){
+        if(job.status==="done"&&job.final_video){
           ME.editor.jobId=job.job_id;
           ME.editor.resultVideo=job.final_video;
           ME.editor.stats=job.stats||{};
@@ -1264,7 +1384,7 @@ if(job.status==="done"&&job.final_video){
           return;
         }
         if(ME.timer){window.clearInterval(ME.timer);ME.timer=null;}
-if(job.status==="done"&&job.final_video){
+        if(job.status==="done"&&job.final_video){
           ME.editor.resultVideo=job.final_video;
           ME.editor.stats=job.stats||{};
           ME.editor.jobId=job.job_id;
@@ -1295,7 +1415,7 @@ if(job.status==="done"&&job.final_video){
 
   function goToInput(){ME.mode="intro";renderBody();updateGo();}
 
-function stageLabel(stage){
+  function stageLabel(stage){
     var map={analysis:"Analyzing your video...",planned:"Planning your edit...",broll:"Adding B-roll...",sticker:"Applying the sticker...",
       "slow-motion":"Applying slow motion...",camera:"Applying camera effects...",transitions:"Adding transitions...",sfx:"Adding sound effects...",
       music:"Mixing in the music...",done:"Wrapping up..."};
@@ -1325,6 +1445,28 @@ function stageLabel(stage){
     ME.jobId="";ME.mode="intro";renderBody();updateGo();
   }
 
+  /* ── Sheeting (mobile) ──────────────────────────────────────────────── */
+  function openScrim() { var sc=$("meScrim"); if(sc&&isSmall()) sc.classList.add("show"); }
+  function syncScrim() {
+    var sc=$("meScrim"); if(!sc)return;
+    var f=$("meToolPanel"), p=$("meAiPanel");
+    var any = !!(f&&f.classList.contains("open")) || !!(p&&p.classList.contains("open"));
+    sc.classList.toggle("show", isSmall() && any);
+  }
+  function toggleAIPanel(force) {
+    var p=$("meAiPanel"); if(!p)return;
+    var show = (typeof force==="boolean")? force : !p.classList.contains("open");
+    p.classList.toggle("open", show);
+    syncScrim();
+    if (ME.mode==="intro") updateGo();
+  }
+  function closeSheets(){
+    var f=$("meToolPanel"); if(f)f.classList.remove("open");
+    var p=$("meAiPanel"); if(p)p.classList.remove("open");
+    if(isSmall()){ var tb=$("meToolPanel"); if(tb) tb.innerHTML=""; }
+    syncScrim();
+  }
+
   /* ── Public API ─────────────────────────────────────────────────────── */
   var API = {
     launch: launch, hide: hide, onShow: onShow, reset: reset,
@@ -1345,7 +1487,9 @@ function stageLabel(stage){
     addTextLayer: addTextLayer, removeTextLayer: removeTextLayer, updateTextLayer: updateTextLayer,
     undoAction: undoAction, redoAction: redoAction,
     togglePlay: togglePlay, skipBack: skipBack, skipForward: skipForward,
-    zoomTimeline: zoomTimeline, goToInput: goToInput
+    zoomTimeline: zoomTimeline, goToInput: goToInput,
+    pickFiles: pickFiles, railClick: railClick, openTool: openTool, closeTool: closeTool,
+    toggleAIPanel: toggleAIPanel, closeSheets: closeSheets
   };
   window.VMEditing = API;
 
@@ -1357,4 +1501,3 @@ function stageLabel(stage){
     initOnce();
   }
 })();
-
