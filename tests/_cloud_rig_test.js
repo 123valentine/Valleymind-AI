@@ -118,7 +118,13 @@ wantParts.forEach(function (p) {
   check(built.parts[p] != null, "part present: " + p);
 });
 eq(built.parts.root.tagName, "svg", "root is an SVG");
-eq(built.parts.root.attrs["viewBox"], "0 0 328 261", "viewBox matches content bbox");
+// The rig claims the PNG's own canvas (433x577) so it can overlay static/
+// cloud.png pixel-exactly (the character content is offset by translate(78,185)).
+eq(built.parts.root.attrs["viewBox"], "0 0 433 577", "viewBox equals PNG canvas");
+const wrapped = built.parts.root.children.filter(function (c) {
+  return c.attrs["transform"] === "translate(78 185)";
+});
+eq(wrapped.length, 1, "content wrapped for PNG-canvas alignment");
 
 // Every independently-animated part must carry a transform-origin pivot so the
 // anim engine can rotate/scale around the correct joint.

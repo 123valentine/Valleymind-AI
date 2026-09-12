@@ -319,7 +319,10 @@
   var _rig = null;          // resolved rig { parts } or null (flat fallback)
   var _running = false;
   var _dragging = false;
+  var _dragListenersBound = false;
   var _dragEndAt = 0;       // timestamp the last drag ended (grace period)
+  var _framesDrawn = 0;     // diagnostic: frames that fully rendered
+  var _lastFramesAt = 0;    // diagnostic: timestamp of last rendered frame
   var _intensity = 0.5;
   var _reduced = false;
   var _rafId = 0;
@@ -375,7 +378,8 @@
     dir: -1,             // -1 left, 1 right (for continuous walking)
     speed: WALK_SPEED,
     target: null,        // {x, y} optional walk-to-target
-    baseX: 0, baseY: 0   // where walking started (reserved for wander re-anchor)
+    baseX: 0, baseY: 0,  // where walking started (reserved for wander re-anchor)
+    acc: 0               // sub-pixel step accumulator for reduced-motion amble
   };
 
   // Emotional walking profiles — cadence (steps/sec), step amplitude (deg),
@@ -392,6 +396,13 @@
     sad:       { cadence: 1.2, amp: 8,  speed: 0.5,  bounce: -1.0 },
     sleepy:    { cadence: 1.1, amp: 7,  speed: 0.4,  bounce: -1.2 }
   };
+
+  // prefers-reduced-motion must DAMPEN the loop, never stop it. A completely
+  // still Cloud looks broken; under reduce we keep the engine alive and states
+  // distinguishable with only a fraction of the continuous motion.
+  function motionScale() {
+    return _reduced ? 0.12 : 1;
+  }
 
   function walkProfile() {
     return WALK_PROFILES[_state] || WALK_PROFILES.idle;
@@ -450,6 +461,7 @@
     _walk.active = true;
     _walk.paused = false;
     _walk.target = { x: x, y: y };
+    _walk.acc = 0;
     var p = elementPos();
     _walk.baseX = p.x;
     _walk.baseY = p.y;
@@ -612,16 +624,20 @@
       _dragging = true;
       if (_walk.active) { _walk.paused = true; _walk.pausedAt = performance.now(); }
     });
-    el.addEventListener("pointerup", function () {
-      _dragging = false;
-      _dragEndAt = performance.now();
-      if (_walk.active) _walk.paused = true; // hold after drag
-    });
-    el.addEventListener("pointercancel", function () {
-      _dragging = false;
-      _dragEndAt = performance.now();
-      if (_walk.active) _walk.paused = true;
-    });
+    // Drag-release is cleared document-wide so a pointerup that lands outside
+    // the character (a real browser goes there all the time) can never leave
+    // the frame loop permanently gated.
+    if (!_dragListenersBound) {
+      _dragListenersBound = true;
+      document.addEventListener("pointerup", endDrag);
+      document.addEventListener("pointercancel", endDrag);
+    }
+  }
+
+  function endDrag() {
+    _dragging = false;
+    _dragEndAt = performance.now();
+    if (_walk.active) _walk.paused = true; // hold after drag
   }
 
   // ───────────────────────────────────────────────────────────────────────
@@ -644,6 +660,7 @@
   function renderRig(pose, now) {
     if (!_rig || !_rig.parts) return;
     var p = _rig.parts;
+    var amp = motionScale();
 
     // Face descriptors → targets.
     var eyeKey = pose.face.eyes;
@@ -661,8 +678,8 @@
     // Ease eye/brow targets for natural, non-snapping motion. When an explicit
     // look target is active the eyes ease toward it instead of the pose preset.
     var k = 0.14;
-    var eyeTx = _lookTarget ? (_lookTarget.x * 2.2) : eyeT.px;
-    var eyeTy = _lookTarget ? (_lookTarget.y * 2.2) : eyeT.py;
+    var eyeTx = (_lookTarget ? (_lookTarget.x * 2.2) : eyeT.px) * amp;
+    var eyeTy = (_lookTarget ? (_lookTarget.y * 2.2) : eyeT.py) * amp;
     _cur.eyePx += (eyeTx - _cur.eyePx) * k;
     _cur.eyePy += (eyeTy - _cur.eyePy) * k;
     _cur.eyeOpen += (eyeT.open - _cur.eyeOpen) * k;
@@ -679,8 +696,8 @@
     // target (or the pose preset); the pose gaze nudges them a little further.
     var gx = _cur.eyePx;
     var gy = _cur.eyePy;
-    gx += pose.gaze.x * 2;
-    gy += pose.gaze.y * 2;
+    gx += pose.gaze.x * 2 * amp;
+    gy += pose.gaze.y * 2 * amp;
 
     if (p.leftPupil) p.leftPupil.style.transform = "translate(" + gx.toFixed(2) + "px," + gy.toFixed(2) + "px)";
     if (p.rightPupil) p.rightPupil.style.transform = "translate(" + gx.toFixed(2) + "px," + gy.toFixed(2) + "px)";
@@ -690,10 +707,10 @@
     if (p.rightEye) p.rightEye.style.transform = "scaleY(" + eyeOpen.toFixed(3) + ")";
 
     // Eyebrows.
-    _cur.blTy += (browT.lty - _cur.blTy) * k;
-    _cur.brTy += (browT.rty - _cur.brTy) * k;
-    _cur.blRot += (browT.lrot - _cur.blRot) * k;
-    _cur.brRot += (browT.rrot - _cur.brRot) * k;
+    _cur.blTy += (browT.lty * amp - _cur.blTy) * k;
+    _cur.brTy += (browT.rty * amp - _cur.brTy) * k;
+    _cur.blRot += (browT.lrot * amp - _cur.blRot) * k;
+    _cur.brRot += (browT.rrot * amp - _cur.brRot) * k;
     if (p.leftEyebrow) rigPartTransform(p.leftEyebrow, 0, _cur.blTy, _cur.blRot, null, null);
     if (p.rightEyebrow) rigPartTransform(p.rightEyebrow, 0, _cur.brTy, _cur.brRot, null, null);
 
@@ -713,9 +730,9 @@
     var lookY = _lookTarget ? _lookTarget.y : pose.gaze.y;
     // Walking: head turns slightly toward the direction of travel.
     if (_walk.active && !_walk.paused) lookX += _walk.dir * 0.35;
-    var headTxT = (lookX * 7);
-    var headTyT = (lookY * 5) - 1;
-    var headRotT = (lookX * 6);
+    var headTxT = (lookX * 7) * amp;
+    var headTyT = (lookY * 5 - 1) * amp;
+    var headRotT = (lookX * 6) * amp;
     var headK = 0.07;
     _cur.hdTx += (headTxT - _cur.hdTx) * headK;
     _cur.hdTy += (headTyT - _cur.hdTy) * headK;
@@ -733,6 +750,7 @@
     // Returns [leftDeg, rightDeg] relative to rest. Sign convention follows the
     // existing known-good poses ("lift" = both inward-up): left arm counter-
     // clockwise is inward-up, right arm clockwise is inward-up.
+    var amp = motionScale();
     var restL = 4, restR = -4; // slight neutral outward hang
     var left = restL, right = restR;
     switch (pose.arms) {
@@ -740,7 +758,7 @@
         break;
       case "chin": // thinking hand-to-face: right arm up toward chin
         left = restL;
-        right = 24 + Math.sin(_clock / 1000 * 0.6) * 2;
+        right = 24 + Math.sin(_clock / 1000 * 0.6) * 2 * amp;
         break;
       case "lift": // excited: both up
         left = -38; right = 38;
@@ -755,22 +773,22 @@
         left = -14; right = 14;
         break;
       case "bounce": // excited foot/arm motion
-        left = restL + Math.sin(_clock / 1000 * TAU * 2.2) * 6;
-        right = restR - Math.sin(_clock / 1000 * TAU * 2.2) * 6;
+        left = restL + Math.sin(_clock / 1000 * TAU * 2.2) * 6 * amp;
+        right = restR - Math.sin(_clock / 1000 * TAU * 2.2) * 6 * amp;
         break;
       case "wave": // greeting: one arm waves in the air
         left = restL;
-        right = 34 + Math.sin(_clock / 1000 * TAU * 3.2) * 12;
+        right = 34 + Math.sin(_clock / 1000 * TAU * 3.2) * 12 * amp;
         break;
       case "point_up":
         left = -95; right = 95;
         break;
       case "point_l": // point toward image-left (west)
         left = restL;
-        right = 118 + Math.sin(_clock / 1000 * 2.4) * 3;
+        right = 118 + Math.sin(_clock / 1000 * 2.4) * 3 * amp;
         break;
       case "point_r": // point toward image-right (east)
-        left = -118 + Math.sin(_clock / 1000 * 2.4) * 3;
+        left = -118 + Math.sin(_clock / 1000 * 2.4) * 3 * amp;
         right = restR;
         break;
       case "point_d": // point down
@@ -780,15 +798,15 @@
         left = -68; right = 68;
         break;
       case "talk": // conversational hand gestures
-        left = restL + Math.sin(_clock / 1000 * TAU * 2.8) * 5;
-        right = restR - Math.sin(_clock / 1000 * TAU * 2.8) * 5;
+        left = restL + Math.sin(_clock / 1000 * TAU * 2.8) * 5 * amp;
+        right = restR - Math.sin(_clock / 1000 * TAU * 2.8) * 5 * amp;
         break;
       default:
         left = restL; right = restR;
     }
     // Occasional speaking gesture adds a little arm life.
     if (pose.arms === "rest" && _state === "speaking") {
-      left += Math.sin(_clock / 1000 * TAU * 2.6) * 3;
+      left += Math.sin(_clock / 1000 * TAU * 2.6) * 3 * amp;
     }
     // One-shot arm gestures override the pose (they run a timed script of
     // arm poses so a future Brain can trigger wave/point/welcome on demand).
@@ -805,7 +823,7 @@
     var ang = armAngle(pose, 0, now);
     // Counter-swing the arms while actually stepping (emotionally paced).
     if (_walk.active && !_walk.paused) {
-      var s = Math.sin(_clock / 1000 * TAU * walkProfile().cadence) * (9 * moodScale());
+      var s = Math.sin(_clock / 1000 * TAU * walkProfile().cadence) * (9 * moodScale()) * motionScale();
       ang[0] += -s;
       ang[1] += s;
     }
@@ -817,21 +835,22 @@
     if (!_rig.parts) return;
     var p = _rig.parts;
     var t = _clock / 1000;
+    var amp = motionScale();
 
     // Weight shift while standing.
-    var shift = Math.sin(t * 0.5) * 1.5;
+    var shift = Math.sin(t * 0.5) * 1.5 * amp;
     var leftLeg = shift, rightLeg = -shift;
 
     if (_walk.active && !_walk.paused) {
       // Walk cycle: legs swing back/forth (real stepping), emotionally paced.
       var pr = walkProfile();
-      var step = Math.sin(t * TAU * pr.cadence) * pr.amp;
+      var step = Math.sin(t * TAU * pr.cadence) * pr.amp * amp;
       leftLeg = step;
       rightLeg = -step;
       _walk.stepPhase = step; // shared with arms via a module field
     } else if (pose.legs === "bounce") {
-      leftLeg = Math.sin(t * TAU * 2.2) * 5;
-      rightLeg = -Math.sin(t * TAU * 2.2) * 5;
+      leftLeg = Math.sin(t * TAU * 2.2) * 5 * amp;
+      rightLeg = -Math.sin(t * TAU * 2.2) * 5 * amp;
     } else if (pose.legs === "sit") {
       leftLeg = 4; rightLeg = -2; // relaxed/sleepy stance
     } else if (pose.legs === "shift") {
@@ -851,15 +870,16 @@
   // Movement stepping (Layer 2) — runs inside the frame loop
   // ───────────────────────────────────────────────────────────────────────
   function stepMovement(dt) {
-    if (!_walk.active || _dragging || _reduced || document.hidden) return;
+    if (!_walk.active || _dragging || document.hidden) return;
     if (_walk.paused) {
       // Allow resume after a drag grace period if a target still exists.
       if (_walk.target && (performance.now() - _dragEndAt) > DRAG_GRACE_MS) _walk.paused = false;
       else return;
     }
     var p = elementPos();
-    // Emotion paces the gait (happy/excited move quicker, sad/thinking drag).
-    var dist = WALK_SPEED * _walk.speed * walkProfile().speed * (dt / 1000);
+    // Emotion paces the gait (happy/excited move quicker, sad/thinking drag);
+    // prefers-reduced-motion slows everything to a gentle amble.
+    var dist = WALK_SPEED * _walk.speed * walkProfile().speed * motionScale() * (dt / 1000);
 
     if (_walk.target) {
       var dx = _walk.target.x - p.x;
@@ -875,13 +895,22 @@
       var ny = p.y + (dy / d) * dist;
       placeElement(nx, ny);
     } else {
-      // Continuous wander in _walk.dir; bounce off viewport edges.
-      var c = clampToViewport(p.x + _walk.dir * dist, p.y);
-      if (Math.round(c.x) === Math.round(p.x) || c.x <= viewportRect().x ||
-          c.x >= window.innerWidth - (p.w || 96) - viewportRect().x) {
-        _walk.dir = -_walk.dir; // turn around at a boundary
-      } else {
-        placeElement(c.x, p.y);
+      // Continuous wander in _walk.dir; bounce off viewport edges. Sub-pixel
+      // steps (reduced motion makes them tiny) accumulate so tiny-but-real
+      // movement still tips over into a visible tick.
+      _walk.acc = _walk.acc || 0;
+      _walk.acc += _walk.dir * dist;
+      var step = Math.round(_walk.acc);
+      if (step !== 0) {
+        var c = clampToViewport(p.x + step, p.y);
+        if (c.x === p.x || c.x <= viewportRect().x ||
+            c.x >= window.innerWidth - (p.w || 96) - viewportRect().x) {
+          _walk.dir = -_walk.dir;            // turn around at a boundary
+          _walk.acc = 0;
+        } else {
+          placeElement(c.x, p.y);
+          _walk.acc -= step;
+        }
       }
     }
   }
@@ -897,13 +926,15 @@
       if (!_el) { _rafId = requestAnimationFrame(frame); return; }
       adopt(_el);
     }
-    if (_dragging || _reduced || document.hidden || isCharacterHidden(_el)) {
+    if (_dragging || document.hidden || isCharacterHidden(_el)) {
       _rafId = requestAnimationFrame(frame);
       return;
     }
     var dt = Math.min(64, (now - _lastT) || 16);
     _lastT = now;
     _clock += dt;
+    _framesDrawn++;
+    _lastFramesAt = now;
 
     if (!_rig) _rig = resolveRig(_el);
 
@@ -957,12 +988,13 @@
   }
 
   function renderBody(pose, now) {
+    var amp = motionScale();
     var mood = MOOD[_state] || 1;
-    var wrap = pose.breath * mood * _intensity;
-    var stride = pose.bob * mood * _intensity;
+    var wrap = pose.breath * mood * _intensity * amp;
+    var stride = pose.bob * mood * _intensity * amp;
 
-    var gx = pose.gaze.x * 2 * _intensity;
-    var gy = pose.gaze.y * 1.5 * _intensity;
+    var gx = pose.gaze.x * 2 * _intensity * amp;
+    var gy = pose.gaze.y * 1.5 * _intensity * amp;
 
     // Soft eased settling on the target pose.
     _cur.tx += ((pose.tx + gx) - _cur.tx) * 0.045;
@@ -975,14 +1007,14 @@
     _cur.bob += (stride - _cur.bob) * 0.045;
 
     var breathePx = _cur.breath * 120;
-    var bobPx = _cur.bob * (1 + Math.sin(_clock / 1000 * TAU * _cur.breatheHz)) * 0.5;
+    var bobPx = (_cur.bob * (1 + Math.sin(_clock / 1000 * TAU * _cur.breatheHz)) * 0.5) * amp;
 
     // A walking Cloud genuinely bobs with each step; the emotion profile adds
     // extra hop (happy/excited) or drag (sad/thinking/sleepy).
     if (_walk.active && !_walk.paused) {
       var wpr = walkProfile();
       var stepWave = Math.abs(Math.sin(_clock / 1000 * TAU * wpr.cadence));
-      bobPx += (1.4 + wpr.bounce * 2.2) * stepWave;
+      bobPx += ((1.4 + wpr.bounce * 2.2) * stepWave) * amp;
     }
 
     var tx = _cur.tx + breathePx * 0.3 * Math.sin(_clock / 1000 * TAU * _cur.breatheHz);
@@ -1002,11 +1034,11 @@
         _gesture = null;
       } else {
         var g = evalGesture(_gesture, at);
-        tx += g.tx;
-        ty += g.ty;
-        rot += g.rot;
-        sx += g.sx;
-        sy += g.sy;
+        tx += g.tx * amp;
+        ty += g.ty * amp;
+        rot += g.rot * amp;
+        sx += (g.sx - 1) * amp + 1;
+        sy += (g.sy - 1) * amp + 1;
         if (g.originY != null) originY = g.originY;
       }
     }
@@ -1022,7 +1054,6 @@
   // Lifecycle
   // ───────────────────────────────────────────────────────────────────────
   function boot() {
-    if (_reduced) return;
     _lastT = performance.now();
     scheduleIdleLife(_lastT);
     if (!_running) {
@@ -1093,12 +1124,14 @@
     _walk.paused = false;
     _walk.dir = dir;
     _walk.target = null;
+    _walk.acc = 0;
     return true;
   }
   function stop() {
     _walk.active = false;
     _walk.target = null;
     _walk.paused = false;
+    _walk.acc = 0;
   }
   function turn(dir) {
     if (!_running) boot();
@@ -1165,6 +1198,28 @@
     getState: function () { return _state; },
     listStates: function () {
       return STATES.map(function (s) { return s.key; });
+    },
+    debug: function () {
+      var el = _el || resolveElement();
+      return {
+        running: _running,
+        reduced: _reduced,
+        dragging: _dragging,
+        framesDrawn: _framesDrawn,
+        lastFrameAt: _lastFramesAt,
+        now: performance.now(),
+        state: _state,
+        stable: _stable,
+        elFound: !!el,
+        elConnected: !!(el && el.isConnected),
+        elId: el ? el.id : null,
+        rigParts: _rig && _rig.parts ? Object.keys(_rig.parts).length : 0,
+        hidden: el ? isCharacterHidden(el) : true,
+        walkActive: _walk.active,
+        walkPaused: _walk.paused,
+        walkHasTarget: !!_walk.target,
+        dragging2: _dragging
+      };
     },
     getCapabilities: getCapabilities,
     start: function () { boot(); },

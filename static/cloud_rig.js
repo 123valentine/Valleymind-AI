@@ -108,11 +108,19 @@
 
   function build() {
     var svg = el("svg");
-    attr(svg, "viewBox", "0 0 328 261");
-    attr(svg, "preserveAspectRatio", "xMidYMax meet");
+    // The rig must overlay static/cloud.png exactly: the PNG canvas is
+    // 433x577 and its character content lives in the bbox x78..405, y185..446
+    // (measured from cloud.png). So the SVG claims the same canvas and all
+    // content is wrapped in translate(78,185) — giving one visible Cloud where
+    // the rig paints over (and can safely replace) the flattened image.
+    attr(svg, "viewBox", "0 0 433 577");
+    attr(svg, "preserveAspectRatio", "xMidYMid meet");
     attr(svg, "width", "100%");
     attr(svg, "height", "100%");
     attr(svg, "aria-hidden", "true");
+
+    var content = el("g");
+    attr(content, "transform", "translate(78 185)");
 
     // Shared linear gradients to softly shade the fluff and body.
     var defs = el("defs");
@@ -147,7 +155,7 @@
     attr(shadow, "fill", COLORS.shadow);
     var shadowG = el("g"); attr(shadowG, "data-part", "shadow");
     shadowG.appendChild(shadow);
-    svg.appendChild(shadowG);
+    content.appendChild(shadowG);
 
     // ── Body (torso) ───────────────────────────────────────────────────────
     var bodyPath = el("path");
@@ -160,37 +168,47 @@
     attr(bodyPath, "fill", "url(#cloudBodyGr)");
     var bodyG = rigPart(el("g"), 50, 30); attr(bodyG, "data-part", "body");
     bodyG.appendChild(bodyPath);
-    svg.appendChild(bodyG);
+    content.appendChild(bodyG);
 
-    // ── Legs ──────────────────────────────────────────────────────────────
-    var leftLeg = legPath("left");
-    var leftLegPath = el("path"); attr(leftLegPath, "d", leftLeg); attr(leftLegPath, "fill", "url(#cloudLegGr)");
-    var leftLegG = rigPart(el("g"), 66, 2); attr(leftLegG, "data-part", "leftLeg");
+    // ── Legs (boots) ───────────────────────────────────────────────────────
+    var leftLegG = rigPart(el("g"), 50, 68); attr(leftLegG, "data-part", "leftLeg");
+    var leftLegPath = el("path");
+    attr(leftLegPath, "d", legPath("left"));
+    attr(leftLegPath, "fill", "url(#cloudLegGr)");
     leftLegG.appendChild(leftLegPath);
-    svg.appendChild(leftLegG);
+    content.appendChild(leftLegG);
 
-    var rightLeg = legPath("right");
-    var rightLegPath = el("path"); attr(rightLegPath, "d", rightLeg); attr(rightLegPath, "fill", "url(#cloudLegGr)");
-    var rightLegG = rigPart(el("g"), 77, 2); attr(rightLegG, "data-part", "rightLeg");
+    var rightLegG = rigPart(el("g"), 50, 68); attr(rightLegG, "data-part", "rightLeg");
+    var rightLegPath = el("path");
+    attr(rightLegPath, "d", legPath("right"));
+    attr(rightLegPath, "fill", "url(#cloudLegGr)");
     rightLegG.appendChild(rightLegPath);
-    svg.appendChild(rightLegG);
+    content.appendChild(rightLegG);
 
-    // ── Arms (behind body/head for a natural layering) ────────────────────
-    var leftArm = el("path"); attr(leftArm, "d", armPath("left")); attr(leftArm, "fill", COLORS.limb);
-    var leftArmG = rigPart(el("g"), 68, 5); attr(leftArmG, "data-part", "leftArm");
+    // ── Arms (blob arms with hands) ───────────────────────────────────────
+    var leftArmG = rigPart(el("g"), 50, 72); attr(leftArmG, "data-part", "leftArm");
+    var leftArm = el("path");
+    attr(leftArm, "d", armPath("left"));
+    attr(leftArm, "fill", "url(#cloudLegGr)");
+    attr(leftArm, "stroke", COLORS.limbDark); attr(leftArm, "stroke-width", "2");
     leftArmG.appendChild(leftArm);
-    svg.appendChild(leftArmG);
+    content.appendChild(leftArmG);
 
-    var rightArm = el("path"); attr(rightArm, "d", armPath("right")); attr(rightArm, "fill", COLORS.limb);
-    var rightArmG = rigPart(el("g"), 31, 5); attr(rightArmG, "data-part", "rightArm");
+    var rightArmG = rigPart(el("g"), 50, 72); attr(rightArmG, "data-part", "rightArm");
+    var rightArm = el("path");
+    attr(rightArm, "d", armPath("right"));
+    attr(rightArm, "fill", "url(#cloudLegGr)");
+    attr(rightArm, "stroke", COLORS.limbDark); attr(rightArm, "stroke-width", "2");
     rightArmG.appendChild(rightArm);
-    svg.appendChild(rightArmG);
+    content.appendChild(rightArmG);
 
-    // ── Head (fluffy cloud dome with the face) ────────────────────────────
-    var head = el("path"); attr(head, "d", headPath()); attr(head, "fill", "url(#cloudHeadGr)");
-    var headG = rigPart(el("g"), 50, 100); attr(headG, "data-part", "head");
+    // ── Head (fluff) ──────────────────────────────────────────────────────
+    var head = el("path");
+    attr(head, "d", headPath());
+    attr(head, "fill", "url(#cloudHeadGr)");
+    var headG = rigPart(el("g"), 50, 50); attr(headG, "data-part", "head");
     headG.appendChild(head);
-    svg.appendChild(headG);
+    content.appendChild(headG);
 
     // ── Eyebrows ──────────────────────────────────────────────────────────
     // A soft dark arc sitting just above each eye.
@@ -206,8 +224,8 @@
     }
     var leftBrow = browPart("leftEyebrow", GEO.leftEye.x, GEO.browY);
     var rightBrow = browPart("rightEyebrow", GEO.rightEye.x, GEO.browY);
-    svg.appendChild(leftBrow);
-    svg.appendChild(rightBrow);
+    content.appendChild(leftBrow);
+    content.appendChild(rightBrow);
 
     // ── Eyes ──────────────────────────────────────────────────────────────
     // Each eye is a group holding a dark pupil so "looking" can translate the
@@ -231,8 +249,8 @@
     }
     var leftEye = eyePart("leftEye", GEO.leftEye.x);
     var rightEye = eyePart("rightEye", GEO.rightEye.x);
-    svg.appendChild(leftEye);
-    svg.appendChild(rightEye);
+    content.appendChild(leftEye);
+    content.appendChild(rightEye);
 
     // ── Mouth ─────────────────────────────────────────────────────────────
     // By default a small neutral smile; cloud_anim.js swaps expressions.
@@ -247,7 +265,8 @@
     attr(mouthPath, "stroke-width", "2.5"); attr(mouthPath, "stroke-linecap", "round");
     attr(mouthPath, "data-expression", "neutral");
     mouthG.appendChild(mouthPath);
-    svg.appendChild(mouthG);
+    content.appendChild(mouthG);
+    svg.appendChild(content); // content lives in PNG-canvas space (after #defs)
 
     var parts = {
       root: svg,
@@ -288,9 +307,22 @@
     return !!(roots && roots.length);
   }
 
+  // The rig overlay is the single visible Cloud once it is live. The flattened
+  // PNG stays in the DOM only as the no-JS/loading fallback — hide it the
+  // moment the rig takes over so there is never a frozen PNG over the moving
+  // Cloud.
+  function hideFallback(container) {
+    if (!container || !container.querySelectorAll) return;
+    var imgs = container.querySelectorAll("img.vmcloud-fallback");
+    for (var i = 0; imgs && i < imgs.length; i++) {
+      imgs[i].style.visibility = "hidden";
+    }
+  }
+
   function mount(container) {
     var host = findRigMount(container);
     if (!host || host.nodeType !== 1) return null;
+    hideFallback(container);
     if (alreadyRooted(host)) {
       // Already mounted (auto-boot or cloud.js raced ahead): return it.
       return collectRig(host.querySelector("svg.vmcloud-rig-svg"));

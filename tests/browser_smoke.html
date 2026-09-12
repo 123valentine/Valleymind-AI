@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>cloud-browser-smoke</title>
+<!-- Mirror index.html script order + static markup exactly. -->
+<script src="/static/cloud.js?v=2"></script>
+<script src="/static/cloud3d.js?v=2"></script>
+<script src="/static/cloud_voice.js?v=2"></script>
+<script src="/static/cloud_vision.js?v=2"></script>
+<script src="/static/cloud_rig.js?v=2"></script>
+<script src="/static/cloud_anim.js?v=2"></script>
+<style>
+#vmCloudCharacter {
+  position: fixed !important;
+  width: 96px !important;
+  height: auto !important;
+  aspect-ratio: 433 / 577 !important;
+  right: 18px !important;
+  bottom: calc(18px + env(safe-area-inset-bottom)) !important;
+  display: block !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  z-index: 99999 !important;
+  pointer-events: auto !important;
+  touch-action: none !important;
+  cursor: grab !important;
+  user-select: none !important;
+  -webkit-user-drag: none !important;
+  filter: drop-shadow(0 8px 14px rgba(0,0,0,0.45)) !important;
+}
+.vmcloud-fallback {
+  position: absolute !important; inset: 0;
+  width: 100% !important; height: 100% !important;
+  object-fit: contain !important;
+  pointer-events: none !important;
+  user-select: none !important;
+  -webkit-user-drag: none !important;
+}
+.vmcloud-rig-mount {
+  position: absolute !important; inset: 0;
+  pointer-events: none !important;
+  overflow: visible !important;
+}
+.vmcloud-rig-mount svg { display: block; width: 100%; height: 100%; }
+</style>
+</head>
+<body>
+<div id="vmCloudCharacter" role="button" aria-label="Cloud companion">
+  <img class="vmcloud-fallback" src="/static/cloud.png" alt="Cloud" draggable="false">
+  <div class="vmcloud-rig-mount"></div>
+</div>
+<div id="results" style="position:absolute;left:0;top:0;color:#0f0;background:#000;font-size:12px;white-space:pre-wrap;max-width:1200px"></div>
+<script>
+window.vmIsAuthenticated = function () { return true; };
+</script>
+<script>
+(function () {
+  "use strict";
+  var out = [];
+  var _log = [];
+  window.addEventListener("error", function (e) { _log.push("err:" + e.message + "@" + (e.filename || "")); });
+  window.addEventListener("unhandledrejection", function (e) { _log.push("rej:" + String((e.reason && e.reason.message) || e.reason)); });
+  function snap(label, obj) { out.push(label + ": " + JSON.stringify(obj)); }
+  function snapProbe() {
+    var dbg = window.vmCloudAnim && window.vmCloudAnim.debug ? window.vmCloudAnim.debug() : null;
+    var rn = dbg && dbg.running;
+    snap("probe", { logs: _log.slice(), running: rn, frames: dbg ? dbg.framesDrawn : -1 });
+  }
+  function poll() {
+    var el = document.getElementById("vmCloudCharacter");
+    var mount = el && el.querySelector(".vmcloud-rig-mount");
+    var svg = mount && mount.querySelector("svg.vmcloud-rig-svg");
+    var img = el && el.querySelector("img.vmcloud-fallback");
+    var cs = function (n) { try { var s = getComputedStyle(n); return { d: s.display, v: s.visibility, o: s.opacity, p: s.position, z: s.zIndex, t: n.style.transform }; } catch (e) { return { err: String(e) }; } };
+    snap("globals", {
+      cloudSetState: typeof window.cloudSetState,
+      vmCloudAnim: !!window.vmCloudAnim,
+      VMCloudRig: !!window.VMCloudRig
+    });
+    snap("dom", { charEl: !!el, mount: !!mount, rigSvg: !!svg, imgs: document.querySelectorAll("img").length });
+    if (svg) {
+      snap("svgViewBox", svg.getAttribute("viewBox"));
+      snap("svgRect", (function () { var r = svg.getBoundingClientRect(); return { w: r.width, h: r.height }; })());
+      snap("imgRect", (function () { var r = img.getBoundingClientRect(); return { w: r.width, h: r.height }; })());
+      var pt = document.elementsFromPoint(el.offsetLeft + el.offsetWidth / 2, el.offsetTop + el.offsetHeight / 2);
+      snap("topmost", pt.slice(0, 4).map(function (n) { return n.tagName + "." + (n.className && n.className.baseVal !== undefined ? n.className.baseVal : n.className || "") + (n.id ? "#" + n.id : ""); }));
+    }
+    if (window.vmCloudAnim) {
+      snap("state0", window.vmCloudAnim.getState && window.vmCloudAnim.getState());
+      window.cloudSetState("excited");
+      setTimeout(function () {
+        if (!window.vmCloudAnim) return;
+        var parts = {};
+        ["head", "leftArm", "rightArm", "leftLeg", "leftEye", "leftEyebrow"].forEach(function (k) {
+          var g = svg && svg.querySelector('[data-part="' + k + '"]');
+          parts[k] = g ? g.style.transform : null;
+        });
+        var pupil = svg && svg.querySelector(".cloud-pupil");
+        var mouthPath = svg && svg.querySelector("[data-part=\"mouth\"] path");
+        var anim = window.vmCloudAnim.debug ? window.vmCloudAnim.debug() : {};
+        snap("debug", anim);
+        snap("state1", window.vmCloudAnim.getState());
+        snap("parts", parts);
+        snap("pupil", pupil ? pupil.style.transform : null);
+        snap("mouthExpr", mouthPath ? mouthPath.getAttribute("data-expression") : null);
+        snap("containerT", el && el.style.transform);
+        snap("elStyle", cs(el));
+        snap("imgStyle", img && cs(img));
+        snap("mountStyle", mount && cs(mount));
+        snapProbe();
+        var r = document.getElementById("results");
+        if (r) r.textContent = out.join("\n");
+        document.title = "RESULT_OK";
+      }, 250); // let a few rAF frames run after state change
+    } else {
+      snap("error", "vmCloudAnim missing");
+      var r2 = document.getElementById("results");
+      if (r2) r2.textContent = out.join("\n");
+    }
+  }
+  setTimeout(poll, 500);
+})();
+</script>
+</body>
+</html>
