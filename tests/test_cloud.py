@@ -1479,10 +1479,11 @@ class CloudAnimStaticTestCase(unittest.TestCase):
 
     def test_get_capabilities_is_honest_about_layered_rig(self):
         src = self._anim_js()
-        # The layered SVG rig (static/cloud_rig.js) redraws static/cloud.png as
-        # separately addressable parts, so the animation layer can honestly
-        # claim independent face/limb motion — the flattened PNG is the source
-        # of truth and the standing fallback, not the animatable surface.
+        # The layered SVG rig (static/cloud_rig.js) draws the companion as an
+        # ORIGINAL robot (not the legacy cloud.png), exposing separately
+        # addressable parts so the animation layer can honestly claim
+        # independent face/limb motion — flatter assets are the animatable
+        # surface, and static/cloud.png remains only the no-JS fallback.
         self.assertIn("independentEyes: true", src)
         self.assertIn("independentEyebrows: true", src)
         self.assertIn("independentMouth: true", src)
@@ -1491,7 +1492,7 @@ class CloudAnimStaticTestCase(unittest.TestCase):
         self.assertIn("wholeBodyArticulation: true", src)
         self.assertIn("needsPartAssetsForFaceAndLimbs: false", src)
         self.assertIn("asset: \"static/cloud_rig.js\"", src)
-        self.assertIn("assetType: \"layered SVG rig (faithful redraw of static/cloud.png)\"", src)
+        self.assertIn("assetType: \"layered SVG rig (original robot companion visual)\"", src)
         self.assertIn("standingAssetFallback: \"static/cloud.png\"", src)
 
     def test_tweening_math_is_available(self):
@@ -1629,12 +1630,14 @@ class CloudAnimStaticTestCase(unittest.TestCase):
 
 
 class CloudRigStaticTestCase(unittest.TestCase):
-    """Static guarantees about static/cloud_rig.js — the faithful layered
-    vector rig that redraws static/cloud.png as separately addressable parts.
+    """Static guarantees about static/cloud_rig.js — the layered vector rig for
+    the robot companion, an ORIGINAL robot visual (NOT the legacy cloud.png)
+    drawn as separately addressable toy-like parts.
 
-    The flattened PNG stays the source of truth and the standing fallback;
-    the rig is how independent eyes/brows/mouth/arms/legs can be animated at
-    all without redesigning the character.
+    static/cloud.png stays only as the no-JS/loading fallback and is hidden the
+    moment the rig mounts; the rig is how independent eyes/brows/mouth/ears/
+    arms/hands/pods/halo/lower-body can be animated at all without a flattened
+    stale asset behind the character.
     """
 
     def _index_html(self):
@@ -1663,18 +1666,23 @@ class CloudRigStaticTestCase(unittest.TestCase):
         self.assertIn("collectRig: collectRig", src)
         self.assertIn("mountRoot: mountRoot", src)
 
-    def test_rig_declares_faithful_not_redesign(self):
+    def test_rig_declares_original_robot_not_legacy_cloud(self):
         src = self._rig_js()
-        self.assertIn("faithful", src)
-        self.assertIn("NOT a redesign", src)
+        self.assertIn("robot", src)
+        self.assertIn("original robot companion", src)
+        self.assertIn("NOT the legacy cloud", src)
+        # The legacy cloud asset survives strictly as the hidden fallback only.
         self.assertIn("static/cloud.png", src)
+        self.assertIn("vmcloud-fallback", src)
 
-    def test_rig_palette_sampled_from_png(self):
+    def test_rig_palette_robot(self):
         src = self._rig_js()
-        self.assertIn('headTop: "#E5EAE8"', src)
-        self.assertIn('face:    "#6A7274"', src)
-        self.assertIn('leg:     "#272B2B"', src)
-        self.assertIn('ink:     "#010409"', src)
+        # Robot palette: white/off-white glossy body, deep black face screen,
+        # saturated blue accents, bright cyan glow ink.
+        self.assertIn('headTop: "#F4F9FB"', src)
+        self.assertIn('face:    "#05090D"', src)
+        self.assertIn('leg:     "#2E7CF6"', src)
+        self.assertIn('ink:     "#00E5FF"', src)
 
     def test_rig_exposes_all_addressable_parts(self):
         src = self._rig_js()
@@ -1685,6 +1693,10 @@ class CloudRigStaticTestCase(unittest.TestCase):
         for part in ("body", "head", "leftEyebrow", "rightEyebrow", "leftEye",
                      "rightEye", "mouth", "leftArm", "rightArm", "leftLeg",
                      "rightLeg", "shadow"):
+            self.assertIn('"%s"' % part, src)
+        # Robot companion parts are also addressable.
+        for part in ("face", "halo", "lowerBody", "leftEar", "rightEar",
+                     "leftHand", "rightHand"):
             self.assertIn('"%s"' % part, src)
         self.assertIn("attr(g, \"data-part\", id)", src)
 

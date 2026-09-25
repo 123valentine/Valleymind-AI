@@ -1,29 +1,30 @@
-/* ValleyMind Cloud — faithful layered vector rig.
-   ────────────────────────────────────────────────────
-   The canonical character is static/cloud.png (a single flattened 433×577
-   image). Because that asset cannot move its eyes, brows, mouth, arms or legs
-   independently, this module builds a LAYERED SVG rig that faithfully redraws
-   the exact Cloud character — same palette, proportions, silhouette and facial
-   design, measured directly from cloud.png — as separately addressable parts:
+/* ValleyMind Cloud companion — layered vector rig for the ROBOT visual.
+   ────────────────────────────────────────────────────────────────────
+   The companion is a small, cute, futuristic floating 3D-cartoon AI ROBOT:
+   an original robot companion (NOT the legacy cloud.png). Because a single
+   flattened image cannot move its eyes, brows, mouth, arms or hands
+   independently, this module builds a LAYERED SVG rig that draws the robot
+   as separately addressable 3D-toy-like parts:
 
-       body | head | leftEyebrow | rightEyebrow | leftEye | rightEye |
-       mouth | leftArm | rightArm | leftLeg | rightLeg | feet/shadow
+       body | head | face | leftEyebrow | rightEyebrow | leftEye | rightEye |
+       mouth | leftEar | rightEar | leftArm | rightArm | leftHand | rightHand |
+       leftLeg | rightLeg | lowerBody | halo | shadow
 
-   Each part is an <g> that the centralized animation engine
+   Each part is an SVG <g> that the single centralized animation engine
    (static/cloud_anim.js) can translate/rotate/scale independently via CSS
-   transforms. The flattened PNG remains the source of truth and the static
-   fallback for the non-animated companion avatar.
+   transforms (eyes blink, pupils gaze, mouth smiles/talks, arms wave & point,
+   hands waggle, ears pulse, halo floats, base hovers). The character itself
+   floats with a gentle hover idle — no legs, no walking figure; the lower
+   body is a rounded floating base with small blue hover pods.
 
-   This rig is a faithful vector recreation, NOT a redesign: it preserves the
-   character's proportions, colors, outlines, facial design and recognizable
-   silhouette so it is clearly still the SAME Cloud. To be honest: a flattened
-   PNG cannot be independently animated; only this layered redraw can.
+   static/cloud.png is NOT the robot visual. It remains in the DOM ONLY as the
+   no-JS / loading fallback before this rig mounts; the moment the rig takes
+   over the fallback is hidden, so there is exactly ONE visible companion and
+   the old cloud never shows behind the robot.
 
-   All outline geometry was extracted from static/cloud.png itself with a
-   measurement harness (silhouette IoU ≈ 0.93 against the source), so the rig
-   overlays the fallback image almost exactly. Alive features are painted over
-   that flat base: light fluff dome + gray face plate, light arms with dark
-   mittens, dark legs with gray feet.
+   Palette (robot): white/off-white glossy body, saturated clean blue accents,
+   deep black glossy face screen, bright cyan glowing eyes/mouth, and a subtle
+   light-blue halo ring.
 
    Usage (internal):
        var rig = window.VMCloudRig.build(containerEl);
@@ -35,76 +36,49 @@
 (function () {
   "use strict";
 
-  // Palette sampled directly from static/cloud.png (region averages over the
-  // actual pixel areas; see the measurement notes in the repo history).
+  // Robot palette (white/off-white glossy body, blue accents, black screen,
+  // cyan glow). Values are the canonical companion palette.
   var COLORS = {
-    headTop: "#E5EAE8",   // fluffy white cloud top (png ~222,227,223)
-    headMid: "#D7DDDB",   // soft mid shadow on the fluff
-    headBase:"#B4BAB8",   // under-chin fluff shading
-    face:    "#6A7274",   // gray-teal face plate, darkened toward png tone
-    faceLight:"#8C9496",  // lighter lower face / chin
-    body:    "#B8BCBB",   // light gray-teal torso, lightened toward png tone
-    bodyDark:"#A1A6A4",   // torso bottom shading
-    limb:    "#DDE6E3",   // light fluff-colored upper arm (png ~221,230,227)
-    limbRight:"#9AA3A1",  // shadowed right upper arm (png ~143,152,149)
-    limbDark:"#3A3F42",   // dark mitten hands (png ~57,62,65)
-    leg:     "#272B2B",   // dark leg shafts (png ~40,43,43)
-    legDark: "#171B1C",   // leg shading
-    foot:    "#6F7578",   // gray feet (png ~111,118,121)
-    ink:     "#010409",   // eyes/brows/mouth
-    mouthOpen:"#05090B",  // dark mouth interior
-    shadow:  "rgba(0,0,0,0.10)"
+    headTop: "#F4F9FB",   // white glossy head highlight
+    headMid: "#E8F0F4",   // soft mid tone on the head/arms
+    headBase:"#D3DEE4",   // shaded underside of the head
+    face:    "#05090D",   // deep black glossy face screen
+    faceGlow:"#0B1622",   // faint screen reflection/lower glow
+    body:    "#F4F9FB",   // white glossy torso
+    bodyDark:"#DAE6EA",   // torso shading
+    limb:    "#F4F9FB",   // white arms
+    limbDark:"#C2D2D9",   // arm underside shading
+    blue:    "#2E7CF6",   // saturated blue accent (panels, joints, pods)
+    blueDark:"#1E5FD0",   // blue shading
+    blueLight:"#6FA9FF",  // blue highlight
+    cyan:    "#00E5FF",   // glowing eyes / mouth / halo
+    cyanDim: "#00B8D6",   // cyan shadow tone
+    ink:     "#00E5FF",   // eyes/brows/mouth glow ink
+    leg:     "#2E7CF6",   // hover pods (blue)
+    legDark: "#1E5FD0",   // pod shading / nozzles
+    shadow:  "rgba(0,0,0,0.16)"
   };
 
-  // Anchor / geometry constants (content space, x 0..328, y 0..261).
-  // Derived from pixel measurements of cloud.png (content bbox x78..406, y184..447).
+  // Anchor / geometry constants in full canvas space (0..433 x 0..577).
   var GEO = {
-    // Face feature anchors (content coords).
-    leftEye:  { x: 136, y: 91 },
-    rightEye: { x: 162, y: 91 },
-    eyeW: 7, eyeH: 6,
-    browY: 57,
-    mouth: { x: 166, y: 104 },
-    // Limb pivot anchors.
-    leftShoulder:  { x: 36, y: 100 },
-    rightShoulder: { x: 231, y: 112 },
-    leftHip:       { x: 108, y: 158 },
-    rightHip:      { x: 190, y: 159 }
-  };
-
-  // Outlines extracted from cloud.png (content coordinates). These are the
-  // measured silhouettes: a bulky fluff dome with drooping side lobes, a wide
-  // scallop-bottomed body, short legs that flare into wide gray feet, and arms
-  // that end in dark rounded mittens. Hand/foot overlays carry the dark/gray
-  // accents on top of the matching base part.
-  var PATHS = {
-    head: "M110 3 L114 2 L118 1 L122 1 L126 2 L130 3 L134 4 L138 6 L142 8 L146 8 L150 7 L154 5 L158 3 L162 2 L166 1 L170 1 L174 1 L178 2 L182 4 L186 8 L195 15 L208 21 L221 27 L227 33 L231 39 L233 45 L234 51 L235 57 L236 63 L242 69 L249 75 L253 81 L260 85 L267 87 L272 93 L273 99 L290 102 L308 107 L318 114 L321 122 L312 130 L306 136 L303 142 L301 146 L298 147 L290 152 L278 156 L262 160 L244 163 L226 163 L206 161 L186 159 L166 158 L146 158 L126 159 L106 160 L86 161 L66 162 L48 162 L34 161 L22 159 L14 157 L8 155 L4 153 L2 156 L1 159 L1 156 L2 153 L3 150 L4 147 L5 144 L7 141 L8 138 L11 135 L13 129 L16 126 L22 121 L30 117 L33 111 L35 105 L34 99 L34 96 L34 93 L35 90 L35 87 L36 84 L37 81 L39 78 L41 75 L44 72 L47 69 L50 66 L54 63 L56 57 L57 51 L58 45 L60 39 L64 33 L69 27 L74 24 L81 21 L88 16 L96 12 Z",
-    body: "M46 118 L30 124 L22 132 L18 142 L20 152 L18 160 L26 168 L42 172 L58 168 L70 158 L88 150 L100 156 L116 162 L132 163 L150 158 L168 152 L182 148 L194 150 L206 156 L220 162 L234 166 L250 172 L268 176 L284 168 L294 156 L296 144 L288 132 L272 124 L250 118 L226 116 L200 116 L170 118 L140 120 L110 120 L80 120 L56 118 Z",
-    belt: "M138 152 L176 153 L202 156 L205 160 L204 163 L170 164 L146 163 L136 160 L135 156 Z",
-    legL: "M94 158 L90 166 L88 177 L89 186 L89 196 L92 202 L87 208 L81 214 L74 222 L67 230 L61 238 L60 247 L64 256 L76 261 L90 262 L104 261 L114 256 L126 247 L134 239 L139 231 L141 224 L140 217 L138 211 L134 206 L126 200 L123 192 L122 185 L122 177 L122 169 L120 163 L114 157 L106 155 L98 157 Z",
-    legR: "M179 157 L173 164 L168 173 L167 183 L168 194 L170 200 L165 207 L160 214 L157 223 L157 232 L159 241 L162 249 L170 256 L181 260 L194 263 L207 263 L220 260 L231 255 L240 249 L243 242 L243 233 L242 225 L238 216 L228 208 L218 205 L207 201 L204 193 L203 185 L201 178 L198 171 L193 165 L188 160 Z",
-    footL: "M87 208 L81 214 L74 222 L67 230 L61 238 L60 247 L64 256 L76 261 L90 262 L104 261 L114 256 L126 247 L134 239 L139 231 L141 224 L140 217 L137 212 L132 208 L124 205 L112 204 L99 206 L92 208 Z",
-    footR: "M165 207 L160 214 L157 223 L157 232 L159 241 L162 249 L170 256 L181 260 L194 263 L207 263 L220 260 L231 255 L240 249 L243 242 L243 233 L242 225 L238 217 L232 211 L223 207 L213 205 L201 203 L188 204 L177 204 L170 205 Z",
-    armL: "M30 108 L26 114 L22 122 L18 130 L15 137 L10 143 L5 149 L1 157 L0 164 L3 172 L9 177 L15 178 L21 176 L23 169 L25 160 L26 151 L26 143 L27 135 L29 127 L30 120 L31 113 Z",
-    armR: "M216 122 L218 116 L226 113 L234 115 L240 121 L244 130 L248 140 L252 150 L255 160 L256 168 L254 176 L247 180 L240 179 L233 175 L228 167 L225 158 L222 149 L220 140 L220 132 L223 125 L228 119 Z",
-    handL: "M11 140 L8 143 L5 146 L3 150 L1 156 L1 161 L2 167 L6 171 L12 173 L17 172 L20 169 L23 165 L23 159 L21 154 L17 149 L14 145 Z",
-    handR: "M228 129 L222 134 L219 141 L218 148 L218 156 L221 164 L226 171 L232 176 L239 177 L245 174 L250 168 L253 161 L255 152 L255 143 L252 135 L246 130 L241 128 L235 128 L231 127 Z",
-    face: "M134 57 L125 63 L120 72 L118 82 L120 92 L126 104 L136 113 L150 118 L164 119 L178 116 L190 108 L199 98 L204 86 L202 74 L196 64 L186 57 L172 53 L158 52 L146 53 Z"
+    // Face feature anchors.
+    leftEye:  { x: 186, y: 208 },
+    rightEye: { x: 247, y: 208 },
+    eyeW: 13, eyeH: 17,
+    browY: 180,
+    mouth: { x: 216, y: 248 },
+    // Limb pivot anchors (shoulder / hover-pod hip).
+    leftShoulder:  { x: 150, y: 352 },
+    rightShoulder: { x: 283, y: 352 },
+    leftHip:       { x: 172, y: 496 },
+    rightHip:      { x: 261, y: 496 }
   };
 
   function attr(el, name, val) { el.setAttribute(name, val); }
   function el(name) { return document.createElementNS("http://www.w3.org/2000/svg", name); }
 
-  function headPath() { return PATHS.head; }
-  function bodyPath() { return PATHS.body; }
-
-  function legPath(side) { return side === "left" ? PATHS.legL : PATHS.legR; }
-  function footPath(side) { return side === "left" ? PATHS.footL : PATHS.footR; }
-  function armPath(side) { return side === "left" ? PATHS.armL : PATHS.armR; }
-  function handPath(side) { return side === "left" ? PATHS.handL : PATHS.handR; }
-
   // Helper: set the CSS pivot so cloud_anim.js can rotate/scale each part
-  // around the correct joint (shoulder/hip/eye-centre) as a pure transform.
+  // around the correct joint (shoulder/pod/eye-centre) as a pure transform.
   function rigPart(g, xPct, yPct) {
     g.style.transformBox = "fill-box";
     g.style.transformOrigin = xPct + "% " + yPct + "%";
@@ -118,13 +92,22 @@
     return g;
   }
 
+  // Linear gradient helper (defs stop pairs, top→bottom).
+  function makeGrad(defs, id, top, bottom, topOffset, bottomOffset) {
+    var g = el("linearGradient");
+    attr(g, "id", id);
+    attr(g, "x1", "0"); attr(g, "y1", "0"); attr(g, "x2", "0"); attr(g, "y2", "1");
+    var s1 = el("stop"); attr(s1, "offset", topOffset || "0%"); attr(s1, "stop-color", top);
+    var s2 = el("stop"); attr(s2, "offset", bottomOffset || "100%"); attr(s2, "stop-color", bottom);
+    g.appendChild(s1); g.appendChild(s2);
+    defs.appendChild(g);
+    return g;
+  }
+
   function build() {
     var svg = el("svg");
-    // The rig must overlay static/cloud.png exactly: the PNG canvas is
-    // 433x577 and its character content lives in the bbox x78..406, y184..447
-    // (measured from cloud.png). So the SVG claims the same canvas and all
-    // content is wrapped in translate(78,185) — giving one visible Cloud where
-    // the rig paints over (and can safely replace) the flattened image.
+    // Same canvas as the companion container (aspect-ratio 433/577); content
+    // lives in full canvas space directly under <body>.
     attr(svg, "viewBox", "0 0 433 577");
     attr(svg, "preserveAspectRatio", "xMidYMid meet");
     attr(svg, "width", "100%");
@@ -132,196 +115,301 @@
     attr(svg, "aria-hidden", "true");
 
     var content = el("g");
-    attr(content, "transform", "translate(78 185)");
 
-    // Shared linear gradients to softly shade the fluff, face, body and legs.
+    // Shared linear gradients for the glossy toy shading.
     var defs = el("defs");
-
-    var headG = el("linearGradient"); headG.id = "cloudHeadGr";
-    attr(headG, "x1", "0"); attr(headG, "y1", "0"); attr(headG, "x2", "0"); attr(headG, "y2", "1");
-    var hs1 = el("stop"); attr(hs1, "offset", "0%"); attr(hs1, "stop-color", COLORS.headTop);
-    var hs2 = el("stop"); attr(hs2, "offset", "55%"); attr(hs2, "stop-color", COLORS.headMid);
-    var hs3 = el("stop"); attr(hs3, "offset", "100%"); attr(hs3, "stop-color", COLORS.headBase);
-    headG.appendChild(hs1); headG.appendChild(hs2); headG.appendChild(hs3);
-    defs.appendChild(headG);
-
-    var faceG = el("linearGradient"); faceG.id = "cloudFaceGr";
-    attr(faceG, "x1", "0"); attr(faceG, "y1", "0"); attr(faceG, "x2", "0"); attr(faceG, "y2", "1");
-    var fs1 = el("stop"); attr(fs1, "offset", "0%"); attr(fs1, "stop-color", COLORS.face);
-    var fs2 = el("stop"); attr(fs2, "offset", "100%"); attr(fs2, "stop-color", COLORS.faceLight);
-    faceG.appendChild(fs1); faceG.appendChild(fs2);
-    defs.appendChild(faceG);
-
-    var bodyG = el("linearGradient"); bodyG.id = "cloudBodyGr";
-    attr(bodyG, "x1", "0"); attr(bodyG, "y1", "0"); attr(bodyG, "x2", "0"); attr(bodyG, "y2", "1");
-    var bs1 = el("stop"); attr(bs1, "offset", "0%"); attr(bs1, "stop-color", COLORS.body);
-    var bs2 = el("stop"); attr(bs2, "offset", "100%"); attr(bs2, "stop-color", COLORS.bodyDark);
-    bodyG.appendChild(bs1); bodyG.appendChild(bs2);
-    defs.appendChild(bodyG);
-
-    var legG = el("linearGradient"); legG.id = "cloudLegGr";
-    attr(legG, "x1", "0"); attr(legG, "y1", "0"); attr(legG, "x2", "0"); attr(legG, "y2", "1");
-    var ls1 = el("stop"); attr(ls1, "offset", "0%"); attr(ls1, "stop-color", COLORS.legDark);
-    var ls2 = el("stop"); attr(ls2, "offset", "100%"); attr(ls2, "stop-color", COLORS.leg);
-    legG.appendChild(ls1); legG.appendChild(ls2);
-    defs.appendChild(legG);
+    makeGrad(defs, "vmRobotHeadGr", COLORS.headTop, COLORS.headBase, "0%", "100%");
+    makeGrad(defs, "vmRobotScreenGr", COLORS.face, COLORS.faceGlow, "0%", "100%");
+    makeGrad(defs, "vmRobotBodyGr", COLORS.body, COLORS.bodyDark, "0%", "100%");
+    makeGrad(defs, "vmRobotBlueGr", COLORS.blueLight, COLORS.blueDark, "0%", "100%");
+    makeGrad(defs, "vmRobotCyanGr", COLORS.cyan, COLORS.cyanDim, "0%", "100%");
+    makeGrad(defs, "vmRobotBaseGr", "#EFF6F9", "#D5E1E6", "0%", "100%");
     svg.appendChild(defs);
 
-    // ── Ground shadow (soft, under the feet) ──────────────────────────────
-    var shadow = el("ellipse");
-    attr(shadow, "cx", "164"); attr(shadow, "cy", "252"); attr(shadow, "rx", "85"); attr(shadow, "ry", "5");
-    attr(shadow, "fill", COLORS.shadow);
+    // ── Ground shadow (soft contact shadow under the hovering robot) ──────
     var shadowG = el("g"); attr(shadowG, "data-part", "shadow");
-    shadowG.appendChild(shadow);
+    var shadowOuter = el("ellipse");
+    attr(shadowOuter, "cx", "216"); attr(shadowOuter, "cy", "552");
+    attr(shadowOuter, "rx", "118"); attr(shadowOuter, "ry", "15");
+    attr(shadowOuter, "fill", COLORS.shadow);
+    var shadowCore = el("ellipse");
+    attr(shadowCore, "cx", "216"); attr(shadowCore, "cy", "550");
+    attr(shadowCore, "rx", "62"); attr(shadowCore, "ry", "9");
+    attr(shadowCore, "fill", "rgba(0,0,0,0.24)");
+    shadowG.appendChild(shadowOuter);
+    shadowG.appendChild(shadowCore);
     content.appendChild(shadowG);
 
-    // ── Body (torso) ───────────────────────────────────────────────────────
-    // The wide scalloped belly plus a small pad filling the V between the legs
-    // (measured from the flattened image).
+    // ── Halo (thin glowing light-blue ring floating above the head) ───────
+    var haloG = rigPart(el("g"), 50, 50); labelPart(haloG, "halo");
+    var haloGlow = el("ellipse");
+    attr(haloGlow, "cx", "216"); attr(haloGlow, "cy", "48");
+    attr(haloGlow, "rx", "112"); attr(haloGlow, "ry", "22");
+    attr(haloGlow, "fill", "none"); attr(haloGlow, "stroke", COLORS.cyan);
+    attr(haloGlow, "stroke-width", "15"); attr(haloGlow, "stroke-opacity", "0.22");
+    var haloRing = el("ellipse");
+    attr(haloRing, "cx", "216"); attr(haloRing, "cy", "48");
+    attr(haloRing, "rx", "112"); attr(haloRing, "ry", "22");
+    attr(haloRing, "fill", "none"); attr(haloRing, "stroke", COLORS.cyan);
+    attr(haloRing, "stroke-width", "6"); attr(haloRing, "stroke-opacity", "0.75");
+    haloG.appendChild(haloGlow);
+    haloG.appendChild(haloRing);
+    content.appendChild(haloG);
+
+    // ── Ears (blue circular modules peeking out behind the head) ───────────
+    function earPart(id, cx) {
+      var g = rigPart(el("g"), 50, 50); labelPart(g, id);
+      var shell = el("circle");
+      attr(shell, "cx", cx); attr(shell, "cy", "190"); attr(shell, "r", "24");
+      attr(shell, "fill", "url(#vmRobotBlueGr)");
+      var inner = el("circle");
+      attr(inner, "cx", cx); attr(inner, "cy", "190"); attr(inner, "r", "13");
+      attr(inner, "fill", COLORS.blueDark);
+      var dot = el("circle");
+      attr(dot, "cx", cx); attr(dot, "cy", "190"); attr(dot, "r", "4.5");
+      attr(dot, "fill", COLORS.cyan); attr(dot, "stroke-opacity", "0.85");
+      g.appendChild(shell); g.appendChild(inner); g.appendChild(dot);
+      return g;
+    }
+    var leftEar = earPart("leftEar", 92);
+    var rightEar = earPart("rightEar", 341);
+    content.appendChild(leftEar);
+    content.appendChild(rightEar);
+
+    // ── Hover pods ("legs"): small blue rounded pods with nozzles ──────────
+    function podPart(id, cx) {
+      var g = rigPart(el("g"), 50, 0); labelPart(g, id);
+      var pod = el("circle");
+      attr(pod, "cx", cx); attr(pod, "cy", "500"); attr(pod, "r", "23");
+      attr(pod, "fill", "url(#vmRobotBlueGr)");
+      var cap = el("ellipse");
+      attr(cap, "cx", cx); attr(cap, "cy", "488"); attr(cap, "rx", "16"); attr(cap, "ry", "7");
+      attr(cap, "fill", "rgba(255,255,255,0.35)");
+      var nozzle = el("rect");
+      attr(nozzle, "x", String(cx - 10)); attr(nozzle, "y", "520");
+      attr(nozzle, "width", "20"); attr(nozzle, "height", "14"); attr(nozzle, "rx", "6");
+      attr(nozzle, "fill", COLORS.legDark);
+      g.appendChild(pod); g.appendChild(cap); g.appendChild(nozzle);
+      return g;
+    }
+    var leftLeg = podPart("leftLeg", 172);
+    var rightLeg = podPart("rightLeg", 261);
+    content.appendChild(leftLeg);
+    content.appendChild(rightLeg);
+
+    // ── Lower body (rounded floating base the torso sits on) ───────────────
+    var lowerBodyG = rigPart(el("g"), 50, 30); labelPart(lowerBodyG, "lowerBody");
+    var base = el("ellipse");
+    attr(base, "cx", "216"); attr(base, "cy", "460"); attr(base, "rx", "104"); attr(base, "ry", "36");
+    attr(base, "fill", "url(#vmRobotBaseGr)");
+    var baseRim = el("ellipse");
+    attr(baseRim, "cx", "216"); attr(baseRim, "cy", "474"); attr(baseRim, "rx", "82"); attr(baseRim, "ry", "15");
+    attr(baseRim, "fill", COLORS.bodyDark); attr(baseRim, "opacity", "0.7");
+    var baseRing = el("ellipse");
+    attr(baseRing, "cx", "216"); attr(baseRing, "cy", "463"); attr(baseRing, "rx", "96"); attr(baseRing, "ry", "26");
+    attr(baseRing, "fill", "none"); attr(baseRing, "stroke", COLORS.blue);
+    attr(baseRing, "stroke-width", "4"); attr(baseRing, "stroke-opacity", "0.5");
+    lowerBodyG.appendChild(base); lowerBodyG.appendChild(baseRim); lowerBodyG.appendChild(baseRing);
+    content.appendChild(lowerBodyG);
+
+    // ── Body (white glossy torso + blue shoulder joints, chest mark, waist) ─
     var bodyG = rigPart(el("g"), 50, 30); attr(bodyG, "data-part", "body");
-    var bodyPath = el("path");
-    attr(bodyPath, "d", bodyPath());
-    attr(bodyPath, "fill", "url(#cloudBodyGr)");
-    bodyG.appendChild(bodyPath);
-    var belt = el("path");
-    attr(belt, "d", PATHS.belt);
-    attr(belt, "fill", "url(#cloudBodyGr)");
-    bodyG.appendChild(belt);
+    // Neck (draw first so the head covers its top edge).
+    var neck = el("rect");
+    attr(neck, "x", "198"); attr(neck, "y", "300"); attr(neck, "width", "37"); attr(neck, "height", "26"); attr(neck, "rx", "10");
+    attr(neck, "fill", COLORS.headMid);
+    bodyG.appendChild(neck);
+    // Torso.
+    var torso = el("rect");
+    attr(torso, "x", "136"); attr(torso, "y", "314"); attr(torso, "width", "161"); attr(torso, "height", "130"); attr(torso, "rx", "48");
+    attr(torso, "fill", "url(#vmRobotBodyGr)");
+    bodyG.appendChild(torso);
+    // Chest gloss sheen.
+    var gloss = el("ellipse");
+    attr(gloss, "cx", "216"); attr(gloss, "cy", "336"); attr(gloss, "rx", "54"); attr(gloss, "ry", "13");
+    attr(gloss, "fill", "#FFFFFF"); attr(gloss, "opacity", "0.45");
+    bodyG.appendChild(gloss);
+    // Chest badge: blue round mark with a white valley chevron.
+    var badge = el("circle");
+    attr(badge, "cx", "216"); attr(badge, "cy", "374"); attr(badge, "r", "20");
+    attr(badge, "fill", "url(#vmRobotBlueGr)");
+    var chevron = el("path");
+    attr(chevron, "d", "M204 366 L216 379 L228 366");
+    attr(chevron, "fill", "none"); attr(chevron, "stroke", "#FFFFFF");
+    attr(chevron, "stroke-width", "7"); attr(chevron, "stroke-linecap", "round"); attr(chevron, "stroke-linejoin", "round");
+    bodyG.appendChild(badge);
+    bodyG.appendChild(chevron);
+    // Blue shoulder joints (arm pivots).
+    var leftJoint = el("circle");
+    attr(leftJoint, "cx", "150"); attr(leftJoint, "cy", "352"); attr(leftJoint, "r", "13");
+    attr(leftJoint, "fill", "url(#vmRobotBlueGr)");
+    var rightJoint = el("circle");
+    attr(rightJoint, "cx", "283"); attr(rightJoint, "cy", "352"); attr(rightJoint, "r", "13");
+    attr(rightJoint, "fill", "url(#vmRobotBlueGr)");
+    bodyG.appendChild(leftJoint);
+    bodyG.appendChild(rightJoint);
+    // Blue waist band.
+    var waist = el("rect");
+    attr(waist, "x", "146"); attr(waist, "y", "414"); attr(waist, "width", "141"); attr(waist, "height", "30"); attr(waist, "rx", "15");
+    attr(waist, "fill", "url(#vmRobotBlueGr)");
+    bodyG.appendChild(waist);
     content.appendChild(bodyG);
 
-    // ── Legs (dark shafts + flared gray feet) ──────────────────────────────
-    var leftLegG = rigPart(el("g"), 59, 3); labelPart(leftLegG, "leftLeg");
-    var leftLegPath = el("path");
-    attr(leftLegPath, "d", legPath("left"));
-    attr(leftLegPath, "fill", "url(#cloudLegGr)");
-    leftLegG.appendChild(leftLegPath);
-    var leftFoot = el("path");
-    attr(leftFoot, "d", footPath("left"));
-    attr(leftFoot, "fill", COLORS.foot);
-    leftLegG.appendChild(leftFoot);
-    content.appendChild(leftLegG);
-
-    var rightLegG = rigPart(el("g"), 38, 2); labelPart(rightLegG, "rightLeg");
-    var rightLegPath = el("path");
-    attr(rightLegPath, "d", legPath("right"));
-    attr(rightLegPath, "fill", "url(#cloudLegGr)");
-    rightLegG.appendChild(rightLegPath);
-    var rightFoot = el("path");
-    attr(rightFoot, "d", footPath("right"));
-    attr(rightFoot, "fill", COLORS.foot);
-    rightLegG.appendChild(rightFoot);
-    content.appendChild(rightLegG);
-
-    // ── Head (fluff dome + gray face plate) ────────────────────────────────
-    // The dome carries the fluffy gradient; the face plate sits on it in the
-    // gray-teal facial zone so brows/eyes/mouth have a proper backdrop. The
-    // face is inside the head group so it tilts with the head.
-    var head = el("path");
-    attr(head, "d", headPath());
-    attr(head, "fill", "url(#cloudHeadGr)");
+    // ── Head (big white glossy rounded shell + blue top panel + face screen) ─
     var headG = rigPart(el("g"), 50, 50); attr(headG, "data-part", "head");
-    headG.appendChild(head);
-    var face = el("path");
-    attr(face, "d", PATHS.face);
-    attr(face, "fill", "url(#cloudFaceGr)");
-    headG.appendChild(face);
-    content.appendChild(headG);
+    var shell = el("rect");
+    attr(shell, "x", "102"); attr(shell, "y", "84"); attr(shell, "width", "229"); attr(shell, "height", "224"); attr(shell, "rx", "74");
+    attr(shell, "fill", "url(#vmRobotHeadGr)");
+    var shellSheen = el("ellipse");
+    attr(shellSheen, "cx", "184"); attr(shellSheen, "cy", "122"); attr(shellSheen, "rx", "72"); attr(shellSheen, "ry", "18");
+    attr(shellSheen, "fill", "#FFFFFF"); attr(shellSheen, "opacity", "0.5");
+    headG.appendChild(shell);
+    headG.appendChild(shellSheen);
+    // Blue top panel.
+    var topPanel = el("rect");
+    attr(topPanel, "x", "130"); attr(topPanel, "y", "98"); attr(topPanel, "width", "173"); attr(topPanel, "height", "32"); attr(topPanel, "rx", "16");
+    attr(topPanel, "fill", "url(#vmRobotBlueGr)");
+    var panelGloss = el("rect");
+    attr(panelGloss, "x", "144"); attr(panelGloss, "y", "104"); attr(panelGloss, "width", "96"); attr(panelGloss, "height", "9"); attr(panelGloss, "rx", "4.5");
+    attr(panelGloss, "fill", "#FFFFFF"); attr(panelGloss, "opacity", "0.45");
+    headG.appendChild(topPanel);
+    headG.appendChild(panelGloss);
 
-    // ── Arms (light upper arm + dark mitten) ──────────────────────────────
-    // Drawn after the head so each arm's measured silhouette (and its dark
-    // rounded hand overlay) reads against the body instead of vanishing under
-    // the fluff. Pivots sit at the shoulder joints for cloud_anim.js rotations.
-    var leftArmG = rigPart(el("g"), 116, -11); labelPart(leftArmG, "leftArm");
-    var leftArm = el("path");
-    attr(leftArm, "d", armPath("left"));
-    attr(leftArm, "fill", COLORS.limb);
-    leftArmG.appendChild(leftArm);
-    var leftHand = el("path");
-    attr(leftHand, "d", handPath("left"));
-    attr(leftHand, "fill", COLORS.limbDark);
-    leftArmG.appendChild(leftHand);
-    content.appendChild(leftArmG);
+    // Face (dark glossy screen) — a part of the head so it tilts with it.
+    var faceG = rigPart(el("g"), 50, 50); labelPart(faceG, "face");
+    var screen = el("rect");
+    attr(screen, "x", "147"); attr(screen, "y", "156"); attr(screen, "width", "139"); attr(screen, "height", "120"); attr(screen, "rx", "38");
+    attr(screen, "fill", "url(#vmRobotScreenGr)");
+    var rim = el("rect");
+    attr(rim, "x", "147"); attr(rim, "y", "156"); attr(rim, "width", "139"); attr(rim, "height", "120"); attr(rim, "rx", "38");
+    attr(rim, "fill", "none"); attr(rim, "stroke", COLORS.cyan); attr(rim, "stroke-width", "2"); attr(rim, "stroke-opacity", "0.18");
+    var screenSheen = el("ellipse");
+    attr(screenSheen, "cx", "216"); attr(screenSheen, "cy", "250"); attr(screenSheen, "rx", "52"); attr(screenSheen, "ry", "15");
+    attr(screenSheen, "fill", COLORS.faceGlow); attr(screenSheen, "opacity", "0.8");
+    faceG.appendChild(screen);
+    faceG.appendChild(screenSheen);
+    faceG.appendChild(rim);
+    headG.appendChild(faceG);
 
-    var rightArmG = rigPart(el("g"), 38, -1); labelPart(rightArmG, "rightArm");
-    var rightArm = el("path");
-    attr(rightArm, "d", armPath("right"));
-    attr(rightArm, "fill", COLORS.limbRight);
-    rightArmG.appendChild(rightArm);
-    var rightHand = el("path");
-    attr(rightHand, "d", handPath("right"));
-    attr(rightHand, "fill", COLORS.limbDark);
-    rightArmG.appendChild(rightHand);
-    content.appendChild(rightArmG);
-
-    // ── Eyebrows ──────────────────────────────────────────────────────────
-    // Two long soft arcs that nearly meet over the nose, reading as the
-    // single mobile brow band of the reference.
-    function browPart(id, cx, spanY) {
+    // Eyebrows — short glowing cyan arcs above the eyes on the screen.
+    function browPart(id, cx, cy) {
       var g = rigPart(el("g"), 50, 50); labelPart(g, id);
       var p = el("path");
-      attr(p, "d", "M" + (cx - 17) + " " + spanY + " C" + (cx - 8) + " " + (spanY - 3) + " " +
-        (cx + 8) + " " + (spanY - 3) + " " + (cx + 17) + " " + spanY);
+      attr(p, "d", "M" + (cx - 15) + " " + cy + " C" + (cx - 7) + " " + (cy - 5) + " " +
+        (cx + 7) + " " + (cy - 5) + " " + (cx + 15) + " " + cy);
       attr(p, "fill", "none"); attr(p, "stroke", COLORS.ink);
-      attr(p, "stroke-width", "4.5"); attr(p, "stroke-linecap", "round");
+      attr(p, "stroke-width", "5"); attr(p, "stroke-linecap", "round"); attr(p, "stroke-opacity", "0.9");
       g.appendChild(p);
       return g;
     }
-    var leftBrow = browPart("leftEyebrow", 138, GEO.browY);
-    var rightBrow = browPart("rightEyebrow", 169, GEO.browY);
-    content.appendChild(leftBrow);
-    content.appendChild(rightBrow);
+    var leftBrow = browPart("leftEyebrow", 186, GEO.browY);
+    var rightBrow = browPart("rightEyebrow", 247, GEO.browY);
 
-    // ── Eyes ──────────────────────────────────────────────────────────────
-    // Each eye is a group holding a dark pupil so "looking" can translate the
-    // pupil within a fixed dark socket without sliding the whole eye around,
-    // and blinking scales the group around its center.
+    // Eyes — glowing cyan ovals on the screen; blink scales the group around
+    // its center, pupils translate for gaze.
     function eyePart(id, cx) {
       var g = rigPart(el("g"), 50, 50); labelPart(g, id);
-      var socket = el("ellipse");
-      attr(socket, "cx", cx); attr(socket, "cy", GEO.leftEye.y);
-      attr(socket, "rx", GEO.eyeW); attr(socket, "ry", GEO.eyeH);
-      attr(socket, "fill", "#1B242A");
+      var bloom = el("ellipse");
+      attr(bloom, "cx", cx); attr(bloom, "cy", GEO.leftEye.y);
+      attr(bloom, "rx", String(GEO.eyeW + 3)); attr(bloom, "ry", String(GEO.eyeH + 3));
+      attr(bloom, "fill", COLORS.cyan); attr(bloom, "opacity", "0.18");
+      var eye = el("ellipse");
+      attr(eye, "cx", cx); attr(eye, "cy", GEO.leftEye.y);
+      attr(eye, "rx", String(GEO.eyeW)); attr(eye, "ry", String(GEO.eyeH));
+      attr(eye, "fill", "url(#vmRobotCyanGr)");
       var pupil = el("circle");
       attr(pupil, "class", "cloud-pupil");
       attr(pupil, "cx", cx); attr(pupil, "cy", GEO.leftEye.y);
-      attr(pupil, "r", 3.8); attr(pupil, "fill", COLORS.ink);
+      attr(pupil, "r", "4.6"); attr(pupil, "fill", "#032430");
       var hl = el("circle");
-      attr(hl, "cx", cx - 2); attr(hl, "cy", GEO.leftEye.y - 2); attr(hl, "r", 1.3); attr(hl, "fill", "#ffffff");
-      g.appendChild(socket);
+      attr(hl, "cx", String(cx - 4)); attr(hl, "cy", String(GEO.leftEye.y - 4.5)); attr(hl, "r", "2.6");
+      attr(hl, "fill", "#FFFFFF"); attr(hl, "opacity", "0.95");
+      g.appendChild(bloom);
+      g.appendChild(eye);
       g.appendChild(pupil);
       g.appendChild(hl);
       return g;
     }
     var leftEye = eyePart("leftEye", GEO.leftEye.x);
     var rightEye = eyePart("rightEye", GEO.rightEye.x);
-    content.appendChild(leftEye);
-    content.appendChild(rightEye);
 
-    // ── Mouth ─────────────────────────────────────────────────────────────
-    // Neutral smile matching cloud_anim.js MOUTH.neutral (anchored ~166,104).
+    // Mouth — glowing cyan smile on the screen. cloud_anim.js swaps this
+    // path's `d` and data-expression for every facial expression.
     var mouthG = rigPart(el("g"), 50, 50); labelPart(mouthG, "mouth");
     var mouthPath = el("path");
-    attr(mouthPath, "d", "M161 104 C164 108 168 108 171 104");
+    attr(mouthPath, "d", "M203 247 C209 253 223 253 229 247");
     attr(mouthPath, "fill", "none"); attr(mouthPath, "stroke", COLORS.ink);
-    attr(mouthPath, "stroke-width", "2.5"); attr(mouthPath, "stroke-linecap", "round");
+    attr(mouthPath, "stroke-width", "4"); attr(mouthPath, "stroke-linecap", "round");
     attr(mouthPath, "data-expression", "neutral");
     mouthG.appendChild(mouthPath);
-    content.appendChild(mouthG);
-    svg.appendChild(content); // content lives in PNG-canvas space (after #defs)
+
+    headG.appendChild(leftBrow);
+    headG.appendChild(rightBrow);
+    headG.appendChild(leftEye);
+    headG.appendChild(rightEye);
+    headG.appendChild(mouthG);
+    content.appendChild(headG);
+
+    // ── Arms (short white capsules with blue round cartoon hands) ──────────
+    // Pivots sit at the shoulder joints; hands are nested groups so they can
+    // waggle independently on top of arm rotation.
+    function armPart(id, armX, handCx, shoulderY) {
+      var g = rigPart(el("g"), 50, 0); labelPart(g, id);
+      var arm = el("rect");
+      attr(arm, "x", String(armX)); attr(arm, "y", String(shoulderY));
+      attr(arm, "width", "30"); attr(arm, "height", "82"); attr(arm, "rx", "15");
+      attr(arm, "fill", "url(#vmRobotBodyGr)");
+      attr(arm, "stroke", COLORS.limbDark); attr(arm, "stroke-width", "2");
+      g.appendChild(arm);
+
+      var handG = rigPart(el("g"), 50, 22); labelPart(handG, id === "leftArm" ? "leftHand" : "rightHand");
+      var ball = el("circle");
+      attr(ball, "cx", handCx); attr(ball, "cy", "442"); attr(ball, "r", "17");
+      attr(ball, "fill", "url(#vmRobotBlueGr)");
+      // Two little cartoon finger nubs.
+      var fl = el("rect");
+      attr(fl, "x", String(handCx - 15)); attr(fl, "y", "454"); attr(fl, "width", "10"); attr(fl, "height", "12"); attr(fl, "rx", "5");
+      attr(fl, "fill", "#EAF1F5");
+      var fr = el("rect");
+      attr(fr, "x", String(handCx - 1)); attr(fr, "y", "454"); attr(fr, "width", "10"); attr(fr, "height", "12"); attr(fr, "rx", "5");
+      attr(fr, "fill", "#EAF1F5");
+      var knuckle = el("ellipse");
+      attr(knuckle, "cx", handCx); attr(knuckle, "cy", "440"); attr(knuckle, "rx", "12"); attr(knuckle, "ry", "6");
+      attr(knuckle, "fill", "#FFFFFF"); attr(knuckle, "opacity", "0.5");
+      handG.appendChild(ball);
+      handG.appendChild(fl);
+      handG.appendChild(fr);
+      handG.appendChild(knuckle);
+      // Hands drift visually downward so the whole arm reads as one limb.
+      g.appendChild(handG);
+      return g;
+    }
+    var leftArm = armPart("leftArm", 135, 146, 352);
+    var rightArm = armPart("rightArm", 268, 287, 352);
+    content.appendChild(leftArm);
+    content.appendChild(rightArm);
+    svg.appendChild(content); // content lives in full companion-canvas space (after #defs)
 
     var parts = {
       root: svg,
       body: bodyG,
       head: headG,
+      face: faceG,
+      halo: haloG,
+      lowerBody: lowerBodyG,
+      leftEar: leftEar,
+      rightEar: rightEar,
       leftEye: leftEye,
       rightEye: rightEye,
       leftEyebrow: leftBrow,
       rightEyebrow: rightBrow,
       mouth: mouthG,
-      leftArm: leftArmG,
-      rightArm: rightArmG,
-      leftLeg: leftLegG,
-      rightLeg: rightLegG,
+      leftArm: leftArm,
+      rightArm: rightArm,
+      leftHand: leftArm.querySelector('[data-part="leftHand"]'),
+      rightHand: rightArm.querySelector('[data-part="rightHand"]'),
+      leftLeg: leftLeg,
+      rightLeg: rightLeg,
       shadow: shadowG,
       nightMouth: mouthPath,
       leftPupil: leftEye.querySelector(".cloud-pupil"),
@@ -333,10 +421,10 @@
 
   // ── Mounting (used by index.html static markup and cloud.js) ────────────
   // The character container (#vmCloudCharacter) is a small fixed <div>
-  // holding the flattened PNG as a static fallback plus this layered rig in a
-  // pointer-transparent overlay. `mount` builds the SVG into an existing
-  // container once and returns the runnable rig (parts + noted pivots) so the
-  // animation engine can drive it.
+  // holding the fallback <img> plus this layered rig in a pointer-transparent
+  // overlay. `mount` builds the SVG into an existing container once and
+  // returns the runnable rig (parts + noted pivots) so the animation engine
+  // can drive it.
   function findRigMount(container) {
     if (!container) return null;
     var m = container.querySelector && container.querySelector(".vmcloud-rig-mount");
@@ -348,10 +436,10 @@
     return !!(roots && roots.length);
   }
 
-  // The rig overlay is the single visible Cloud once it is live. The flattened
-  // PNG stays in the DOM only as the no-JS/loading fallback — hide it the
-  // moment the rig takes over so there is never a frozen PNG over the moving
-  // Cloud.
+  // The rig overlay is the single visible companion once it is live. The
+  // flattened cloud.png stays in the DOM only as the no-JS/loading fallback —
+  // hide it the moment the rig takes over so the old cloud is never visible
+  // behind the robot and there is exactly one visible companion.
   function hideFallback(container) {
     if (!container || !container.querySelectorAll) return;
     var imgs = container.querySelectorAll("img.vmcloud-fallback");
@@ -386,6 +474,8 @@
     }
     var leftEye = part("leftEye");
     var rightEye = part("rightEye");
+    var leftArm = part("leftArm");
+    var rightArm = part("rightArm");
     var pupil = function (eye) {
       return eye && eye.querySelector ? (eye.querySelector(".cloud-pupil") || null) : null;
     };
@@ -394,13 +484,20 @@
         root: svg,
         body: part("body"),
         head: part("head"),
+        face: part("face"),
+        halo: part("halo"),
+        lowerBody: part("lowerBody"),
+        leftEar: part("leftEar"),
+        rightEar: part("rightEar"),
         leftEye: leftEye,
         rightEye: rightEye,
         leftEyebrow: part("leftEyebrow"),
         rightEyebrow: part("rightEyebrow"),
         mouth: part("mouth"),
-        leftArm: part("leftArm"),
-        rightArm: part("rightArm"),
+        leftArm: leftArm,
+        rightArm: rightArm,
+        leftHand: leftArm ? leftArm.querySelector('[data-part="leftHand"]') : null,
+        rightHand: rightArm ? rightArm.querySelector('[data-part="rightHand"]') : null,
         leftLeg: part("leftLeg"),
         rightLeg: part("rightLeg"),
         shadow: part("shadow"),

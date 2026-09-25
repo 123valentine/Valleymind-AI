@@ -1,6 +1,6 @@
 // Pure-node harness for static/cloud_rig.js using a minimal SVG DOM stub.
-// Verifies the layered rig builds the expected addressable parts, keeps the
-// faithful cloud.png palette/geometry, sets per-part pivots, and mounts into a
+// Verifies the layered rig builds the expected addressable robot parts, keeps
+// the robot palette/geometry, sets per-part pivots, and mounts into a
 // container exactly once (auto-boot + cloud.js can race safely).
 // Prints a JSON summary and exits non-zero on any failure.
 "use strict";
@@ -98,11 +98,11 @@ const R = sandbox.window.VMCloudRig;
 check(!!R, "VMCloudRig exported");
 check(!!R.build && !!R.mount && !!R.collectRig && !!R.mountRoot, "rig API surface present");
 
-// ── Faithful palette (sampled from static/cloud.png) ────────────────────
-eq(R.COLORS.ink, "#010409", "ink is near-black (png ~1,4,9)");
-eq(R.COLORS.face, "#788286", "face gray-teal (png 120,130,131)");
-eq(R.COLORS.leg, "#40464A", "legs dark gray (png 65,70,74)");
-eq(R.COLORS.headTop, "#E5EAE8", "head fluff near-white (png ~229,234,230)");
+// ── Robot palette ───────────────────────────────────────────────────────
+eq(R.COLORS.ink, "#00E5FF", "ink = cyan glow");
+eq(R.COLORS.face, "#05090D", "face = deep black glossy screen");
+eq(R.COLORS.leg, "#2E7CF6", "legs = blue hover pods");
+eq(R.COLORS.headTop, "#F4F9FB", "head = white glossy shell");
 
 // ── Geometry anchors ────────────────────────────────────────────────────
 check(R.GEO.leftEye.x < R.GEO.rightEye.x, "left eye is image-left of right eye");
@@ -111,25 +111,28 @@ check(R.GEO.leftShoulder.y < R.GEO.leftHip.y, "shoulder above hip");
 
 // ── Build produces all addressable parts ────────────────────────────────
 const built = R.build();
-const wantParts = ["root", "body", "head", "leftEye", "rightEye", "leftEyebrow",
-  "rightEyebrow", "mouth", "leftArm", "rightArm", "leftLeg", "rightLeg",
-  "shadow", "leftPupil", "rightPupil"];
+const wantParts = ["root", "body", "head", "face", "halo", "lowerBody",
+  "leftEar", "rightEar", "leftEye", "rightEye", "leftEyebrow",
+  "rightEyebrow", "mouth", "leftArm", "rightArm", "leftHand", "rightHand",
+  "leftLeg", "rightLeg", "shadow", "leftPupil", "rightPupil"];
 wantParts.forEach(function (p) {
   check(built.parts[p] != null, "part present: " + p);
 });
 eq(built.parts.root.tagName, "svg", "root is an SVG");
-// The rig claims the PNG's own canvas (433x577) so it can overlay static/
-// cloud.png pixel-exactly (the character content is offset by translate(78,185)).
-eq(built.parts.root.attrs["viewBox"], "0 0 433 577", "viewBox equals PNG canvas");
+// The rig claims the same canvas as the companion container (433x577); the
+// robot is drawn in FULL canvas space (no PNG translate overlay needed).
+eq(built.parts.root.attrs["viewBox"], "0 0 433 577", "viewBox equals companion canvas");
 const wrapped = built.parts.root.children.filter(function (c) {
   return c.attrs["transform"] === "translate(78 185)";
 });
-eq(wrapped.length, 1, "content wrapped for PNG-canvas alignment");
+eq(wrapped.length, 0, "content uses full canvas (robot, no PNG translate)");
 
 // Every independently-animated part must carry a transform-origin pivot so the
 // anim engine can rotate/scale around the correct joint.
-["body", "head", "leftEye", "rightEye", "leftEyebrow", "rightEyebrow",
-  "mouth", "leftArm", "rightArm", "leftLeg", "rightLeg"].forEach(function (p) {
+["body", "head", "face", "halo", "lowerBody", "leftEar", "rightEar",
+  "leftEye", "rightEye", "leftEyebrow", "rightEyebrow",
+  "mouth", "leftArm", "rightArm", "leftHand", "rightHand",
+  "leftLeg", "rightLeg"].forEach(function (p) {
   const part = built.parts[p];
   check(!!part.style.transformOrigin, "pivot set on " + p, part.style.transformOrigin);
 });

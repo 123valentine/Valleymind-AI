@@ -11,16 +11,18 @@
   //      respects boundaries/safe-areas, pauses on user drag, and never walks
   //      off-screen.
   //   3) Rig/animation layer — drives the layered SVG rig (static/cloud_rig.js)
-  //      so eyes, eyebrows, mouth, arms and legs genuinely move independently.
-  //      If the rig is absent (only the flattened PNG is available) it falls
-  //      back to honest whole-character body articulation, exactly as before.
+  //      — the original robot companion visual — so eyes, eyebrows, mouth,
+  //      ears, arms, hands, hover pods, halo and lower body genuinely move
+  //      independently. If the rig is absent (only the flattened PNG is
+  //      available) it falls back to honest whole-character body articulation.
   //
-  // The flattened static/cloud.png is the source of truth for the character's
-  // design; cloud_rig.js redraws it as addressable vector parts so each can be
-  // animated. Whole-body transforms (breathing, bob, lean, squash) apply to the
-  // character container; part transforms (eyes/brows/mouth/arms/legs) apply to
-  // the rig groups. This module never mounts or creates the character — the
-  // element owner (static/cloud.js) and static/index.html markup handle that.
+  // The rig is an ORIGINAL robot companion drawn as addressable vector parts
+  // (NOT a redraw of static/cloud.png; cloud.png remains only the no-JS
+  // fallback, hidden the moment the rig mounts). Whole-body transforms
+  // (breathing, bob, lean, squash) apply to the character container; part
+  // transforms (face/eyes/brows/mouth/arms/hands/pods/halo) apply to the rig
+  // groups. This module never mounts or creates the character — the element
+  // owner (static/cloud.js) and static/index.html markup handle that.
 
   var CHARACTER_ID = "vmCloudCharacter";
   var MINI_ORB_ID = "vmCloudCompanionMiniOrb";
@@ -41,6 +43,8 @@
     { key: "concerned", label: "Concerned", transient: true, hold: 5200 },
     { key: "greeting", label: "Greeting", transient: true, hold: 4000 },
     { key: "speaking", label: "Speaking", transient: false, hold: 0 },
+    { key: "waving", label: "Waving", transient: true, hold: 2400 },
+    { key: "pointing", label: "Pointing", transient: true, hold: 2400 },
     { key: "sleeping", label: "Sleeping", transient: false, hold: 0 }
   ];
 
@@ -128,6 +132,20 @@
       face: { eyes: "soft", brows: "gentle", mouth: "smile" },
       arms: "wave", legs: "stand"
     },
+    waving: {
+      tx: 0, ty: -1, rot: 0, sx: 1.01, sy: 1.01,
+      breath: 0.02, breatheHz: 1.3, bob: 1.6,
+      gaze: { x: 0.3, y: -0.1 },
+      face: { eyes: "soft", brows: "gentle", mouth: "smile" },
+      arms: "wave", legs: "stand"
+    },
+    pointing: {
+      tx: 0, ty: -1, rot: 1, sx: 1.01, sy: 1,
+      breath: 0.017, breatheHz: 1.1, bob: 1.2,
+      gaze: { x: 0.8, y: 0 },
+      face: { eyes: "center", brows: "gentle", mouth: "neutral" },
+      arms: "point_l", legs: "stand"
+    },
     speaking: {
       tx: 0, ty: 0, rot: 0, sx: 1, sy: 1,
       breath: 0.024, breatheHz: 1.6, bob: 1.3,
@@ -148,7 +166,8 @@
   var MOOD = {
     idle: 1, listening: 1.1, thinking: 0.8, happy: 1.3, excited: 1.6,
     sad: 0.7, surprised: 1.5, confused: 1, concerned: 0.85,
-    curious: 1.15, greeting: 1.4, speaking: 1.3, sleeping: 0.5
+    curious: 1.15, greeting: 1.4, speaking: 1.3, waving: 1.4, pointing: 1.2,
+    sleeping: 0.5
   };
 
   // One-shot whole-body gestures (idle life + state entry).
@@ -295,19 +314,20 @@
     one_up:  { lty: -4, rty: 0, lrot: 1, rrot: 0 }
   };
 
-  // mouth: expression path `d` values anchored near content (172,106).
+  // mouth: expression path `d` values anchored on the robot face screen
+  // (cyan glow smile centered near the face at ~216,248).
   var MOUTH = {
-    neutral:    "M167 106 C170 109 174 109 177 106",
-    smile:      "M166 105 C169 112 177 112 180 105",
-    big_smile:  "M165 104 C169 114 177 114 181 104",
-    thin:       "M169 107 L175 107",
-    frown:      "M167 108 C170 103 174 103 177 108",
-    open:       "M168 104 C168 110 174 112 176 110 C178 106 174 103 168 104",
-    wry:        "M167 106 C169 111 174 107 179 106",
-    concern:    "M167 108 C168 105 174 105 177 108",
-    open_small: "M169 105 C169 109 173 110 174 108 C175 106 171 104 169 105",
-    soft:       "M168 106 C170 108 174 108 176 106",
-    speak:      "M168 105 C170 110 174 110 176 105"
+    neutral:    "M203 247 C209 253 223 253 229 247",
+    smile:      "M201 246 C207 255 225 255 231 246",
+    big_smile:  "M199 245 C207 258 225 258 233 245",
+    thin:       "M208 249 L224 249",
+    frown:      "M203 250 C209 243 223 243 229 250",
+    open:       "M203 247 C205 255 227 255 229 247 C227 239 205 239 203 247",
+    wry:        "M203 247 C206 253 222 248 230 246",
+    concern:    "M204 249 C220 249 225 245 229 244",
+    open_small: "M205 247 C206 252 226 252 227 247 C226 243 206 243 205 247",
+    soft:       "M204 247 C208 250 224 250 228 247",
+    speak:      "M204 246 C205 253 227 253 228 246"
   };
 
   // ───────────────────────────────────────────────────────────────────────
@@ -744,6 +764,9 @@
 
     // Legs — weight shift / walk cycle.
     renderLegs(pose, now, eyeOpen);
+
+    // Robot-companion detail layer (halo, ears, hands, face, lower body).
+    renderRobotParts(pose, now);
   }
 
   function armAngle(pose, t, now) {
@@ -864,6 +887,58 @@
     rightLeg = clamp(rightLeg, -18, 18);
     if (p.leftLeg) rigPartTransform(p.leftLeg, 0, 0, leftLeg, null, null);
     if (p.rightLeg) rigPartTransform(p.rightLeg, 0, 0, rightLeg, null, null);
+  }
+
+  // Robot-companion detail layer (runs inside the SAME frame loop — never a
+  // second engine): the halo floats/counters the hover bob, the ear modules
+  // pulse while attentive, the hands waggle during arm gestures, the face
+  // screen gives a faint talk-glow, and the floating lower body hovers gently.
+  function renderRobotParts(pose, now) {
+    if (!_rig || !_rig.parts) return;
+    var p = _rig.parts;
+    var t = _clock / 1000;
+    var amp = motionScale();
+
+    // Halo: floats above the head, bobbing opposite to the robot's hover and
+    // giving a subtle scale "breathing" while idle.
+    if (p.halo) {
+      var hy = -(_cur.bob * 5 + _cur.breath * 70) * 0.5
+        - Math.sin(t * TAU * 1.3) * 2.4 * amp;
+      var hrot = Math.sin(t * TAU * 0.9) * 1.2 * amp;
+      var hscale = 1 + Math.sin(t * TAU * 0.9) * 0.008 * amp;
+      rigPartTransform(p.halo, 0, hy, hrot, hscale, hscale);
+    }
+
+    // Ears: gentle pulse while listening/speaking (attention signal).
+    var attentive = _state === "listening" || _state === "speaking" ||
+      _state === "greeting" || _state === "waving" || _state === "happy";
+    var ear = attentive
+      ? (1 + Math.abs(Math.sin(t * TAU * 3.2)) * 0.06 * amp) : 1;
+    if (p.leftEar) rigPartTransform(p.leftEar, 0, 0, 0, 1, ear);
+    if (p.rightEar) rigPartTransform(p.rightEar, 0, 0, 0, 1, ear);
+
+    // Hands: waggle when an arm gesture is running or the robot is talking;
+    // otherwise a tiny idle sway keeps the robot alive but calm.
+    var gesturing = !!_armGest || pose.arms !== "rest" || _state === "speaking";
+    var wag = gesturing
+      ? Math.sin(t * TAU * 9) * 26 * amp
+      : Math.sin(t * TAU * 1.4) * 2 * amp;
+    if (p.leftHand) rigPartTransform(p.leftHand, 0, 0, wag, null, null);
+    if (p.rightHand) rigPartTransform(p.rightHand, 0, 0, wag, null, null);
+
+    // Face screen: faint brightness flicker while talking (mouth "speak").
+    if (p.face) {
+      p.face.style.opacity = (pose.face.mouth === "speak" && _state === "speaking")
+        ? (0.86 + Math.abs(Math.sin(_clock / 1000 * TAU * 5)) * 0.12).toFixed(3)
+        : "1";
+    }
+
+    // Lower body: gentle hover rotation + vertical drift so the base floats.
+    if (p.lowerBody) {
+      var wob = Math.sin(t * TAU * 2.1) * 1.6 * amp;
+      var lbY = -Math.sin(t * TAU * 1.15) * 1.4 * amp;
+      rigPartTransform(p.lowerBody, 0, lbY, wob, null, null);
+    }
   }
 
   // ───────────────────────────────────────────────────────────────────────
@@ -1094,7 +1169,7 @@
       wholeBodyArticulation: true,
       needsPartAssetsForFaceAndLimbs: false,
       asset: "static/cloud_rig.js",
-      assetType: "layered SVG rig (faithful redraw of static/cloud.png)",
+      assetType: "layered SVG rig (original robot companion visual)",
       hasMovementController: true,
       movementBoundaries: true,
       standingAssetFallback: "static/cloud.png",
