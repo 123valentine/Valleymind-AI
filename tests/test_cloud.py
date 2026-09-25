@@ -1422,9 +1422,9 @@ class CloudAnimStaticTestCase(unittest.TestCase):
     def test_anim_layer_script_loaded_after_cloud_vision(self):
         html = self._index_html()
         vision = re.search(
-            r'<script src="/static/cloud_vision\.js\?v=1"></script>', html)
+            r'<script src="/static/cloud_vision\.js\?v=2"></script>', html)
         anim = re.search(
-            r'<script src="/static/cloud_anim\.js\?v=1"></script>', html)
+            r'<script src="/static/cloud_anim\.js\?v=2"></script>', html)
         self.assertIsNotNone(anim, "cloud_anim.js script tag is required")
         self.assertIsNotNone(vision, "cloud_vision.js script tag is required")
         self.assertGreater(anim.start(), vision.start(),
@@ -1434,8 +1434,8 @@ class CloudAnimStaticTestCase(unittest.TestCase):
 
     def test_anim_layer_loads_last_after_cloud_scripts(self):
         html = self._index_html()
-        cloud3d = re.search(r'<script src="/static/cloud3d\.js\?v=1"></script>', html)
-        anim = re.search(r'<script src="/static/cloud_anim\.js\?v=1"></script>', html)
+        cloud3d = re.search(r'<script src="/static/cloud3d\.js\?v=2"></script>', html)
+        anim = re.search(r'<script src="/static/cloud_anim\.js\?v=2"></script>', html)
         self.assertIsNotNone(cloud3d)
         self.assertIsNotNone(anim)
         self.assertGreater(anim.start(), cloud3d.start())
@@ -1648,8 +1648,8 @@ class CloudRigStaticTestCase(unittest.TestCase):
 
     def test_rig_script_loaded_before_anim(self):
         html = self._index_html()
-        rig = re.search(r'<script src="/static/cloud_rig\.js\?v=1"></script>', html)
-        anim = re.search(r'<script src="/static/cloud_anim\.js\?v=1"></script>', html)
+        rig = re.search(r'<script src="/static/cloud_rig\.js\?v=2"></script>', html)
+        anim = re.search(r'<script src="/static/cloud_anim\.js\?v=2"></script>', html)
         self.assertIsNotNone(rig, "cloud_rig.js script tag is required")
         self.assertIsNotNone(anim)
         self.assertLess(rig.start(), anim.start(),
@@ -1672,8 +1672,8 @@ class CloudRigStaticTestCase(unittest.TestCase):
     def test_rig_palette_sampled_from_png(self):
         src = self._rig_js()
         self.assertIn('headTop: "#E5EAE8"', src)
-        self.assertIn('face:    "#788286"', src)
-        self.assertIn('leg:     "#40464A"', src)
+        self.assertIn('face:    "#6A7274"', src)
+        self.assertIn('leg:     "#272B2B"', src)
         self.assertIn('ink:     "#010409"', src)
 
     def test_rig_exposes_all_addressable_parts(self):
