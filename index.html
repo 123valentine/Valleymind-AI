@@ -8,7 +8,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#0b141a">
 
-<!-- ── SEO primary meta ─────────────────────────────────────────────────
+<!-- â”€â”€ SEO primary meta â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
      NOTE: keep the canonical host below in sync with SITE_URL in
      core/seo.py. The SPA home is the "home" entry of sitemap.xml. -->
 <title>Valley Mind-AI - AI Assistant, Image &amp; Video Studio</title>
@@ -122,11 +122,11 @@
   }
 </script>
 <style>
-  /* ── Light theme ─────────────────────────────────────────────
+  /* â”€â”€ Light theme â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
      The UI is a single file with ~200 hardcoded dark colours, many
      inline (style="color:#..."), which a normal class override cannot
      beat. A whole-document filter flips the palette to light in one
-     move — including inline styles — and media is re-inverted so photos
+     move â€” including inline styles â€” and media is re-inverted so photos
      and videos still look right. */
   html.theme-light { filter: invert(0.93) hue-rotate(180deg); background:#ffffff; }
   html.theme-light img,
@@ -134,7 +134,7 @@
   html.theme-light canvas,
   html.theme-light [data-no-invert],
   html.theme-light [style*="background-image"] { filter: invert(1) hue-rotate(180deg); }
-  /* App font-size scale (Settings › Appearance) */
+  /* App font-size scale (Settings â€º Appearance) */
   html.font-small  { font-size: 14px; }
   html.font-medium { font-size: 16px; }
   html.font-large  { font-size: 18px; }
@@ -153,7 +153,7 @@
   .thinking-dot:nth-child(2){animation-delay:0.16s}
   .thinking-dot:nth-child(3){animation-delay:0.32s}
   @keyframes swimDots{0%,100%{transform:translateY(0) translateX(0);opacity:0.35}35%{transform:translateY(-5px) translateX(2px);opacity:1}70%{transform:translateY(2px) translateX(-1px);opacity:0.65}}
-  /* ── Thinking Process Block ──────────────────────────────────── */
+  /* â”€â”€ Thinking Process Block â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
   .thinking-process {
     margin: 0 0 8px; padding: 0; max-width: 560px;
     font-family: 'Inter', 'Segoe UI', sans-serif;
@@ -221,7 +221,7 @@
   .thinking-process-step.step-done .step-text { color: #94a3b8; }
   .thinking-process-step.step-active .step-text { color: #e2e8f0; }
 
-  /* ── Improved Source Panel (replaces old source-panel) ────────── */
+  /* â”€â”€ Improved Source Panel (replaces old source-panel) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
   .sources-section {
     margin-top: 14px; padding: 12px 14px; border-radius: 12px;
     background: rgba(15,23,42,0.55); border: 1px solid rgba(255,255,255,0.06);
@@ -312,7 +312,7 @@
   .sources-collapsed .sources-header { margin-bottom: 8px; }
   .sources-collapsed .sources-chips { margin-bottom: 0; }
   .sources-section:not(.sources-collapsed) .sources-details { display: block; }
-  /* ── Reply Copy Bar (MODE B) ─────────────────────────────── */
+  /* â”€â”€ Reply Copy Bar (MODE B) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
   .reply-copy-bar {
     display: flex; align-items: center; justify-content: space-between;
     gap: 8px; margin-top: 12px; padding: 10px 12px; border-radius: 10px;
@@ -354,7 +354,7 @@
   }
   .gen-image-download:hover { background:rgba(0,212,255,0.25); border-color:rgba(0,212,255,0.4); color:#00d4ff; }
 
-  /* ── Image Generation Skeleton Card ─────────────────────────── */
+  /* â”€â”€ Image Generation Skeleton Card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
   .img-gen-skeleton {
     max-width:420px; border-radius:16px; overflow:hidden;
     background:rgba(15,23,42,0.7); border:1px solid rgba(255,255,255,0.06);
@@ -392,7 +392,7 @@
     100% { background-position:-200% 0; }
   }
 
-  /* ── Premium Image Result Card ──────────────────────────────── */
+  /* â”€â”€ Premium Image Result Card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
   .img-result-card {
     max-width:420px; border-radius:16px; overflow:hidden;
     background:rgba(15,23,42,0.7); border:1px solid rgba(255,255,255,0.06);
@@ -435,7 +435,7 @@
     100% { opacity:1; transform:translateY(0) scale(1); }
   }
 
-  /* ── Image Viewer Overlay ───────────────────────────────────── */
+  /* â”€â”€ Image Viewer Overlay â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
   #imageViewerOverlay {
     position:fixed; inset:0; z-index:99999;
     background:rgba(2,6,23,0.92); backdrop-filter:blur(20px);
@@ -485,7 +485,7 @@
     100% { opacity:1; transform:translateX(-50%) translateY(0); }
   }
 
-  /* ── Full-Screen Image Gallery Overlay ──────────────────────── */
+  /* â”€â”€ Full-Screen Image Gallery Overlay â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
   #galleryOverlay {
     position:fixed; inset:0; z-index:9998;
     background:rgba(2,6,23,0.97); backdrop-filter:blur(20px);
@@ -508,7 +508,7 @@
   #videoGalleryOverlay.closing { display:flex; opacity:0; transform:translateY(100%); }
   .gallery-card video { width:100%; height:100%; object-fit:cover; display:block; }
 
-  /* ── ValleyMind Studio ──────────────────────────────────────── */
+  /* â”€â”€ ValleyMind Studio â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
   #studioOverlay {
     position:fixed; inset:0; z-index:9998;
     background:rgba(2,6,23,0.97); backdrop-filter:blur(20px);
@@ -520,7 +520,7 @@
   #studioOverlay.open { display:flex; opacity:1; transform:translateY(0); }
   #studioOverlay.closing { display:flex; opacity:0; transform:translateY(100%); }
 
-  /* ── The Round Table ───────────────────────────────────────────
+  /* â”€â”€ The Round Table â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
      Lives INSIDE the Studio workspace now as a tab panel (not a standalone
      fixed overlay). It stays a flex column so the existing stage / ring /
      transcript / controls layout keeps working completely unchanged. */
@@ -535,11 +535,11 @@
   .rt-seat.speaking { opacity:1; transform:translateY(-4px); }
   .rt-portrait { width:72px; height:72px; border-radius:50%; overflow:hidden; background:rgba(0,212,255,0.08); border:2px solid rgba(255,255,255,0.12); }
   .rt-portrait img { width:100%; height:100%; object-fit:cover; object-position:top center; display:block; }
-  /* The speaking persona comes alive — glowing halo + a subtle vibrate. */
+  /* The speaking persona comes alive â€” glowing halo + a subtle vibrate. */
   .rt-seat.speaking .rt-portrait { border-color:#00d4ff; animation:rtSpeak 1s ease-in-out infinite, rtVibe 0.3s ease-in-out infinite; }
   @keyframes rtSpeak { 0%,100%{ box-shadow:0 0 0 4px rgba(0,212,255,0.14), 0 0 18px rgba(0,212,255,0.3);} 50%{ box-shadow:0 0 0 7px rgba(0,212,255,0.05), 0 0 30px rgba(0,212,255,0.5);} }
   @keyframes rtVibe { 0%,100%{ transform:translateY(0) scale(1);} 25%{ transform:translateY(-1.5px) scale(1.04);} 75%{ transform:translateY(1.5px) scale(1.04);} }
-  /* Voice visual — the glowing waveform ring (static/voice-wave.png) with live
+  /* Voice visual â€” the glowing waveform ring (static/voice-wave.png) with live
      bars: real amplitude for the user's mic, animated wave for a persona's note. */
   .rt-ring { display:flex; flex-direction:column; align-items:center; gap:8px; padding:6px 0 2px; }
   .rt-ring-core { position:relative; width:188px; height:188px; border-radius:50%; overflow:hidden;
@@ -571,7 +571,7 @@
   #rtMicBtn { background:rgba(255,255,255,0.06); color:#94a3b8; }
   #rtMicBtn.listening { background:rgba(239,68,68,0.15); color:#ef4444 !important; animation:micPulse 1.2s ease-out infinite; }
   #rtSendBtn { background:#00d4ff; color:#003642; }
-  /* Per-persona mic indicator — animates only while that persona has the floor */
+  /* Per-persona mic indicator â€” animates only while that persona has the floor */
   .rt-seat-mic { display:flex; align-items:center; justify-content:center; gap:4px; height:14px; color:#475569; opacity:0.3; transition:opacity 0.2s, color 0.2s; }
   .rt-seat.speaking .rt-seat-mic { opacity:1; color:#00d4ff; }
   .rt-eq { display:inline-flex; align-items:center; gap:2px; height:12px; }
@@ -602,7 +602,7 @@
   .rt-mode-btn { background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.12); color:#94a3b8; border-radius:20px; padding:5px 14px; font-size:12px; font-weight:700; cursor:pointer; transition:all 0.2s; }
   .rt-mode-btn.active { background:rgba(0,212,255,0.15); border-color:rgba(0,212,255,0.4); color:#00d4ff; }
   @media (max-width:640px){ .rt-stage{ gap:14px; padding-top:16px; } .rt-portrait{ width:56px; height:56px; } .rt-seat{ width:72px; } .rt-entry-q{ font-size:16px; } .rt-controls.voice-main #rtInput{ max-width:120px; } .rt-ring-core{ width:150px; height:150px; } .rt-ring-bars{ width:98px; height:52px; } .rt-ring-bars i{ height:46px; } }
-    /* ── Massive Studio (AI Video Studio) ─────────────────────────────── */
+    /* â”€â”€ Massive Studio (AI Video Studio) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
   .me-root { flex:1; min-height:0; display:flex; flex-direction:column; position:relative;
     background: radial-gradient(1100px 700px at 80% -20%, rgba(0,212,255,0.07), transparent), #05070d; }
   .me-topbar { display:flex; align-items:center; gap:12px; padding:12px 22px; flex-shrink:0;
@@ -993,7 +993,7 @@
 
 .studio-body { flex:1; overflow-y:auto; padding:24px 32px; }
   .studio-inner { max-width:760px; margin:0 auto; }
-  /* Pinned bottom input bar — mirrors the main chat composer */
+  /* Pinned bottom input bar â€” mirrors the main chat composer */
   .studio-input-bar {
     flex-shrink:0; padding:14px 32px 18px;
     border-top:1px solid rgba(255,255,255,0.06);
@@ -1013,7 +1013,7 @@
   .studio-actions-left { display:flex; align-items:center; gap:10px; min-width:0; }
   .studio-actions-right { display:flex; align-items:center; gap:10px; margin-left:auto; }
   .studio-testmode { display:flex; align-items:center; gap:5px; font-size:11px; color:#94a3b8; cursor:pointer; white-space:nowrap; }
-  /* Length + upload/join dropdown — keeps the bottom bar to one row on a phone */
+  /* Length + upload/join dropdown â€” keeps the bottom bar to one row on a phone */
   .studio-opts { position:relative; }
   .studio-opts-btn {
     display:flex; align-items:center; gap:5px; white-space:nowrap;
@@ -1160,7 +1160,7 @@
     .studio-frame.pending { height:120px; }
   }
 
-  /* ── Studio Dashboard ─────────────────────────────────────── */
+  /* â”€â”€ Studio Dashboard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
   #studioDash { flex:1; min-height:0; display:flex; flex-direction:column; }
   #studioDash.hidden { display:none; }
   .studio-back-btn {
@@ -1366,7 +1366,7 @@
     background:linear-gradient(160deg, rgba(0,212,255,0.1), rgba(14,165,233,0.03)); color:#7dd3fc; font-size:11px; font-weight:700; }
   .sd-asset-name { position:absolute; left:0; right:0; bottom:0; padding:16px 9px 7px; font-size:10.5px; color:#e2e8f0;
     background:linear-gradient(180deg, transparent, rgba(2,6,23,0.88)); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  /* Stickers/GIFs are transparent — show the whole cutout on a checker backdrop */
+  /* Stickers/GIFs are transparent â€” show the whole cutout on a checker backdrop */
   .sd-asset-sticker img { object-fit:contain !important; padding:10px;
     background:#0f172a repeating-conic-gradient(rgba(255,255,255,0.04) 0% 25%, transparent 0% 50%) 0 0 / 20px 20px; }
   /* Apply-sticker modal */
@@ -1419,7 +1419,7 @@
     font-family:'Space Grotesk',sans-serif; }
   .studio-cs-note { color:#64748b; font-size:12px; margin:18px 0 22px; line-height:1.6; }
 
-  /* ── Studio workspace switcher (unified creative suite) ────────────── */
+  /* â”€â”€ Studio workspace switcher (unified creative suite) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
   .vm-ws-tabbar {
     display:flex; gap:8px; flex-shrink:0; align-items:center;
     padding:14px 32px 12px; overflow-x:auto; scrollbar-width:none;
@@ -1445,7 +1445,7 @@
   .vm-ws-panel { display:none; flex:1; min-height:0; flex-direction:column; animation:sdViewIn 0.28s ease both; }
   .vm-ws-panel.active { display:flex; }
 
-  /* ── Coming Soon workspace (glassmorphism, dark + light safe) ───────── */
+  /* â”€â”€ Coming Soon workspace (glassmorphism, dark + light safe) â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
   .vm-cs { position:relative; flex:1; min-height:0; display:flex; align-items:center; justify-content:center; padding:28px 20px; overflow:hidden; }
   .vm-cs-orb { position:absolute; border-radius:50%; filter:blur(70px); pointer-events:none; }
   .vm-cs-orb.a { width:340px; height:340px; left:-80px; top:-80px; background:rgba(0,212,255,0.18); }
@@ -1484,8 +1484,8 @@
   .vm-cs-brand-mark { width:16px; height:16px; border-radius:5px; background:linear-gradient(135deg,#00d4ff,#0ea5e9);
     display:inline-flex; align-items:center; justify-content:center; color:#04222b; font-weight:900; font-size:10px; }
 
-  /* ── AI Builder workspace (dark-first; the studio overlay is always dark and
-       html.theme-light re-inverts it via the app's existing filter trick). ── */
+  /* â”€â”€ AI Builder workspace (dark-first; the studio overlay is always dark and
+       html.theme-light re-inverts it via the app's existing filter trick). â”€â”€ */
   .aib { flex:1; min-height:0; display:flex; flex-direction:column; position:relative; overflow:hidden; }
   .aib-topbar { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:14px 24px;
     flex-shrink:0; border-bottom:1px solid rgba(255,255,255,0.07);
@@ -1777,7 +1777,7 @@
   }
   .gallery-load-more button:hover { background:rgba(0,212,255,0.1); }
 
-  /* ── Sidebar Images Tab ─────────────────────────────────────── */
+  /* â”€â”€ Sidebar Images Tab â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
   .sidebar-img-item {
     display:flex; align-items:center; gap:10px;
     padding:8px; border-radius:10px; cursor:pointer;
@@ -1806,7 +1806,7 @@
   }
   .sidebar-img-item .img-actions button:hover { background:rgba(0,212,255,0.1); color:#00d4ff; }
 
-  /* ── Sidebar Nav Items ──────────────────────────────────────── */
+  /* â”€â”€ Sidebar Nav Items â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
   .vm-nav-item {
     display:flex; align-items:center; gap:12px;
     padding:10px 24px; cursor:pointer;
@@ -1824,7 +1824,7 @@
     text-transform:uppercase; letter-spacing:0.1em; font-weight:700;
   }
 
-  /* ── Result Card Edit Mode ──────────────────────────────────── */
+  /* â”€â”€ Result Card Edit Mode â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
   .img-result-card .card-edit-area { display:none; padding:16px 20px; }
   .img-result-card.editing .card-actions-row { display:none; }
   .img-result-card.editing .card-image-wrap { opacity:0.3; pointer-events:none; }
@@ -1852,7 +1852,7 @@
   }
   .img-result-card .btn-edit-cancel:hover { background:rgba(148,163,184,0.2); color:#e2e8f0; }
 
-  /* ── Result Card Fade-Out ──────────────────────────────────── */
+  /* â”€â”€ Result Card Fade-Out â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
   @keyframes cardFadeOut {
     0% { opacity:1; transform:translateY(0) scale(1); }
     100% { opacity:0; transform:translateY(-8px) scale(0.98); max-height:0; margin:0; padding:0; overflow:hidden; }
@@ -2042,7 +2042,7 @@
   .msg-toolbar button:hover{background:rgba(0,212,255,0.1)}
   .msg-toolbar .up-active{color:#00ff88 !important;background:rgba(0,255,136,0.1) !important}
   .msg-toolbar .down-active{color:#ff6b7a !important;background:rgba(255,45,70,0.1) !important}
-  /* ── Conversation-focused chat workspace ─────────────────────────
+  /* â”€â”€ Conversation-focused chat workspace â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
      Conversation first; everything else secondary. More breathing room,
      lighter bubbles, and a comfortable reading column on wide screens. */
   #messages{ gap:28px !important; }
@@ -2072,7 +2072,7 @@
     .chat-composer-bar{ padding:10px 12px 12px !important; }
     .chat-composer-bar>div{ max-width:none !important; }
   }
-  /* ── Unified composer (input box) ─────────────────────────────── */
+  /* â”€â”€ Unified composer (input box) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
   #composer{
     background:#1a1f2e;border:1px solid rgba(255,255,255,0.1);
     border-radius:24px;padding:4px 8px;
@@ -2133,7 +2133,7 @@
     #personaBtn{height:32px;padding:0 12px;font-size:13px}
 
     /* Settings: sidebar becomes a horizontal scrollable tab bar on top.
-       !important is required throughout — the overlay is styled inline. */
+       !important is required throughout â€” the overlay is styled inline. */
     #settingsBody{flex-direction:column!important}
     #settingsSidebar{width:100%!important;flex-shrink:0!important;overflow-x:auto!important;overflow-y:hidden!important;border-right:none!important;border-bottom:1px solid rgba(255,255,255,0.08)!important;padding:8px 10px!important;-webkit-overflow-scrolling:touch}
     #settingsNav{flex-direction:row!important;gap:6px!important;width:max-content;padding-right:12px}
@@ -2148,12 +2148,12 @@
     .gallery-close-btn{padding:8px 10px}
     .gallery-body{padding:16px 14px}
     .gallery-grid{grid-template-columns:repeat(auto-fill,minmax(140px,1fr))}
-    /* Touch devices have no hover — card actions (Download) must stay visible */
+    /* Touch devices have no hover â€” card actions (Download) must stay visible */
     .gallery-card-actions{opacity:1}
    }
 
 /* Splash logo: rotates in, comes a bit forward, then settles back.
-   No glow — the blue drop-shadow halo was removed deliberately. */
+   No glow â€” the blue drop-shadow halo was removed deliberately. */
 @keyframes logoIntro {
   0% {
     transform: rotate(-15deg) scale(0.82);
@@ -2237,7 +2237,8 @@
 <style>
 #vmCloudCharacter {
     position: fixed !important;
-    width: 96px !important;
+    width: 128px !important;
+    max-width: 128px !important;
     height: auto !important;
     aspect-ratio: 433 / 577 !important;
     right: 18px !important;
@@ -2251,7 +2252,15 @@
     cursor: grab !important;
     user-select: none !important;
     -webkit-user-drag: none !important;
-    filter: drop-shadow(0 8px 14px rgba(0,0,0,0.45)) !important;
+    filter: drop-shadow(0 10px 18px rgba(0,10,20,0.5)) !important;
+    animation: vm-char-float 4.5s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+    #vmCloudCharacter { animation: none !important; }
+}
+@keyframes vm-char-float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-7px); }
 }
 .vmcloud-fallback {
     position: absolute !important; inset: 0;
@@ -2276,13 +2285,21 @@
     // Auth-gated visibility. Uses inline style with "important" because the
     // stylesheet above forces the element visible by default.
     window.vmCloudCharacterShow = function () {
+        if (!document.getElementById("vmCloudCharacter") &&
+            window.VMCloudRig && typeof window.VMCloudRig.mountRoot === "function") {
+            // The character was removed at some point (e.g. a session teardown);
+            // recreate it so the robot always comes back on the front end.
+            try { window.VMCloudRig.mountRoot(); } catch (err) { }
+        }
+        el = document.getElementById("vmCloudCharacter") || el;
         el.style.setProperty("display", "block", "important");
         el.style.setProperty("visibility", "visible", "important");
         el.style.setProperty("opacity", "1", "important");
     };
     window.vmCloudCharacterHide = function () {
-        el.style.setProperty("visibility", "hidden", "important");
-        el.style.setProperty("opacity", "0", "important");
+        // The robot companion is a persistent brand element: it stays on screen
+        // (previously it was hidden here, which made the character vanish from
+        // the front end entirely). Hide() is kept as a no-op API for callers.
     };
 
     // Direct pointer dragging on the character container (positioned via
@@ -2298,7 +2315,7 @@
         if (!drag) return;
         var x = e.clientX - drag.dx;
         var y = e.clientY - drag.dy;
-        el.style.left = Math.max(0, Math.min(window.innerWidth - 96, x)) + "px";
+        el.style.left = Math.max(0, Math.min(window.innerWidth - 128, x)) + "px";
         el.style.top = Math.max(0, Math.min(window.innerHeight - el.offsetHeight, y)) + "px";
         el.style.right = "auto";
         el.style.bottom = "auto";
@@ -2633,7 +2650,7 @@
     <div class="space-y-1" id="historyList"></div>
   </div>
   </div><!-- /sidebarPanel-chats -->
-  <!-- Navigation — the sidebar intentionally stays minimal: Chat + Studio.
+  <!-- Navigation â€” the sidebar intentionally stays minimal: Chat + Studio.
        Every other workspace (Image/Video Galleries, AI Builder, Sketch,
        3D Studio, Round Table, Massive Editing) now lives inside Studio.
        Settings/Profile/Theme/Account remain untouched in the gear menu. -->
@@ -2753,7 +2770,7 @@
         </div>
         <div style="text-align:center;">
           <h1 style="color:#00d4ff;font-size:28px;font-weight:900;letter-spacing:0.15em;text-transform:uppercase;font-family:'Space Grotesk',sans-serif;margin-bottom:8px;">Valley Mind-AI</h1>
-          <p style="color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:0.2em;">Quantum v2.4 · Neural Interface Active</p>
+          <p style="color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:0.2em;">Quantum v2.4 Â· Neural Interface Active</p>
         </div>
         <div style="display:flex;flex-wrap:wrap;gap:10px;justify-content:center;max-width:500px;">
           <button onclick="quickSend(this)" style="padding:10px 16px;border-radius:12px;border:1px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.05);color:#cbd5e1;font-size:13px;cursor:pointer;transition:all 0.2s;" onmouseover="this.style.borderColor='rgba(0,212,255,0.4)';this.style.color='#00d4ff';" onmouseout="this.style.borderColor='rgba(255,255,255,0.1)';this.style.color='#cbd5e1';">Who are you?</button>
@@ -2846,7 +2863,7 @@
     <div style="flex:1;display:flex;flex-direction:column;padding:24px;overflow:hidden;">
       <div style="margin-bottom:16px;">
         <h2 style="color:#00d4ff;font-family:'Space Grotesk',sans-serif;font-size:12px;letter-spacing:0.3em;text-transform:uppercase;margin-bottom:6px;">// Sketch Tool</h2>
-        <p style="color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:0.1em;">Draw · Label · Biology · Chemistry · Engineering · Architecture</p>
+        <p style="color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:0.1em;">Draw Â· Label Â· Biology Â· Chemistry Â· Engineering Â· Architecture</p>
       </div>
       <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
         <button onclick="setTool(this,'pen')" class="sketch-tool" style="padding:7px 14px;border-radius:10px;border:1px solid rgba(0,212,255,0.4);background:rgba(0,212,255,0.1);color:#00d4ff;font-size:11px;cursor:pointer;font-family:'Space Grotesk',sans-serif;letter-spacing:0.05em;">Pen</button>
@@ -2877,7 +2894,7 @@
         </div>
         <div>
           <span style="color:#f1f5f9;font-size:15px;font-weight:700;font-family:'Inter',sans-serif;letter-spacing:0.02em;">Help &amp; Learning Center</span>
-          <span style="color:#475569;font-size:10px;text-transform:uppercase;letter-spacing:0.15em;font-family:'Space Grotesk',sans-serif;font-weight:500;margin-left:8px;">Tutorials · Docs · Support</span>
+          <span style="color:#475569;font-size:10px;text-transform:uppercase;letter-spacing:0.15em;font-family:'Space Grotesk',sans-serif;font-weight:500;margin-left:8px;">Tutorials Â· Docs Â· Support</span>
         </div>
       </div>
       <button onclick="vmHelpCenter.close()" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.08);color:#94a3b8;font-size:18px;cursor:pointer;width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;transition:all 0.2s;">&times;</button>
@@ -2967,7 +2984,7 @@
             backdrop-filter:blur(6px);align-items:center;justify-content:center;padding:22px;">
   <div style="max-width:390px;width:100%;background:#0f172a;border:1px solid rgba(0,212,255,0.25);
               border-radius:16px;padding:22px;box-shadow:0 20px 60px rgba(0,0,0,0.55);">
-    <div style="font-size:30px;line-height:1;margin-bottom:10px;">🔔</div>
+    <div style="font-size:30px;line-height:1;margin-bottom:10px;">ðŸ””</div>
     <div style="color:#e2e8f0;font-size:16px;font-weight:600;margin-bottom:8px;">
       Want a heads-up when it's done?
     </div>
@@ -3061,7 +3078,7 @@
     </div>
   </div>
 
-  <!-- Workspace switcher — one unified creative suite.
+  <!-- Workspace switcher â€” one unified creative suite.
        Clicking a tab swaps the panels below instantly (no page reload).
        NOTE: Cloud is NOT a workspace in this bar. Cloud is ValleyMind's
        persistent app-shell companion (see #vmCloudCompanion in cloud.js). The
@@ -3078,10 +3095,10 @@
     <button class="vm-ws-tab" data-ws="analytics" id="vmWsTabAnalytics" onclick="vmWsGo('analytics')" style="display:none"><i data-lucide="bar-chart-3"></i> Analytics</button>
   </nav>
 
-  <!-- ── Workspace: ValleyMind Studio — the existing Studio, unchanged ── -->
+  <!-- â”€â”€ Workspace: ValleyMind Studio â€” the existing Studio, unchanged â”€â”€ -->
   <div class="vm-ws-panel active" data-ws-panel="studio">
 
-  <!-- STUDIO DASHBOARD — CapCut-style creative-suite home. The classic
+  <!-- STUDIO DASHBOARD â€” CapCut-style creative-suite home. The classic
        Studio surface below is untouched; these sections just layer on top. -->
   <div id="studioDash" style="display:none;flex:1;min-height:0;flex-direction:column;">
     <nav class="studio-tabbar" id="studioTabbar" aria-label="Studio sections">
@@ -3104,14 +3121,14 @@
     </div>
   </div>
 
-  <!-- COMING SOON — shown when a feature has no backend yet -->
+  <!-- COMING SOON â€” shown when a feature has no backend yet -->
   <div id="studioComingSoon" class="studio-cs" style="display:none;">
     <div class="studio-cs-card">
       <div class="studio-cs-icon" id="csIcon"></div>
       <div class="studio-cs-title" id="csTitle"></div>
       <p class="studio-cs-desc" id="csDesc"></p>
       <span class="studio-cs-badge">Coming Soon</span>
-      <p class="studio-cs-note">We're building this tool. The Studio team is hard at work — check back soon.</p>
+      <p class="studio-cs-note">We're building this tool. The Studio team is hard at work â€” check back soon.</p>
       <button class="studio-go-btn" onclick="studioShowDashboard()">Back to Dashboard</button>
     </div>
   </div>
@@ -3126,10 +3143,10 @@
   <div class="studio-input-bar" id="studioInputBar">
     <div class="studio-inner">
       <div class="studio-prompt-wrap">
-        <textarea id="studioPrompt" rows="2" placeholder="Describe your movie idea — a logline, a scene, a feeling..."></textarea>
+        <textarea id="studioPrompt" rows="2" placeholder="Describe your movie idea â€” a logline, a scene, a feeling..."></textarea>
         <div class="studio-prompt-actions">
           <div class="studio-actions-left">
-            <label class="studio-testmode" title="Run the full pipeline with free placeholder clips — no video spend.">
+            <label class="studio-testmode" title="Run the full pipeline with free placeholder clips â€” no video spend.">
               <input type="checkbox" id="studioTestModeToggle" onchange="onStudioControlsChange()" style="cursor:pointer;">Test mode
             </label>
             <!-- Length + upload/join live in one dropdown so the bar fits on a phone -->
@@ -3144,7 +3161,7 @@
               <div class="studio-opts-menu" id="studioOptsMenu" role="menu">
                 <div class="studio-opts-group">
                   <div class="studio-opts-heading">Length</div>
-                  <select id="studioLengthSelect" onchange="onStudioControlsChange()" title="Target runtime — scene count follows (about one scene per 5s)">
+                  <select id="studioLengthSelect" onchange="onStudioControlsChange()" title="Target runtime â€” scene count follows (about one scene per 5s)">
                     <option value="30">30 seconds (default)</option>
                     <option value="60">60 seconds</option>
                     <option value="90">90 seconds</option>
@@ -3154,9 +3171,9 @@
                 <div class="studio-opts-group">
                   <div class="studio-opts-heading">Your own footage</div>
                   <button type="button" class="studio-opts-item" title="Upload footage for the crew to work from"
-                          onclick="closeStudioOptions(); initStudioVideoUpload(); document.getElementById('studioVideoInput').click();">🎬 Upload footage</button>
+                          onclick="closeStudioOptions(); initStudioVideoUpload(); document.getElementById('studioVideoInput').click();">ðŸŽ¬ Upload footage</button>
                   <button type="button" class="studio-opts-item" title="Upload two or more of your own clips and the crew joins them into one finished video"
-                          onclick="closeStudioOptions(); initStudioJoinUpload(); document.getElementById('studioJoinInput').click();">🎞️ Join clips into one video</button>
+                          onclick="closeStudioOptions(); initStudioJoinUpload(); document.getElementById('studioJoinInput').click();">ðŸŽžï¸ Join clips into one video</button>
                 </div>
               </div>
             </div>
@@ -3172,7 +3189,7 @@
   </div>
   </div><!-- /ValleyMind Studio workspace panel -->
 
-  <!-- ── Workspace: AI Builder — describe → plan → build → preview/download ── -->
+  <!-- â”€â”€ Workspace: AI Builder â€” describe â†’ plan â†’ build â†’ preview/download â”€â”€ -->
   <div class="vm-ws-panel" data-ws-panel="website">
     <div class="aib">
       <div class="aib-topbar">
@@ -3180,7 +3197,7 @@
           <img src="/static/valleymind-logo.png" alt="ValleyMind" class="aib-logo-img">
           <div>
             <h3>AI Builder</h3>
-            <p id="aibTopbarSub">Describe an idea — get a full, production-ready project.</p>
+            <p id="aibTopbarSub">Describe an idea â€” get a full, production-ready project.</p>
           </div>
         </div>
         <div class="aib-topbar-actions">
@@ -3195,7 +3212,7 @@
         <div class="aib-body">
           <div class="aib-hero">
             <div class="aib-hero-title">Describe it. <span class="aib-hero-accent">We build it.</span></div>
-            <p class="aib-hero-sub">ValleyMind AI Builder turns a plain-language idea into a complete project — an editable specification, then the full codebase with a live preview and one-click download. Powered by the OpenCode API, running entirely on our server.</p>
+            <p class="aib-hero-sub">ValleyMind AI Builder turns a plain-language idea into a complete project â€” an editable specification, then the full codebase with a live preview and one-click download. Powered by the OpenCode API, running entirely on our server.</p>
             <div class="aib-type-row" id="aibTypeRow">
               <button type="button" class="aib-type active" data-type="website" onclick="aibSelectType(this)"><i data-lucide="globe" style="width:14px;height:14px;"></i> Website</button>
               <button type="button" class="aib-type" data-type="mobile" onclick="aibSelectType(this)"><i data-lucide="smartphone" style="width:14px;height:14px;"></i> Mobile app</button>
@@ -3205,7 +3222,7 @@
               <button type="button" class="aib-type" data-type="ai" onclick="aibSelectType(this)"><i data-lucide="bot" style="width:14px;height:14px;"></i> AI app</button>
               <button type="button" class="aib-type" data-type="saas" onclick="aibSelectType(this)"><i data-lucide="rocket" style="width:14px;height:14px;"></i> SaaS</button>
             </div>
-            <textarea id="aibDesc" class="aib-textarea" rows="5" spellcheck="false" placeholder="Example: A subscription SaaS that lets content creators publish a paid newsletter — landing page, member portal, Stripe checkout, admin dashboard and a REST API."></textarea>
+            <textarea id="aibDesc" class="aib-textarea" rows="5" spellcheck="false" placeholder="Example: A subscription SaaS that lets content creators publish a paid newsletter â€” landing page, member portal, Stripe checkout, admin dashboard and a REST API."></textarea>
             <div class="aib-attach-row" id="aibAttachRow">
               <button type="button" class="aib-btn aib-btn-ghost aib-btn-sm" onclick="aibOpenAttach()" title="Attach files (images or .txt/.md)"><i data-lucide="paperclip" style="width:14px;height:14px;"></i> Attach</button>
               <input type="file" id="aibAttachInput" accept=".png,.jpg,.jpeg,.gif,.webp,.txt,.md" multiple style="display:none;" onchange="aibHandleAttachFiles(this)">
@@ -3220,7 +3237,7 @@
 
           <div class="aib-steps">
             <div class="aib-step"><div class="aib-step-num">1</div><h5>Describe &amp; answer</h5><p>Tell the builder what you want. It asks a few smart questions to shape the scope.</p></div>
-            <div class="aib-step"><div class="aib-step-num">2</div><h5>Review the plan</h5><p>You get a full project specification — features, stack, pages, database and roadmap. Edit anything.</p></div>
+            <div class="aib-step"><div class="aib-step-num">2</div><h5>Review the plan</h5><p>You get a full project specification â€” features, stack, pages, database and roadmap. Edit anything.</p></div>
             <div class="aib-step"><div class="aib-step-num">3</div><h5>Build &amp; ship</h5><p>Watch the code generate live, browse the file tree, preview it and download the whole project.</p></div>
           </div>
 
@@ -3284,7 +3301,7 @@
         </div>
       </div>
 
-      <!-- VIEW: build (live progress → files / preview / download) -->
+      <!-- VIEW: build (live progress â†’ files / preview / download) -->
       <div class="aib-view" id="aibViewBuild" style="display:none;">
         <div class="aib-body aib-body-build">
           <div class="aib-card" id="aibBuildProgress">
@@ -3293,9 +3310,9 @@
               <span class="aib-badge aib-badge-live" id="aibBuildStatus">Running</span>
             </div>
             <div class="aib-progress-track"><div class="aib-progress-bar" id="aibProgressBar" style="width:0%;"></div></div>
-            <div class="aib-progress-meta"><span id="aibProgressText">Designing the architecture…</span><span id="aibProgressCount">0/0</span></div>
+            <div class="aib-progress-meta"><span id="aibProgressText">Designing the architectureâ€¦</span><span id="aibProgressCount">0/0</span></div>
             <div class="aib-build-log" id="aibBuildLog"></div>
-            <div class="aib-build-live" id="aibBuildLive"><pre id="aibBuildLivePre"><span class="aib-tok-com">// waiting for the first file…</span></pre></div>
+            <div class="aib-build-live" id="aibBuildLive"><pre id="aibBuildLivePre"><span class="aib-tok-com">// waiting for the first fileâ€¦</span></pre></div>
           </div>
           <div class="aib-card" id="aibBuildResult" style="display:none;">
             <div class="aib-card-head">
@@ -3331,7 +3348,7 @@
     </div>
   </div>
 
-  <!-- ── Workspace: Sketch — Coming Soon ── -->
+  <!-- â”€â”€ Workspace: Sketch â€” Coming Soon â”€â”€ -->
   <div class="vm-ws-panel" data-ws-panel="sketch">
     <div class="vm-cs">
       <span class="vm-cs-orb a"></span>
@@ -3343,12 +3360,12 @@
         <h2 class="vm-cs-title">Sketch</h2>
         <p class="vm-cs-desc">This feature is currently under development and will be available in a future update.</p>
         <div class="vm-cs-dots"><i></i><i></i><i></i></div>
-        <span class="vm-cs-brand"><span class="vm-cs-brand-mark">V</span>Valley Mind-AI · Creative Suite</span>
+        <span class="vm-cs-brand"><span class="vm-cs-brand-mark">V</span>Valley Mind-AI Â· Creative Suite</span>
       </div>
     </div>
   </div>
 
-  <!-- ── Workspace: 3D Studio — Coming Soon ── -->
+  <!-- â”€â”€ Workspace: 3D Studio â€” Coming Soon â”€â”€ -->
   <div class="vm-ws-panel" data-ws-panel="threed">
     <div class="vm-cs">
       <span class="vm-cs-orb a"></span>
@@ -3360,12 +3377,12 @@
         <h2 class="vm-cs-title">3D Studio</h2>
         <p class="vm-cs-desc">This feature is currently under development and will be available in a future update.</p>
         <div class="vm-cs-dots"><i></i><i></i><i></i></div>
-        <span class="vm-cs-brand"><span class="vm-cs-brand-mark">V</span>Valley Mind-AI · Creative Suite</span>
+        <span class="vm-cs-brand"><span class="vm-cs-brand-mark">V</span>Valley Mind-AI Â· Creative Suite</span>
       </div>
     </div>
   </div>
 
-  <!-- ── Workspace: Round Table — the existing Council Hall interface ── -->
+  <!-- â”€â”€ Workspace: Round Table â€” the existing Council Hall interface â”€â”€ -->
   <div class="vm-ws-panel" data-ws-panel="roundtable">
     <div id="roundTableOverlay">
       <div class="rt-header">
@@ -3406,45 +3423,45 @@
     <div class="rt-entry-q" id="rtEntryQ">What do you want to talk about?</div>
     <div class="rt-recording" id="rtRecording" style="display:none;">
       <span class="rt-rec-dot"></span>
-      <span class="rt-rec-label">Listening…</span>
+      <span class="rt-rec-label">Listeningâ€¦</span>
       <span class="rt-rec-wave"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
       <button class="rt-mini-btn" onclick="rtStopVoice(); rtRender();">Stop</button>
     </div>
     <div class="rt-inputbar" id="rtInputbar">
       <button class="rt-btn rt-mic" id="rtMicBtn" onclick="rtMicTap()" title="Speak"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2M12 19v4"/></svg></button>
-      <textarea id="rtInput" rows="1" placeholder="Speak or type…" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();rtSendFromInput();}"></textarea>
+      <textarea id="rtInput" rows="1" placeholder="Speak or typeâ€¦" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();rtSendFromInput();}"></textarea>
       <button class="rt-btn rt-send" id="rtSendBtn" onclick="rtSendFromInput()" title="Send"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg></button>
     </div>
     <div class="rt-modes" id="rtModes">
       <span class="rt-modes-label">This session</span>
-      <button class="rt-mode-btn" id="rtModeVoice" onclick="rtSetMode('voice')" title="Everyone replies out loud as voice notes only — nothing written">Voice</button>
-      <button class="rt-mode-btn" id="rtModeText" onclick="rtSetMode('text')" title="Everything in text only — no voice">Text</button>
-      <button class="rt-mode-btn active" id="rtModeBoth" onclick="rtSetMode('both')" title="Both — a voice note and the text together">Both</button>
+      <button class="rt-mode-btn" id="rtModeVoice" onclick="rtSetMode('voice')" title="Everyone replies out loud as voice notes only â€” nothing written">Voice</button>
+      <button class="rt-mode-btn" id="rtModeText" onclick="rtSetMode('text')" title="Everything in text only â€” no voice">Text</button>
+      <button class="rt-mode-btn active" id="rtModeBoth" onclick="rtSetMode('both')" title="Both â€” a voice note and the text together">Both</button>
     </div>
   </div>
   <audio id="rtPlayer" preload="auto" style="display:none;"></audio>
   <!-- One persistent, gesture-unlocked player for chat persona playback (see
        unlockPersonaAudio). A fresh new Audio() per reply is never unlocked, so
        mobile/strict browsers blocked .play() and the code fell back to the
-       device's own voice — the bug that made Marcus sound female on one device
+       device's own voice â€” the bug that made Marcus sound female on one device
        and male on another. -->
   <audio id="personaPlayer" preload="auto" style="display:none;"></audio>
   </div>
   </div><!-- /Round Table workspace panel -->
 
-  <!-- ── Workspace: Music Studio — sing/hum/record → DIY or AI-produced track ── -->
+  <!-- â”€â”€ Workspace: Music Studio â€” sing/hum/record â†’ DIY or AI-produced track â”€â”€ -->
   <div class="vm-ws-panel" data-ws-panel="music" id="vmWsPanelMusic"></div>
 
-  <!-- ── Workspace: Cloud — companion body around the existing ValleyMind brain ── -->
+  <!-- â”€â”€ Workspace: Cloud â€” companion body around the existing ValleyMind brain â”€â”€ -->
   <div class="vm-ws-panel" data-ws-panel="cloud" id="vmWsPanelCloud"></div>
 
   <div class="vm-ws-panel" data-ws-panel="analytics" id="vmWsPanelAnalytics">
     <div id="studioAnalyticsView"></div>
   </div>
 
-  <!-- ── Workspace: Massive Editing — instruction-driven AI edit tool. The UI is
+  <!-- â”€â”€ Workspace: Massive Editing â€” instruction-driven AI edit tool. The UI is
        rendered by static/massive_editing.js into this panel the first time the
-       user opens the workspace (Studio → Massive Editing, right after Music
+       user opens the workspace (Studio â†’ Massive Editing, right after Music
        Studio). Text + voice instructions, media uploads and a selected sticker
        all travel to the real editing pipeline on "Start AI Edit". -->
   <div class="vm-ws-panel" data-ws-panel="editing" id="vmWsPanelEditing">
@@ -3476,8 +3493,8 @@
     </div>
     <div id="sdStickerProgress" style="display:none;text-align:center;padding:34px 6px;">
       <div class="edit-spinner"></div>
-      <div class="edit-phase" id="sdStickerPhase" style="margin-top:16px;">Applying the sticker…</div>
-      <div class="edit-sub">Overlaying and re-encoding — usually under a minute for a short clip; keep this open.</div>
+      <div class="edit-phase" id="sdStickerPhase" style="margin-top:16px;">Applying the stickerâ€¦</div>
+      <div class="edit-sub">Overlaying and re-encoding â€” usually under a minute for a short clip; keep this open.</div>
     </div>
     <div id="sdStickerResult" style="display:none;text-align:center;">
       <div class="edit-sheet-label" style="margin-top:6px;">Your video</div>
@@ -3581,7 +3598,7 @@ function renderDevLog(log) {
         return;
     }
     el.innerHTML = log.slice().reverse().map(function (e) {
-        var icon = e.success ? "✓" : "✗";
+        var icon = e.success ? "âœ“" : "âœ—";
         var color = e.success ? "#22c55e" : "#ef4444";
         var time = e.timestamp ? new Date(e.timestamp * 1000).toLocaleTimeString() : "";
         return '<span style="color:' + color + ';">' + icon + '</span> ' +
@@ -3782,7 +3799,7 @@ function renderSessionListError(message) {
         '</div>';
 }
 
-/** Single fetch attempt — primary endpoint only. */
+/** Single fetch attempt â€” primary endpoint only. */
 async function fetchSessionsOnce() {
     var res = await apiFetch("/chat/sessions", {
         credentials: "include",
@@ -3818,7 +3835,7 @@ function apiUrl(path) {
 function networkErrorMessage(err, url) {
     const reason = err && err.message ? err.message : String(err || "unknown error");
     if ((err && err.name === "AbortError") || /aborted/i.test(reason)) {
-        return "That answer is taking longer than usual. Please try a shorter version, or send it again and I’ll continue from there.";
+        return "That answer is taking longer than usual. Please try a shorter version, or send it again and Iâ€™ll continue from there.";
     }
     return `Network error reaching backend at ${url}: ${reason}`;
 }
@@ -3957,7 +3974,7 @@ document.getElementById('chatImageInput').addEventListener('change', function (e
     reader.readAsDataURL(file);
 });
 
-/* ── Video upload + analysis (Qwen3-VL) ───────────────────────────────── */
+/* â”€â”€ Video upload + analysis (Qwen3-VL) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 var pendingVideoFile = null;
 
 document.getElementById('chatVideoInput').addEventListener('change', function (event) {
@@ -3985,7 +4002,7 @@ async function sendVideoForAnalysis(question) {
     var file = pendingVideoFile;
     if (!file) return;
     clearVideoUpload();
-    addMessage(question ? question + "\n\n🎬 " + file.name : "🎬 " + file.name, "user");
+    addMessage(question ? question + "\n\nðŸŽ¬ " + file.name : "ðŸŽ¬ " + file.name, "user");
     var thinking = addThinkingIndicator ? addThinkingIndicator() : null;
     try {
         var fd = new FormData();
@@ -4007,7 +4024,7 @@ async function sendVideoForAnalysis(question) {
                         d.video_url ? { url: d.video_url, type: "video" } : null);
     } catch (err) {
         if (thinking && removeThinkingIndicator) removeThinkingIndicator(thinking);
-        addMessage("I couldn't watch that video — the upload failed.", "ai");
+        addMessage("I couldn't watch that video â€” the upload failed.", "ai");
     }
 }
 
@@ -4022,12 +4039,12 @@ function renderComposerChips() {
         vchip.style.cssText = "display:flex;align-items:center;gap:7px;padding:5px 9px;background:rgba(0,212,255,0.1);border:1px solid rgba(0,212,255,0.3);border-radius:8px;color:#7dd3fc;font-size:12px;";
         var name = pendingVideoFile.name.length > 26
             ? pendingVideoFile.name.slice(0, 23) + "..." : pendingVideoFile.name;
-        vchip.appendChild(document.createTextNode("🎬 " + name));
+        vchip.appendChild(document.createTextNode("ðŸŽ¬ " + name));
         var vx = document.createElement("button");
         vx.className = "chip-x";
         vx.type = "button";
         vx.title = "Remove video";
-        vx.textContent = "✕";
+        vx.textContent = "âœ•";
         vx.onclick = function (ev) { ev.stopPropagation(); clearVideoUpload(); };
         vchip.appendChild(vx);
         chips.appendChild(vchip);
@@ -4042,7 +4059,7 @@ function renderComposerChips() {
         x.className = "chip-x";
         x.type = "button";
         x.title = "Remove image";
-        x.textContent = "✕";
+        x.textContent = "âœ•";
         x.onclick = function (ev) { ev.stopPropagation(); clearImageUpload(); };
         chip.appendChild(img);
         chip.appendChild(x);
@@ -4074,7 +4091,7 @@ function resetComposerHeight() {
     if (input) { input.style.height = "auto"; input.style.overflowY = "hidden"; }
 }
 
-/* ── Placeholder / send-button state (status indicator, NOT a lock) ── */
+/* â”€â”€ Placeholder / send-button state (status indicator, NOT a lock) â”€â”€ */
 function activePersonaName() {
     try {
         var n = (window.currentCharacterName || window.activePersona || "").trim();
@@ -4109,7 +4126,7 @@ function setThinkingState(thinking) {
     const input = document.getElementById("chatInput");
     const sendBtn = document.getElementById("sendBtn");
     const sendIcon = document.getElementById("sendIcon");
-    // Input stays USABLE throughout — placeholder is the status indicator.
+    // Input stays USABLE throughout â€” placeholder is the status indicator.
     if (input) input.disabled = false;
     if (sendBtn) sendBtn.disabled = thinking;
     if (sendIcon) {
@@ -4214,12 +4231,12 @@ function handleMessageContextAction(action) {
 // Open the user's mail client with the response prefilled as a draft.
 function draftResponseEmail(text) {
     if (!text) return;
-    var body = text.slice(0, 1500) + (text.length > 1500 ? "\n\n…(truncated)" : "") + "\n\n— via ValleyMind AI";
-    window.location.href = "mailto:?subject=" + encodeURIComponent("ValleyMind AI — response") +
+    var body = text.slice(0, 1500) + (text.length > 1500 ? "\n\nâ€¦(truncated)" : "") + "\n\nâ€” via ValleyMind AI";
+    window.location.href = "mailto:?subject=" + encodeURIComponent("ValleyMind AI â€” response") +
         "&body=" + encodeURIComponent(body);
 }
 
-// Report a bad response — routed to the same /suggestions feedback channel.
+// Report a bad response â€” routed to the same /suggestions feedback channel.
 function reportResponseIssue(text) {
     var note = window.prompt("What's wrong with this response? A short note helps us fix it.");
     if (note === null) return;                       // cancelled
@@ -4231,7 +4248,7 @@ function reportResponseIssue(text) {
         headers: authHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify({ text: payload })
     }).then(function (r) { return r.json(); }).then(function (j) {
-        if (j && j.status === "success") _vmToast("Thanks — your report was sent.");
+        if (j && j.status === "success") _vmToast("Thanks â€” your report was sent.");
         else _vmToast((j && j.message) || "Could not send the report.");
     }).catch(function () { _vmToast("Could not send the report."); });
 }
@@ -4240,7 +4257,7 @@ function showResponseDetails(wrap) {
     var persona = (typeof currentPersona !== "undefined" && currentPersona) ? currentPersona : "assistant";
     var chars = 0;
     if (wrap) { var b = wrap.querySelector(".bubble"); chars = b ? b.textContent.trim().length : 0; }
-    _vmToast("Assistant: " + persona + " · " + chars + " chars · Engine: ValleyMind AI");
+    _vmToast("Assistant: " + persona + " Â· " + chars + " chars Â· Engine: ValleyMind AI");
 }
 
 // Re-run the most recent prompt and stream a fresh response.
@@ -4255,7 +4272,7 @@ function regenerateResponse(btn) {
     window.send();
 }
 
-// Share a single response — native share sheet where available, else clipboard.
+// Share a single response â€” native share sheet where available, else clipboard.
 function shareMessageText(btn) {
     var wrapper = btn.closest(".assistant-message");
     var bubble = wrapper ? wrapper.querySelector(".bubble") : null;
@@ -4419,7 +4436,7 @@ window.toggleVoicePlayback = function (btn) {
             _voiceIcon(btn, 'pause');
             pl.play().catch(function () { _voiceIcon(btn, 'play'); _msgAudioBtn = null; });
         } else {
-            // No Qwen audio from the server — stay silent rather than use the
+            // No Qwen audio from the server â€” stay silent rather than use the
             // device's native voice (which broke persona gender on some devices).
             _voiceIcon(btn, 'play'); _msgAudioBtn = null;
         }
@@ -4436,7 +4453,7 @@ document.addEventListener("click", function (e) {
     }
 });
 
-// Appearance — apply the saved theme + font size across the whole app.
+// Appearance â€” apply the saved theme + font size across the whole app.
 // Called on load and live from Settings when the user changes either one.
 window.applyAppearance = function (theme, fontSize) {
     try {
@@ -4454,14 +4471,14 @@ window.applyAppearance = function (theme, fontSize) {
 // Apply immediately from whatever was last saved locally (no flash of wrong theme).
 window.applyAppearance();
 
-// ── Notifications ───────────────────────────────────────────────────────
+// â”€â”€ Notifications â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Fire only when the user turned Push on AND the browser granted permission.
 // `target` deep-links the click: {url, type:'image'|'video'}.
 window.vmNotify = function (title, body, target) {
     try {
         if (localStorage.getItem("vm_push") !== "1") return;
         if (!("Notification" in window) || Notification.permission !== "granted") return;
-        // Don't nag while the tab is focused — the user already sees the result
+        // Don't nag while the tab is focused â€” the user already sees the result
         if (document.visibilityState === "visible") return;
         var n = new Notification(title, {
             body: body || "",
@@ -4508,10 +4525,10 @@ function closeVideoViewer() {
     document.body.style.overflow = "";
 }
 
-// ── Permission onboarding ───────────────────────────────────────────────
+// â”€â”€ Permission onboarding â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Asking on page load gets a reflexive "Block", which is PERMANENT and cannot
 // be re-requested. So we show our own prompt at the moment it's obviously
-// useful — the first time a generation starts — and only touch the native API
+// useful â€” the first time a generation starts â€” and only touch the native API
 // if they say yes. Declined twice, we never ask again.
 var VM_PUSH_MAX_ASKS = 2;
 var _vmPushResolve = null;
@@ -4528,7 +4545,7 @@ function vmShouldAskPush() {
 }
 
 /* Show OUR prompt. Resolves true if the browser ended up granting. Never
-   blocks the generation — callers may ignore the result. */
+   blocks the generation â€” callers may ignore the result. */
 function vmMaybeAskPush(message) {
     return new Promise(function (resolve) {
         if (!vmShouldAskPush()) { resolve(false); return; }
@@ -4548,7 +4565,7 @@ function vmPushPromptAnswer(yes) {
     if (ov) ov.style.display = "none";
     var done = _vmPushResolve; _vmPushResolve = null;
     if (!yes) {
-        localStorage.setItem("vm_push", "0");   // declined ours — no native prompt at all
+        localStorage.setItem("vm_push", "0");   // declined ours â€” no native prompt at all
         if (done) done(false);
         return;
     }
@@ -4565,7 +4582,7 @@ function vmPushPromptAnswer(yes) {
 }
 
 function applyVideoGenAvailability() {
-    // Video generation is chat-triggered — there is no dedicated button to grey
+    // Video generation is chat-triggered â€” there is no dedicated button to grey
     // out. When the global kill switch is off the backend returns an instant
     // "unavailable" message (no provider is ever called), which renders inline
     // like any assistant reply. This hook reflects the flag on any element
@@ -4721,7 +4738,7 @@ function renderInlineCitations(bubbleEl, sourceMetadata) {
     var textEl = bub.querySelector(".message-text") || bub;
     if (!textEl) return;
 
-    // Build name→index and domain→index mappings (1-indexed)
+    // Build nameâ†’index and domainâ†’index mappings (1-indexed)
     var nameIndex = {};
     var domainIndex = {};
     sourceMetadata.forEach(function (s, i) {
@@ -4790,7 +4807,7 @@ function renderInlineCitations(bubbleEl, sourceMetadata) {
                 };
                 frag.appendChild(sup);
             } else {
-                // Unrecognized citation — keep original text
+                // Unrecognized citation â€” keep original text
                 frag.appendChild(document.createTextNode(match[0]));
             }
             lastIdx = match.index + match[0].length;
@@ -4802,7 +4819,7 @@ function renderInlineCitations(bubbleEl, sourceMetadata) {
     });
 }
 
-/* ── Thinking Process Block ────────────────────────────────────────────
+/* â”€â”€ Thinking Process Block â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    Creates a collapsible "Thinking Process" indicator similar to Claude's
    thinking blocks. Steps are added one by one via addThinkingStep(),
    and the block auto-expands while active, then collapses when done.
@@ -4847,12 +4864,12 @@ function createThinkingProcess(container) {
             }
             var emoji = "\uD83D\uDD0D";
             var l = String(label || "").toLowerCase();
-            if (l.indexOf("search") !== -1) emoji = "\uD83D\uDD0E";         // 🔎
-            else if (l.indexOf("review") !== -1) emoji = "\uD83D\uDCDA";    // 📚
-            else if (l.indexOf("timestamp") !== -1 || l.indexOf("fresh") !== -1) emoji = "\uD83D\uDDB3"; // 🕒
-            else if (l.indexOf("compar") !== -1) emoji = "\u2696\uFE0F";    // ⚖️
-            else if (l.indexOf("synthes") !== -1) emoji = "\u270D\uFE0F";   // ✍️
-            else if (l.indexOf("thinking") !== -1) emoji = "\uD83D\uDCAC";  // 💬
+            if (l.indexOf("search") !== -1) emoji = "\uD83D\uDD0E";         // ðŸ”Ž
+            else if (l.indexOf("review") !== -1) emoji = "\uD83D\uDCDA";    // ðŸ“š
+            else if (l.indexOf("timestamp") !== -1 || l.indexOf("fresh") !== -1) emoji = "\uD83D\uDDB3"; // ðŸ•’
+            else if (l.indexOf("compar") !== -1) emoji = "\u2696\uFE0F";    // âš–ï¸
+            else if (l.indexOf("synthes") !== -1) emoji = "\u270D\uFE0F";   // âœï¸
+            else if (l.indexOf("thinking") !== -1) emoji = "\uD83D\uDCAC";  // ðŸ’¬
             var row = document.createElement("div");
             row.className = "thinking-process-step step-active";
             row.setAttribute("data-step", "1");
@@ -4894,7 +4911,7 @@ function createThinkingProcess(container) {
     };
 }
 
-/* ── Improved Sources Panel ────────────────────────────────────────────
+/* â”€â”€ Improved Sources Panel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    Clean, modern source cards shown only when real search results exist.
    Shows favicon, name, title, domain, and tier badge. No fake/empty sources.
    --------------------------------------------------------------------- */
@@ -5037,7 +5054,7 @@ function renderSourcesPanel(bubbleEl, sourceMetadata, confidence) {
     bub.appendChild(section);
 }
 
-/* ── Reply Copy Bar (MODE B) ───────────────────────────────────────
+/* â”€â”€ Reply Copy Bar (MODE B) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    When the user asked for a copy-ready reply/message ("reply to her",
    "copy that"), render a prominent copy call-to-action under the message.
    ------------------------------------------------------------------ */
@@ -5100,7 +5117,7 @@ function addMessage(text, type = "ai", imageData, mediaUrl, videoUrl) {
     if (videoUrl) msgObj.video_url = videoUrl;
     messageStore.push(msgObj);
 
-    // Every assistant reply notifies when you're not looking at the app — so a
+    // Every assistant reply notifies when you're not looking at the app â€” so a
     // question asked before switching to WhatsApp still reaches you. vmNotify
     // itself no-ops while the tab is visible and when push is off.
     if (type !== "user" && displayText) {
@@ -5469,7 +5486,7 @@ function renderSessionList() {
 
     if (!Array.isArray(sessionList) || sessionList.length === 0) {
         if (sessionFetchFailed) {
-            list.innerHTML = '<div style="padding:12px 8px;color:#475569;font-size:11px;text-align:center;">Couldn\'t load sessions — <a href="#" onclick="loadSessions({force:true});return false" style="color:#00d4ff;text-decoration:underline;">tap to retry</a></div>';
+            list.innerHTML = '<div style="padding:12px 8px;color:#475569;font-size:11px;text-align:center;">Couldn\'t load sessions â€” <a href="#" onclick="loadSessions({force:true});return false" style="color:#00d4ff;text-decoration:underline;">tap to retry</a></div>';
         } else {
             list.innerHTML = '<div style="padding:12px 8px;color:#475569;font-size:11px;text-align:center;">No previous sessions</div>';
         }
@@ -5520,7 +5537,7 @@ function renderSessionList() {
         var warn = document.createElement("div");
         warn.className = "session-load-status error";
         warn.style.marginBottom = "6px";
-        warn.textContent = "Showing cached sessions — " + sessionsLoadError;
+        warn.textContent = "Showing cached sessions â€” " + sessionsLoadError;
         list.appendChild(warn);
     }
 
@@ -5762,7 +5779,7 @@ async function playMarcusVoice(text, voice) {
 // HTMLMediaElement.play() that isn't tied to a recent user gesture. A voice reply
 // plays seconds after the mic tap (after speech-to-text, the SSE stream, and a
 // second /api/tts fetch), so a fresh `new Audio()` was always rejected on mobile
-// and the code fell back to the device's own speechSynthesis voice — which is why
+// and the code fell back to the device's own speechSynthesis voice â€” which is why
 // Marcus sounded female on one device and male on another. We unlock this single
 // element on the first user gesture (any tap/key) and reuse it, exactly like the
 // Round Table does, so the assigned Qwen voice actually plays everywhere.
@@ -5795,7 +5812,7 @@ function unlockPersonaAudio() {
 // Play a persona's reply in their fixed, server-generated Qwen voice (identical
 // on every device). Only when the SERVER genuinely can't synthesise (Qwen
 // unconfigured, over the budget cap, or offline) do we fall back to the device
-// voice — never on a mere play() rejection, which is what used to hijack the
+// voice â€” never on a mere play() rejection, which is what used to hijack the
 // voice with the browser default.
 async function speakPersona(text, persona) {
     if (!text) return;
@@ -5825,7 +5842,7 @@ async function speakPersona(text, persona) {
             }
             return;
         }
-        // Server has no Qwen audio to give — stay silent rather than fall back to
+        // Server has no Qwen audio to give â€” stay silent rather than fall back to
         // the device's native voice, which is what made Marcus sound female on
         // some devices (the assigned Qwen voice is gender-correct everywhere).
     } catch (e) {
@@ -6026,7 +6043,7 @@ async function submitSuggestion() {
     }
 }
 
-// ── Part 1: voice input (speech-to-text) for normal chat ───────────────────
+// â”€â”€ Part 1: voice input (speech-to-text) for normal chat â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Opt-in mic button. Uses the Web Speech API (Chrome/Edge/Android Chrome; limited
 // on Safari, unsupported on Firefox). Recognition stays running and we decide
 // end-of-speech with a silence debounce, so a mid-sentence pause never submits
@@ -6048,7 +6065,7 @@ function setMicUI(active) {
     if (!btn) return;
     // The .mic-listening class (see CSS) carries both the red colour and the pulse.
     btn.classList.toggle("mic-listening", active);
-    btn.title = active ? "Listening… tap to stop" : "Speak your message";
+    btn.title = active ? "Listeningâ€¦ tap to stop" : "Speak your message";
 }
 
 function toggleVoice() {
@@ -6092,7 +6109,7 @@ function startListening() {
     try { _recognition.start(); } catch (e) {}
     _listening = true;
     setMicUI(true);
-    if (input) input.placeholder = "Listening…  (tap mic to stop)";
+    if (input) input.placeholder = "Listeningâ€¦  (tap mic to stop)";
 }
 
 function endOfSpeech() {
@@ -6125,7 +6142,7 @@ function togglePinSession(chatId) {
 }
 function ctxDo() {}
 
-// ── Flat Sidebar Navigation ─────────────────────────────────────────────
+// â”€â”€ Flat Sidebar Navigation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 var currentNavView = "chat";
 
 function navTo(view) {
@@ -6206,7 +6223,7 @@ function closeGallery() {
     }, 400);
 }
 
-// ── Image Gallery Panel ─────────────────────────────────────────────────
+// â”€â”€ Image Gallery Panel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 var galleryOffset = 0;
 var galleryTotal = 0;
 var gallerySearchTimer = null;
@@ -6303,7 +6320,7 @@ function renderGalleryItems(images) {
     });
 }
 
-// ── Video Gallery Panel ─────────────────────────────────────────────────
+// â”€â”€ Video Gallery Panel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 var videoGalleryOffset = 0;
 var videoGalleryTotal = 0;
 var videoGallerySearchTimer = null;
@@ -6427,11 +6444,11 @@ function renderVideoGalleryItems(videos) {
     });
 }
 
-// ── Persona switching ──────────────────────────────────────────────────
+// â”€â”€ Persona switching â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 var CREW = [
-    { key: "marcus",   name: "Marcus",   role: "Director — scenes, camera, framing" },
-    { key: "angelina", name: "Angelina", role: "Writer — story, dialogue, screenplay" },
-    { key: "elena",    name: "Elena",    role: "Editor — assembly, transitions, pacing" }
+    { key: "marcus",   name: "Marcus",   role: "Director â€” scenes, camera, framing" },
+    { key: "angelina", name: "Angelina", role: "Writer â€” story, dialogue, screenplay" },
+    { key: "elena",    name: "Elena",    role: "Editor â€” assembly, transitions, pacing" }
 ];
 var currentPersona = "marcus";
 
@@ -6483,11 +6500,11 @@ document.addEventListener("click", function (e) {
     }
 });
 
-// ── ValleyMind Studio ──────────────────────────────────────────────────
+// â”€â”€ ValleyMind Studio â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 var STUDIO_STAGES = [
-    { key: "writing",    persona: "Angelina", initial: "A", role: "Writer — story, dialogue, screenplay" },
-    { key: "directing",  persona: "Marcus",   initial: "M", role: "Director — scene breakdown, camera, framing" },
-    { key: "storyboard", persona: "Elena",    initial: "E", role: "Editor — storyboard assembly, pacing" }
+    { key: "writing",    persona: "Angelina", initial: "A", role: "Writer â€” story, dialogue, screenplay" },
+    { key: "directing",  persona: "Marcus",   initial: "M", role: "Director â€” scene breakdown, camera, framing" },
+    { key: "storyboard", persona: "Elena",    initial: "E", role: "Editor â€” storyboard assembly, pacing" }
 ];
 
 var studioState = [];        // "waiting" | "working" | "done" per stage
@@ -6524,7 +6541,7 @@ var studioCanRetryAssembly = false; // clips finished but never joined
 // Per-run controls. Runtime drives scene count (~1 scene per 5s).
 var studioTargetDuration = 30;  // seconds
 var studioTestMode = false;
-// Phase 0 — conversational intake before anything generates
+// Phase 0 â€” conversational intake before anything generates
 var studioPhase = "intake";  // "intake" | "producing"
 var studioIntake = [];        // {who, text, quick_replies?}
 var studioBrief = "";
@@ -6564,7 +6581,7 @@ function openStudio() {
     if (typeof vmGuideMaybeShow === "function") vmGuideMaybeShow("studio");
 }
 
-// ── Workspace switcher (unified creative suite, no page reload) ──────────
+// â”€â”€ Workspace switcher (unified creative suite, no page reload) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function vmWsGo(ws) {
     document.querySelectorAll(".vm-ws-tab").forEach(function (t) {
         t.classList.toggle("active", t.getAttribute("data-ws") === ws);
@@ -6607,7 +6624,7 @@ function closeStudio() {
     }, 400);
 }
 
-// ── Studio Dashboard ──────────────────────────────────────────────────
+// â”€â”€ Studio Dashboard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // A CapCut-style creative-suite home layered on top of the existing Studio.
 // Everything here is additive: the classic pipeline (stages, prompt bar,
 // filmstrip) is untouched and simply lives behind the dashboard.
@@ -6653,7 +6670,7 @@ function formatSdDate(d) {
 }
 
 function sdLoadingHTML() {
-    return '<div class="sd-empty"><p>Loading…</p></div>';
+    return '<div class="sd-empty"><p>Loadingâ€¦</p></div>';
 }
 
 function sdEmptyHTML(title, sub) {
@@ -6678,7 +6695,7 @@ function studioRestoreOverlayZ() {
     }
 }
 
-// ── Tab switching (no page reload) ─────────────────────────────────────
+// â”€â”€ Tab switching (no page reload) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function studioTab(tab) {
     if (SD_TABS.indexOf(tab) === -1) tab = "home";
     sdActiveTab = tab;
@@ -6698,7 +6715,7 @@ function studioTab(tab) {
     }
 }
 
-// ── Dashboard / classic / coming-soon surface switching ────────────────
+// â”€â”€ Dashboard / classic / coming-soon surface switching â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function studioShowDashboard() {
     var dash = document.getElementById("studioDash");
     var body = document.getElementById("studioBody");
@@ -6755,7 +6772,7 @@ function studioShowComingSoon(f) {
     }
 }
 
-// ── Feature catalog ────────────────────────────────────────────────────
+// â”€â”€ Feature catalog â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 var SD_HOME_FEATURES = [
     { id: "autocut", icon: "scissors", title: "AutoCut", desc: "Turn any idea into a finished trailer with the full AI crew.", ready: true, action: function () { studioShowClassic(); } },
     { id: "retouch", icon: "wand-2", title: "Retouch", desc: "Clean up faces and details with one-tap AI retouching.", ready: false },
@@ -6772,7 +6789,7 @@ var SD_HOME_FEATURES = [
     { id: "ai-avatar", icon: "user", title: "AI Avatar", desc: "Your own talking AI avatar for videos.", ready: false },
     { id: "marketing-tools", icon: "megaphone", title: "Marketing Tools", desc: "Posters, captions and creatives for social campaigns.", ready: false },
     { id: "desktop-editor", icon: "monitor", title: "Desktop Editor", desc: "A full multi-track timeline for desktop browsers.", ready: false },
-    { id: "space", icon: "cloud", title: "Space", desc: "Your cloud workspace — every asset, project and draft.", ready: false },
+    { id: "space", icon: "cloud", title: "Space", desc: "Your cloud workspace â€” every asset, project and draft.", ready: false },
     { id: "record", icon: "circle-record", title: "Record", desc: "Record voice, webcam or screen in a click.", ready: false },
     { id: "screen-recorder", icon: "monitor-play", title: "Screen Recorder", desc: "Capture your screen with crisp audio.", ready: false },
     { id: "voice-recorder", icon: "audio-lines", title: "Voice Recorder", desc: "Record and trim clean voiceovers.", ready: false }
@@ -6780,7 +6797,7 @@ var SD_HOME_FEATURES = [
 
 var SD_VIDEO_ITEMS = [
     { id: "new-project", icon: "plus-circle", title: "Create New Project", desc: "Start a fresh production with the AI crew.", ready: true, action: function () { studioShowClassic(); } },
-    { id: "timeline-editor", icon: "layout-grid", title: "Timeline Editor", desc: "The classic Studio timeline — scenes, storyboards and clips.", ready: true, action: function () { studioShowClassic(); } },
+    { id: "timeline-editor", icon: "layout-grid", title: "Timeline Editor", desc: "The classic Studio timeline â€” scenes, storyboards and clips.", ready: true, action: function () { studioShowClassic(); } },
     { id: "auto-editing", icon: "zap", title: "Auto Editing", desc: "Turn a raw clip into a captioned short automatically.", ready: true, action: function () { openEditing(); } },
     { id: "video-generator", icon: "clapperboard", title: "Video Generator", desc: "Text-to-video through the Studio pipeline.", ready: true, action: function () { studioShowClassic(); } },
     { id: "video-templates", icon: "layout-template", title: "Video Templates", desc: "Jump straight to the template gallery.", ready: true, action: function () { studioTab("templates"); } },
@@ -6798,11 +6815,11 @@ var SD_PHOTO_ITEMS = [
 ];
 
 var SD_AI_ITEMS = [
-    { id: "t2i", icon: "image", title: "Text → Image", desc: "Describe a picture and generate it.", ready: true, action: function () { studioLaunchOverlay("imageGenOverlay", generateImagesTool); } },
-    { id: "i2i", icon: "repeat", title: "Image → Image", desc: "Restyle an image from a prompt.", ready: false },
-    { id: "t2v", icon: "clapperboard", title: "Text → Video", desc: "Turn a script into moving footage.", ready: true, action: function () { studioShowClassic(); } },
-    { id: "i2v", icon: "film", title: "Image → Video", desc: "Animate a still into motion.", ready: false },
-    { id: "v2v", icon: "repeat-2", title: "Video → Video", desc: "Restyle or re-edit an existing video.", ready: false },
+    { id: "t2i", icon: "image", title: "Text â†’ Image", desc: "Describe a picture and generate it.", ready: true, action: function () { studioLaunchOverlay("imageGenOverlay", generateImagesTool); } },
+    { id: "i2i", icon: "repeat", title: "Image â†’ Image", desc: "Restyle an image from a prompt.", ready: false },
+    { id: "t2v", icon: "clapperboard", title: "Text â†’ Video", desc: "Turn a script into moving footage.", ready: true, action: function () { studioShowClassic(); } },
+    { id: "i2v", icon: "film", title: "Image â†’ Video", desc: "Animate a still into motion.", ready: false },
+    { id: "v2v", icon: "repeat-2", title: "Video â†’ Video", desc: "Restyle or re-edit an existing video.", ready: false },
     { id: "ai-voice", icon: "mic", title: "AI Voice", desc: "The crew answers aloud at the Round Table.", ready: true, action: function () { studioLaunchOverlay("roundTableOverlay", openRoundTable); } },
     { id: "ai-music", icon: "music", title: "AI Music", desc: "Original scores and soundtracks.", ready: false },
     { id: "story-generator", icon: "book-open", title: "AI Story Generator", desc: "Angelina writes stories and loglines for you.", ready: true, action: function () { studioShowClassic(); } },
@@ -6828,7 +6845,7 @@ var SD_TEMPLATE_CATS = ["Trending", "New", "Popular", "Business", "Football", "S
 
 var SD_ASSET_CATS = ["All", "Videos", "Images", "Audio", "Sound Effects", "Stickers", "GIFs", "Overlays", "Transitions", "Fonts"];
 
-// ── Dispatch ───────────────────────────────────────────────────────────
+// â”€â”€ Dispatch â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function sdFeatureById(id) {
     var all = SD_HOME_FEATURES.concat(SD_VIDEO_ITEMS, SD_PHOTO_ITEMS, SD_AI_ITEMS);
     for (var i = 0; i < all.length; i++) {
@@ -6863,7 +6880,7 @@ function studioUseTemplate(t) {
     }, 250);
 }
 
-// ── Card / chip / template / asset / project renderers ─────────────────
+// â”€â”€ Card / chip / template / asset / project renderers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function sdCardHTML(f) {
     var badge = f.ready
         ? '<span class="sd-badge ready">Ready</span>'
@@ -6951,7 +6968,7 @@ function sdSetGrid(id, cards, emptyTitle, emptySub) {
     studioRefreshIcons();
 }
 
-// ── View renderers ─────────────────────────────────────────────────────
+// â”€â”€ View renderers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function renderStudioDashboard() {
     sdRenderHome();
     sdRenderVideo();
@@ -6970,7 +6987,7 @@ function sdRenderHome() {
         '<div class="sd-hero">' +
             '<div class="sd-hero-badge">' + studioIcon("sparkles", 13) + ' Creative Suite</div>' +
             '<h1 class="sd-hero-title">Make something <span class="sd-hero-accent">incredible</span></h1>' +
-            '<p class="sd-hero-sub">Your AI creative suite — cut, edit, generate and publish from one place.</p>' +
+            '<p class="sd-hero-sub">Your AI creative suite â€” cut, edit, generate and publish from one place.</p>' +
             '<div class="sd-hero-actions">' +
                 '<button class="sd-go" onclick="studioShowClassic()">' + studioIcon("clapperboard", 16) + ' New Project</button>' +
                 '<button class="sd-go ghost" onclick="studioTab(\'templates\')">' + studioIcon("layout-template", 16) + ' Browse Templates</button>' +
@@ -7022,7 +7039,7 @@ function sdRenderTemplates() {
     if (!el || el.dataset.rendered) return;
     el.dataset.rendered = "1";
     el.innerHTML =
-        '<div class="sd-section"><h3>Template gallery</h3><div class="sd-section-line"></div><span class="sd-section-count" id="sdTplCount">Loading…</span></div>' +
+        '<div class="sd-section"><h3>Template gallery</h3><div class="sd-section-line"></div><span class="sd-section-count" id="sdTplCount">Loadingâ€¦</span></div>' +
         '<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:2px;">' +
             '<div class="sd-search">' +
                 '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>' +
@@ -7137,7 +7154,7 @@ function sdRenderProjects() {
     loadStudioProjects();
 }
 
-// ── Data loaders ───────────────────────────────────────────────────────
+// â”€â”€ Data loaders â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function loadStudioRecents() {
     var el = document.getElementById("studioVideoRecents");
     if (!el) return;
@@ -7177,7 +7194,7 @@ function loadStudioTplStrip() {
         });
 }
 
-// ── Template detail / use modal ─────────────────────────────────────────
+// â”€â”€ Template detail / use modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function openTemplateModal() {
     var modal = document.getElementById("templateModal");
     if (!modal) return;
@@ -7240,7 +7257,7 @@ function renderTemplateDetail(t) {
         ? '<img class="tmpl-thumb" src="' + esc(t.thumbnail) + '" alt="">'
         : '<div class="tmpl-thumb" style="background:linear-gradient(160deg,#0ea5e9,#1e1b4b);"></div>';
     card.innerHTML =
-        '<button class="tmpl-x" onclick="closeTemplateModal()">×</button>' +
+        '<button class="tmpl-x" onclick="closeTemplateModal()">Ã—</button>' +
         '<div class="tmpl-top">' + thumb +
             '<div class="tmpl-head">' +
                 '<div class="tmpl-title">' + esc(t.name) + '</div>' +
@@ -7249,9 +7266,9 @@ function renderTemplateDetail(t) {
                 '<div class="tmpl-stats">' + stats + '</div>' +
                 '<div class="tmpl-actions">' +
                     '<button class="tmpl-btn primary" onclick="useTemplate(\'' + esc(String(t.id)) + '\')">' + studioIcon("sparkles", 14) + ' Use Template</button>' +
-                    '<button class="tmpl-btn ghost' + (t.liked ? " active" : "") + '" id="tmplLikeBtn" onclick="tmplToggleLike(\'' + esc(String(t.id)) + '\')">' + studioIcon("heart", 14) + ' <span id="tmplLikeLbl">' + (t.liked ? "Liked" : "Like") + ' · ' + (t.likes || 0) + '</span></button>' +
+                    '<button class="tmpl-btn ghost' + (t.liked ? " active" : "") + '" id="tmplLikeBtn" onclick="tmplToggleLike(\'' + esc(String(t.id)) + '\')">' + studioIcon("heart", 14) + ' <span id="tmplLikeLbl">' + (t.liked ? "Liked" : "Like") + ' Â· ' + (t.likes || 0) + '</span></button>' +
                 '</div>' +
-                '<p class="tmpl-hint" style="margin-top:12px;">Every template is a reusable project — add your text and photos, then render your own video.</p>' +
+                '<p class="tmpl-hint" style="margin-top:12px;">Every template is a reusable project â€” add your text and photos, then render your own video.</p>' +
             '</div>' +
         '</div>' + preview;
     studioRefreshIcons();
@@ -7266,7 +7283,7 @@ async function tmplToggleLike(tid) {
         var btn = document.getElementById("tmplLikeBtn");
         var lbl = document.getElementById("tmplLikeLbl");
         if (btn) btn.classList.toggle("active", !!data.liked);
-        if (lbl) lbl.textContent = (data.liked ? "Liked" : "Like") + " · " + data.count;
+        if (lbl) lbl.textContent = (data.liked ? "Liked" : "Like") + " Â· " + data.count;
     } catch (e) {}
 }
 
@@ -7314,7 +7331,7 @@ function renderTemplateForm(d) {
                 '<input type="text" id="tmplF_' + key + '" placeholder="' + esc(f.label || f.key) + '"' + max + value + '>' + hint + '</div>';
         }
         var accept = f.type === "video" ? "video/*" : f.type === "audio" ? "audio/*" : "image/*";
-        var optional = f.required ? "" : " · optional, falls back to the template background";
+        var optional = f.required ? "" : " Â· optional, falls back to the template background";
         return '<div class="tmpl-field">' + label +
             '<div class="tmpl-file">' +
                 '<label class="tmpl-file-btn" for="tmplFile_' + key + '">' + studioIcon("upload", 13) + ' Choose ' + esc(f.type) + '</label>' +
@@ -7325,7 +7342,7 @@ function renderTemplateForm(d) {
         '</div>';
     }).join("");
     card.innerHTML =
-        '<button class="tmpl-x" onclick="closeTemplateModal()">×</button>' +
+        '<button class="tmpl-x" onclick="closeTemplateModal()">Ã—</button>' +
         '<div class="tmpl-step-title">' + studioIcon("wand-2", 15) + ' Fill in ' + esc(d.name) + '</div>' +
         '<div class="tmpl-stats" style="margin-bottom:18px;">' +
             '<span class="tmpl-stat">' + studioIcon("clock", 12) + ' ' + tmplDur(d.duration) + '</span>' +
@@ -7396,7 +7413,7 @@ function startTmplPolling(pid) {
     area.innerHTML =
         '<div class="tmpl-step-title">' + studioIcon("loader", 15) + ' Rendering your video</div>' +
         '<div class="tmpl-progress"><div class="tmpl-progress-fill" id="tmplProgFill"></div></div>' +
-        '<div class="tmpl-render-status"><span id="tmplProgPct">0%</span><span id="tmplProgLog">Preparing…</span></div>';
+        '<div class="tmpl-render-status"><span id="tmplProgPct">0%</span><span id="tmplProgLog">Preparingâ€¦</span></div>';
     var tick = async function () {
         var res = null, data = null;
         try {
@@ -7514,7 +7531,7 @@ function sdAssetHTML(m) {
         inner + '<div class="sd-asset-name">' + esc(m.name) + '</div></div>';
 }
 
-// Clicking a sticker/asset selects it — used by the "apply to a video" flow.
+// Clicking a sticker/asset selects it â€” used by the "apply to a video" flow.
 var sdPickedAsset = null;
 var sdStickerPos = "br";
 var sdStickerJob = "";
@@ -7577,13 +7594,13 @@ function sdStickerApply(file) {
         .then(function (r) { return r.json(); })
         .then(function (d) {
             if (!d || d.status !== "success" || !d.job) {
-                document.getElementById("sdStickerPhase").textContent = (d && d.message) || "Couldn’t start — try again.";
+                document.getElementById("sdStickerPhase").textContent = (d && d.message) || "Couldnâ€™t start â€” try again.";
                 return;
             }
             sdStickerJob = d.job.job_id;
             sdStickerPoll();
         })
-        .catch(function () { document.getElementById("sdStickerPhase").textContent = "Upload failed — check your connection."; });
+        .catch(function () { document.getElementById("sdStickerPhase").textContent = "Upload failed â€” check your connection."; });
 }
 function sdStickerPoll() {
     if (!sdStickerJob) return;
@@ -7598,7 +7615,7 @@ function sdStickerPoll() {
                 _sdStickerShow("sdStickerResult", true);
                 document.getElementById("sdStickerVideo").src = job.final_video;
             } else {
-                document.getElementById("sdStickerPhase").textContent = job.error || "Couldn’t apply the sticker.";
+                document.getElementById("sdStickerPhase").textContent = job.error || "Couldnâ€™t apply the sticker.";
             }
         })
         .catch(function () { sdStickerTimer = setTimeout(sdStickerPoll, 5000); });
@@ -7610,13 +7627,13 @@ async function loadStudioAssets() {
     grid.innerHTML = sdLoadingHTML();
     var stuck = ["Overlays", "Transitions", "Fonts"].indexOf(sdAssetCat) !== -1;
     if (stuck) {
-        grid.innerHTML = sdEmptyHTML(sdAssetCat + " are coming soon", "This asset type isn't available yet — your images, videos, sound and stickers are ready to use.");
+        grid.innerHTML = sdEmptyHTML(sdAssetCat + " are coming soon", "This asset type isn't available yet â€” your images, videos, sound and stickers are ready to use.");
         return;
     }
     var wantImages = sdAssetCat === "All" || sdAssetCat === "Images";
     var wantVideos = sdAssetCat === "All" || sdAssetCat === "Videos";
     var wantAudio = sdAssetCat === "All" || sdAssetCat === "Audio" || sdAssetCat === "Sound Effects";
-    var wantStickers = sdAssetCat === "Stickers";   // heavy set — only on its own tab
+    var wantStickers = sdAssetCat === "Stickers";   // heavy set â€” only on its own tab
     var wantGifs = sdAssetCat === "GIFs";
     var items = [];
     try {
@@ -7671,18 +7688,18 @@ async function loadStudioAssets() {
     studioRefreshIcons();
 }
 
-// ── The Round Table: three-way voice-first discussion room ─────────────────
+// â”€â”€ The Round Table: three-way voice-first discussion room â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // One "director" call (/api/roundtable) reads the room and returns who speaks
-// (0-3, by relevance — not a fixed rotation). Each turn's Qwen voice plays
+// (0-3, by relevance â€” not a fixed rotation). Each turn's Qwen voice plays
 // through ONE persistent, gesture-unlocked <audio> element, sequentially (never
 // overlapping). In voice mode the mic stays live for barge-in; end-of-speech
 // uses a silence debounce so a mid-sentence pause never submits early.
 var rtHistory = [];
 var rtState = "entry";        // "entry" (topic prompt) | "live"
 // One session-wide choice picked at the start:
-//   voice — all three reply as voice notes only, nothing written
-//   text  — text only, no voice
-//   both  — voice note AND text together
+//   voice â€” all three reply as voice notes only, nothing written
+//   text  â€” text only, no voice
+//   both  â€” voice note AND text together
 var rtMode = "both";
 function rtShowText() { return rtMode !== "voice"; }   // render text bubbles?
 function rtPlayVoice() { return rtMode !== "text"; }   // synth + play audio?
@@ -7721,7 +7738,7 @@ function closeRoundTable() {
     vmWsGo("studio");
 }
 
-// ── Massive Editing: instruction-driven AI edit tool ────────────────────────
+// â”€â”€ Massive Editing: instruction-driven AI edit tool â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // The full UI lives in static/massive_editing.js and renders into the Studio's
 // "Massive Editing" workspace panel. These wrappers keep legacy entry points
 // (Studio feature tiles, inline handlers) forwarding to that module.
@@ -7742,7 +7759,7 @@ function initEditingUpload() {}
 
 // Unlock audio: browsers block Audio.play() outside a user gesture, so we play a
 // silent clip through the persistent element on the first tap. After that,
-// programmatic turn playback is allowed — this is what makes the assigned Qwen
+// programmatic turn playback is allowed â€” this is what makes the assigned Qwen
 // voices actually play instead of silently failing (the old bug).
 function rtUnlockAudio() {
     if (!rtPlayer) rtPlayer = document.getElementById("rtPlayer");
@@ -7767,7 +7784,7 @@ function rtRender() {
     set("rtEntryQ", isEntry);
     set("rtRecording", recording);
     set("rtInputbar", !recording);
-    // The reply mode is a ONE-TIME session choice — only offered at the start,
+    // The reply mode is a ONE-TIME session choice â€” only offered at the start,
     // then locked for the whole session.
     set("rtModes", isEntry);
     var mv = document.getElementById("rtModeVoice"); if (mv) mv.classList.toggle("active", rtMode === "voice");
@@ -7832,7 +7849,7 @@ async function rtSubmit(text) {
     if (rtState === "entry") rtState = "live";
     if (rtShowText()) rtAddMsg("user", text);   // voice mode writes nothing
     rtHistory.push({ persona: "user", text: text });
-    rtSetStatus("The room is reading it…");
+    rtSetStatus("The room is reading itâ€¦");
     rtRender();
     var turns = [];
     try {
@@ -7841,7 +7858,7 @@ async function rtSubmit(text) {
             headers: authHeaders({ "Content-Type": "application/json" }),
             body: JSON.stringify({ message: text, history: rtHistory.slice(-14) }),
             // Each persona speaks with its own model (some slower, e.g. NVIDIA 70b)
-            // and later speakers wait for earlier ones so they can react — so a
+            // and later speakers wait for earlier ones so they can react â€” so a
             // 2-3 voice turn can take ~40s. Allow headroom before aborting.
             timeoutMs: 90000
         });
@@ -7854,19 +7871,19 @@ async function rtSubmit(text) {
         rtRender();
         return;
     }
-    if (!turns.length) rtSetStatus("(no one jumps in — try steering it)");
+    if (!turns.length) rtSetStatus("(no one jumps in â€” try steering it)");
     for (var k = 0; k < turns.length; k++) {
         if (rtInterrupted) break;
         if (rtShowText()) rtAddMsg(turns[k].persona, turns[k].text);   // voice mode: no bubbles
         rtHistory.push({ persona: turns[k].persona, text: turns[k].text });
-        await rtSpeakTurn(turns[k].persona, turns[k].text);   // sequential — never overlap
+        await rtSpeakTurn(turns[k].persona, turns[k].text);   // sequential â€” never overlap
     }
     rtSetSpeaking(null);
     rtBusy = false;
     rtSttFinal = "";                                          // discard echo heard during playback
     if (rtSttTimer) { clearTimeout(rtSttTimer); rtSttTimer = null; }
     var inpEnd = document.getElementById("rtInput"); if (inpEnd) inpEnd.value = "";
-    if (rtMode === "voice" && rtVoiceOn) { if (!rtListening) rtStartListening(); rtSetStatus("Listening…"); }
+    if (rtMode === "voice" && rtVoiceOn) { if (!rtListening) rtStartListening(); rtSetStatus("Listeningâ€¦"); }
     else rtSetStatus("");
     rtRender();
 }
@@ -7884,7 +7901,7 @@ function rtSpeakTurn(persona, text) {
             return;
         }
         var who = persona.charAt(0).toUpperCase() + persona.slice(1);
-        rtSetStatus(who + " has the floor…");
+        rtSetStatus(who + " has the floorâ€¦");
         // The waveform ring goes live on the speaking persona (mic viz off now).
         rtMicVizStop();
         rtRingShow("speaking", who + " is speaking");
@@ -7906,9 +7923,9 @@ function rtSpeakTurn(persona, text) {
                 if (pr && pr.catch) pr.catch(function () { rtSpeaking = false; rtRingHide(); rtRender(); if (rtCurrentResolve) rtCurrentResolve(); });
                 rtRender();
             } else {
-                // Qwen unavailable — stay honest: show a note, don't fake a device voice.
+                // Qwen unavailable â€” stay honest: show a note, don't fake a device voice.
                 rtRingHide();
-                rtSetStatus("(voice unavailable — showing text)");
+                rtSetStatus("(voice unavailable â€” showing text)");
                 setTimeout(function () { if (rtCurrentResolve) rtCurrentResolve(); }, 500);
             }
         }).catch(function () { rtRingHide(); setTimeout(function () { if (rtCurrentResolve) rtCurrentResolve(); }, 300); });
@@ -7968,12 +7985,12 @@ function rtStartListening() {
     try { rtRecognition.start(); } catch (e) {}
     rtListening = true;
     if (!rtBusy && !rtSpeaking) {
-        rtSetStatus("Listening…");
+        rtSetStatus("Listeningâ€¦");
         // Ring animates via CSS while listening. IMPORTANT: do NOT open a second
-        // getUserMedia stream here — SpeechRecognition already owns the mic, and a
+        // getUserMedia stream here â€” SpeechRecognition already owns the mic, and a
         // competing capture starves it (esp. on mobile), which stopped voice input
         // from working at all. The CSS wave is enough.
-        rtRingShow("listening", "Listening…");
+        rtRingShow("listening", "Listeningâ€¦");
     }
     rtRender();
 }
@@ -7996,7 +8013,7 @@ function rtStopListening() {
     rtRender();
 }
 
-// ── Voice waveform ring (static/voice-wave.png + live bars) ────────────────
+// â”€â”€ Voice waveform ring (static/voice-wave.png + live bars) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Shown while the user speaks (bars driven by their real mic amplitude) and
 // while a persona's voice note plays (bars animate so it's clear who's talking).
 var rtAC = null, rtAnalyser = null, rtRingRAF = null, rtMicStream = null, rtMicSrc = null;
@@ -8033,7 +8050,7 @@ function rtRingHide() {
 }
 
 // NOTE: the listening ring animates purely via CSS. We deliberately do NOT tap
-// the mic with getUserMedia for a live waveform — SpeechRecognition owns the mic
+// the mic with getUserMedia for a live waveform â€” SpeechRecognition owns the mic
 // and a second capture broke voice input (especially on mobile). Kept as a safe
 // no-op cleanup so callers (rtStopListening) stay simple.
 function rtMicVizStop() {
@@ -8111,7 +8128,7 @@ async function restoreLastStudioRun() {
         if (label && studioFrames.length) label.textContent = "Last production restored";
         renderStudioStages();
         // If a video job was still running when we left, reconnect and keep
-        // filling the filmstrip — the server never stopped rendering.
+        // filling the filmstrip â€” the server never stopped rendering.
         var jstatus = run.job_status || "";
         if (run.job_id && jstatus && jstatus !== "done" && jstatus !== "failed" &&
             jstatus !== "budget_capped" && jstatus !== "aborted") {
@@ -8177,7 +8194,7 @@ async function studioIntakeSend(forcedText) {
         console.warn("[Studio] intake failed:", err);
         studioIntakeBusy = false;
         if (btn) { btn.disabled = false; btn.textContent = "Send"; }
-        studioIntake.push({ who: "Marcus", text: "Sorry — say that again?" });
+        studioIntake.push({ who: "Marcus", text: "Sorry â€” say that again?" });
         renderStudioStages();
     }
 }
@@ -8197,7 +8214,7 @@ function initStudioVideoUpload() {
             alert("That video is " + (file.size / 1024 / 1024).toFixed(0) + "MB. The limit is 100MB.");
             return;
         }
-        studioIntake.push({ who: "You", text: "🎬 Uploaded footage: " + file.name });
+        studioIntake.push({ who: "You", text: "ðŸŽ¬ Uploaded footage: " + file.name });
         studioIntake.push({ who: "Marcus", text: "Let me watch that..." });
         renderStudioIntake();
         try {
@@ -8225,14 +8242,14 @@ function initStudioVideoUpload() {
             renderStudioIntake();
         } catch (e) {
             studioIntake.pop();
-            studioIntake.push({ who: "Marcus", text: "That upload failed — try a smaller file?" });
+            studioIntake.push({ who: "Marcus", text: "That upload failed â€” try a smaller file?" });
             renderStudioIntake();
         }
     });
 }
 
 /* Studio's SECOND assembly capability: the user uploads their OWN clips and the
-   crew joins them into one finished video — same engine and reliability as a
+   crew joins them into one finished video â€” same engine and reliability as a
    generated trailer (stored in R2, shown in the Studio and the Video Gallery).
    Wired straight from the button so it works the moment the Studio is open. */
 function initStudioJoinUpload() {
@@ -8245,7 +8262,7 @@ function initStudioJoinUpload() {
         if (files.length < 2) { alert("Pick at least two clips to join into one video."); return; }
         var tooBig = files.filter(function (f) { return f.size > 100 * 1024 * 1024; });
         if (tooBig.length) { alert(tooBig[0].name + " is over the 100MB limit."); return; }
-        if (studioRunning) { alert("A production is already running — let it finish first."); return; }
+        if (studioRunning) { alert("A production is already running â€” let it finish first."); return; }
         joinUploadedClips(files);
     });
 }
@@ -8260,8 +8277,8 @@ function joinUploadedClips(files) {
     studioCutReview = null;
     studioExpectedClips = files.length;
     var names = files.map(function (f) { return f.name; }).join(", ");
-    studioIntake.push({ who: "You", text: "🎞️ Uploaded " + files.length + " clips to join: " + names });
-    studioIntake.push({ who: "Elena", text: "On it — joining your clips into one cut..." });
+    studioIntake.push({ who: "You", text: "ðŸŽžï¸ Uploaded " + files.length + " clips to join: " + names });
+    studioIntake.push({ who: "Elena", text: "On it â€” joining your clips into one cut..." });
     renderStudioIntake();
     var label = document.getElementById("studioStatusLabel");
     if (label) label.textContent = "Uploading " + files.length + " clips...";
@@ -8277,14 +8294,14 @@ function joinUploadedClips(files) {
             if (btn) btn.disabled = false;
             if (!d || d.status !== "success" || !d.job) {
                 studioIntake.pop();  // drop the "on it" placeholder
-                studioIntake.push({ who: "Elena", text: (d && d.message) || "I couldn't start that join — try again?" });
+                studioIntake.push({ who: "Elena", text: (d && d.message) || "I couldn't start that join â€” try again?" });
                 renderStudioIntake();
                 studioRunning = false;
                 if (label) label.textContent = (d && d.message) || "Upload failed";
                 return;
             }
             studioIntake.pop();
-            studioIntake.push({ who: "Elena", text: "Got them. Joining now — the finished cut will land here and in your Video Gallery." });
+            studioIntake.push({ who: "Elena", text: "Got them. Joining now â€” the finished cut will land here and in your Video Gallery." });
             renderStudioIntake();
             var job = d.job;
             studioJobId = job.job_id;
@@ -8298,7 +8315,7 @@ function joinUploadedClips(files) {
         .catch(function () {
             if (btn) btn.disabled = false;
             studioIntake.pop();
-            studioIntake.push({ who: "Elena", text: "That upload failed — try smaller files, or fewer at once?" });
+            studioIntake.push({ who: "Elena", text: "That upload failed â€” try smaller files, or fewer at once?" });
             renderStudioIntake();
             studioRunning = false;
         });
@@ -8319,15 +8336,15 @@ function onStudioControlsChange() {
     var hint = document.getElementById("studioCostHint");
     if (!hint) return;
     if (studioTestMode) { hint.textContent = "free"; hint.style.color = "#34d399"; return; }
-    hint.textContent = "…";
+    hint.textContent = "â€¦";
     fetch(apiUrl("/api/studio/estimate?duration_seconds=" + studioTargetDuration), { credentials: "include", headers: authHeaders() })
         .then(function (r) { return r.json(); })
         .then(function (d) {
             if (!d || d.status !== "success") { hint.textContent = ""; return; }
             if (!d.video_enabled) { hint.textContent = "video off"; hint.style.color = "#64748b"; return; }
             if (!d.video_access) { hint.textContent = d.access_reason || "not on your plan"; hint.style.color = "#fbbf24"; return; }
-            hint.textContent = d.clips + " scenes · ~$" + (d.est_cost_usd || 0).toFixed(2) +
-                " · $" + (d.remaining_budget_usd || 0).toFixed(2) + " left";
+            hint.textContent = d.clips + " scenes Â· ~$" + (d.est_cost_usd || 0).toFixed(2) +
+                " Â· $" + (d.remaining_budget_usd || 0).toFixed(2) + " left";
             hint.style.color = (d.est_cost_usd > d.remaining_budget_usd) ? "#f87171" : "#64748b";
         })
         .catch(function () { hint.textContent = ""; });
@@ -8367,12 +8384,12 @@ async function startStudioProduction(brief) {
             var r = await fetch(apiUrl("/api/studio/estimate?duration_seconds=" + studioTargetDuration), { credentials: "include", headers: authHeaders() });
             var d = await r.json();
             if (d && d.status === "success" && d.video_enabled && d.video_access && d.est_cost_usd > 0) {
-                var ok = confirm("About " + studioTargetDuration + "s — " + d.clips + " scenes (~$" +
+                var ok = confirm("About " + studioTargetDuration + "s â€” " + d.clips + " scenes (~$" +
                     d.est_cost_usd.toFixed(2) + "). Budget left: $" + d.remaining_budget_usd.toFixed(2) +
                     ".\n\nStart the render?");
                 if (!ok) return;
             }
-        } catch (e) { /* fall through — server still enforces the cap */ }
+        } catch (e) { /* fall through â€” server still enforces the cap */ }
     }
     // Right moment to ask: a production takes minutes, so a notification is
     // obviously useful here. Our own prompt first; native only on yes.
@@ -8411,7 +8428,7 @@ function renderStudioIntake(host) {
         var hint = document.createElement("div");
         hint.className = "studio-stage";
         hint.innerHTML = '<div class="studio-scene-body">The crew is ready when you are. ' +
-            'Say hi, or tell them the film you want to make — they\'ll ask a few questions before rolling.</div>';
+            'Say hi, or tell them the film you want to make â€” they\'ll ask a few questions before rolling.</div>';
         host.appendChild(hint);
         return;
     }
@@ -8497,7 +8514,7 @@ function renderStudioStages() {
 
         card.appendChild(head);
 
-        // ── Live content per stage ──────────────────────────────────
+        // â”€â”€ Live content per stage â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         if (stage.key === "writing") {
             if (studioScript) {
                 var scriptEl = document.createElement("div");
@@ -8510,7 +8527,7 @@ function renderStudioStages() {
                 sheetWrap.className = "studio-sheet";
                 var sheetLbl = document.createElement("div");
                 sheetLbl.className = "studio-sheet-label";
-                sheetLbl.textContent = "Character sheet — kept consistent across scenes";
+                sheetLbl.textContent = "Character sheet â€” kept consistent across scenes";
                 var sheetBody = document.createElement("div");
                 sheetBody.textContent = studioSheetText;
                 sheetWrap.appendChild(sheetLbl);
@@ -8524,7 +8541,7 @@ function renderStudioStages() {
                 s.className = "studio-scene";
                 var t = document.createElement("div");
                 t.className = "studio-scene-title";
-                t.textContent = "Scene " + sc.number + " — " + sc.title;
+                t.textContent = "Scene " + sc.number + " â€” " + sc.title;
                 var b = document.createElement("div");
                 b.className = "studio-scene-body";
                 b.textContent = sc.description;
@@ -8533,14 +8550,14 @@ function renderStudioStages() {
                 if (sc.camera || sc.framing) {
                     var c = document.createElement("div");
                     c.className = "studio-scene-cam";
-                    c.textContent = [sc.framing, sc.camera].filter(Boolean).join("  •  ");
+                    c.textContent = [sc.framing, sc.camera].filter(Boolean).join("  â€¢  ");
                     s.appendChild(c);
                 }
                 card.appendChild(s);
             });
             if (status === "working" && !studioScenes.length) card.appendChild(studioSkeleton());
         } else if (stage.key === "storyboard") {
-            // Show the producing card whenever there's ANY render activity — not
+            // Show the producing card whenever there's ANY render activity â€” not
             // only when storyboard frames exist. Text-to-video and the single
             // Alibaba video have NO frames, so gating on frames alone hid the
             // finished video, cost meter and messages entirely.
@@ -8556,7 +8573,7 @@ function renderStudioStages() {
                     fr.className = "studio-frame";
                     var clip = studioClips[f.number];
                     if (clip) {
-                        // Clip is ready — it replaces the still for this scene
+                        // Clip is ready â€” it replaces the still for this scene
                         var vd = document.createElement("video");
                         vd.src = clip.video_url;
                         vd.controls = true;
@@ -8574,7 +8591,7 @@ function renderStudioStages() {
                     }
                     var lb = document.createElement("div");
                     lb.className = "frame-label";
-                    lb.textContent = (clip ? "▶ Sc " : "Sc ") + f.number + " — " + f.title;
+                    lb.textContent = (clip ? "â–¶ Sc " : "Sc ") + f.number + " â€” " + f.title;
                     fr.appendChild(lb);
                     strip.appendChild(fr);
                 });
@@ -8588,7 +8605,7 @@ function renderStudioStages() {
                 }
                 var clipCount = Object.keys(studioClips).length;
                 if (studioSingleVideo) {
-                    // One Alibaba video for the whole piece — no clips, no stapling.
+                    // One Alibaba video for the whole piece â€” no clips, no stapling.
                     if (!studioFinalVideo && !studioClipsMessage && !studioClipsDisabled) {
                         var sv = document.createElement("div");
                         sv.className = "studio-scene-cam";
@@ -8599,7 +8616,7 @@ function renderStudioStages() {
                     var cn = document.createElement("div");
                     cn.className = "studio-scene-cam";
                     cn.textContent = "Clips " + clipCount + " / " + (studioExpectedClips || clipCount) +
-                        (clipCount < studioExpectedClips ? " — animating stills..." : " — ready");
+                        (clipCount < studioExpectedClips ? " â€” animating stills..." : " â€” ready");
                     card.appendChild(cn);
                 }
                 if (studioClipsDisabled) {
@@ -8617,7 +8634,7 @@ function renderStudioStages() {
                     cm.textContent = studioClipsMessage;
                     card.appendChild(cm);
                 }
-                // Clips finished but never joined — offer the free re-join.
+                // Clips finished but never joined â€” offer the free re-join.
                 if (studioCanRetryAssembly && !studioFinalVideo) {
                     var rbtn = document.createElement("button");
                     rbtn.textContent = "Join the clips into a trailer";
@@ -8625,7 +8642,7 @@ function renderStudioStages() {
                     rbtn.onclick = function () { retryStudioAssembly(rbtn); };
                     card.appendChild(rbtn);
                 }
-                // Cost meter — spend so far, estimate, remaining budget
+                // Cost meter â€” spend so far, estimate, remaining budget
                 if (studioJobCost) {
                     var meter = document.createElement("div");
                     meter.className = "studio-scene-cam";
@@ -8634,8 +8651,8 @@ function renderStudioStages() {
                     var est = (studioJobCost.est_cost_usd || 0).toFixed(2);
                     var rem = (studioJobCost.remaining_budget_usd || 0).toFixed(2);
                     meter.textContent = studioTestMode
-                        ? "Test mode — no spend · budget left $" + rem
-                        : "Spent $" + spend + " of ~$" + est + " est · budget left $" + rem;
+                        ? "Test mode â€” no spend Â· budget left $" + rem
+                        : "Spent $" + spend + " of ~$" + est + " est Â· budget left $" + rem;
                     card.appendChild(meter);
                 }
                 // Which scenes didn't make it
@@ -8652,7 +8669,7 @@ function renderStudioStages() {
                     asm.textContent = "Joining clips into the trailer...";
                     card.appendChild(asm);
                 }
-                // Marcus's per-clip reviews — the crew watching its own work
+                // Marcus's per-clip reviews â€” the crew watching its own work
                 var reviewNums = Object.keys(studioClipReviews);
                 if (reviewNums.length) {
                     var rl = document.createElement("div");
@@ -8668,7 +8685,7 @@ function renderStudioStages() {
                             "background:rgba(15,23,42,0.55);border-left:3px solid " + (bad ? "#f87171" : "#34d399") + ";";
                         var head = document.createElement("div");
                         head.style.cssText = "color:#94a3b8;font-size:10.5px;margin-bottom:3px;";
-                        head.textContent = "Scene " + n + (bad ? " — doesn't match" : " — matches");
+                        head.textContent = "Scene " + n + (bad ? " â€” doesn't match" : " â€” matches");
                         row.appendChild(head);
                         var body = document.createElement("div");
                         body.style.color = "#cbd5e1";
@@ -8778,20 +8795,20 @@ function studioFinish(msg) {
     var filmName = (studioLogline || studioBrief || "").trim();
     if (filmName.length > 110) filmName = filmName.slice(0, 107) + "...";
     if (studioFinalVideo) {
-        window.vmNotify("Your video is ready", filmName || "Your trailer is finished — tap to watch.",
+        window.vmNotify("Your video is ready", filmName || "Your trailer is finished â€” tap to watch.",
                         { url: studioFinalVideo, type: "video" });
     } else {
         window.vmNotify("Your storyboard is ready", filmName || "Open the Studio to see it.",
                         { type: "studio" });
     }
-    if (promptEl) promptEl.placeholder = "Start a new production — say hi or pitch another idea...";
+    if (promptEl) promptEl.placeholder = "Start a new production â€” say hi or pitch another idea...";
     renderStudioStages();
 }
 
 // Poll a background video job until it finishes. This is what makes a run
 // survive the browser closing: on return, reconnecting to the job id resumes
 // exactly here, and the server keeps rendering regardless.
-// Re-join clips that finished but never got assembled. Free — no regeneration.
+// Re-join clips that finished but never got assembled. Free â€” no regeneration.
 function retryStudioAssembly(btn) {
     var jid = studioJobIdForRetry;
     if (!jid) return;
@@ -8871,9 +8888,9 @@ function startStudioJobPolling(jobId) {
                 var doneN = job.done || 0, total = job.total || studioExpectedClips;
                 if (label && job.status === "running") {
                     label.textContent = studioSingleVideo
-                        ? (job.stalled ? "Render paused — reconnecting..." : "Rendering your video...")
+                        ? (job.stalled ? "Render paused â€” reconnecting..." : "Rendering your video...")
                         : (job.stalled
-                            ? "Render paused — reconnecting (" + doneN + "/" + total + ")..."
+                            ? "Render paused â€” reconnecting (" + doneN + "/" + total + ")..."
                             : "Rendering clips (" + doneN + "/" + total + ")...");
                 }
                 renderStudioStages();
@@ -8882,15 +8899,15 @@ function startStudioJobPolling(jobId) {
                 if (terminal) {
                     studioFinalVideo = job.final_video || studioFinalVideo || "";
                     studioJobId = "";
-                    // An assembly that produced no trailer is a failure — say so
+                    // An assembly that produced no trailer is a failure â€” say so
                     // rather than leaving loose clips looking like success.
                     studioClipsMessage = job.error || "";
                     var msg = studioSingleVideo ? "Your video is ready" : "Production complete";
-                    if (job.status === "budget_capped") msg = "Budget cap reached — assembled what was ready";
+                    if (job.status === "budget_capped") msg = "Budget cap reached â€” assembled what was ready";
                     else if (job.status === "failed") msg = "Render failed" + (job.error ? ": " + job.error : "");
                     else if (job.status === "aborted") msg = "Run stopped";
                     else if (!job.final_video) msg = studioSingleVideo ? "The video didn't finish rendering" : "Clips ready, but they were not joined";
-                    if (studioMissingScenes.length) msg += " · missing scenes: " + studioMissingScenes.join(", ");
+                    if (studioMissingScenes.length) msg += " Â· missing scenes: " + studioMissingScenes.join(", ");
                     studioFinish(msg);
                 } else {
                     studioJobTimer = setTimeout(poll, 6000);
@@ -8982,7 +8999,7 @@ async function runStudioPipeline(ideaArg) {
 
                 if (evt.error) { finish(evt.error); return; }
                 if (evt.done) {
-                    // A background video job owns completion — don't finish yet.
+                    // A background video job owns completion â€” don't finish yet.
                     if (studioJobPolling) { return; }
                     finish();
                     return;
@@ -9025,7 +9042,7 @@ async function runStudioPipeline(ideaArg) {
                 if (evt.stage === "clips") {
                     var eIdx = studioStageIndex("storyboard");
                     if (evt.status === "queued") {
-                        // Async job accepted — hand off to the poller.
+                        // Async job accepted â€” hand off to the poller.
                         studioJobId = evt.job_id || "";
                         studioExpectedClips = evt.total || 0;
                         studioSingleVideo = !!evt.single_video;
@@ -9111,7 +9128,7 @@ function formatImageDate(isoStr) {
     } catch (e) { return ""; }
 }
 
-// ── Image Viewer ────────────────────────────────────────────────────────
+// â”€â”€ Image Viewer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function openImageViewer(src) {
     var overlay = document.getElementById("imageViewerOverlay");
     var img = document.getElementById("viewerImage");
@@ -9143,7 +9160,7 @@ document.addEventListener("keydown", function (e) {
     }
 });
 
-// ── Image Generation Skeleton & Result Card ─────────────────────────────
+// â”€â”€ Image Generation Skeleton & Result Card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 var _imgGenStartTime = 0;
 var _imgGenSkeletonEl = null;
 
@@ -9220,7 +9237,7 @@ function renderImageResultCard(imageUrl, prompt, revisedPrompt) {
         imgWrap.appendChild(img);
         card.appendChild(imgWrap);
 
-        // Body — only actions, no prompt
+        // Body â€” only actions, no prompt
         var body = document.createElement("div");
         body.className = "card-body";
         body.style.padding = "12px 16px";
@@ -9331,12 +9348,12 @@ async function checkSession() {
                 return false;
             }
 
-            // Auth is fully resolved — safe to fetch protected session endpoints.
+            // Auth is fully resolved â€” safe to fetch protected session endpoints.
             isAuthenticated = true;
             authCheckComplete = true;
 
             // Global video-generation kill switch (fails closed). Playback and
-            // the Video Gallery are unaffected — this gates generation only.
+            // the Video Gallery are unaffected â€” this gates generation only.
             window.VIDEO_GEN_ENABLED = data.video_generation_enabled === true;
             applyVideoGenAvailability();
 
@@ -9352,7 +9369,7 @@ async function checkSession() {
 
             // Always open the app on a fresh, empty chat.  Previous conversations
             // stay listed in the sidebar (loadSessions below) for the user to pick
-            // manually — never auto-restore the last-active thread.
+            // manually â€” never auto-restore the last-active thread.
             currentChatId = "";
             clearVisibleMessages();
             messageStore.length = 0;
@@ -9407,7 +9424,7 @@ async function checkSession() {
                 return true;
             }
 
-            // ── First-run Preferences Setup ─────────────────────────
+            // â”€â”€ First-run Preferences Setup â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             // Server-side status replaces the fragile sessionStorage flag.
             // GET /api/settings/setup-status returns "not_started" for
             // new accounts or those who never completed/skipped the wizard.
@@ -9512,7 +9529,7 @@ function closeRecovery() {
 
 // Step 1 of the email-based reset: request a reset link. The server always
 // returns the same generic confirmation, so this can never reveal whether an
-// account exists — we show that message verbatim and move on.
+// account exists â€” we show that message verbatim and move on.
 async function verifyEmail() {
     var email = document.getElementById("recoveryEmail").value.trim();
     var errorEl = document.getElementById("recoveryError");
@@ -9536,7 +9553,7 @@ async function verifyEmail() {
 }
 
 // Step 2 of the email-based reset: swap the emailed single-use token for a new
-// password. The backend accepts ONLY { token, new_password } — no security
+// password. The backend accepts ONLY { token, new_password } â€” no security
 // question path exists anymore.
 async function resetPassword() {
     var token = window._vmResetToken || "";
@@ -9579,7 +9596,7 @@ document.addEventListener("DOMContentLoaded", function () {
     if (forgotLink) forgotLink.addEventListener("click", function (e) { e.preventDefault(); openRecovery(); });
 });
 
-// ── Email verification (6-digit code entered by the signed-in user) ──────────
+// â”€â”€ Email verification (6-digit code entered by the signed-in user) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 var _vmVerifyEmail = "";
 var _vmEmail = "";
 var _vmVerifyLocked = false;
@@ -9592,7 +9609,7 @@ var _vmShowOtpSentMsg = false;
 // 50-second resend cooldown timer (cosmetic frontend countdown).
 var _verifyResendTimer = null;
 var _verifyResendRemaining = 0;
-var _VERIFY_RESEND_COOLDOWN = 50; // seconds — matches EMAIL_RESEND_COOLDOWN in app.py
+var _VERIFY_RESEND_COOLDOWN = 50; // seconds â€” matches EMAIL_RESEND_COOLDOWN in app.py
 
 function _startVerifyResendCooldown(seconds) {
     _clearVerifyResendCooldown();
@@ -9771,7 +9788,7 @@ function dismissVerifyBanner() {
     hideVerifyBanner();
 }
 
-// ── Preferences setup banner (chat) ─────────────────────────────────────────
+// â”€â”€ Preferences setup banner (chat) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function showPreferenceBanner() {
     var banner = document.getElementById("prefBanner");
     if (!banner) return;
@@ -9794,7 +9811,7 @@ function openPreferenceBannerSetup() {
     window.openPreferencesSetup({ source: "settings" });
 }
 
-// ── Verify / reset deep-link handling ────────────────────────────────────────
+// â”€â”€ Verify / reset deep-link handling â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function vmAuthToast(message, ok) {
     var el = document.getElementById("vmAuthToast");
     if (!el) {
@@ -9916,7 +9933,7 @@ async function handleGoogleLogin(response) {
         }
         setAuthToken(data.session_token || "");
         // Server-side setup-status (GET /api/settings/setup-status) now
-        // determines whether to show the preferences wizard — no client-side
+        // determines whether to show the preferences wizard â€” no client-side
         // flag needed.
         // Show "Verification code sent to your email." when the verify modal opens
         // for a new Google user (backend sends the OTP synchronously).
@@ -9928,7 +9945,7 @@ async function handleGoogleLogin(response) {
     }
 }
 
-// ── Sign Up ──────────────────────────────────────────────────────────────
+// â”€â”€ Sign Up â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function getElementVisible(el) {
     return el && el.style.display !== "none";
@@ -10080,7 +10097,7 @@ async function signup(event) {
         // First-run flag: show the Chat guide the moment the dashboard loads.
         try { sessionStorage.setItem("vm_first_run", "1"); } catch (_) {}
         // Server-side setup-status (GET /api/settings/setup-status) now
-        // determines whether to show the preferences wizard — no client-side
+        // determines whether to show the preferences wizard â€” no client-side
         // flag needed.
         var authenticated = await checkSession();
         if (!authenticated) throw new Error("Session validation failed");
@@ -10209,7 +10226,7 @@ window.send = async function () {
     clearImageUpload();          // clear chips now that they've been sent
     resetComposerHeight();       // shrink box back to single line
     updateSendButtonDim();
-    if (currentChatId) clearChatDraft(currentChatId);   // sent — no longer a draft
+    if (currentChatId) clearChatDraft(currentChatId);   // sent â€” no longer a draft
     setInputPlaceholder("sending");
     const thinking = addThinkingIndicator();
 
@@ -10278,7 +10295,7 @@ window.send = async function () {
 
                 if (evt.error) { streamError = evt.error; break; }
 
-                /* ---- LAYER 2: INTENT → STATUS BUBBLE (never leaks into chat) ---- */
+                /* ---- LAYER 2: INTENT â†’ STATUS BUBBLE (never leaks into chat) ---- */
                 if (evt.intent) {
                     if (!statusIndicator) {
                         removeThinkingIndicator(thinking);
@@ -10298,14 +10315,14 @@ window.send = async function () {
                                 statusBubble.textContent = (evt.status_message || "Generating video...");
                             } else if (evt.intent === "searching_web") {
                                 var domainLabels = {
-                                    "tech": "Checking documentation & technical sources…",
-                                    "news": "Scanning latest news sources…",
-                                    "sports": "Looking up scores & sports data…",
-                                    "science": "Checking research & scientific sources…",
-                                    "media": "Looking up reviews & media info…",
-                                    "general": "Researching…"
+                                    "tech": "Checking documentation & technical sourcesâ€¦",
+                                    "news": "Scanning latest news sourcesâ€¦",
+                                    "sports": "Looking up scores & sports dataâ€¦",
+                                    "science": "Checking research & scientific sourcesâ€¦",
+                                    "media": "Looking up reviews & media infoâ€¦",
+                                    "general": "Researchingâ€¦"
                                 };
-                                statusBubble.textContent = domainLabels[evt.domain] || "Researching…";
+                                statusBubble.textContent = domainLabels[evt.domain] || "Researchingâ€¦";
                             } else {
                                 statusBubble.textContent = "Searching the web...";
                             }
@@ -10325,7 +10342,7 @@ window.send = async function () {
                     continue;
                 }
 
-                /* ---- THINKING PROCESS — collapsible reasoning steps ---- */
+                /* ---- THINKING PROCESS â€” collapsible reasoning steps ---- */
                 if (evt.thinking_process) {
                     var tp = evt.thinking_process;
                     if (!thinkingBlock) {
@@ -10341,13 +10358,13 @@ window.send = async function () {
                     continue;
                 }
 
-                /* ---- REPLY MODE — user asked for a copy-ready message ---- */
+                /* ---- REPLY MODE â€” user asked for a copy-ready message ---- */
                 if (evt.reply_mode) {
                     streamReplyMode = true;
                     continue;
                 }
 
-                /* ---- RECOVERY STATUS — context-recovery indicator ---- */
+                /* ---- RECOVERY STATUS â€” context-recovery indicator ---- */
                 if (evt.recovery_status) {
                     var _recoveryLabels = {
                         "searching": "Finding where we left off\u2026",
@@ -10390,7 +10407,7 @@ window.send = async function () {
                     continue;
                 }
 
-                /* ---- VIDEO URL — RENDER PLAYER ---- */
+                /* ---- VIDEO URL â€” RENDER PLAYER ---- */
                 if (evt.video_url) {
                     console.log("[TRACE FE] SSE video_url received:", evt.video_url);
                     removeThinkingIndicator(thinking);
@@ -10527,7 +10544,7 @@ window.send = async function () {
             }
         }
 
-        /* Only render sources when real search evidence was collected —
+        /* Only render sources when real search evidence was collected â€”
            never show empty or fake source lists. */
         if (bubbleEl && streamSourceMetadata.length && streamSourceMetadata.some(function (s) { return s && s.url && s.domain; })) {
             renderSourcesPanel(bubbleEl, streamSourceMetadata, streamConfidence);
@@ -10540,7 +10557,7 @@ window.send = async function () {
             thinkingBlock = null;
         }
 
-        /* MODE B — reply/copy request: render a prominent copy bar under the message */
+        /* MODE B â€” reply/copy request: render a prominent copy bar under the message */
         if (bubbleEl && streamReplyMode) {
             renderReplyCopyBar(bubbleEl);
         }
@@ -10552,9 +10569,9 @@ window.send = async function () {
             renderSessionList();
         }
 
-        /* Messages already persisted by backend during stream — no duplicate save needed */
+        /* Messages already persisted by backend during stream â€” no duplicate save needed */
         if (currentChatId) saveLastChatId(currentChatId);
-        /* refresh sessions once — dedup guard prevents double fetch */
+        /* refresh sessions once â€” dedup guard prevents double fetch */
         if (!window._sessionsRefreshPending) {
             window._sessionsRefreshPending = true;
             loadSessions({ showLoading: false }).finally(function () {
@@ -10601,7 +10618,7 @@ window.send = async function () {
             }
             addMessage(reply, "ai");
 
-            /* Backend already persisted messages in /chat — no duplicate save needed */
+            /* Backend already persisted messages in /chat â€” no duplicate save needed */
             if (currentChatId) saveLastChatId(currentChatId);
             if (!window._sessionsRefreshPending) {
                 window._sessionsRefreshPending = true;
@@ -10638,9 +10655,9 @@ function aibGo(view) {
     if (btn) btn.style.display = view === "home" ? "none" : "";
     var sub = document.getElementById("aibTopbarSub");
     if (sub) {
-        if (view === "plan") sub.textContent = "Plan your project before building — edit anything you like.";
+        if (view === "plan") sub.textContent = "Plan your project before building â€” edit anything you like.";
         else if (view === "build") sub.textContent = "Live build progress, files, preview and download.";
-        else sub.textContent = "Describe an idea — get a full, production-ready project.";
+        else sub.textContent = "Describe an idea â€” get a full, production-ready project.";
     }
 }
 
@@ -10737,7 +10754,7 @@ function aibReset() {
 // Curated coder line-up. Real OpenCode ids stay server-side (`value`); the UI
 // only ever shows Valley-branded names so provider identities never leak.
 // `ling` is the default (fast + reliable within the server build timeout).
-// ── Creator Analytics (owner-only, lives in the Studio "Analytics" workspace) ─
+// â”€â”€ Creator Analytics (owner-only, lives in the Studio "Analytics" workspace) â”€
 var _vmIsCreator = false;
 var _vmDashTimer = null;
 
@@ -10773,7 +10790,7 @@ function vmSetVideoQuota(limit) {
 }
 
 function vmDashRender(d) {
-    function val(x) { return x == null ? "—" : String(x); }
+    function val(x) { return x == null ? "â€”" : String(x); }
     function card(title, rows) {
         var h = '<div style="background:rgba(15,23,42,0.7);border:1px solid rgba(148,163,184,0.15);border-radius:12px;padding:14px 16px;">' +
             '<h3 style="margin:0 0 10px;color:#94a3b8;font-size:12px;text-transform:uppercase;letter-spacing:.06em;">' + esc(title) + '</h3>';
@@ -10795,8 +10812,8 @@ function vmDashRender(d) {
         var r = health[k];
         return '<tr><td style="padding:4px 8px;color:#e2e8f0;">' + esc(r.label) + '</td>' +
             '<td style="padding:4px 8px;color:' + (r.available ? "#4ade80" : "#f87171") + ';">' + (r.available ? "available" : "cooldown " + r.cooldown_s + "s") + '</td>' +
-            '<td style="padding:4px 8px;">' + (r.success_rate == null ? "—" : Math.round(r.success_rate * 100) + "%") + '</td>' +
-            '<td style="padding:4px 8px;">' + (r.avg_ms == null ? "—" : r.avg_ms + "ms") + '</td>' +
+            '<td style="padding:4px 8px;">' + (r.success_rate == null ? "â€”" : Math.round(r.success_rate * 100) + "%") + '</td>' +
+            '<td style="padding:4px 8px;">' + (r.avg_ms == null ? "â€”" : r.avg_ms + "ms") + '</td>' +
             '<td style="padding:4px 8px;">' + (r.builds_completed || 0) + '</td>' +
             '<td style="padding:4px 8px;">' + (r.timeouts || 0) + '</td></tr>';
     }).join("");
@@ -10828,7 +10845,7 @@ function vmDashQuota() {
             block.innerHTML =
                 '<div style="background:rgba(15,23,42,0.7);border:1px solid rgba(148,163,184,0.15);border-radius:12px;padding:14px 16px;margin-top:20px;">' +
                 '<h3 style="margin:0 0 10px;color:#94a3b8;font-size:12px;text-transform:uppercase;letter-spacing:.06em;">Video generation quota</h3>' +
-                '<div style="font-size:13px;color:#e2e8f0;margin-bottom:10px;">Active limit: <b>' + j.active_limit + '</b> videos &nbsp;·&nbsp; Max (env): ' + j.env_max + '</div>' +
+                '<div style="font-size:13px;color:#e2e8f0;margin-bottom:10px;">Active limit: <b>' + j.active_limit + '</b> videos &nbsp;Â·&nbsp; Max (env): ' + j.env_max + '</div>' +
                 '<div style="font-size:12px;color:#64748b;margin-bottom:10px;">Paid users may generate up to this many videos. Your own account always keeps the full env max.</div>' +
                 opts + '</div>';
         }).catch(function () {});
@@ -10850,7 +10867,7 @@ function aibLoadStatus() {
             aibPopulateBuilders(j.default_builder || "");
             aibRenderDevToggle(!!j.is_creator);
             var note = document.getElementById("aibModelNote");
-            if (note) note.textContent = "Powered by ValleyMind AI · Free to use";
+            if (note) note.textContent = "Powered by ValleyMind AI Â· Free to use";
         }).catch(function () {});
 }
 
@@ -10862,7 +10879,7 @@ function aibPopulateBuilders(defaultId) {
         var opt = document.createElement("option");
         opt.value = b.id;   // opaque branded id (e.g. "vmb5")
         // Short display label ("VMB 4.0"); the full label stays on the server.
-        opt.textContent = aibShortLabel(b.label) + (b.model ? "  ·  " + b.model : "");
+        opt.textContent = aibShortLabel(b.label) + (b.model ? "  Â·  " + b.model : "");
         if (b["default"] || b.id === defaultId) opt.selected = true;
         sel.appendChild(opt);
     });
@@ -10883,7 +10900,7 @@ function aibUpdateModelHint() {
     hint.textContent = b ? (b.note || "") : "";
 }
 
-// Developer Mode toggle — only rendered for the creator account; flips the
+// Developer Mode toggle â€” only rendered for the creator account; flips the
 // localStorage flag and reloads the list so provider ids show/hide.
 function aibRenderDevToggle(isCreator) {
     var existing = document.getElementById("aibDevToggle");
@@ -10905,7 +10922,7 @@ function aibRenderDevToggle(isCreator) {
 
 function aibLoaderHtml() {
     return '<div class="aib-empty" style="display:flex;align-items:center;justify-content:center;gap:8px;color:#00d4ff;">' +
-        '<i data-lucide="loader-circle" style="width:15px;height:15px;" class="aib-spin"></i> Loading…</div>';
+        '<i data-lucide="loader-circle" style="width:15px;height:15px;" class="aib-spin"></i> Loadingâ€¦</div>';
 }
 
 function aibSelectType(el) {
@@ -10969,9 +10986,9 @@ function aibRenderAttachChips() {
     aibAttachFiles.forEach(function (a, i) {
         var c = document.createElement("span");
         c.className = "aib-attach-chip";
-        c.textContent = (a.type === "image" ? "🖼 " : "📄 ") + a.name;
+        c.textContent = (a.type === "image" ? "ðŸ–¼ " : "ðŸ“„ ") + a.name;
         var x = document.createElement("b");
-        x.textContent = " ×";
+        x.textContent = " Ã—";
         x.title = "Remove";
         x.onclick = function () { aibRemoveAttach(i); };
         c.appendChild(x);
@@ -10989,7 +11006,7 @@ function aibMicTap() {
     _aibSR = new SR();
     _aibSR.lang = "en-US";
     _aibSR.interimResults = false;
-    _aibSR.onstart = function () { _aibMicOn = true; if (btn) { btn.classList.add("active"); btn.textContent = "Listening…"; } };
+    _aibSR.onstart = function () { _aibMicOn = true; if (btn) { btn.classList.add("active"); btn.textContent = "Listeningâ€¦"; } };
     _aibSR.onend = function () { _aibMicOn = false; if (btn) { btn.classList.remove("active"); btn.textContent = "Mic"; } };
     _aibSR.onerror = function () { _aibMicOn = false; if (btn) { btn.classList.remove("active"); btn.textContent = "Mic"; } };
     _aibSR.onresult = function (evt) {
@@ -11062,7 +11079,7 @@ function aibStream(url, body, onEvent) {
 
 function aibClarify() {
     var statusEl = document.getElementById("aibClarifyStatus");
-    statusEl.innerHTML = '<span class="aib-thinking">Analyzing your request…</span>';
+    statusEl.innerHTML = '<span class="aib-thinking">Analyzing your requestâ€¦</span>';
     document.getElementById("aibQuestions").innerHTML = "";
     document.getElementById("aibPlanActions").style.display = "none";
     aibStream("/api/ai-builder/clarify", { message: aibState.desc, project_type: aibState.type, attachments: aibAttachFiles }, function (evt) {
@@ -11100,7 +11117,7 @@ function aibRenderQuestions(qs) {
         });
         html += '</div></div>';
     });
-    wrap.innerHTML = html || '<p class="aib-clarify-status">No questions needed — generating the plan.</p>';
+    wrap.innerHTML = html || '<p class="aib-clarify-status">No questions needed â€” generating the plan.</p>';
 }
 
 function aibPickOpt(btn) {
@@ -11173,13 +11190,13 @@ function aibRenderSpecPreview(text) {
     if (s.tagline) blocks.push(["Tagline", "<p>" + esc(s.tagline) + "</p>"]);
     if (s.project_overview) blocks.push(["Overview", "<p>" + esc(s.project_overview) + "</p>"]);
     if (s.features) blocks.push(["Features", arr(s.features)]);
-    if (s.stack) blocks.push(["Tech stack", arr(s.stack.map(function (x) { return x.category + " — " + (x.choice || x.name || "") + (x.reason ? " — " + x.reason : ""); }))]);
-    if (s.ui_pages) blocks.push(["UI pages", arr(s.ui_pages.map(function (p) { return (p.path || "") + " · " + (p.name || "") + (p.description ? " — " + p.description : ""); }))]);
-    if (s.database_design) blocks.push(["Database", arr(s.database_design.map(function (e) { return (e.entity || "") + (e.fields ? " — " + e.fields.map(function (f) { return (f.name || "") + ":" + (f.type || ""); }).join(", ") : ""); }))]);
-    if (s.api_design) blocks.push(["API design", arr(s.api_design.map(function (a) { return (a.method || "") + " " + (a.path || "") + (a.purpose ? " — " + a.purpose : ""); }))]);
+    if (s.stack) blocks.push(["Tech stack", arr(s.stack.map(function (x) { return x.category + " â€” " + (x.choice || x.name || "") + (x.reason ? " â€” " + x.reason : ""); }))]);
+    if (s.ui_pages) blocks.push(["UI pages", arr(s.ui_pages.map(function (p) { return (p.path || "") + " Â· " + (p.name || "") + (p.description ? " â€” " + p.description : ""); }))]);
+    if (s.database_design) blocks.push(["Database", arr(s.database_design.map(function (e) { return (e.entity || "") + (e.fields ? " â€” " + e.fields.map(function (f) { return (f.name || "") + ":" + (f.type || ""); }).join(", ") : ""); }))]);
+    if (s.api_design) blocks.push(["API design", arr(s.api_design.map(function (a) { return (a.method || "") + " " + (a.path || "") + (a.purpose ? " â€” " + a.purpose : ""); }))]);
     if (s.folder_structure) blocks.push(["Folder structure", arr(s.folder_structure)]);
-    if (s.development_roadmap) blocks.push(["Roadmap", arr(s.development_roadmap.map(function (p) { return "Phase " + (p.phase || "") + ": " + (p.title || "") + (p.tasks ? " — " + p.tasks.join("; ") : ""); }))]);
-    if (s.estimated_complexity) blocks.push(["Complexity", "<p>" + esc((s.estimated_complexity.level || "") + " · " + (s.estimated_complexity.build_time || "") + (s.estimated_complexity.effort ? " · " + s.estimated_complexity.effort : "")) + "</p>"]);
+    if (s.development_roadmap) blocks.push(["Roadmap", arr(s.development_roadmap.map(function (p) { return "Phase " + (p.phase || "") + ": " + (p.title || "") + (p.tasks ? " â€” " + p.tasks.join("; ") : ""); }))]);
+    if (s.estimated_complexity) blocks.push(["Complexity", "<p>" + esc((s.estimated_complexity.level || "") + " Â· " + (s.estimated_complexity.build_time || "") + (s.estimated_complexity.effort ? " Â· " + s.estimated_complexity.effort : "")) + "</p>"]);
     var html = "";
     blocks.forEach(function (b) { html += '<div class="aib-spec-sec"><h5>' + esc(b[0]) + '</h5>' + b[1] + '</div>'; });
     el.innerHTML = html || '<pre>' + esc(text) + '</pre>';
@@ -11189,7 +11206,7 @@ function aibBuild() {
     var text = document.getElementById("aibSpecEdit").value.trim();
     var spec;
     try { spec = JSON.parse(text); }
-    catch (e) { alert("The spec is not valid JSON — check for missing commas or quotes."); return; }
+    catch (e) { alert("The spec is not valid JSON â€” check for missing commas or quotes."); return; }
     if (!spec || typeof spec !== "object") { alert("The spec must be a JSON object."); return; }
     aibState.pid = null;
     document.getElementById("aibBtnBuild").disabled = true;
@@ -11221,7 +11238,7 @@ function aibRegenerate() {
     var spec = null;
     try { spec = JSON.parse(specText); } catch (e) { spec = null; }
     if (!spec || typeof spec !== "object") {
-        alert("There's no project to regenerate yet — please start a new project.");
+        alert("There's no project to regenerate yet â€” please start a new project.");
         return;
     }
     aibState.pid = null;                       // a fresh build, not a resume
@@ -11253,10 +11270,10 @@ function aibRunStream(url, body) {
     }
     aibStream(url, body, function (evt) {
         if (evt.type === "status" || evt.type === "heartbeat") {
-            statusEl.textContent = evt.message || "Working…";
+            statusEl.textContent = evt.message || "Workingâ€¦";
         } else if (evt.type === "failover") {
-            // Automatic model failover — surface it, don't stop the build.
-            statusEl.textContent = evt.message || "Switching builder…";
+            // Automatic model failover â€” surface it, don't stop the build.
+            statusEl.textContent = evt.message || "Switching builderâ€¦";
             addLog('<span class="aib-log-skip">' + studioIcon("refresh-cw", 13) + ' ' + esc(evt.message || "Switched builder automatically") + '</span>');
             if (typeof studioRefreshIcons === "function") studioRefreshIcons();
         } else if (evt.type === "manifest") {
@@ -11281,17 +11298,17 @@ function aibRunStream(url, body) {
             addLog('<span class="aib-log-ok">' + studioIcon("check", 13) + ' ' + esc(evt.path) + (evt.resumed ? ' (already built)' : '') + '</span>');
             if (typeof studioRefreshIcons === "function") studioRefreshIcons();
         } else if (evt.type === "file_error") {
-            addLog('<span class="aib-log-err">' + studioIcon("x-circle", 13) + ' ' + esc(evt.path) + ' — ' + esc(evt.message) + '</span>');
+            addLog('<span class="aib-log-err">' + studioIcon("x-circle", 13) + ' ' + esc(evt.path) + ' â€” ' + esc(evt.message) + '</span>');
             if (typeof studioRefreshIcons === "function") studioRefreshIcons();
         } else if (evt.type === "file_skipped") {
-            addLog('<span class="aib-log-skip">' + studioIcon("minus-circle", 13) + ' ' + esc(evt.path) + ' — ' + esc(evt.message || "skipped") + '</span>');
+            addLog('<span class="aib-log-skip">' + studioIcon("minus-circle", 13) + ' ' + esc(evt.path) + ' â€” ' + esc(evt.message || "skipped") + '</span>');
             if (typeof studioRefreshIcons === "function") studioRefreshIcons();
         } else if (evt.type === "paused") {
-            // Rate-limited across all models — progress saved, offer Resume.
+            // Rate-limited across all models â€” progress saved, offer Resume.
             aibState.pid = evt.project_id || aibState.pid;
             document.getElementById("aibBuildStatus").textContent = "Paused";
             document.getElementById("aibBuildStatus").className = "aib-badge";
-            statusEl.textContent = evt.message || "Build paused — rate limited";
+            statusEl.textContent = evt.message || "Build paused â€” rate limited";
             addLog('<span class="aib-log-skip">' + studioIcon("pause-circle", 13) + ' ' + esc(evt.message || "Paused (rate limited)") + '</span>');
             addLog('<button onclick="aibResume()" class="aib-btn aib-btn-primary aib-btn-sm" style="margin-top:8px;">Resume build</button>');
             if (typeof studioRefreshIcons === "function") studioRefreshIcons();
@@ -11301,7 +11318,7 @@ function aibRunStream(url, body) {
         } else if (evt.type === "done") {
             document.getElementById("aibBuildStatus").textContent = "Complete";
             document.getElementById("aibBuildStatus").className = "aib-badge aib-badge-live";
-            statusEl.textContent = "Build complete — " + fileCount + " files generated";
+            statusEl.textContent = "Build complete â€” " + fileCount + " files generated";
         } else if (evt.type === "error") {
             addLog('<span class="aib-log-err">' + esc(evt.message || "Error") + '</span>');
             addLog('<button onclick="aibRegenerate()" class="aib-btn aib-btn-primary aib-btn-sm" style="margin-top:8px;">Try again</button>');
@@ -11322,19 +11339,19 @@ function aibResetBuildUI() {
     document.getElementById("aibBuildResult").style.display = "none";
     document.getElementById("aibProgressBar").style.width = "0%";
     document.getElementById("aibProgressCount").textContent = "0/0";
-    document.getElementById("aibProgressText").textContent = "Designing the architecture…";
+    document.getElementById("aibProgressText").textContent = "Designing the architectureâ€¦";
     document.getElementById("aibBuildStatus").textContent = "Running";
     document.getElementById("aibBuildStatus").className = "aib-badge aib-badge-live";
     document.getElementById("aibBuildLog").innerHTML = "";
     var live = document.getElementById("aibBuildLive");
-    if (live) live.innerHTML = '<pre id="aibBuildLivePre"><span class="aib-tok-com">// waiting for the first file…</span></pre>';
+    if (live) live.innerHTML = '<pre id="aibBuildLivePre"><span class="aib-tok-com">// waiting for the first fileâ€¦</span></pre>';
 }
 
 function aibShowLivePane(path) {
     var head = document.getElementById("aibBuildLive");
     if (!head) return;
     head.innerHTML = '<div class="aib-code-head"><span>' + esc(path) + '</span></div>' +
-        '<pre id="aibBuildLivePre"><span class="aib-tok-com">// generating…</span></pre>';
+        '<pre id="aibBuildLivePre"><span class="aib-tok-com">// generatingâ€¦</span></pre>';
 }
 
 function aibShowResult(project) {
@@ -11409,7 +11426,7 @@ function aibShowFile(path, el) {
     var codeEl = document.getElementById("aibCode");
     codeEl.innerHTML = '<div class="aib-code-head"><span>' + esc(path) + '</span>' +
         '<button class="aib-btn aib-btn-ghost aib-btn-sm" onclick="aibCopyCode()">' + studioIcon("copy", 13) + ' Copy</button></div>' +
-        '<pre id="aibCodePre"><span class="aib-tok-com">loading…</span></pre>';
+        '<pre id="aibCodePre"><span class="aib-tok-com">loadingâ€¦</span></pre>';
     if (typeof studioRefreshIcons === "function") studioRefreshIcons();
     apiFetch("/api/ai-builder/projects/" + encodeURIComponent(aibState.pid) + "/file?path=" + encodeURIComponent(path), { timeoutMs: 20000 })
         .then(function (r) { return r.json(); })
@@ -11468,7 +11485,7 @@ function aibLoadProjects() {
             var cnt = document.getElementById("aibProjectCount");
             if (cnt) cnt.textContent = projects.length + (projects.length === 1 ? " project" : " projects");
             if (!projects.length) {
-                list.innerHTML = '<div class="aib-empty">No projects yet — describe your first idea above and hit "Start building".</div>';
+                list.innerHTML = '<div class="aib-empty">No projects yet â€” describe your first idea above and hit "Start building".</div>';
                 return;
             }
             var html = "";
@@ -11579,7 +11596,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const form = document.getElementById("loginForm");
     if (form) form.addEventListener("submit", login);
 
-    // Remember Me — purely client-side convenience; auth logic is untouched.
+    // Remember Me â€” purely client-side convenience; auth logic is untouched.
     (function () {
         var emailInput = document.getElementById("loginEmail");
         var remember = document.getElementById("loginRemember");

@@ -31,7 +31,7 @@ function FakeEl(tagName, ownerDocument) {
 FakeEl.prototype.setAttribute = function (n, v) { this.attrs[n] = String(v); };
 FakeEl.prototype.getAttribute = function (n) { return this.attrs[n]; };
 FakeEl.prototype.appendChild = function (c) { this.children.push(c); c.parentNode = this; return c; };
-FakeEl.prototype.getBoundingClientRect = function () { return { left: 0, top: 0, width: 96, height: 140 }; };
+FakeEl.prototype.getBoundingClientRect = function () { return { left: 0, top: 0, width: 128, height: 171 }; };
 FakeEl.prototype.hasClass = function (c) { return (this.attrs["class"] || "").split(/\s+/).indexOf(c) !== -1; };
 FakeEl.prototype.addEventListener = function (ev, cb) { (this.listeners[ev] = this.listeners[ev] || []).push(cb); };
 FakeEl.prototype.emit = function (ev) { (this.listeners[ev] || []).forEach(function (cb) { cb(); }); };

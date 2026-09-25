@@ -43,7 +43,7 @@ FakeEl.prototype.addEventListener = function (ev, cb) {
   (this.listeners[ev] = this.listeners[ev] || []).push(cb);
 };
 FakeEl.prototype.getBoundingClientRect = function () {
-  return { left: 0, top: 0, width: 96, height: 140, right: 96, bottom: 140 };
+  return { left: 0, top: 0, width: 128, height: 171, right: 128, bottom: 171 };
 };
 FakeEl.prototype.hasClass = function (c) {
   return (this.attrs["class"] || this._class || "").split(/\s+/).indexOf(c) !== -1;

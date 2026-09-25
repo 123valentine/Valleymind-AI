@@ -451,15 +451,20 @@
   function mount(container) {
     var host = findRigMount(container);
     if (!host || host.nodeType !== 1) return null;
-    hideFallback(container);
     if (alreadyRooted(host)) {
       // Already mounted (auto-boot or cloud.js raced ahead): return it.
+      hideFallback(container);
       return collectRig(host.querySelector("svg.vmcloud-rig-svg"));
     }
     host.setAttribute("data-vm-rig", "1");
-    var built = build();
+    // Build + attach FIRST so the fallback image is only hidden once the robot
+    // is actually on screen — a failure here must never leave a blank space.
+    var built;
+    try { built = build(); } catch (e) { built = null; }
+    if (!built) return null;
     attr(built.parts.root, "class", "vmcloud-rig-svg");
     host.appendChild(built.parts.root);
+    hideFallback(container);
     built.holder = host;
     return built;
   }
@@ -527,7 +532,7 @@
     d.style.display = "block";
     d.style.visibility = "visible";
     d.style.opacity = "1";
-    d.style.width = "96px";
+    d.style.width = "128px";
     d.style.height = "auto";
     d.style.aspectRatio = "433 / 577";
     d.style.pointerEvents = "auto";
@@ -535,7 +540,7 @@
     d.style.cursor = "grab";
     d.style.userSelect = "none";
     d.style.webkitUserDrag = "none";
-    d.style.filter = "drop-shadow(0 8px 14px rgba(0,0,0,0.45))";
+    d.style.filter = "drop-shadow(0 10px 18px rgba(0,10,20,0.5))";
 
     var img = document.createElement("img");
     img.className = "vmcloud-fallback";

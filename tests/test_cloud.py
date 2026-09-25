@@ -93,7 +93,7 @@ class CloudStaticTestCase(unittest.TestCase):
         # Visual isolation pass: a #vmCloudCharacter container sits directly
         # under <body> holding the flattened static/cloud.png <img> fallback
         # plus the animated rig-mount overlay, with no lifecycle engine, so the
-        # exact character is always visible to authenticated users.
+        # exact character is always visible on the front end.
         html = self._index_html()
         body = html[html.index("<body"):]
         char_index = body.index('<div id="vmCloudCharacter"')
@@ -103,10 +103,10 @@ class CloudStaticTestCase(unittest.TestCase):
         self.assertIn('class="vmcloud-fallback"', body[char_index:char_index + 600])
         self.assertIn('class="vmcloud-rig-mount"', body[char_index:char_index + 600])
         # The stylesheet forces the small fixed character visible in the
-        # bottom-right corner, responsive (env safe-area) and small (96px).
+        # bottom-right corner, responsive (env safe-area) and 128px wide.
         self.assertIn("#vmCloudCharacter {", body)
         self.assertIn("position: fixed !important", body)
-        self.assertIn("width: 96px !important", body)
+        self.assertIn("width: 128px !important", body)
         self.assertIn("bottom: calc(18px + env(safe-area-inset-bottom)) !important", body)
         # Auth gate lives in the app shell's setAppVisible (not the Cloud
         # lifecycle), plus an immediate show once auth state reports true.
@@ -1165,7 +1165,7 @@ class CloudCompanionStaticTestCase(unittest.TestCase):
         # The companion shell is a small fixed element — it must never be a
         # full-width/height container or hide the app with a big invisible box.
         self.assertIn("#vmCloudCompanion{position:fixed;right:18px;bottom:18px;", js)
-        self.assertIn("width:96px;height:auto", js)
+        self.assertIn("width:128px;height:auto", js)
         # The shell/small-companion rules never use viewport-filling sizes.
         suppress = re.search(r"\#vmCloudCompanion\{[^}]+\}", js)
         self.assertIsNotNone(suppress)
@@ -1197,7 +1197,7 @@ class CloudCompanionStaticTestCase(unittest.TestCase):
         self.assertIn('el.style.position = "fixed"', js)
         self.assertIn('el.style.right = "18px"', js)
         self.assertIn('el.style.bottom = "calc(18px + env(safe-area-inset-bottom))"', js)
-        self.assertIn('el.style.width = "96px"', js)
+        self.assertIn('el.style.width = "128px"', js)
         self.assertIn('el.style.height = "auto"', js)
         self.assertIn('el.style.visibility = "visible"', js)
         self.assertIn('el.style.opacity = "1"', js)
@@ -1206,7 +1206,7 @@ class CloudCompanionStaticTestCase(unittest.TestCase):
         self.assertIsNotNone(rule)
         self.assertIn("right:18px", rule.group(0))
         self.assertIn("bottom:calc(18px + env(safe-area-inset-bottom", rule.group(0))
-        self.assertIn("width:96px;height:auto", rule.group(0))
+        self.assertIn("width:128px;height:auto", rule.group(0))
         self.assertNotIn("width:100%", rule.group(0))
         self.assertNotIn("width:100vw", rule.group(0))
         self.assertNotIn("inset:0", rule.group(0))
@@ -1232,11 +1232,14 @@ class CloudCompanionStaticTestCase(unittest.TestCase):
         self.assertNotIn("left:280px", js)
         self.assertNotIn('makeDraggable($id("vmCloudCompanion").parentNode', js)
 
-    def test_logout_removes_character(self):
+    def test_logout_keeps_character(self):
         js = self._cloud_js()
         cleanup = js[js.index("function cleanupCompanion()"):js.index("function start3D()")]
-        self.assertIn('var char = $id("vmCloudCharacter");', cleanup)
-        self.assertIn("removeChild(char)", cleanup)
+        # The robot companion is a persistent front-end element: teardown removes
+        # the chat panel but never the #vmCloudCharacter robot, so the robot
+        # stays visible on the front end at all times.
+        self.assertIn("removeChild(shell)", cleanup)
+        self.assertNotIn("removeChild(char)", cleanup)
 
     def test_one_visible_character_no_second_cloud(self):
         js = self._cloud_js()

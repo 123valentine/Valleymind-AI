@@ -1152,7 +1152,7 @@
       el.style.display = "block";
       el.style.visibility = "visible";
       el.style.opacity = "1";
-      el.style.width = "96px";
+      el.style.width = "128px";
       el.style.height = "auto";
       el.style.aspectRatio = "433 / 577";
       el.style.pointerEvents = "auto";
@@ -1160,7 +1160,7 @@
       el.style.cursor = "grab";
       el.style.userSelect = "none";
       el.style.webkitUserDrag = "none";
-      el.style.filter = "drop-shadow(0 8px 14px rgba(0,0,0,0.45))";
+      el.style.filter = "drop-shadow(0 10px 18px rgba(0,10,20,0.5))";
       document.body.appendChild(el);
     }
     makeDraggable(el);
@@ -1208,8 +1208,9 @@
     CLOUD.prefs = defaultPrefs();
     var shell = $id("vmCloudCompanion");
     if (shell && shell.parentNode) shell.parentNode.removeChild(shell);
-    var char = $id("vmCloudCharacter");
-    if (char && char.parentNode) char.parentNode.removeChild(char);
+    // The #vmCloudCharacter robot is intentionally NOT removed: it is the
+    // persistent front-end companion (always visible), so teardown only drops
+    // the chat panel, voice, screen-share and renderer — never the robot.
   }
 
   function start3D() {
@@ -1285,7 +1286,9 @@
       ".vmcloud-chat-hint{color:#475569;font-size:11px;text-transform:none;letter-spacing:normal;}" +
       ".vmcloud-status-ok{color:#3ddc84;}" +
       "#vmCloudCompanion{position:fixed;right:18px;bottom:18px;z-index:8000;font-family:'Inter',sans-serif;isolation:isolate;}" +
-      "#vmCloudCharacter{position:fixed;right:18px;bottom:calc(18px + env(safe-area-inset-bottom,0px));z-index:8000;display:block;visibility:visible;opacity:1;width:96px;height:auto;aspect-ratio:433/577;pointer-events:auto;touch-action:none;cursor:grab;user-select:none;-webkit-user-drag:none;filter:drop-shadow(0 8px 14px rgba(0,0,0,0.45));}" +
+      "#vmCloudCharacter{position:fixed;right:18px;bottom:calc(18px + env(safe-area-inset-bottom,0px));z-index:8000;display:block;visibility:visible;opacity:1;width:128px;height:auto;aspect-ratio:433/577;pointer-events:auto;touch-action:none;cursor:grab;user-select:none;-webkit-user-drag:none;filter:drop-shadow(0 10px 18px rgba(0,10,20,0.5));animation:vm-char-float 4.5s ease-in-out infinite;}" +
+      "@keyframes vm-char-float{0%,100%{transform:translateY(0);}50%{transform:translateY(-7px);}}" +
+      "@media (prefers-reduced-motion: reduce){#vmCloudCharacter{animation:none !important;}}" +
       ".vmcloud-character .vmcloud-fallback,.vmcloud-character.vmcloud-fallback{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;pointer-events:none;user-select:none;-webkit-user-drag:none;}" +
       ".vmcloud-rig-mount{position:absolute;inset:0;pointer-events:none;overflow:visible;}" +
       ".vmcloud-rig-mount svg{display:block;width:100%;height:100%;}" +
