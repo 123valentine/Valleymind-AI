@@ -671,17 +671,18 @@ class CloudApiTestCase(unittest.TestCase):
         self.assertEqual(brain.calls[0]["image_data"], "")
 
 
-class Cloud3DStaticTestCase(unittest.TestCase):
-    """Structural checks for the 3D Cloud character (static/cloud3d.js).
+class CloudSingleImplementationTestCase(unittest.TestCase):
+    """Cloud must have exactly ONE implementation: the layered SVG rig.
 
-    These never execute WebGL/three.js: they assert that the renderer module
-    is wired into index.html and cloud.js, keeps the renderer out of cloud.js,
-    and centralizes the emotion/status→visual rig so every canonical state has
-    a presentation.
+    static/cloud3d.js (a WebGL/three.js Cloud) was removed. It was dead code —
+    VMCloud3D.attach() was never called and its stage markup did not exist — but
+    keeping it meant a second, duplicate mascot implementation sitting in the
+    project. These tests lock that in: no WebGL renderer, no VMCloud3D hook, and
+    no second Cloud script in the page.
     """
 
     def _cloud3d_js(self):
-        return (ROOT / "static" / "cloud3d.js").read_text(encoding="utf-8")
+        return ROOT / "static" / "cloud3d.js"
 
     def _index_html(self):
         return (ROOT / "index.html").read_text(encoding="utf-8")
@@ -689,99 +690,41 @@ class Cloud3DStaticTestCase(unittest.TestCase):
     def _cloud_js(self):
         return (ROOT / "static" / "cloud.js").read_text(encoding="utf-8")
 
-    def test_cloud3d_script_loaded(self):
+    def test_cloud3d_renderer_file_is_gone(self):
+        self.assertFalse(self._cloud3d_js().exists(),
+                         "static/cloud3d.js is a duplicate Cloud implementation")
+
+    def test_cloud3d_script_not_loaded(self):
         html = self._index_html()
-        self.assertIn('<script src="/static/cloud3d.js', html)
+        self.assertNotIn("/static/cloud3d.js", html)
+
+    def test_cloud_js_has_no_3d_hooks(self):
+        js = self._cloud_js()
+        self.assertNotIn("VMCloud3D", js)
+        self.assertNotIn("mount3DAt", js)
+        self.assertNotIn("start3D", js)
+
+    def test_cloud_js_keeps_renderer_out_of_controller(self):
+        js = self._cloud_js()
+        self.assertNotIn("getContext('webgl')", js)
+        self.assertNotIn("THREE.", js)
+        self.assertNotIn("requestAnimationFrame", js)
+
+    def test_cloud_js_still_wires_stage_and_rig(self):
+        js = self._cloud_js()
+        self.assertIn('id="vmCloudStage"', js)
+        self.assertIn("window.vmCloudOnHide", js)
+
+    def test_no_stuck_3d_status_text(self):
+        # The WebGL surface used to render a permanent "Activating Cloud..."
+        # caption because attach() never ran. It must not come back.
+        self.assertNotIn("vmCloud3DStatus", self._cloud_js())
 
     def test_vm_ws_go_hooks_cloud_hide(self):
         html = self._index_html()
         block = html[html.index("function vmWsGo("):]
         self.assertIn('ws !== "cloud" && typeof vmCloudOnHide === "function"', block)
         self.assertIn("vmCloudOnHide()", block)
-
-    def test_cloud_js_wires_stage_and_3d(self):
-        js = self._cloud_js()
-        self.assertIn('id="vmCloudStage"', js)
-        self.assertIn("window.vmCloudOnHide", js)
-        self.assertIn("VMCloud3D.attach", js)
-        self.assertIn("VMCloud3D.detach", js)
-        self.assertIn("VMCloud3D.notifyState", js)
-        # Renderer must NOT leak into the controller module.
-        self.assertNotIn("getContext('webgl')", js)
-        self.assertNotIn("THREE.", js)
-        self.assertNotIn("requestAnimationFrame", js)
-
-    def test_cloud3d_exposes_public_api(self):
-        js = self._cloud3d_js()
-        self.assertIn("window.VMCloud3D = {", js)
-        self.assertIn("attach: attach", js)
-        self.assertIn("detach: detach", js)
-        self.assertIn("notifyState: notifyState", js)
-        self.assertIn("setAttentionTarget", js)
-        self.assertIn("clearAttentionTarget", js)
-        self.assertIn("isActive", js)
-        self.assertIn("getEngineInfo", js)
-
-    def test_cloud3d_lazy_loads_three(self):
-        js = self._cloud3d_js()
-        self.assertIn(
-            'var THREE_URL = "https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"',
-            js)
-        self.assertIn('document.createElement("script")', js)
-        self.assertIn("requestAnimationFrame", js)
-        self.assertIn("cancelAnimationFrame", js)
-        # Should be lazy: nothing renders until attach() is called.
-        self.assertIn("function attach(", js)
-
-    def test_cloud3d_covers_every_canonical_emotion(self):
-        js = self._cloud3d_js()
-        for emo in cloud_model.EMOTIONS:
-            self.assertIn(emo, js)
-
-    def test_cloud3d_covers_every_canonical_status(self):
-        js = self._cloud3d_js()
-        for status in cloud_model.INTERACTION_STATES:
-            self.assertIn(status, js)
-
-    def test_cloud3d_centralizes_visual_rigs(self):
-        js = self._cloud3d_js()
-        self.assertIn("var EMOTION_RIG = {", js)
-        self.assertIn("var STATUS_OVERRIDE = {", js)
-        self.assertIn("var PRESENTATION_ADJ = {", js)
-        self.assertIn("var GESTURES = {", js)
-        self.assertIn("var BASE_BODY = 0xeaf7ff", js)
-        self.assertIn("var BASE_ACCENT = 0x00d4ff", js)
-
-    def test_cloud3d_supports_presentations_and_attention(self):
-        js = self._cloud3d_js()
-        self.assertIn("var PRESENTATION_ADJ = {", js)
-        for p in cloud_model.PRESENTATIONS:
-            self.assertIn(p, js)
-        self.assertIn("attention_target", js)
-        self.assertIn("setAttentionTarget", js)
-        self.assertIn("nextBlinkAt", js)
-
-    def test_cloud3d_cleanup_and_fallback(self):
-        js = self._cloud3d_js()
-        self.assertIn("function detach()", js)
-        self.assertIn("dispose", js)
-        self.assertIn("removeChild", js)
-        self.assertIn("WebGL unavailable", js)
-        self.assertIn("showFallback", js)
-        self.assertIn("visibilitychange", js)
-
-    def test_cloud3d_uses_existing_stage_ids(self):
-        js = self._cloud3d_js()
-        self.assertIn('var STAGE_ID = "vmCloudStage"', js)
-        self.assertIn('var STATUS_ID = "vmCloud3DStatus"', js)
-
-    def test_cloud3d_frames_tiny_companion_surface(self):
-        js = self._cloud3d_js()
-        # The shared engine zooms its camera for the small companion surface so
-        # the creature stays clearly visible when mini, instead of showing a
-        # static CSS stand-in.
-        self.assertIn("if (w < 140) api.camera.position.z = 6.2;", js)
-        self.assertIn("api.camera.updateProjectionMatrix();", js)
 
 
 class CloudVoiceStaticTestCase(unittest.TestCase):
@@ -797,9 +740,6 @@ class CloudVoiceStaticTestCase(unittest.TestCase):
 
     def _cloud_js(self):
         return (ROOT / "static" / "cloud.js").read_text(encoding="utf-8")
-
-    def _cloud3d_js(self):
-        return (ROOT / "static" / "cloud3d.js").read_text(encoding="utf-8")
 
     def _index_html(self):
         return (ROOT / "index.html").read_text(encoding="utf-8")
@@ -887,12 +827,6 @@ class CloudVoiceStaticTestCase(unittest.TestCase):
             self.assertIn(emo, js)
         self.assertIn("function pickCloudEmotion(", js)
         self.assertIn("return emo;", js)
-
-    def test_cloud3d_speech_gating(self):
-        js = self._cloud3d_js()
-        self.assertIn("speechActive", js)
-        self.assertIn("notifySpeech", js)
-        self.assertIn('status === "speaking" && engine.speechActive', js)
 
     def test_cloud_voice_no_overlap_guards(self):
         js = self._voice_js()
@@ -1016,12 +950,10 @@ class CloudCompanionStaticTestCase(unittest.TestCase):
     def test_one_3d_engine_shared_between_surfaces(self):
         js = self._cloud_js()
         self.assertIn("surfaceCompanion", js)
-        self.assertIn("startCompanion3D", js)
-        self.assertIn("start3D", js)
-        # The controller never starts a second renderer; it re-parents the
-        # single engine via attach()/suspend()/resume().
-        self.assertIn("VMCloud3D.suspend", js)
-        self.assertIn("VMCloud3D.resume", js)
+        # The controller drives ONE implementation only: the SVG rig. There is no
+        # second WebGL renderer to start, suspend or resume.
+        self.assertIn("vmCloudAnim", js)
+        self.assertNotIn("VMCloud3D", js)
         self.assertNotIn("new THREE.WebGLRenderer", js)
 
     def test_minimize_restore_preserves_state(self):
@@ -1109,14 +1041,13 @@ class CloudCompanionStaticTestCase(unittest.TestCase):
         self.assertIn('src="/static/cloud.png"', js)
         self.assertIn('class="vmcloud-companion-mini-img"', js)
         self.assertIn("draggable=\"false\"", js)
-        # Mini shows the character (no 3D engine mounted for the small state),
-        # while panel/workspace surfaces still reuse the shared 3D engine.
+        # Mini shows the character; every surface shares the ONE SVG rig and the
+        # one animation controller. No per-surface 3D engine is mounted.
         self.assertIn("showMiniCharacter", js)
-        self.assertIn("startCompanion3D", js)
-        self.assertIn("vmCloudCompanionStage", js)
         self.assertIn("vmCloudStage", js)
-        self.assertIn("VMCloud3D.suspend", js)
-        self.assertNotIn('mount3DAt("vmCloudCompanionMiniStage"', js)
+        self.assertIn("vmCloudAnim", js)
+        self.assertNotIn("VMCloud3D", js)
+        self.assertNotIn("mount3DAt", js)
 
     def test_companion_expands_from_small_surface(self):
         js = self._cloud_js()
@@ -1239,7 +1170,7 @@ class CloudCompanionStaticTestCase(unittest.TestCase):
 
     def test_logout_keeps_character(self):
         js = self._cloud_js()
-        cleanup = js[js.index("function cleanupCompanion()"):js.index("function start3D()")]
+        cleanup = js[js.index("function cleanupCompanion()"):js.index("function injectStyles()")]
         # The robot companion is a persistent front-end element: teardown removes
         # the chat panel but never the #vmCloudCharacter robot, so the robot
         # stays visible on the front end at all times.
@@ -1440,13 +1371,14 @@ class CloudAnimStaticTestCase(unittest.TestCase):
         self.assertNotIn("defer", anim.group(0))
         self.assertNotIn("async", anim.group(0))
 
-    def test_anim_layer_loads_last_after_cloud_scripts(self):
+    def test_anim_layer_loads_last_after_rig(self):
         html = self._index_html()
-        cloud3d = re.search(r'<script src="/static/cloud3d\.js\?v=2"></script>', html)
+        rig = re.search(r'<script src="/static/cloud_rig\.js\?v=2"></script>', html)
         anim = re.search(r'<script src="/static/cloud_anim\.js\?v=2"></script>', html)
-        self.assertIsNotNone(cloud3d)
+        self.assertIsNotNone(rig)
         self.assertIsNotNone(anim)
-        self.assertGreater(anim.start(), cloud3d.start())
+        # The controller must come after the rig it animates.
+        self.assertGreater(anim.start(), rig.start())
 
     def test_api_exports_cloud_set_state_and_vm_cloud_anim(self):
         src = self._anim_js()
@@ -1553,8 +1485,12 @@ class CloudLiveAnimBridgeTestCase(unittest.TestCase):
     def test_bridge_is_pushed_from_the_single_state_funnel(self):
         js = self._cloud_js()
         # Every state mutation already funnels through reflectState(); the rig
-        # push must live there so no caller can bypass it.
-        self.assertRegex(js, r"notify3d\(\);\s*\n\s*syncAnim\(\);")
+        # push must live there so no caller can bypass it. It is the ONLY sink —
+        # the removed 3D renderer used to sit right above it.
+        start = js.index("function reflectState()")
+        end = js.index("\n  function ", start + 10)
+        funnel = js[start:end]
+        self.assertIn("syncAnim();", funnel)
         self.assertEqual(js.count("syncAnim();"), 2,
                          "syncAnim is called once from reflectState plus the "
                          "single resume re-assert")

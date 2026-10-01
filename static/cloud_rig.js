@@ -406,20 +406,85 @@
       attr(armPath, "stroke-linecap", "round");
       g.appendChild(armPath);
 
-      // Hand group: palm + thumb, pivoting from the wrist.
+      // ── Hand ────────────────────────────────────────────────────────────
+      // A natural, mitten-style hand: ONE filled silhouette combining a palm
+      // with four rounded fingers (middle longest, outer fingers shorter, the
+      // way a relaxed hand actually hangs), plus an opposed thumb tucked
+      // BEHIND the palm. Drawing palm+fingers as a single path avoids the
+      // seams you get from overlapping circles -- that seam is exactly what
+      // made the old two-ellipse hand read as a blob.
+      //
+      // Every shape starts on the wrist line (GEO.wristY) and grows DOWNWARD,
+      // so this group's fill-box top edge stays on the wrist. That matters:
+      // the animation engine pivots each hand at "50% 0%" (top-centre of this
+      // group), so gestures still rotate at the wrist exactly as before.
       var handG = rigPart(el("g"), 50, 0); labelPart(handG, handName);
-      var palm = el("ellipse");
-      attr(palm, "cx", String(hx)); attr(palm, "cy", String(GEO.handY));
-      attr(palm, "rx", "17"); attr(palm, "ry", "14");
-      attr(palm, "fill", COLORS.limbHigh);
-      attr(palm, "stroke", COLORS.edge); attr(palm, "stroke-width", "2.5");
-      var thumb = el("ellipse");
-      attr(thumb, "cx", String(hx - dir * 14)); attr(thumb, "cy", String(GEO.handY - 8));
-      attr(thumb, "rx", "8"); attr(thumb, "ry", "6");
+
+      var palmTop = GEO.wristY;      // 436 - the pivot line
+      var palmBot = GEO.handY + 6;   // 456
+      var halfW = 15.2;      // palm half-width
+      var tipR = 3.4;              // finger-tip rounding
+      // Four fingers, outer -> inner, with natural length variation.
+      var fingers = [
+        { x0: -15.2, x1: -8.8, len: 10 },
+        { x0: -7.2, x1: -0.8, len: 14 },
+        { x0: 0.8, x1: 7.2, len: 16 },
+        { x0: 8.8, x1: 15.2, len: 12 }
+      ];
+
+      function X(v) { return Math.round((hx + v) * 10) / 10; }
+      function Y(v) { return Math.round(v * 10) / 10; }
+
+      // Thumb first so the palm silhouette overlaps its inner edge and the
+      // thumb reads as attached to the hand rather than stuck on top of it.
+      var thumb = el("path");
+      attr(thumb, "d",
+        "M " + X(-dir * 12) + " " + Y(palmTop + 6) +
+        " C " + X(-dir * 21) + " " + Y(palmTop + 9) +
+        " " + X(-dir * 23) + " " + Y(palmBot - 4) +
+        " " + X(-dir * 17) + " " + Y(palmBot + 2) +
+        " C " + X(-dir * 12) + " " + Y(palmBot + 5) +
+        " " + X(-dir * 8) + " " + Y(palmBot - 2) +
+        " " + X(-dir * 8) + " " + Y(palmBot - 8) + " Z");
       attr(thumb, "fill", COLORS.limbHigh);
-      attr(thumb, "stroke", COLORS.edge); attr(thumb, "stroke-width", "2");
-      handG.appendChild(palm);
+      attr(thumb, "stroke", COLORS.edge);
+      attr(thumb, "stroke-width", "2");
+      attr(thumb, "stroke-linejoin", "round");
       handG.appendChild(thumb);
+
+      // Palm + fingers as one path: down the palm's outer side, then for each
+      // finger down its left edge, over a rounded tip, back up its right edge,
+      // and a shallow web into the next finger.
+      var hd = "M " + X(-halfW + 1) + " " + Y(palmTop) +
+        " C " + X(-halfW - 1.4) + " " + Y(palmTop + 9) +
+        " " + X(-halfW - 1) + " " + Y(palmBot - 6) +
+        " " + X(fingers[0].x0) + " " + Y(palmBot);
+      for (var fi = 0; fi < fingers.length; fi++) {
+        var f = fingers[fi];
+        var tip = palmBot + f.len;
+        var nextX = fi < fingers.length - 1 ? fingers[fi + 1].x0 : halfW - 1;
+        hd += " L " + X(f.x0) + " " + Y(tip - tipR) +
+          " Q " + X(f.x0) + " " + Y(tip) + " " + X(f.x0 + tipR) + " " + Y(tip) +
+          " Q " + X(f.x1) + " " + Y(tip) + " " + X(f.x1) + " " + Y(tip - tipR) +
+          " L " + X(f.x1) + " " + Y(palmBot - 2) +
+          " Q " + X((f.x1 + nextX) / 2) + " " + Y(palmBot) +
+          " " + X(nextX) + " " + Y(palmBot - 2);
+      }
+      hd += " L " + X(halfW - 1) + " " + Y(palmBot - 6) +
+        " C " + X(halfW + 1) + " " + Y(palmTop + 9) +
+        " " + X(halfW - 1) + " " + Y(palmTop + 2) +
+        " " + X(halfW - 1) + " " + Y(palmTop) +
+        " Q " + X(halfW - 1) + " " + Y(palmTop) +
+        " " + X(-halfW + 1) + " " + Y(palmTop) + " Z";
+
+      var palm = el("path");
+      attr(palm, "d", hd);
+      attr(palm, "fill", COLORS.limbHigh);
+      attr(palm, "stroke", COLORS.edge);
+      attr(palm, "stroke-width", "2.5");
+      attr(palm, "stroke-linejoin", "round");
+      handG.appendChild(palm);
+
       g.appendChild(handG);
       return g;
     }

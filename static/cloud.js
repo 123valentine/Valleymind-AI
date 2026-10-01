@@ -302,14 +302,7 @@
       var v = c.getAttribute("data-v");
       c.classList.toggle("active", v === CLOUD.state.emotion || v === CLOUD.state.status);
     }
-    notify3d();
     syncAnim();
-  }
-
-  function notify3d() {
-    if (window.VMCloud3D && typeof window.VMCloud3D.notifyState === "function") {
-      try { window.VMCloud3D.notifyState(renderConfig()); } catch (e) { }
-    }
   }
 
   function applyPrefs(p) {
@@ -503,9 +496,6 @@
     CLOUD.busy = true;
     pushTurn("user", text);
     applyRuntimePatch({ status: "thinking", emotion: "thinking" });
-    if (window.VMCloud3D && typeof window.VMCloud3D.notifySpeech === "function") {
-      try { window.VMCloud3D.notifySpeech(false); } catch (e) { }
-    }
     var frame = buildFramePayload();
     var hasVision = CLOUD.visionActive;
     ensureSession().then(function (chatId) {
@@ -578,18 +568,12 @@
     ++CLOUD.turnToken;
     CLOUD.busy = false;
     if (window.VMCloudVoice) { try { window.VMCloudVoice.stop(); } catch (e) { } }
-    if (window.VMCloud3D && typeof window.VMCloud3D.notifySpeech === "function") {
-      try { window.VMCloud3D.notifySpeech(false); } catch (e) { }
-    }
     applyRuntimePatch({ status: "idle", emotion: CLOUD.lastEmotion || "neutral" });
     setVoiceStatus("Tap the mic to talk");
   }
 
   function stopVoice() {
     if (window.VMCloudVoice) { try { window.VMCloudVoice.stop(); } catch (e) { } }
-    if (window.VMCloud3D && typeof window.VMCloud3D.notifySpeech === "function") {
-      try { window.VMCloud3D.notifySpeech(false); } catch (e) { }
-    }
     applyRuntimePatch({ status: "idle", emotion: CLOUD.lastEmotion || "neutral" });
     setVoiceStatus("Tap the mic to talk");
   }
@@ -659,14 +643,8 @@
       },
       onSpeakStart: function () {
         applyRuntimePatch({ status: "speaking" });
-        if (window.VMCloud3D && typeof window.VMCloud3D.notifySpeech === "function") {
-          try { window.VMCloud3D.notifySpeech(true); } catch (e) { }
-        }
       },
       onSpeakEnd: function (reason) {
-        if (window.VMCloud3D && typeof window.VMCloud3D.notifySpeech === "function") {
-          try { window.VMCloud3D.notifySpeech(false); } catch (e) { }
-        }
         if (window.vmCloudAnim && typeof window.vmCloudAnim.clearSpeechLevel === "function") {
           try { window.vmCloudAnim.clearSpeechLevel(); } catch (e) { }
         }
@@ -749,7 +727,6 @@
           '<div class="vmcloud-stage" id="vmCloudStage">' +
             '<div class="vmcloud-backdrop"></div>' +
             '<div class="vmcloud-orb" id="' + CLOUD_ORB_ID + '" style="display:none"></div>' +
-            '<div class="vmcloud-stage-status" id="vmCloud3DStatus">Activating Cloud…</div>' +
           '</div>' +
           '<div class="vmcloud-header-text">' +
             '<h2 id="vmCloudTitle">Cloud</h2>' +
@@ -961,9 +938,9 @@
 
   function surfaceCompanion(mode) {
     // Visual-first: the companion IS the direct cloud.png character and always
-    // stays visible. The old shell/panel/3D surface is kept defined-but-dormant
-    // (no longer mounted anywhere), so the single shared controller can later
-    // re-connect to a presentation surface without any architectural change.
+    // stays visible. The old 3D/WebGL surface was removed entirely so there is
+    // exactly one Cloud implementation; the shared controller drives whichever
+    // presentation surface ("mini" or "panel") is currently mounted.
     CLOUD.surface = mode;
     updateIdentity();
     ensureCloudCharacter();
@@ -973,19 +950,26 @@
       // It is a plain <img>, so no 3D engine (WebGL) is mounted here.
       showMiniCharacter();
     } else if (mode === "panel") {
-      startCompanion3D();
       renderCompanionLog();
       updateMicUI();
       updateVisionUI();
-    } else if (mode === "hidden") {
-      if (window.VMCloud3D && typeof window.VMCloud3D.suspend === "function") {
-        try { window.VMCloud3D.suspend(); } catch (e) { }
-      }
+    }
+    // The resume contract is keyed off visibility, NOT off which surface is
+    // showing: every mode except "hidden" must restart the rig loop and
+    // re-assert live state, otherwise a companion hidden once would stay frozen
+    // on a stale pose when it came back as "mini" or "panel".
+    if (mode === "hidden") {
       // The rig has no suspend verb; stop its loop so a hidden companion does
       // not burn frames. Its state is preserved and replayed on resume.
       if (window.vmCloudAnim && typeof window.vmCloudAnim.stop === "function") {
         try { window.vmCloudAnim.stop(); } catch (e) { }
       }
+    } else {
+      if (window.vmCloudAnim && typeof window.vmCloudAnim.start === "function") {
+        try { window.vmCloudAnim.start(); } catch (e) { }
+      }
+      _animState = null;
+      syncAnim();
     }
   }
 
@@ -993,10 +977,6 @@
     // The on-screen companion is the actual cloud.png character, already in
     // the markup as a plain <img>. Nothing more is needed for the visual-first
     // phase — this hook marks where future animation/behavior will attach.
-  }
-
-  function startCompanion3D() {
-    mount3DAt("vmCloudCompanionStage", "vmCloudCompanionStatus", "vmCloudCompanionOrb");
   }
 
   function savePrefsLight() {
@@ -1151,23 +1131,6 @@
   document.addEventListener("pointerup", onDragEnd);
   document.addEventListener("pointercancel", onDragEnd);
 
-  function mount3DAt(stageId, statusId, fallbackId) {
-    var stage = $id(stageId);
-    if (!stage) return;
-    if (window.VMCloud3D && typeof window.VMCloud3D.attach === "function") {
-      try {
-        window.VMCloud3D.attach(stage, {
-          config: renderConfig(),
-          statusId: statusId,
-          fallbackId: fallbackId
-        });
-        if (typeof window.VMCloud3D.resume === "function") {
-          window.VMCloud3D.resume(renderConfig());
-        }
-      } catch (e) { }
-    }
-  }
-
   // ── Explicit screen context (permission-first, throttled, transient) ───
 
   function visionStateLabel(s) {
@@ -1309,9 +1272,6 @@
     if (window.VMCloudVision && typeof window.VMCloudVision.destroy === "function") {
       try { window.VMCloudVision.destroy(); } catch (e) { }
     }
-    if (window.VMCloud3D && typeof window.VMCloud3D.detach === "function") {
-      try { window.VMCloud3D.detach(); } catch (e) { }
-    }
     // The rig has no detach verb (it self-recovers when a character appears
     // again); only the transient speech/mouth state is reset on logout.
     if (window.vmCloudAnim) {
@@ -1334,31 +1294,7 @@
     if (shell && shell.parentNode) shell.parentNode.removeChild(shell);
     // The #vmCloudCharacter is intentionally NOT removed: it is the
     // persistent front-end companion (always visible), so teardown only drops
-    // the chat panel, voice, screen-share and renderer — never the cloud.
-  }
-
-  function start3D() {
-    var stage = $id("vmCloudStage");
-    if (!stage) return;
-    if (window.VMCloud3D && typeof window.VMCloud3D.attach === "function") {
-      try {
-        window.VMCloud3D.attach(stage, {
-          config: renderConfig(),
-          statusId: "vmCloud3DStatus",
-          fallbackId: "vmCloudOrb"
-        });
-        if (typeof window.VMCloud3D.resume === "function") {
-          window.VMCloud3D.resume(renderConfig());
-        }
-      } catch (e) { }
-    }
-    // Restart the rig loop and re-assert the live state, so a companion that
-    // was hidden resumes on the correct pose instead of a stale one.
-    if (window.vmCloudAnim && typeof window.vmCloudAnim.start === "function") {
-      try { window.vmCloudAnim.start(); } catch (e) { }
-    }
-    _animState = null;
-    syncAnim();
+    // the chat panel, voice and screen-share — never the cloud.
   }
 
   function injectStyles() {

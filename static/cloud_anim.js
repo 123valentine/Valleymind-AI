@@ -88,12 +88,15 @@
       face: { eyes: "soft", brows: "gentle", mouth: "smile" },
       arms: "rest", legs: "stand"
     },
+    // Excited reads as eager and open — wide eyes, lifted brows, a big smile
+    // and raised arms — but it stays grounded: no upward offset, no bigger bob
+    // and no bouncing legs, so excitement can never look like jumping.
     excited: {
-      tx: 0, ty: -2, rot: 0, sx: 1.03, sy: 1.05,
-      breath: 0.026, breatheHz: 1.8, bob: 2.4,
-      gaze: { x: 0, y: -0.25 },
+      tx: 0, ty: 0, rot: 0, sx: 1.02, sy: 1.03,
+      breath: 0.024, breatheHz: 1.6, bob: 1.5,
+      gaze: { x: 0, y: -0.2 },
       face: { eyes: "wide", brows: "lifted", mouth: "big_smile" },
-      arms: "lift", legs: "bounce"
+      arms: "lift", legs: "stand"
     },
     sad: {
       tx: 0, ty: 1, rot: 0, sx: 0.98, sy: 0.97,
@@ -240,15 +243,6 @@
         { at: 1, tx: 0, rot: 0 }
       ]
     },
-    hop: {
-      dur: 700,
-      keys: [
-        { at: 0, ty: 0 },
-        { at: 0.25, ty: -5 },
-        { at: 0.6, ty: 0 },
-        { at: 1, ty: 0 }
-      ]
-    },
     recoil: {
       dur: 600,
       keys: [
@@ -276,6 +270,9 @@
     }
   };
 
+  // Entry gestures are all grounded, in-place reactions. There is deliberately
+  // no "hop"/jump entry gesture: Cloud greets and reacts without ever leaving
+  // the ground.
   var STATE_ENTRY_GESTURES = {
     thinking: ["leanBack"],
     surprised: ["recoil"],
@@ -283,7 +280,7 @@
     curious: ["look"],
     confused: ["tiltHead"],
     happy: ["nod"],
-    excited: ["hop"],
+    excited: ["leanFwd"],
     sad: ["leanBack"],
     concerned: ["tiltHead"]
   };
@@ -492,17 +489,18 @@
 
   // Emotional walking profiles — cadence (steps/sec), step amplitude (deg),
   // speed multiplier, and a vertical bounce added on top of the step bob.
-  // These make a happy Cloud skip, an excited Cloud eager, a sad Cloud drag,
-  // and a thinking Cloud potter, without changing the movement controller.
+  // No profile may bounce: Cloud glides and breathes, it never jumps or skips.
+  // A thinking Cloud still potters and a sad Cloud still drags, but every
+  // profile stays grounded (bounce <= 0) so the cloud never hops.
   var WALK_PROFILES = {
     idle:      { cadence: 2.4, amp: 16, speed: 1.0,  bounce: 0.0 },
     calm:      { cadence: 2.4, amp: 16, speed: 1.0,  bounce: 0.0 },
-    thinking:  { cadence: 1.5, amp: 10, speed: 0.65, bounce: -0.6 },
-    happy:     { cadence: 2.8, amp: 17, speed: 1.15, bounce: 0.9 },
-    excited:   { cadence: 3.4, amp: 19, speed: 1.35, bounce: 1.3 },
-    surprised: { cadence: 2.1, amp: 12, speed: 0.8,  bounce: 0.4 },
-    sad:       { cadence: 1.2, amp: 8,  speed: 0.5,  bounce: -1.0 },
-    sleepy:    { cadence: 1.1, amp: 7,  speed: 0.4,  bounce: -1.2 }
+    thinking:  { cadence: 1.5, amp: 10, speed: 0.65, bounce: 0.0 },
+    happy:     { cadence: 2.6, amp: 15, speed: 1.1,  bounce: 0.0 },
+    excited:   { cadence: 2.8, amp: 15, speed: 1.15, bounce: 0.0 },
+    surprised: { cadence: 2.1, amp: 12, speed: 0.8,  bounce: 0.0 },
+    sad:       { cadence: 1.2, amp: 8,  speed: 0.5,  bounce: 0.0 },
+    sleepy:    { cadence: 1.1, amp: 7,  speed: 0.4,  bounce: 0.0 }
   };
 
   // prefers-reduced-motion must DAMPEN the loop, never stop it. A completely
@@ -894,10 +892,6 @@
       case "clasp": // concerned: both brought inward-forward
         left = -12; right = 12;
         break;
-      case "bounce": // excited foot/arm motion
-        left = restL + Math.sin(_clock / 1000 * TAU * 2.2) * 6 * amp;
-        right = restR - Math.sin(_clock / 1000 * TAU * 2.2) * 6 * amp;
-        break;
       case "wave": // greeting: one arm waves in the air
         left = restL;
         right = 30 + Math.sin(_clock / 1000 * TAU * 3.2) * 11 * amp;
@@ -972,10 +966,8 @@
     leftLeg += travel;
     rightLeg += travel;
 
-    if (pose.legs === "bounce") {
-      leftLeg += Math.sin(t * TAU * 2.2) * 5 * amp;
-      rightLeg -= Math.sin(t * TAU * 2.2) * 5 * amp;
-    } else if (pose.legs === "sit") {
+// No "bounce" leg mode: Cloud never bounces its legs (that read as jumping).
+    if (pose.legs === "sit") {
       leftLeg += 4; rightLeg -= 2;             // relaxed / sleepy droop
     } else if (pose.legs === "shift") {
       leftLeg += 3; rightLeg -= 1;
@@ -1331,8 +1323,8 @@
     var breathePx = _cur.breath * 120;
     var bobPx = (_cur.bob * (1 + Math.sin(_clock / 1000 * TAU * _cur.breatheHz)) * 0.5) * amp;
 
-    // A walking Cloud genuinely bobs with each step; the emotion profile adds
-    // extra hop (happy/excited) or drag (sad/thinking/sleepy).
+    // A walking Cloud gently bobs with each step. The profile "bounce" term is
+    // always 0 (every profile is grounded), so this never produces a hop.
     if (_walk.active && !_walk.paused) {
       var wpr = walkProfile();
       var stepWave = Math.abs(Math.sin(_clock / 1000 * TAU * wpr.cadence));
