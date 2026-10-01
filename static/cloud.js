@@ -31,6 +31,104 @@
     focused: ["plan", "help me", "organize", "steps", "tutorial", "guide", "schedule", "remember", "write a", "create a"]
   };
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // Live bridge: this owner's state → the vector rig's single animation
+  // controller (static/cloud_anim.js). The rig was designed and approved but
+  // was never connected to the live AI; every state change funnels through
+  // reflectState() below so there is exactly one push path and no second
+  // animation system. Both vocabularies are canonical and differ, so they are
+  // mapped explicitly instead of string-matched.
+  // ─────────────────────────────────────────────────────────────────────────
+  var ANIM_EMOTION = {
+    neutral: "idle",
+    happy: "happy",
+    excited: "excited",
+    thinking: "thinking",
+    focused: "thinking",
+    curious: "curious",
+    concerned: "concerned",
+    // The rig has no anger pose; a redesign decision, not a wiring one, so
+    // frustration and anger resolve to the closest existing concerned pose
+    // rather than inventing new body language here.
+    frustrated: "concerned",
+    angry: "concerned",
+    sad: "sad",
+    surprised: "surprised",
+    confused: "confused",
+    listening: "listening",
+    speaking: "speaking"
+  };
+
+  var ANIM_STATUS = {
+    idle: null,            // idle defers to the emotion
+    listening: "listening",
+    thinking: "thinking",
+    speaking: "speaking",
+    helping: "thinking",
+    learning: "thinking",
+    observing: "curious",
+    guiding: "greeting"
+  };
+
+  // Persistent states are re-asserted every frame so a long request keeps
+  // "thinking" on screen; transient blips are never re-armed, so the rig's own
+  // hold-then-relax timer stays in charge of them.
+  var ANIM_STICKY = { idle: 1, listening: 1, thinking: 1, speaking: 1 };
+  var ANIM_GESTURE_FOR = {
+    greeting: "welcome",
+    excited: "wave",
+    happy: "wave",
+    pointing: "point"
+  };
+  var ANIM_GESTURE_MS = 6000;
+  var _animState = null;
+  var _animGestureAt = 0;
+
+  function animStateKey(state) {
+    var s = state || CLOUD.state;
+    var byStatus = ANIM_STATUS[s.status];
+    if (byStatus) return byStatus;
+    return ANIM_EMOTION[s.emotion] || "idle";
+  }
+
+  function syncAnim() {
+    var A = window.vmCloudAnim;
+    if (!A || typeof A.setState !== "function") return;
+    var st = CLOUD.state;
+    var key = animStateKey(st);
+
+    var current = typeof A.getState === "function" ? A.getState() : _animState;
+    // Sticky states win against the rig's own transient timer; blips are
+    // delivered once and then left to relax.
+    if (key !== current && (ANIM_STICKY[key] || key !== _animState)) {
+      try { A.setState(key); } catch (e) { }
+    }
+    if (key !== _animState) {
+      _animState = key;
+      maybeAnimGesture(key);
+    }
+    if (typeof A.setIntensity === "function") {
+      try { A.setIntensity(typeof st.intensity === "number" ? st.intensity : 0.5); } catch (e) { }
+    }
+  }
+
+  function maybeAnimGesture(key) {
+    var A = window.vmCloudAnim;
+    if (!A) return;
+    var kind = ANIM_GESTURE_FOR[key];
+    if (!kind) return;
+    // The rig's own state poses already carry the body language; these one-shots
+    // are a light accent and are rate-limited so a chatty reply cannot spam.
+    var now = (window.performance && performance.now) ? performance.now() : Date.now();
+    if (now - _animGestureAt < ANIM_GESTURE_MS) return;
+    _animGestureAt = now;
+    try {
+      if (kind === "welcome" && typeof A.welcome === "function") A.welcome();
+      else if (kind === "wave" && typeof A.wave === "function") A.wave();
+    } catch (e) { }
+  }
+
+
   function findHint(text, map) {
     var t = String(text || "").toLowerCase();
     var keys = Object.keys(map);
@@ -205,6 +303,7 @@
       c.classList.toggle("active", v === CLOUD.state.emotion || v === CLOUD.state.status);
     }
     notify3d();
+    syncAnim();
   }
 
   function notify3d() {
@@ -568,6 +667,9 @@
         if (window.VMCloud3D && typeof window.VMCloud3D.notifySpeech === "function") {
           try { window.VMCloud3D.notifySpeech(false); } catch (e) { }
         }
+        if (window.vmCloudAnim && typeof window.vmCloudAnim.clearSpeechLevel === "function") {
+          try { window.vmCloudAnim.clearSpeechLevel(); } catch (e) { }
+        }
         applyRuntimePatch({ status: "idle", emotion: CLOUD.lastEmotion || "neutral" });
         setVoiceStatus("Tap the mic to talk");
         if (reason && reason !== "interrupted") {
@@ -584,6 +686,16 @@
         updateMicUI();
       }
     });
+    // Mouth sync: real TTS amplitude from the ONE existing player element,
+    // pushed into the rig's single animation controller.
+    if (typeof window.VMCloudVoice.setLevelListener === "function") {
+      window.VMCloudVoice.setLevelListener(function (level) {
+        var A = window.vmCloudAnim;
+        if (A && typeof A.setSpeechLevel === "function") {
+          try { A.setSpeechLevel(level); } catch (e) { }
+        }
+      });
+    }
     updateMicUI();
   }
 
@@ -869,6 +981,11 @@
       if (window.VMCloud3D && typeof window.VMCloud3D.suspend === "function") {
         try { window.VMCloud3D.suspend(); } catch (e) { }
       }
+      // The rig has no suspend verb; stop its loop so a hidden companion does
+      // not burn frames. Its state is preserved and replayed on resume.
+      if (window.vmCloudAnim && typeof window.vmCloudAnim.stop === "function") {
+        try { window.vmCloudAnim.stop(); } catch (e) { }
+      }
     }
   }
 
@@ -1152,7 +1269,7 @@
       el.style.display = "block";
       el.style.visibility = "visible";
       el.style.opacity = "1";
-      el.style.width = "128px";
+      el.style.width = "132px";
       el.style.height = "auto";
       el.style.aspectRatio = "433 / 577";
       el.style.pointerEvents = "auto";
@@ -1160,7 +1277,7 @@
       el.style.cursor = "grab";
       el.style.userSelect = "none";
       el.style.webkitUserDrag = "none";
-      el.style.filter = "drop-shadow(0 10px 18px rgba(0,10,20,0.5))";
+      el.style.filter = "drop-shadow(0 10px 18px rgba(0,10,20,0.45))";
       document.body.appendChild(el);
     }
     makeDraggable(el);
@@ -1195,6 +1312,13 @@
     if (window.VMCloud3D && typeof window.VMCloud3D.detach === "function") {
       try { window.VMCloud3D.detach(); } catch (e) { }
     }
+    // The rig has no detach verb (it self-recovers when a character appears
+    // again); only the transient speech/mouth state is reset on logout.
+    if (window.vmCloudAnim) {
+      try { if (typeof window.vmCloudAnim.clearSpeechLevel === "function") window.vmCloudAnim.clearSpeechLevel(); } catch (e) { }
+    }
+    _animState = null;
+    _animGestureAt = 0;
     CLOUD.visionActive = false;
     CLOUD.companionActive = false;
     CLOUD.surface = "hidden";
@@ -1208,9 +1332,9 @@
     CLOUD.prefs = defaultPrefs();
     var shell = $id("vmCloudCompanion");
     if (shell && shell.parentNode) shell.parentNode.removeChild(shell);
-    // The #vmCloudCharacter robot is intentionally NOT removed: it is the
+    // The #vmCloudCharacter is intentionally NOT removed: it is the
     // persistent front-end companion (always visible), so teardown only drops
-    // the chat panel, voice, screen-share and renderer — never the robot.
+    // the chat panel, voice, screen-share and renderer — never the cloud.
   }
 
   function start3D() {
@@ -1228,6 +1352,13 @@
         }
       } catch (e) { }
     }
+    // Restart the rig loop and re-assert the live state, so a companion that
+    // was hidden resumes on the correct pose instead of a stale one.
+    if (window.vmCloudAnim && typeof window.vmCloudAnim.start === "function") {
+      try { window.vmCloudAnim.start(); } catch (e) { }
+    }
+    _animState = null;
+    syncAnim();
   }
 
   function injectStyles() {
@@ -1286,9 +1417,9 @@
       ".vmcloud-chat-hint{color:#475569;font-size:11px;text-transform:none;letter-spacing:normal;}" +
       ".vmcloud-status-ok{color:#3ddc84;}" +
       "#vmCloudCompanion{position:fixed;right:18px;bottom:18px;z-index:8000;font-family:'Inter',sans-serif;isolation:isolate;}" +
-      "#vmCloudCharacter{position:fixed;right:18px;bottom:calc(18px + env(safe-area-inset-bottom,0px));z-index:8000;display:block;visibility:visible;opacity:1;width:128px;height:auto;aspect-ratio:433/577;pointer-events:auto;touch-action:none;cursor:grab;user-select:none;-webkit-user-drag:none;filter:drop-shadow(0 10px 18px rgba(0,10,20,0.5));animation:vm-char-float 4.5s ease-in-out infinite;}" +
-      "@keyframes vm-char-float{0%,100%{transform:translateY(0);}50%{transform:translateY(-7px);}}" +
-      "@media (prefers-reduced-motion: reduce){#vmCloudCharacter{animation:none !important;}}" +
+      "#vmCloudCharacter{position:fixed;right:18px;bottom:calc(18px + env(safe-area-inset-bottom,0px));z-index:8000;display:block;visibility:visible;opacity:1;width:132px;height:auto;aspect-ratio:433/577;pointer-events:auto;touch-action:none;cursor:grab;user-select:none;-webkit-user-drag:none;filter:drop-shadow(0 10px 18px rgba(0,10,20,0.45));}" +
+      "#vmCloudCharacter.dragging{cursor:grabbing;}" +
+      ".vmcloud-character .vmcloud-rig-mount{pointer-events:none;}" +
       ".vmcloud-character .vmcloud-fallback,.vmcloud-character.vmcloud-fallback{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;pointer-events:none;user-select:none;-webkit-user-drag:none;}" +
       ".vmcloud-rig-mount{position:absolute;inset:0;pointer-events:none;overflow:visible;}" +
       ".vmcloud-rig-mount svg{display:block;width:100%;height:100%;}" +

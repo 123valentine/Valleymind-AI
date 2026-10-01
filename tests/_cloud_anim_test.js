@@ -108,6 +108,24 @@ eq(A.BrainAPI.point("right"), true, "BrainAPI.point works");
 eq(A.BrainAPI.welcome(), true, "BrainAPI.welcome works");
 eq(A.BrainAPI.stop(), true, "BrainAPI.stop cancels everything");
 
+// ── curious is a real, registered state (the live bridge relies on it) ─────
+check(A.listStates().indexOf("curious") !== -1, "curious is a registered state");
+eq(A.setState("curious"), true, "curious can be set");
+eq(A.getState(), "curious", "curious sticks as current state");
+
+// ── Amplitude-driven mouth sync ─────────────────────────────────────────
+eq(A.isSpeechDriven(), false, "mouth is not audio-driven until a tap arrives");
+check(!A.setSpeechLevel(NaN), "non-numeric speech level is rejected");
+check(A.setSpeechLevel(0.8), "speech level accepted");
+eq(A.isSpeechDriven(), true, "mouth is audio-driven once a level arrives");
+check(A.setSpeechLevel(4), "out-of-range speech level is clamped, not rejected");
+check(A.setSpeechLevel(-2), "negative speech level is clamped, not rejected");
+check(A.clearSpeechLevel(), "speech level clears");
+eq(A.isSpeechDriven(), false, "clearing returns to the synthetic pulse");
+check(A.BrainAPI.setSpeechLevel(0.5), "BrainAPI exposes setSpeechLevel");
+check(A.BrainAPI.clearSpeechLevel(), "BrainAPI exposes clearSpeechLevel");
+check(typeof A.getSpeechLevel === "function", "getSpeechLevel is exposed");
+
 // ── Capabilities are honest about independence ──────────────────────────
 const caps = A.getCapabilities();
 check(caps.independentEyes && caps.independentEyebrows && caps.independentMouth, "face parts independently animated");
@@ -115,7 +133,11 @@ check(caps.independentArms && caps.independentLegs, "limbs independently animate
 check(caps.blinkVariants.indexOf("quick") !== -1 && caps.blinkVariants.indexOf("slow") !== -1, "blink variants exposed");
 check(caps.gazeDirections.indexOf("toward-point") !== -1, "explicit gaze direction exposed");
 check(caps.emotionalWalking, "emotional walking flagged");
-check(caps.brainAPI.indexOf("anim surface only") !== -1, "brain API is honestly scoped");
+check(caps.brainAPI.indexOf("driven by static/cloud.js") !== -1, "brain API is honestly scoped to its real driver");
+// The capability string must stay truthful in the other direction too: the rig
+// no longer claims it is unwired, and it now advertises real mouth sync.
+check(caps.brainAPI.indexOf("anim surface only") === -1, "brain API no longer claims to be unwired");
+check(caps.mouthSync.indexOf("amplitude-driven") !== -1, "mouth sync is advertised as amplitude-driven");
 
 // ── Top-level movement aliases ──────────────────────────────────────────
 check(typeof window.vmCloudWalk === "function", "vmCloudWalk alias");

@@ -2221,10 +2221,14 @@
 
 <!-- Minimal authenticated Cloud character (visual isolation test).
      A faithful layered vector rig (static/cloud_rig.js) is mounted into the
-     .vmcloud-rig-mount overlay so Cloud's eyes, brows, mouth, arms and legs
-     can genuinely move independently, while the flattened static/cloud.png
+     .vmcloud-rig-mount overlay so Cloud's eyes, brows, nose, mouth, arms and
+     legs can genuinely move independently, while the flattened static/cloud.png
      remains as the static fallback <img>. Rendered directly, independent of
-     the Cloud lifecycle engine, so the browser always shows the character. -->
+     the Cloud lifecycle engine, so the browser always shows the character.
+
+     NOTE: no CSS animation on the container — the single animation engine
+     (static/cloud_anim.js) owns the whole-body transform, and a CSS animation
+     here would override its inline transform. -->
 <div id="vmCloudCharacter"
      role="button"
      aria-label="Cloud companion">
@@ -2237,8 +2241,8 @@
 <style>
 #vmCloudCharacter {
     position: fixed !important;
-    width: 128px !important;
-    max-width: 128px !important;
+    width: 132px !important;
+    max-width: 132px !important;
     height: auto !important;
     aspect-ratio: 433 / 577 !important;
     right: 18px !important;
@@ -2252,16 +2256,9 @@
     cursor: grab !important;
     user-select: none !important;
     -webkit-user-drag: none !important;
-    filter: drop-shadow(0 10px 18px rgba(0,10,20,0.5)) !important;
-    animation: vm-char-float 4.5s ease-in-out infinite;
+    filter: drop-shadow(0 10px 18px rgba(0,10,20,0.45)) !important;
 }
-@media (prefers-reduced-motion: reduce) {
-    #vmCloudCharacter { animation: none !important; }
-}
-@keyframes vm-char-float {
-    0%, 100% { transform: translateY(0); }
-    50% { transform: translateY(-7px); }
-}
+#vmCloudCharacter.dragging { cursor: grabbing !important; }
 .vmcloud-fallback {
     position: absolute !important; inset: 0;
     width: 100% !important; height: 100% !important;
@@ -2288,7 +2285,7 @@
         if (!document.getElementById("vmCloudCharacter") &&
             window.VMCloudRig && typeof window.VMCloudRig.mountRoot === "function") {
             // The character was removed at some point (e.g. a session teardown);
-            // recreate it so the robot always comes back on the front end.
+            // recreate it so Cloud always comes back on the front end.
             try { window.VMCloudRig.mountRoot(); } catch (err) { }
         }
         el = document.getElementById("vmCloudCharacter") || el;
@@ -2297,7 +2294,7 @@
         el.style.setProperty("opacity", "1", "important");
     };
     window.vmCloudCharacterHide = function () {
-        // The robot companion is a persistent brand element: it stays on screen
+        // The cloud companion is a persistent brand element: it stays on screen
         // (previously it was hidden here, which made the character vanish from
         // the front end entirely). Hide() is kept as a no-op API for callers.
     };

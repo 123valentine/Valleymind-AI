@@ -103,11 +103,16 @@ class CloudStaticTestCase(unittest.TestCase):
         self.assertIn('class="vmcloud-fallback"', body[char_index:char_index + 600])
         self.assertIn('class="vmcloud-rig-mount"', body[char_index:char_index + 600])
         # The stylesheet forces the small fixed character visible in the
-        # bottom-right corner, responsive (env safe-area) and 128px wide.
+        # bottom-right corner, responsive (env safe-area) and 132px wide.
         self.assertIn("#vmCloudCharacter {", body)
         self.assertIn("position: fixed !important", body)
-        self.assertIn("width: 128px !important", body)
+        self.assertIn("width: 132px !important", body)
         self.assertIn("bottom: calc(18px + env(safe-area-inset-bottom)) !important", body)
+        # No CSS animation on the container: a keyframe animation would
+        # override the single animation engine's inline whole-body transform.
+        char_style = body[body.index("#vmCloudCharacter {"):]
+        char_style = char_style[:char_style.index("</style>")]
+        self.assertNotIn("animation:", char_style)
         # Auth gate lives in the app shell's setAppVisible (not the Cloud
         # lifecycle), plus an immediate show once auth state reports true.
         self.assertIn("window.vmCloudCharacterShow();", html)
@@ -1165,7 +1170,7 @@ class CloudCompanionStaticTestCase(unittest.TestCase):
         # The companion shell is a small fixed element — it must never be a
         # full-width/height container or hide the app with a big invisible box.
         self.assertIn("#vmCloudCompanion{position:fixed;right:18px;bottom:18px;", js)
-        self.assertIn("width:128px;height:auto", js)
+        self.assertIn("width:132px;height:auto", js)
         # The shell/small-companion rules never use viewport-filling sizes.
         suppress = re.search(r"\#vmCloudCompanion\{[^}]+\}", js)
         self.assertIsNotNone(suppress)
@@ -1197,7 +1202,7 @@ class CloudCompanionStaticTestCase(unittest.TestCase):
         self.assertIn('el.style.position = "fixed"', js)
         self.assertIn('el.style.right = "18px"', js)
         self.assertIn('el.style.bottom = "calc(18px + env(safe-area-inset-bottom))"', js)
-        self.assertIn('el.style.width = "128px"', js)
+        self.assertIn('el.style.width = "132px"', js)
         self.assertIn('el.style.height = "auto"', js)
         self.assertIn('el.style.visibility = "visible"', js)
         self.assertIn('el.style.opacity = "1"', js)
@@ -1206,7 +1211,7 @@ class CloudCompanionStaticTestCase(unittest.TestCase):
         self.assertIsNotNone(rule)
         self.assertIn("right:18px", rule.group(0))
         self.assertIn("bottom:calc(18px + env(safe-area-inset-bottom", rule.group(0))
-        self.assertIn("width:128px;height:auto", rule.group(0))
+        self.assertIn("width:132px;height:auto", rule.group(0))
         self.assertNotIn("width:100%", rule.group(0))
         self.assertNotIn("width:100vw", rule.group(0))
         self.assertNotIn("inset:0", rule.group(0))
@@ -1483,10 +1488,10 @@ class CloudAnimStaticTestCase(unittest.TestCase):
     def test_get_capabilities_is_honest_about_layered_rig(self):
         src = self._anim_js()
         # The layered SVG rig (static/cloud_rig.js) draws the companion as an
-        # ORIGINAL robot (not the legacy cloud.png), exposing separately
-        # addressable parts so the animation layer can honestly claim
-        # independent face/limb motion — flatter assets are the animatable
-        # surface, and static/cloud.png remains only the no-JS fallback.
+        # ORIGINAL cloud character, exposing separately addressable parts so
+        # the animation layer can honestly claim independent face/limb motion
+        # — flatter assets are the animatable surface, and static/cloud.png
+        # remains only the no-JS fallback.
         self.assertIn("independentEyes: true", src)
         self.assertIn("independentEyebrows: true", src)
         self.assertIn("independentMouth: true", src)
@@ -1495,7 +1500,9 @@ class CloudAnimStaticTestCase(unittest.TestCase):
         self.assertIn("wholeBodyArticulation: true", src)
         self.assertIn("needsPartAssetsForFaceAndLimbs: false", src)
         self.assertIn("asset: \"static/cloud_rig.js\"", src)
-        self.assertIn("assetType: \"layered SVG rig (original robot companion visual)\"", src)
+        self.assertIn("assetType: \"layered SVG rig (original cloud companion visual)\"", src)
+        self.assertIn("character: \"cloud\"", src)
+        self.assertIn("autonomousDrift: true", src)
         self.assertIn("standingAssetFallback: \"static/cloud.png\"", src)
 
     def test_tweening_math_is_available(self):
@@ -1513,6 +1520,178 @@ class CloudAnimStaticTestCase(unittest.TestCase):
         self.assertIn("rand(7000, 16000)", src)
         self.assertIn("rand(11000, 22000)", src)
         self.assertIn("rand(24000, 50000)", src)
+
+
+class CloudLiveAnimBridgeTestCase(unittest.TestCase):
+    """The approved vector rig must be driven by the live AI state.
+
+    static/cloud.js is the single owner of Cloud state. Its reflectState() is
+    the one funnel every state change already goes through, so the bridge has to
+    hang off that funnel — a second listener or a second animation system would
+    reintroduce exactly the duplication this is meant to remove.
+    """
+
+    def _cloud_js(self):
+        return (ROOT / "static" / "cloud.js").read_text(encoding="utf-8")
+
+    def _anim_js(self):
+        return (ROOT / "static" / "cloud_anim.js").read_text(encoding="utf-8")
+
+    def _voice_js(self):
+        return (ROOT / "static" / "cloud_voice.js").read_text(encoding="utf-8")
+
+    def _rig_js(self):
+        return (ROOT / "static" / "cloud_rig.js").read_text(encoding="utf-8")
+
+    def test_cloud_js_drives_the_rig_animator(self):
+        js = self._cloud_js()
+        self.assertIn("window.vmCloudAnim", js,
+                      "cloud.js must drive the rig's single animator")
+        self.assertIn("function syncAnim()", js)
+        self.assertIn("A.setState(key)", js)
+
+    def test_bridge_is_pushed_from_the_single_state_funnel(self):
+        js = self._cloud_js()
+        # Every state mutation already funnels through reflectState(); the rig
+        # push must live there so no caller can bypass it.
+        self.assertRegex(js, r"notify3d\(\);\s*\n\s*syncAnim\(\);")
+        self.assertEqual(js.count("syncAnim();"), 2,
+                         "syncAnim is called once from reflectState plus the "
+                         "single resume re-assert")
+
+    def test_no_second_animation_controller_is_introduced(self):
+        js = self._cloud_js()
+        self.assertNotIn("requestAnimationFrame", js,
+                         "cloud.js must not run its own render loop")
+        # The rig animator stays the only thing that writes rig transforms.
+        anim = self._anim_js()
+        self.assertEqual(anim.count("window.vmCloudAnim = {"), 1)
+
+    def test_mapping_covers_every_cloud_vocabulary_term(self):
+        js = self._cloud_js()
+        emotions = re.search(r"var EMOTIONS = \[(.*?)\]", js, re.S).group(1)
+        emotion_terms = re.findall(r'"([a-z_]+)"', emotions)
+        statuses = re.search(r"var INTERACTION_STATES = \[(.*?)\]", js, re.S).group(1)
+        status_terms = re.findall(r'"([a-z_]+)"', statuses)
+        self.assertTrue(emotion_terms and status_terms)
+
+        emap = re.search(r"var ANIM_EMOTION = \{(.*?)\n  \};", js, re.S).group(1)
+        smap = re.search(r"var ANIM_STATUS = \{(.*?)\n  \};", js, re.S).group(1)
+        for term in emotion_terms:
+            self.assertRegex(emap, r"(?m)^\s*%s:\s*\"" % term,
+                             "emotion %r is unmapped to a rig state" % term,
+                             )
+        for term in status_terms:
+            self.assertRegex(smap, r"(?m)^\s*%s:\s*(null|\")" % term,
+                             "status %r is unmapped to a rig state" % term)
+
+    def test_every_mapped_anim_state_actually_exists(self):
+        js = self._cloud_js()
+        anim = self._anim_js()
+        registered = set(re.findall(r'key: "([a-z_]+)"', anim))
+        mapped = set(re.findall(r":\s*\"([a-z_]+)\"", re.search(
+            r"var ANIM_EMOTION = \{(.*?)\n  \};", js, re.S).group(1)))
+        mapped |= set(re.findall(r":\s*\"([a-z_]+)\"", re.search(
+            r"var ANIM_STATUS = \{(.*?)\n  \};", js, re.S).group(1)))
+        missing = sorted(mapped - registered)
+        self.assertEqual(missing, [],
+                         "bridge points at rig states that do not exist: %r"
+                         % missing)
+
+    def test_curious_is_registered_as_a_real_state(self):
+        # cloud.js maps the "curious" emotion, so the rig must accept it.
+        anim = self._anim_js()
+        self.assertIn('key: "curious"', anim)
+        self.assertRegex(anim, r"curious:\s*\{[\s\S]*?face:\s*\{[\s\S]*?arms:")
+
+    def test_sticky_states_are_reasserted_but_blips_are_not(self):
+        js = self._cloud_js()
+        # Long requests must keep "thinking" on screen past the rig's own
+        # transient hold, while one-shot emotions must still relax to idle.
+        for sticky in ("idle", "listening", "thinking", "speaking"):
+            self.assertIn('%s: 1' % sticky,
+                          re.search(r"var ANIM_STICKY = \{[^}]*\}", js).group(0))
+        self.assertIn("ANIM_STICKY[key] || key !== _animState", js)
+
+    def test_rig_lifecycle_follows_the_owner(self):
+        js = self._cloud_js()
+        # Hidden companion stops the rig loop; resuming restarts it and replays
+        # the live state; logout clears the transient mouth state.
+        self.assertIn("window.vmCloudAnim.stop()", js)
+        self.assertIn("window.vmCloudAnim.start()", js)
+        self.assertIn("window.vmCloudAnim.clearSpeechLevel()", js)
+
+    def test_gestures_are_rate_limited(self):
+        js = self._cloud_js()
+        self.assertIn("ANIM_GESTURE_MS", js)
+        self.assertIn("if (now - _animGestureAt < ANIM_GESTURE_MS) return;", js)
+
+    def test_mouth_sync_is_amplitude_driven_not_a_fake_pulse(self):
+        anim = self._anim_js()
+        self.assertIn("setSpeechLevel", anim)
+        self.assertIn("function talkMouthPath", anim)
+        self.assertIn("talkMouthPath(_speechLevel)", anim)
+        self.assertIn("isSpeechDriven", anim)
+        # Level 0 must be byte-identical to the closed MOUTH.speak path so a
+        # silent mouth is indistinguishable from the previous behaviour.
+        self.assertIn('speak:      "M199 342 C201 352 231 352 233 342"', anim)
+        self.assertIn("[199, 342, 201, 352, 231, 352, 233, 342]", anim)
+
+    def test_mouth_sync_still_has_a_working_fallback(self):
+        anim = self._anim_js()
+        self.assertIn("MOUTH.big_smile", anim,
+                      "without an audio tap the mouth must still move")
+        self.assertIn("speechActive(now)", anim)
+
+    def test_voice_taps_the_one_existing_player(self):
+        voice = self._voice_js()
+        self.assertIn("createMediaElementSource(el)", voice)
+        self.assertIn("getPlayer()", voice)
+        # Never a second audio element, and never a second synthesis request.
+        self.assertEqual(voice.count('document.createElement("audio")'), 1)
+        self.assertEqual(voice.count('"/api/tts"'), 1)
+        self.assertIn("setLevelListener", voice)
+
+    def test_analyser_is_terminated_so_playback_is_never_silenced(self):
+        voice = self._voice_js()
+        # An unterminated MediaElementSource mutes the element entirely.
+        self.assertIn("levelAnalyser.connect(levelCtx.destination)", voice)
+
+    def test_tap_is_skipped_for_cross_origin_audio(self):
+        # createMediaElementSource() silences a cross-origin element that is not
+        # CORS-enabled, and TTS audio can come from an external provider URL.
+        voice = self._voice_js()
+        self.assertIn("function sameOriginAudio", voice)
+        self.assertIn("if (!el || !sameOriginAudio(el)) { levelBlocked = true; return null; }", voice)
+
+    def test_voice_stops_its_level_loop_with_playback(self):
+        voice = self._voice_js()
+        self.assertIn("stopLevelLoop", voice)
+        self.assertGreaterEqual(voice.count("stopLevelLoop();"), 3)
+
+    def test_owner_forwards_amplitude_into_the_rig(self):
+        js = self._cloud_js()
+        self.assertIn("VMCloudVoice.setLevelListener", js)
+        self.assertIn("A.setSpeechLevel(level)", js)
+
+    def test_arms_reach_past_the_body(self):
+        # The brief asks for visibly longer arms; GEO drives them so the limbs
+        # and the hands cannot drift apart.
+        rig = self._rig_js()
+        geo = re.search(r"var GEO = \{(.*?)\n  \};", rig, re.S).group(1)
+        wrist = int(re.search(r"wristY:\s*(\d+)", geo).group(1))
+        hand = int(re.search(r"handY:\s*(\d+)", geo).group(1))
+        body = int(re.search(r"body:\s*\{[^}]*bottom:\s*(\d+)", geo).group(1))
+        # The hands must hang below the body underside, and the whole limb must
+        # be longer than the previous 400px wrist that read as a stub.
+        self.assertGreater(hand, body,
+                           "hands must hang below the body underside")
+        self.assertGreater(wrist, 400, "arms must be visibly longer than before")
+        self.assertLess(hand, int(re.search(r"shadowY:\s*(\d+)", geo).group(1)),
+                        "hands must not reach the shadow")
+        self.assertIn("GEO.wristY", rig)
+        # The approved silhouette itself is untouched by an arm change.
+        self.assertIn("var SILHOUETTE_D = [", rig)
 
     def test_transient_state_auto_returns_to_stable(self):
         src = self._anim_js()
@@ -1612,12 +1791,14 @@ class CloudAnimStaticTestCase(unittest.TestCase):
         self.assertIn("walkProfile()", src)
         self.assertIn("pr.cadence", src)
 
-    def test_head_follows_gaze_coordination_present(self):
+    def test_body_follows_gaze_coordination_present(self):
         src = self._anim_js()
+        # A cloud has no neck, so the gaze chain leads the whole body (a lean +
+        # slight roll) instead of a robot head rotation.
         self.assertIn("lookX += _walk.dir", src)
         self.assertIn("headTxT", src)
         self.assertIn("_cur.hdRot", src)
-        self.assertIn("rigPartTransform(p.head", src)
+        self.assertIn("rigPartTransform(p.body", src)
 
     def test_future_brain_surface_present_but_not_wired(self):
         src = self._anim_js()
@@ -1634,13 +1815,13 @@ class CloudAnimStaticTestCase(unittest.TestCase):
 
 class CloudRigStaticTestCase(unittest.TestCase):
     """Static guarantees about static/cloud_rig.js — the layered vector rig for
-    the robot companion, an ORIGINAL robot visual (NOT the legacy cloud.png)
-    drawn as separately addressable toy-like parts.
+    the cloud companion, an ORIGINAL cloud visual (NOT a robot, NOT the legacy
+    cloud.png) drawn as separately addressable toy-like parts.
 
     static/cloud.png stays only as the no-JS/loading fallback and is hidden the
-    moment the rig mounts; the rig is how independent eyes/brows/mouth/ears/
-    arms/hands/pods/halo/lower-body can be animated at all without a flattened
-    stale asset behind the character.
+    moment the rig mounts; the rig is how independent eyes/brows/nose/mouth/
+    arms/hands/legs can be animated at all without a flattened stale asset
+    behind the character.
     """
 
     def _index_html(self):
@@ -1669,39 +1850,106 @@ class CloudRigStaticTestCase(unittest.TestCase):
         self.assertIn("collectRig: collectRig", src)
         self.assertIn("mountRoot: mountRoot", src)
 
-    def test_rig_declares_original_robot_not_legacy_cloud(self):
+    def test_rig_declares_original_cloud_not_legacy_png(self):
         src = self._rig_js()
-        self.assertIn("robot", src)
-        self.assertIn("original robot companion", src)
-        self.assertIn("NOT the legacy cloud", src)
+        self.assertIn("cloud", src)
+        self.assertIn("original cloud", src)
+        self.assertIn("There is no robot anywhere in this rig", src)
         # The legacy cloud asset survives strictly as the hidden fallback only.
         self.assertIn("static/cloud.png", src)
         self.assertIn("vmcloud-fallback", src)
 
-    def test_rig_palette_robot(self):
+    def test_rig_palette_cloud(self):
         src = self._rig_js()
-        # Robot palette: white/off-white glossy body, deep black face screen,
-        # saturated blue accents, bright cyan glow ink.
-        self.assertIn('headTop: "#F4F9FB"', src)
-        self.assertIn('face:    "#05090D"', src)
-        self.assertIn('leg:     "#2E7CF6"', src)
-        self.assertIn('ink:     "#00E5FF"', src)
+        # Cloud palette: luminous cool-white crown, cool shaded underside, a
+        # soft silhouette line, deep navy face ink and warm blush — not robot
+        # chrome.
+        self.assertIn('cloudTop:  "#F4FBFF"', src)
+        self.assertIn('cloudBase: "#BCE2F0"', src)
+        self.assertIn('edge:      "#8CC6DC"', src)
+        self.assertIn('ink:       "#16324F"', src)
+        self.assertIn('blush:     "#FFA9C4"', src)
+        self.assertIn('limbHigh:  "#EAF8FF"', src)
+        self.assertIn('limbLow:   "#A6D2E6"', src)
+        for gone in ('headTop:  "#F4F9FB"', 'face:    "#05090D"',
+                     'leg:     "#2E7CF6"', 'ink:     "#00E5FF"'):
+            self.assertNotIn(gone, src, "robot palette %s should be removed" % gone)
 
     def test_rig_exposes_all_addressable_parts(self):
         src = self._rig_js()
         # Every addressable part is labeled (either an inline label or a
         # builder invocation) and routed through the generic data-part marker.
-        self.assertIn('data-part", "%s"' % "body", src)
-        self.assertIn('data-part", "%s"' % "head", src)
-        for part in ("body", "head", "leftEyebrow", "rightEyebrow", "leftEye",
-                     "rightEye", "mouth", "leftArm", "rightArm", "leftLeg",
-                     "rightLeg", "shadow"):
+        self.assertIn('labelPart(%s, "body")' % "bodyG", src)
+        for part in ("body", "leftEyebrow", "rightEyebrow", "leftEye",
+                     "rightEye", "nose", "leftCheek", "rightCheek", "mouth",
+                     "leftArm", "rightArm", "leftHand", "rightHand",
+                     "leftLeg", "rightLeg", "shadow"):
             self.assertIn('"%s"' % part, src)
-        # Robot companion parts are also addressable.
-        for part in ("face", "halo", "lowerBody", "leftEar", "rightEar",
-                     "leftHand", "rightHand"):
-            self.assertIn('"%s"' % part, src)
-        self.assertIn("attr(g, \"data-part\", id)", src)
+        # Robot-only parts are gone for good.
+        for part in ("head", "face", "halo", "lowerBody", "leftEar",
+                     "rightEar"):
+            self.assertNotIn('"%s"' % part, src, "%s should be removed" % part)
+        self.assertIn('attr(g, "data-part", id)', src)
+
+    def test_rig_is_one_cloud_body(self):
+        src = self._rig_js()
+        # A SINGLE silhouette path describes the cloud; the rim pass, the fill
+        # pass and the clip path all reuse it so they cannot disagree.
+        self.assertIn("var SILHOUETTE_D = [", src)
+        self.assertIn('attr(clip, "id", "vmCloudSilhouette")', src)
+        self.assertIn('attr(clipShape, "d", SILHOUETTE_D)', src)
+        self.assertIn('attr(rim, "d", SILHOUETTE_D)', src)
+        self.assertIn('attr(mainBody, "d", SILHOUETTE_D)', src)
+        # The outline pass is grown with a thick round-joined stroke instead of
+        # by offsetting circles, so it reads as a rim on light and dark alike.
+        self.assertIn('attr(rim, "stroke-width", "14")', src)
+        self.assertIn('attr(rim, "stroke-linejoin", "round")', src)
+
+        # Every coordinate in the silhouette must sit inside the 433x577 canvas.
+        # A path that drifts outside the viewBox renders as a mostly-clipped,
+        # unrecognisable blob, which is invisible to the DOM assertions below.
+        block = re.search(r"var SILHOUETTE_D = \[(.*?)\]\.join", src, re.S)
+        self.assertIsNotNone(block, "SILHOUETTE_D literal must be readable")
+        nums = [float(n) for n in re.findall(r"-?\d+(?:\.\d+)?", block.group(1))]
+        self.assertGreater(len(nums), 40, "silhouette should be a real multi-point path")
+        xs, ys = nums[0::2], nums[1::2]
+        self.assertGreaterEqual(min(xs), 0, "silhouette stays inside the left edge")
+        self.assertLessEqual(max(xs), 433, "silhouette stays inside the right edge")
+        self.assertGreaterEqual(min(ys), 0, "silhouette stays inside the top edge")
+        self.assertLessEqual(max(ys), 577, "silhouette stays inside the bottom edge")
+        mid = (min(xs) + max(xs)) / 2
+        self.assertLess(abs(mid - 216.5), 12,
+                        "silhouette is horizontally centred in the canvas")
+
+        # The old detached-circle silhouette must not creep back in.
+        self.assertNotIn("var PUFFS = [", src)
+        self.assertNotIn("function drawPuffs(", src)
+
+    def test_rig_mouth_neutral_matches_anim_table(self):
+        rig = self._rig_js()
+        anim = self._anim_js()
+        # cloud_anim.js hardcodes its MOUTH table in rig coordinates and swaps
+        # `d` on the first pose it applies. If the rig's neutral path sits at a
+        # different y than MOUTH.neutral the mouth visibly jumps on the first
+        # expression change, so the two must stay locked together.
+        rig_neutral = re.search(r'attr\(mouthPath, "d", "([^"]+)"\)', rig)
+        anim_neutral = re.search(r'neutral:\s*"([^"]+)"', anim)
+        self.assertIsNotNone(rig_neutral, "rig must set an explicit neutral mouth path")
+        self.assertIsNotNone(anim_neutral, "cloud_anim must define MOUTH.neutral")
+        self.assertEqual(
+            rig_neutral.group(1), anim_neutral.group(1),
+            "rig neutral mouth must equal cloud_anim MOUTH.neutral so the first "
+            "expression swap does not jump the mouth")
+
+    def test_rig_robot_parts_are_gone(self):
+        src = self._rig_js()
+        # One cloud body, no head/face screen/halo/ears/hover base.
+        for gone in ('"head"', '"face"', '"halo"', '"lowerBody"',
+                     '"leftEar"', '"rightEar"'):
+            self.assertNotIn(gone, src, "%s should be removed" % gone)
+        # The robot's chest emblem is gone too.
+        self.assertNotIn("vEmblem", src)
+        self.assertNotIn('id === "rightArm"', src)
 
     def test_rig_pivots_per_part(self):
         src = self._rig_js()

@@ -68,6 +68,102 @@
 
   var unlocked = false;
 
+  // ── Amplitude tap ────────────────────────────────────────────────────────
+  // Mouth sync needs the real amplitude of the audio the Cloud is speaking. We
+  // analyse the ONE existing player element through an AnalyserNode instead of
+  // adding a second audio element, a second <audio>, or a second /api/tts call.
+  //
+  // Hard safety rule: createMediaElementSource() silences a cross-origin media
+  // element that is not CORS-enabled. TTS audio can come from an external
+  // provider URL, so the tap is only ever attached to a same-origin source.
+  // Anything else simply leaves the mouth on its synthetic pulse.
+  var levelCtx = null;
+  var levelAnalyser = null;
+  var levelSource = null;
+  var levelData = null;
+  var levelRaf = 0;
+  var levelListener = null;
+  var levelBlocked = false;
+
+  function sameOriginAudio(el) {
+    try {
+      var src = el.currentSrc || el.src;
+      if (!src || src.indexOf("data:") === 0) return true;
+      return new URL(src, window.location.href).origin === window.location.origin;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function ensureLevelTap(el) {
+    if (levelAnalyser || levelBlocked) return levelAnalyser;
+    if (!el || !sameOriginAudio(el)) { levelBlocked = true; return null; }
+    var Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) { levelBlocked = true; return null; }
+    try {
+      levelCtx = new Ctx();
+      levelSource = levelCtx.createMediaElementSource(el);
+      levelAnalyser = levelCtx.createAnalyser();
+      levelAnalyser.fftSize = 512;
+      levelAnalyser.smoothingTimeConstant = 0.6;
+      // analyser must terminate at the destination or playback goes silent.
+      levelSource.connect(levelAnalyser);
+      levelAnalyser.connect(levelCtx.destination);
+      levelData = new Uint8Array(levelAnalyser.fftSize);
+    } catch (e) {
+      levelBlocked = true;
+      levelAnalyser = null;
+      return null;
+    }
+    return levelAnalyser;
+  }
+
+  function readLevel() {
+    if (!levelAnalyser || !levelData) return 0;
+    try {
+      levelAnalyser.getByteTimeDomainData(levelData);
+    } catch (e) {
+      return 0;
+    }
+    var sum = 0;
+    for (var i = 0; i < levelData.length; i++) {
+      var v = (levelData[i] - 128) / 128;
+      sum += v * v;
+    }
+    var rms = Math.sqrt(sum / levelData.length);
+    // TTS speech RMS sits low; expand it and keep a little floor so the mouth
+    // still articulates on quiet providers.
+    var lvl = Math.max(0, Math.min(1, (rms - 0.004) * 7));
+    return lvl < 0.06 ? 0 : Math.min(1, lvl);
+  }
+
+  function startLevelLoop() {
+    if (levelRaf) return;
+    var tick = function () {
+      levelRaf = requestAnimationFrame(tick);
+      if (!levelListener) return;
+      try { levelListener(readLevel()); } catch (e) {}
+    };
+    if (typeof requestAnimationFrame !== "function") return;
+    levelRaf = requestAnimationFrame(tick);
+  }
+
+  function stopLevelLoop() {
+    if (levelRaf && typeof cancelAnimationFrame === "function") cancelAnimationFrame(levelRaf);
+    levelRaf = 0;
+  }
+
+  function setLevelListener(fn) {
+    levelListener = typeof fn === "function" ? fn : null;
+    return !!levelListener;
+  }
+
+  function resumeLevelCtx() {
+    if (levelCtx && levelCtx.state === "suspended" && levelCtx.resume) {
+      try { levelCtx.resume().catch(function () {}); } catch (e) {}
+    }
+  }
+
   function unlock() {
     var el = getPlayer();
     if (!el || unlocked) return;
@@ -167,6 +263,7 @@
     var seq = ++speechSeq;
     var wasSpeaking = speaking;
     speaking = false;
+    stopLevelLoop();
     var el = getPlayer();
     try {
       el.onplaying = null;
@@ -213,27 +310,34 @@
           el.onplaying = function () {
             if (seq !== speechSeq) return;
             speaking = true;
+            resumeLevelCtx();
+            startLevelLoop();
             fire("onSpeakStart");
           };
           el.onended = function () {
             if (seq !== speechSeq) return;
             speaking = false;
+            stopLevelLoop();
             fire("onSpeakEnd", "");
           };
           el.onerror = function () {
             if (seq !== speechSeq) return;
             speaking = false;
+            stopLevelLoop();
             fire("onSpeakEnd", "tts failed");
           };
           el.src = data.url;
+          ensureLevelTap(el);
           var pr = el.play();
           if (pr && pr.catch) pr.catch(function () {
             if (seq !== speechSeq) return;
             speaking = false;
+            stopLevelLoop();
             fire("onSpeakEnd", "tts blocked");
           });
         } catch (e) {
           speaking = false;
+          stopLevelLoop();
           fire("onSpeakEnd", "tts failed");
         }
       } else {
@@ -260,6 +364,10 @@
     takeTranscript: takeTranscript,
     isListening: function () { return active; },
     isSpeaking: function () { return speaking; },
-    getPlayer: getPlayer
+    getPlayer: getPlayer,
+    // Real TTS amplitude for mouth sync (same player element, no extra request).
+    setLevelListener: setLevelListener,
+    readLevel: readLevel,
+    hasLevelTap: function () { return !!levelAnalyser; }
   };
 })();

@@ -11,16 +11,20 @@
   //      respects boundaries/safe-areas, pauses on user drag, and never walks
   //      off-screen.
   //   3) Rig/animation layer — drives the layered SVG rig (static/cloud_rig.js)
-  //      — the original robot companion visual — so eyes, eyebrows, mouth,
-  //      ears, arms, hands, hover pods, halo and lower body genuinely move
-  //      independently. If the rig is absent (only the flattened PNG is
-  //      available) it falls back to honest whole-character body articulation.
+  //      — the original cloud companion visual — so eyes, eyebrows, nose,
+  //      mouth, arms, hands and legs genuinely move independently. If the rig
+  //      is absent (only the flattened PNG is available) it falls back to
+  //      honest whole-character body articulation.
   //
-  // The rig is an ORIGINAL robot companion drawn as addressable vector parts
+  //   4) Autonomous drift layer — when nothing else commands movement, Cloud
+  //      picks a nearby point in the walkable area and eases itself there, so
+  //      it drifts around on its own between user interactions.
+  //
+  // The rig is an ORIGINAL cloud companion drawn as addressable vector parts
   // (NOT a redraw of static/cloud.png; cloud.png remains only the no-JS
   // fallback, hidden the moment the rig mounts). Whole-body transforms
   // (breathing, bob, lean, squash) apply to the character container; part
-  // transforms (face/eyes/brows/mouth/arms/hands/pods/halo) apply to the rig
+  // transforms (eyes/brows/nose/mouth/arms/hands/legs) apply to the rig
   // groups. This module never mounts or creates the character — the element
   // owner (static/cloud.js) and static/index.html markup handle that.
 
@@ -40,6 +44,7 @@
     { key: "sad", label: "Sad", transient: true, hold: 5500 },
     { key: "surprised", label: "Surprised", transient: true, hold: 2600 },
     { key: "confused", label: "Confused", transient: true, hold: 5000 },
+    { key: "curious", label: "Curious", transient: true, hold: 4600 },
     { key: "concerned", label: "Concerned", transient: true, hold: 5200 },
     { key: "greeting", label: "Greeting", transient: true, hold: 4000 },
     { key: "speaking", label: "Speaking", transient: false, hold: 0 },
@@ -314,21 +319,53 @@
     one_up:  { lty: -4, rty: 0, lrot: 1, rrot: 0 }
   };
 
-  // mouth: expression path `d` values anchored on the robot face screen
-  // (cyan glow smile centered near the face at ~216,248).
+  // mouth: expression path `d` values anchored on the cloud face
+  // (smile centered at ~216,346, half-width ~18, depth ~7).
   var MOUTH = {
-    neutral:    "M203 247 C209 253 223 253 229 247",
-    smile:      "M201 246 C207 255 225 255 231 246",
-    big_smile:  "M199 245 C207 258 225 258 233 245",
-    thin:       "M208 249 L224 249",
-    frown:      "M203 250 C209 243 223 243 229 250",
-    open:       "M203 247 C205 255 227 255 229 247 C227 239 205 239 203 247",
-    wry:        "M203 247 C206 253 222 248 230 246",
-    concern:    "M204 249 C220 249 225 245 229 244",
-    open_small: "M205 247 C206 252 226 252 227 247 C226 243 206 243 205 247",
-    soft:       "M204 247 C208 250 224 250 228 247",
-    speak:      "M204 246 C205 253 227 253 228 246"
+    neutral:    "M198 344 C205 351 227 351 234 344",
+    smile:      "M196 342 C204 354 228 354 236 342",
+    big_smile:  "M194 340 C203 360 229 360 238 340",
+    thin:       "M203 348 L229 348",
+    frown:      "M198 349 C205 341 227 341 234 349",
+    open:       "M198 344 C201 354 231 354 234 344 C231 335 201 335 198 344",
+    wry:        "M198 344 C202 351 226 345 235 342",
+    concern:    "M199 347 C216 347 222 342 233 340",
+    open_small: "M201 345 C203 352 229 352 231 345 C230 340 202 340 201 345",
+    soft:       "M199 344 C204 348 228 348 233 344",
+    speak:      "M199 342 C201 352 231 352 233 342"
   };
+
+  // Amplitude-driven talk shapes. Level 0 is byte-identical to MOUTH.speak so a
+  // silent mouth is indistinguishable from the pre-amplitude behaviour. Each
+  // entry is a flat [x1,y1,cx1,cy1,cx2,cy2,x2,y2] cubic so levels can be lerped
+  // numerically instead of by string surgery.
+  var MOUTH_TALK = [
+    [199, 342, 201, 352, 231, 352, 233, 342],
+    [199, 342, 200, 356, 232, 356, 233, 342],
+    [198, 341, 199, 361, 233, 361, 234, 341],
+    [197, 341, 197, 366, 235, 366, 236, 341]
+  ];
+
+  function talkMouthPath(level) {
+    var lv = level < 0 ? 0 : level > 1 ? 1 : level;
+    var span = MOUTH_TALK.length - 1;
+    var pos = lv * span;
+    var i = Math.floor(pos);
+    var frac = pos - i;
+    if (i >= span) return talkPath(MOUTH_TALK[span]);
+    var a = MOUTH_TALK[i], b = MOUTH_TALK[i + 1];
+    var out = [];
+    for (var n = 0; n < a.length; n++) out.push(a[n] + (b[n] - a[n]) * frac);
+    return talkPath(out);
+  }
+
+  function talkPath(p) {
+    // Rounded so the per-frame attribute stays short and stable; float noise
+    // from the ease would otherwise bloat the DOM string every frame.
+    var r = function (n) { return Math.round(n * 100) / 100; };
+    return "M" + r(p[0]) + " " + r(p[1]) +
+      " C" + r(p[2]) + " " + r(p[3]) + " " + r(p[4]) + " " + r(p[5]) + " " + r(p[6]) + " " + r(p[7]);
+  }
 
   // ───────────────────────────────────────────────────────────────────────
   // Engine state
@@ -351,6 +388,57 @@
   var _returnTimer = 0;
   var _onChangeCb = null;
   var _demoTimer = 0;
+
+  // Amplitude-driven speech level (0..1). _speechLive is true only while an
+  // external tap (the TTS player analyser in static/cloud_voice.js) is feeding
+  // real audio levels. While it is false the mouth falls back to the original
+  // synthetic pulse, so nothing changes for callers that do not wire a tap.
+  var _speechTarget = 0;
+  var _speechLevel = 0;
+  var _speechLive = false;
+  var _speechMuteAt = 0;
+  var SPEECH_STALE_MS = 1200;
+
+  function setSpeechLevel(v) {
+    var n = Number(v);
+    if (!isFinite(n)) return false;
+    _speechTarget = n < 0 ? 0 : n > 1 ? 1 : n;
+    _speechLive = true;
+    // Every push refreshes the window, so pauses BETWEEN words keep the mouth
+    // amplitude-driven. The timeout only catches a tap that actually died.
+    _speechMuteAt = performance.now() + SPEECH_STALE_MS;
+    return true;
+  }
+
+  function clearSpeechLevel() {
+    _speechTarget = 0;
+    _speechLive = false;
+    _speechMuteAt = 0;
+    return true;
+  }
+
+  // The tap can go silent mid-utterance (a pause between sentences). Drop back
+  // to the synthetic pulse only after a real gap, never mid-word.
+  function speechActive(now) {
+    if (_speechLive && _speechMuteAt && now > _speechMuteAt) {
+      _speechLive = false;
+      _speechTarget = 0;
+    }
+    return _speechLive;
+  }
+
+  function decaySpeechLevel(dt) {
+    var k = dt > 0 ? Math.min(1, dt / 60) : 1;
+    if (_speechLevel < _speechTarget) {
+      // Fast attack so plosives read crisply.
+      _speechLevel += (_speechTarget - _speechLevel) * (k * 0.65);
+    } else {
+      // Slower release so the mouth closes naturally between syllables.
+      _speechLevel += (_speechTarget - _speechLevel) * (k * 0.3);
+    }
+    if (_speechLevel < 0.0005) _speechLevel = 0;
+    return _speechLevel;
+  }
 
   // Smoothed whole-body pose easing.
   var _cur = {
@@ -583,22 +671,22 @@
     if (t >= 1) { _armGest = null; return null; }
     var restL = 4, restR = -4;
     if (KIND === "wave") {
-      return { left: restL, right: 34 + Math.sin(t * TAU * 7) * 16 };
+      return { left: restL, right: 30 + Math.sin(t * TAU * 7) * 14 };
     }
     if (KIND === "welcome") {
-      return { left: -78 + Math.sin(t * TAU) * 6, right: 78 - Math.sin(t * TAU) * 6 };
+      return { left: -74 + Math.sin(t * TAU) * 6, right: 74 - Math.sin(t * TAU) * 6 };
     }
     if (KIND === "point_up") {
       return { left: -95, right: 95 };
     }
     if (KIND === "point_down") {
-      return { left: 22, right: -22 };
+      return { left: 20, right: -20 };
     }
     if (KIND === "point_l") {
-      return { left: restL, right: 118 };
+      return { left: restL, right: 112 };
     }
     if (KIND === "point_r") {
-      return { left: -118, right: restR };
+      return { left: -112, right: restR };
     }
     if (KIND === "talk") {
       return {
@@ -688,11 +776,17 @@
     var browKey = pose.face.brows;
     var browT = BROW[browKey] || BROW.neutral;
 
-    // Speaking pulses the mouth open/closed.
+    // Speaking pulses the mouth open/closed. When a real audio tap is feeding
+    // levels the mouth is driven by actual TTS amplitude (mouth sync); without
+    // one it falls back to the original synthetic pulse.
     var mouthD = MOUTH[pose.face.mouth] || MOUTH.neutral;
     if (pose.face.mouth === "speak") {
-      var pulse = Math.abs(Math.sin(_clock / 1000 * TAU * 4));
-      mouthD = pulse > 0.45 ? MOUTH.big_smile : MOUTH.smile;
+      if (speechActive(now)) {
+        mouthD = talkMouthPath(_speechLevel);
+      } else {
+        var pulse = Math.abs(Math.sin(_clock / 1000 * TAU * 4));
+        mouthD = pulse > 0.45 ? MOUTH.big_smile : MOUTH.smile;
+      }
     }
 
     // Ease eye/brow targets for natural, non-snapping motion. When an explicit
@@ -744,12 +838,15 @@
     }
 
     // Ease eye/brow targets, then (when a look target or pose gaze is active)
-    // bump the head + body toward it so the eyes lead, the head
-    // follows, and the whole body follows just a touch (lead → follow chain).
+    // bump the body toward it so the eyes lead and the cloud follows, giving a
+    // lead -> follow chain without a separate head to turn.
     var lookX = _lookTarget ? _lookTarget.x : pose.gaze.x;
     var lookY = _lookTarget ? _lookTarget.y : pose.gaze.y;
-    // Walking: head turns slightly toward the direction of travel.
+    // Moving: the cloud leans slightly toward the direction of travel.
     if (_walk.active && !_walk.paused) lookX += _walk.dir * 0.35;
+    // Autonomous drift: the body lags a touch behind the drift direction so
+    // the cloud reads as a physical body being carried along.
+    lookX += clamp(_drift.vx / DRIFT_SPEED_MAX, -1, 1) * 0.22;
     var headTxT = (lookX * 7) * amp;
     var headTyT = (lookY * 5 - 1) * amp;
     var headRotT = (lookX * 6) * amp;
@@ -757,22 +854,24 @@
     _cur.hdTx += (headTxT - _cur.hdTx) * headK;
     _cur.hdTy += (headTyT - _cur.hdTy) * headK;
     _cur.hdRot += (headRotT - _cur.hdRot) * headK;
-    if (p.head) rigPartTransform(p.head, _cur.hdTx, _cur.hdTy, _cur.hdRot, null, null);
+    if (p.body) rigPartTransform(p.body, _cur.hdTx, _cur.hdTy, _cur.hdRot, null, null);
 
     // Arms — rotation around the shoulder pivot (degrees).
     renderArms(pose, now);
 
-    // Legs — weight shift / walk cycle.
+    // Legs — dangle / trail while floating.
     renderLegs(pose, now, eyeOpen);
 
-    // Robot-companion detail layer (halo, ears, hands, face, lower body).
-    renderRobotParts(pose, now);
+    // Cloud detail layer (cheeks, nose, hands, shadow).
+    renderCloudParts(pose, now);
   }
 
   function armAngle(pose, t, now) {
     // Returns [leftDeg, rightDeg] relative to rest. Sign convention follows the
     // existing known-good poses ("lift" = both inward-up): left arm counter-
-    // clockwise is inward-up, right arm clockwise is inward-up.
+    // clockwise is inward-up, right arm clockwise is inward-up. The cloud's
+    // arms are soft puffs, so the range stays small and the big values are
+    // only used for the deliberate one-shot gestures.
     var amp = motionScale();
     var restL = 4, restR = -4; // slight neutral outward hang
     var left = restL, right = restR;
@@ -784,16 +883,16 @@
         right = 24 + Math.sin(_clock / 1000 * 0.6) * 2 * amp;
         break;
       case "lift": // excited: both up
-        left = -38; right = 38;
+        left = -34; right = 34;
         break;
       case "droop": // sad: both hang heavy / out
-        left = 14; right = -14;
+        left = 12; right = -12;
         break;
       case "recoil": // surprised recoil
-        left = -18; right = 18;
+        left = -16; right = 16;
         break;
       case "clasp": // concerned: both brought inward-forward
-        left = -14; right = 14;
+        left = -12; right = 12;
         break;
       case "bounce": // excited foot/arm motion
         left = restL + Math.sin(_clock / 1000 * TAU * 2.2) * 6 * amp;
@@ -801,24 +900,24 @@
         break;
       case "wave": // greeting: one arm waves in the air
         left = restL;
-        right = 34 + Math.sin(_clock / 1000 * TAU * 3.2) * 12 * amp;
+        right = 30 + Math.sin(_clock / 1000 * TAU * 3.2) * 11 * amp;
         break;
       case "point_up":
         left = -95; right = 95;
         break;
       case "point_l": // point toward image-left (west)
         left = restL;
-        right = 118 + Math.sin(_clock / 1000 * 2.4) * 3 * amp;
+        right = 112 + Math.sin(_clock / 1000 * 2.4) * 3 * amp;
         break;
       case "point_r": // point toward image-right (east)
-        left = -118 + Math.sin(_clock / 1000 * 2.4) * 3 * amp;
+        left = -112 + Math.sin(_clock / 1000 * 2.4) * 3 * amp;
         right = restR;
         break;
       case "point_d": // point down
-        left = 22; right = -22;
+        left = 20; right = -20;
         break;
       case "welcome": // open arms wide (welcoming)
-        left = -68; right = 68;
+        left = -64; right = 64;
         break;
       case "talk": // conversational hand gestures
         left = restL + Math.sin(_clock / 1000 * TAU * 2.8) * 5 * amp;
@@ -854,91 +953,88 @@
     if (p.rightArm) rigPartTransform(p.rightArm, 0, 0, ang[1], null, null);
   }
 
+  // Legs hang beneath the cloud and dangle — they never step. Horizontal
+  // travel (walk or autonomous drift) trails them behind, and the pose adds a
+  // small personality swing on top.
   function renderLegs(pose, now, eyeOpen) {
     if (!_rig.parts) return;
     var p = _rig.parts;
     var t = _clock / 1000;
     var amp = motionScale();
 
-    // Weight shift while standing.
-    var shift = Math.sin(t * 0.5) * 1.5 * amp;
-    var leftLeg = shift, rightLeg = -shift;
+    // Idle dangle: a lazy pendulum either side of centre.
+    var dangle = Math.sin(t * TAU * 0.6) * 2.4 * amp;
+    var leftLeg = dangle, rightLeg = -dangle;
 
-    if (_walk.active && !_walk.paused) {
-      // Walk cycle: legs swing back/forth (real stepping), emotionally paced.
-      var pr = walkProfile();
-      var step = Math.sin(t * TAU * pr.cadence) * pr.amp * amp;
-      leftLeg = step;
-      rightLeg = -step;
-      _walk.stepPhase = step; // shared with arms via a module field
-    } else if (pose.legs === "bounce") {
-      leftLeg = Math.sin(t * TAU * 2.2) * 5 * amp;
-      rightLeg = -Math.sin(t * TAU * 2.2) * 5 * amp;
+    // Travel: legs trail the direction of motion (normalized), eased.
+    var travel = clamp((_walk.active && !_walk.paused ? _walk.dir * 0.7 : 0) +
+      clamp(_drift.vx / DRIFT_SPEED_MAX, -1, 1) * 0.5, -1, 1) * 9 * amp;
+    leftLeg += travel;
+    rightLeg += travel;
+
+    if (pose.legs === "bounce") {
+      leftLeg += Math.sin(t * TAU * 2.2) * 5 * amp;
+      rightLeg -= Math.sin(t * TAU * 2.2) * 5 * amp;
     } else if (pose.legs === "sit") {
-      leftLeg = 4; rightLeg = -2; // relaxed/sleepy stance
+      leftLeg += 4; rightLeg -= 2;             // relaxed / sleepy droop
     } else if (pose.legs === "shift") {
-      leftLeg = 3; rightLeg = -1;
+      leftLeg += 3; rightLeg -= 1;
     } else if (pose.legs === "lean") {
-      leftLeg = -4; rightLeg = 4;
+      leftLeg -= 4; rightLeg += 4;
     }
 
-    // Legs pivot at the hip; rotate subtle so feet stay believable.
     leftLeg = clamp(leftLeg, -18, 18);
     rightLeg = clamp(rightLeg, -18, 18);
     if (p.leftLeg) rigPartTransform(p.leftLeg, 0, 0, leftLeg, null, null);
     if (p.rightLeg) rigPartTransform(p.rightLeg, 0, 0, rightLeg, null, null);
   }
 
-  // Robot-companion detail layer (runs inside the SAME frame loop — never a
-  // second engine): the halo floats/counters the hover bob, the ear modules
-  // pulse while attentive, the hands waggle during arm gestures, the face
-  // screen gives a faint talk-glow, and the floating lower body hovers gently.
-  function renderRobotParts(pose, now) {
+  // Cloud detail layer (runs inside the SAME frame loop — never a second
+  // engine): the ground shadow tracks how high the cloud is floating, the
+  // cheeks flush while expressive, the nose twitches, and the hands waggle
+  // during arm gestures.
+  function renderCloudParts(pose, now) {
     if (!_rig || !_rig.parts) return;
     var p = _rig.parts;
     var t = _clock / 1000;
     var amp = motionScale();
 
-    // Halo: floats above the head, bobbing opposite to the robot's hover and
-    // giving a subtle scale "breathing" while idle.
-    if (p.halo) {
-      var hy = -(_cur.bob * 5 + _cur.breath * 70) * 0.5
-        - Math.sin(t * TAU * 1.3) * 2.4 * amp;
-      var hrot = Math.sin(t * TAU * 0.9) * 1.2 * amp;
-      var hscale = 1 + Math.sin(t * TAU * 0.9) * 0.008 * amp;
-      rigPartTransform(p.halo, 0, hy, hrot, hscale, hscale);
+    // Ground shadow: shrinks and fades as the cloud floats higher, so the
+    // hover height reads as real altitude rather than a static decoration.
+    if (p.shadow) {
+      var lift = clamp(-_cur.bob * 0.06, -1, 1.2);
+      var sScale = 1 - lift * 0.16;
+      var sOpacity = (0.95 - lift * 0.45).toFixed(3);
+      p.shadow.style.transform = "scale(" + sScale.toFixed(3) + ",1)";
+      p.shadow.style.opacity = sOpacity;
     }
 
-    // Ears: gentle pulse while listening/speaking (attention signal).
-    var attentive = _state === "listening" || _state === "speaking" ||
-      _state === "greeting" || _state === "waving" || _state === "happy";
-    var ear = attentive
-      ? (1 + Math.abs(Math.sin(t * TAU * 3.2)) * 0.06 * amp) : 1;
-    if (p.leftEar) rigPartTransform(p.leftEar, 0, 0, 0, 1, ear);
-    if (p.rightEar) rigPartTransform(p.rightEar, 0, 0, 0, 1, ear);
+    // Cheeks: flush a little while expressive, calm at rest.
+    var expressive = pose.face.mouth === "smile" || pose.face.mouth === "big_smile" ||
+      pose.face.mouth === "open" || _state === "happy" || _state === "excited" ||
+      _state === "greeting" || _state === "speaking";
+    var cheekScale = expressive
+      ? 1 + Math.abs(Math.sin(t * TAU * 1.7)) * 0.10 * amp
+      : 1;
+    if (p.leftCheek) rigPartTransform(p.leftCheek, 0, 0, 0, cheekScale, cheekScale);
+    if (p.rightCheek) rigPartTransform(p.rightCheek, 0, 0, 0, cheekScale, cheekScale);
 
-    // Hands: waggle when an arm gesture is running or the robot is talking;
-    // otherwise a tiny idle sway keeps the robot alive but calm.
+    // Nose: tiny twitch while talking or thinking — the only "micro" motion.
+    if (p.nose) {
+      var noseY = (_state === "speaking"
+        ? Math.sin(t * TAU * 6) * 1.6 * amp
+        : Math.sin(t * TAU * 0.7) * 0.8 * amp);
+      rigPartTransform(p.nose, 0, noseY, 0, null, null);
+    }
+
+    // Hands: waggle when an arm gesture is running or the cloud is talking;
+    // otherwise a tiny idle sway keeps it alive but calm.
     var gesturing = !!_armGest || pose.arms !== "rest" || _state === "speaking";
     var wag = gesturing
       ? Math.sin(t * TAU * 9) * 26 * amp
       : Math.sin(t * TAU * 1.4) * 2 * amp;
     if (p.leftHand) rigPartTransform(p.leftHand, 0, 0, wag, null, null);
     if (p.rightHand) rigPartTransform(p.rightHand, 0, 0, wag, null, null);
-
-    // Face screen: faint brightness flicker while talking (mouth "speak").
-    if (p.face) {
-      p.face.style.opacity = (pose.face.mouth === "speak" && _state === "speaking")
-        ? (0.86 + Math.abs(Math.sin(_clock / 1000 * TAU * 5)) * 0.12).toFixed(3)
-        : "1";
-    }
-
-    // Lower body: gentle hover rotation + vertical drift so the base floats.
-    if (p.lowerBody) {
-      var wob = Math.sin(t * TAU * 2.1) * 1.6 * amp;
-      var lbY = -Math.sin(t * TAU * 1.15) * 1.4 * amp;
-      rigPartTransform(p.lowerBody, 0, lbY, wob, null, null);
-    }
   }
 
   // ───────────────────────────────────────────────────────────────────────
@@ -953,7 +1049,7 @@
     }
     var p = elementPos();
     // Emotion paces the gait (happy/excited move quicker, sad/thinking drag);
-    // prefers-reduced-motion slows everything to a gentle amble.
+  // prefers-reduced-motion slows everything to a gentle amble.
     var dist = WALK_SPEED * _walk.speed * walkProfile().speed * motionScale() * (dt / 1000);
 
     if (_walk.target) {
@@ -991,6 +1087,155 @@
   }
 
   // ───────────────────────────────────────────────────────────────────────
+  // Autonomous drift (Cloud floats on its own)
+  // ───────────────────────────────────────────────────────────────────────
+  // When nobody has told Cloud where to go, it should still feel alive: it
+  // picks a slow point inside the viewport and eases toward it, pauses, then
+  // picks another. This shares the ONE existing movement loop (placeElement)
+  // and the ONE element position, so it can never fight a drag, a commanded
+  // walk, or the persisted position.
+  //
+  // prefers-reduced-motion damps the drift to a slow in-place hover: the cloud
+  // still breathes and blinks, but it does not travel across the screen.
+  var DRIFT_ENABLED = true;
+  var DRIFT_SPEED_MAX = 26;                  // px / second (the `norm` reference)
+  var DRIFT_MIN_DWELL = 4200;               // ms hovering at a spot
+  var DRIFT_MAX_DWELL = 11000;
+  var DRIFT_REACH = 6;                      // px — close enough to arrive
+  var DRIFT_POST_DRAG_MS = 2600;            // settle time after the user drops it
+
+  var _drift = {
+    enabled: true,
+    on: true,          // autonomous travel is currently allowed
+    target: null,      // { x, y } or null when just hovering
+    vx: 0, vy: 0,      // last applied velocity (px/s), drives lean + legs
+    accX: 0, accY: 0, // sub-pixel accumulators (placeElement rounds to whole px)
+    nextAt: 0          // ms timestamp to pick the next drift target
+  };
+
+  // Drift never fights an explicit instruction, a drag, or the walk controller.
+  function driftSuppressed() {
+    // A short grace after a drag: Cloud stays put while the user reads where
+    // they dropped it instead of immediately wandering off.
+    if (_dragEndAt && (performance.now() - _dragEndAt) < DRIFT_POST_DRAG_MS) return true;
+    return !_drift.enabled || !_drift.on || _walk.active || _dragging ||
+      _walk.paused || document.hidden;
+  }
+
+  function clampTarget(x, y) {
+    var v = viewportRect();
+    var p = elementPos();
+    var w = p.w || 132, h = p.h || 176;
+    // Stay inside the walkable area so drift can never shove the cloud under
+    // a nav bar or off-screen.
+    var maxX = Math.max(v.x, window.innerWidth - w - v.x);
+    var maxY = Math.max(v.y, window.innerHeight - h - v.y);
+    return {
+      x: Math.max(v.x, Math.min(maxX, x)),
+      y: Math.max(v.y, Math.min(maxY, y))
+    };
+  }
+
+  function pickDriftTarget() {
+    var v = viewportRect();
+    var p = elementPos();
+    var w = p.w || 132, h = p.h || 176;
+    // A wander step is deliberately short — Cloud should meander, not patrol.
+    var spanX = Math.max(0, (window.innerWidth - w) - v.x * 2);
+    var spanY = Math.max(0, (window.innerHeight - h) - v.y * 2);
+    var reach = 210;
+    // Sample a few candidates and keep the longest one: a single sample can
+    // land on top of the cloud, which would read as "arrived" and silently
+    // swallow the whole wander, leaving Cloud parked for another full dwell.
+    var best = { x: p.x, y: p.y }, bestD = 0;
+    for (var i = 0; i < 6; i++) {
+      var nx = spanX ? clamp(p.x + rand(-reach, reach), v.x, v.x + spanX) : p.x;
+      var ny = spanY ? clamp(p.y + rand(-reach * 0.7, reach * 0.7), v.y, v.y + spanY) : p.y;
+      var dx = nx - p.x, dy = ny - p.y;
+      var d = Math.sqrt(dx * dx + dy * dy);
+      if (d > bestD) { bestD = d; best = { x: nx, y: ny }; }
+      if (bestD > DRIFT_REACH * 3) break;
+    }
+    if (bestD > DRIFT_REACH) return best;
+    // Still no room to wander (tiny viewport, or a very tight clamp): step a
+    // guaranteed distance along whichever axis actually has space.
+    var step = DRIFT_REACH * 3, dir = rand() < 0.5 ? -1 : 1;
+    if (spanX >= step) return clampTarget(p.x + step * dir, p.y);
+    if (spanY >= step) return clampTarget(p.x, p.y + step * dir);
+    return clampTarget(p.x, p.y);
+  }
+
+  function scheduleDrift(now) {
+    _drift.target = null;
+    _drift.accX = 0; _drift.accY = 0;
+    _drift.nextAt = now + rand(DRIFT_MIN_DWELL, DRIFT_MAX_DWELL);
+  }
+
+  // Ease toward the current drift target; on arrival schedule the next one.
+  function stepDrift(dt, now) {
+    if (!DRIFT_ENABLED) return;
+    if (driftSuppressed()) {
+      // Decay velocity so a stopped cloud doesn't keep leaning.
+      _drift.vx = lerp(_drift.vx, 0, 0.2);
+      _drift.vy = lerp(_drift.vy, 0, 0.2);
+      return;
+    }
+    if (!_drift.target) {
+      if (now < _drift.nextAt) return;
+      _drift.target = pickDriftTarget();
+    }
+    var p = elementPos();
+    var dx = _drift.target.x - p.x;
+    var dy = _drift.target.y - p.y;
+    var d = Math.sqrt(dx * dx + dy * dy);
+    if (d <= DRIFT_REACH) {
+      _drift.vx = 0; _drift.vy = 0;
+      scheduleDrift(now);
+      return;
+    }
+    // Under reduced motion the drift slows to a fraction of its pace.
+    var speed = DRIFT_SPEED_MAX * (0.28 + walkProfile().speed * 0.4) * motionScale();
+    var dist = Math.min(speed * (dt / 1000), d);
+    var ux = dx / d, uy = dy / d;
+    // placeElement rounds to whole pixels, and a slow drift covers well under
+    // one pixel per frame — so the remainder is accumulated and only actually
+    // placed once it tips over into a visible tick (same trick the walk
+    // controller uses for reduced-motion ambling).
+    _drift.accX += ux * dist;
+    _drift.accY += uy * dist;
+    var stepX = Math.round(_drift.accX);
+    var stepY = Math.round(_drift.accY);
+    if (stepX !== 0 || stepY !== 0) {
+      var c = clampToViewport(p.x + stepX, p.y + stepY);
+      // If an edge blocked us, drop the target and re-pick so the cloud
+      // turns around instead of grinding against the margin.
+      if ((c.x === p.x && stepX !== 0) || (c.y === p.y && stepY !== 0)) {
+        _drift.accX = 0; _drift.accY = 0;
+        _drift.target = null;
+        _drift.nextAt = now + rand(DRIFT_MIN_DWELL, DRIFT_MAX_DWELL);
+      } else {
+        placeElement(c.x, c.y);
+        _drift.accX -= stepX;
+        _drift.accY -= stepY;
+      }
+    }
+    // Record the intended velocity (px/s) so the body lean, legs and shadow
+    // can read the drift direction even between visible ticks.
+    _drift.vx = lerp(_drift.vx, ux * speed, 0.15);
+    _drift.vy = lerp(_drift.vy, uy * speed, 0.15);
+  }
+
+  function setDrift(on) {
+    _drift.on = !!on;
+    if (!_drift.on) {
+      _drift.target = null;
+      _drift.accX = 0; _drift.accY = 0;
+      _drift.vx = 0; _drift.vy = 0;
+    }
+    return _drift.on;
+  }
+
+  // ───────────────────────────────────────────────────────────────────────
   // Main loop
   // ───────────────────────────────────────────────────────────────────────
   function frame(now) {
@@ -1006,6 +1251,7 @@
       return;
     }
     var dt = Math.min(64, (now - _lastT) || 16);
+    decaySpeechLevel(dt);
     _lastT = now;
     _clock += dt;
     _framesDrawn++;
@@ -1044,8 +1290,9 @@
       }
     }
 
-    // Movement layer.
+    // Movement layer: an explicit walk wins, otherwise Cloud drifts on its own.
     stepMovement(dt);
+    stepDrift(dt, now);
 
     // Explicit gaze expiry: a timed lookToward drops back to pose gaze.
     if (_lookTarget && _lookHoldUntil > 0 && now >= _lookHoldUntil) {
@@ -1163,25 +1410,32 @@
     return {
       independentEyes: true,
       independentEyebrows: true,
+      independentNose: true,
+      independentCheeks: true,
       independentMouth: true,
       independentArms: true,
+      independentHands: true,
       independentLegs: true,
       wholeBodyArticulation: true,
       needsPartAssetsForFaceAndLimbs: false,
       asset: "static/cloud_rig.js",
-      assetType: "layered SVG rig (original robot companion visual)",
+      assetType: "layered SVG rig (original cloud companion visual)",
+      character: "cloud",
       hasMovementController: true,
       movementBoundaries: true,
+      autonomousDrift: true,
+      driftSpeedMax: DRIFT_SPEED_MAX,
       standingAssetFallback: "static/cloud.png",
       // Explicit, runtime steerable capabilities (Layer 3 / future Brain).
-      gazeDirections: ["left", "right", "up", "down", "toward-point", "follow-pose", "walk-direction"],
+      gazeDirections: ["left", "right", "up", "down", "toward-point", "follow-pose", "walk-direction", "drift-direction"],
       gazeInterpolation: true,
       blinkVariants: ["normal", "quick", "slow"],
       armGestures: ["wave", "point_up", "point_down", "point_l", "point_r", "welcome", "talk", "chin", "lift"],
       emotionalWalking: true,
-      headFollowsGaze: true,
-      bodyFollowsHead: true,
-      brainAPI: "vmCloudAnim.BrainAPI (anim surface only — no Brain wiring yet)"
+      bodyFollowsGaze: true,
+      mouthSync: "amplitude-driven (setSpeechLevel); synthetic pulse when unwired",
+      emotionalFace: true,
+      brainAPI: "vmCloudAnim.BrainAPI — driven by static/cloud.js (live AI state)"
     };
   }
 
@@ -1207,6 +1461,11 @@
     _walk.target = null;
     _walk.paused = false;
     _walk.acc = 0;
+    // Hand control back to the drift layer, but let Cloud settle first.
+    _drift.target = null;
+    _drift.accX = 0; _drift.accY = 0;
+    _drift.nextAt = performance.now() + DRIFT_POST_DRAG_MS;
+    _drift.vx = 0; _drift.vy = 0;
   }
   function turn(dir) {
     if (!_running) boot();
@@ -1293,6 +1552,9 @@
         walkActive: _walk.active,
         walkPaused: _walk.paused,
         walkHasTarget: !!_walk.target,
+        driftOn: _drift.on,
+        driftHasTarget: !!_drift.target,
+        driftVx: _drift.vx,
         dragging2: _dragging
       };
     },
@@ -1307,6 +1569,11 @@
       _intensity = Math.max(0, Math.min(1, v != null ? v : 0.5));
       return _intensity;
     },
+    // Real TTS amplitude (0..1) so the mouth tracks actual audio.
+    setSpeechLevel: setSpeechLevel,
+    clearSpeechLevel: clearSpeechLevel,
+    getSpeechLevel: function () { return _speechLevel; },
+    isSpeechDriven: function () { return _speechLive; },
     onStateChange: function (cb) { _onChangeCb = typeof cb === "function" ? cb : null; },
     demo: function (total) {
       var self = this;
@@ -1329,6 +1596,10 @@
     turn: turn,
     setSpeed: setSpeed,
     isMoving: isMoving,
+    // Autonomous drift (Cloud floats on its own when not commanded).
+    setDrift: setDrift,
+    isDrifting: function () { return _drift.on && !driftSuppressed(); },
+    driftSpeedMax: DRIFT_SPEED_MAX,
     // Explicit gaze (Layer 3).
     lookToward: lookToward,
     lookAt: lookAt,
@@ -1345,8 +1616,10 @@
       setEmotion: function (key) { return setState(key); },
       startThinking: function () { return setState("thinking"); },
       startSpeaking: function (text) { if (typeof text === "string" && text) triggerArmGesture("talk", Math.min(6000, 900 + text.length * 22)); return setState("speaking"); },
-      stopTalking: function () { setState(_stable); return true; },
-      stopSpeaking: function () { setState(_stable); return true; },
+      setSpeechLevel: setSpeechLevel,
+      clearSpeechLevel: clearSpeechLevel,
+      stopTalking: function () { clearSpeechLevel(); setState(_stable); return true; },
+      stopSpeaking: function () { clearSpeechLevel(); setState(_stable); return true; },
       walkTo: walkTo,
       walkToIdle: function () { stop(); return true; },
       lookToward: lookToward,

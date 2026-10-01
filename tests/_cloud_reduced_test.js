@@ -115,7 +115,11 @@ check(dbg.running === true, "engine running under prefers-reduced-motion", JSON.
 check(dbg.reduced === true, "reduced flag observed");
 check(dbg.framesDrawn > 0, "frames actually drawn while reduced", dbg.framesDrawn);
 const PART = function (name) { return rigMount.children[0].querySelector('[data-part="' + name + '"]'); };
-check((PART("head").style.transform || "").length > 0, "rig parts driven while reduced", PART("head").style.transform);
+check((PART("body").style.transform || "").length > 0, "rig body driven while reduced", PART("body").style.transform);
+check((PART("nose").style.transform || "").length > 0, "rig nose driven while reduced", PART("nose").style.transform);
+["head", "face", "halo", "lowerBody", "leftEar", "rightEar"].forEach(function (gone) {
+  check(PART(gone) === null, "robot part gone from the reduced-motion rig: " + gone);
+});
 
 windowObj.cloudSetState("happy");
 pump(60);

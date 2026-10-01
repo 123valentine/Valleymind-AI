@@ -1,6 +1,6 @@
 // Pure-node harness for static/cloud_rig.js using a minimal SVG DOM stub.
-// Verifies the layered rig builds the expected addressable robot parts, keeps
-// the robot palette/geometry, sets per-part pivots, and mounts into a
+// Verifies the layered rig builds the expected addressable cloud parts, keeps
+// the cloud palette/geometry, sets per-part pivots, and mounts into a
 // container exactly once (auto-boot + cloud.js can race safely).
 // Prints a JSON summary and exits non-zero on any failure.
 "use strict";
@@ -98,43 +98,75 @@ const R = sandbox.window.VMCloudRig;
 check(!!R, "VMCloudRig exported");
 check(!!R.build && !!R.mount && !!R.collectRig && !!R.mountRoot, "rig API surface present");
 
-// ── Robot palette ───────────────────────────────────────────────────────
-eq(R.COLORS.ink, "#00E5FF", "ink = cyan glow");
-eq(R.COLORS.face, "#05090D", "face = deep black glossy screen");
-eq(R.COLORS.leg, "#2E7CF6", "legs = blue hover pods");
-eq(R.COLORS.headTop, "#F4F9FB", "head = white glossy shell");
+// ── Cloud palette ───────────────────────────────────────────────────────
+eq(R.COLORS.cloudTop, "#F4FBFF", "cloud crown = luminous cool white");
+eq(R.COLORS.cloudBase, "#BCE2F0", "underside = cool shaded blue");
+eq(R.COLORS.edge, "#8CC6DC", "silhouette = soft cloud outline");
+eq(R.COLORS.ink, "#16324F", "face ink = deep navy");
+eq(R.COLORS.blush, "#FFA9C4", "cheeks = warm blush");
+eq(R.COLORS.limbLow, "#A6D2E6", "limb underside = shaded cloud tone");
+eq(R.COLORS.limbHigh, "#EAF8FF", "limb tops = luminous cloud white");
 
 // ── Geometry anchors ────────────────────────────────────────────────────
 check(R.GEO.leftEye.x < R.GEO.rightEye.x, "left eye is image-left of right eye");
 eq(R.GEO.leftEye.y, R.GEO.rightEye.y, "eyes sit on the same line");
 check(R.GEO.leftShoulder.y < R.GEO.leftHip.y, "shoulder above hip");
+check(R.GEO.nose.x === R.GEO.mouth.x, "nose centred above the mouth");
+check(R.GEO.browY < R.GEO.leftEye.y, "eyebrows sit above the eyes");
 
 // ── Build produces all addressable parts ────────────────────────────────
 const built = R.build();
-const wantParts = ["root", "body", "head", "face", "halo", "lowerBody",
-  "leftEar", "rightEar", "leftEye", "rightEye", "leftEyebrow",
-  "rightEyebrow", "mouth", "leftArm", "rightArm", "leftHand", "rightHand",
+const wantParts = ["root", "body", "leftEye", "rightEye", "leftEyebrow",
+  "rightEyebrow", "nose", "leftCheek", "rightCheek", "mouth",
+  "leftArm", "rightArm", "leftHand", "rightHand",
   "leftLeg", "rightLeg", "shadow", "leftPupil", "rightPupil"];
 wantParts.forEach(function (p) {
   check(built.parts[p] != null, "part present: " + p);
 });
+// Robot-only parts must be gone for good.
+["head", "face", "halo", "lowerBody", "leftEar", "rightEar"].forEach(function (p) {
+  check(built.parts[p] == null, "robot part removed: " + p);
+});
 eq(built.parts.root.tagName, "svg", "root is an SVG");
 // The rig claims the same canvas as the companion container (433x577); the
-// robot is drawn in FULL canvas space (no PNG translate overlay needed).
+// cloud is drawn in FULL canvas space (no PNG translate overlay needed).
 eq(built.parts.root.attrs["viewBox"], "0 0 433 577", "viewBox equals companion canvas");
 const wrapped = built.parts.root.children.filter(function (c) {
   return c.attrs["transform"] === "translate(78 185)";
 });
-eq(wrapped.length, 0, "content uses full canvas (robot, no PNG translate)");
+eq(wrapped.length, 0, "content uses full canvas (cloud, no PNG translate)");
+
+// ── One coherent silhouette, and it must stay on the canvas ─────────────
+// Regression guard: a single path drives the rim pass, the gradient fill pass
+// and the clip path, so they cannot disagree. The coordinate bounds check
+// catches shapes that drift outside the 433x577 viewBox (which renders as a
+// mostly-clipped, unrecognisable blob).
+const bodyPaths = built.parts.body.queryAll().filter(function (p) { return p.tagName === "path"; });
+check(bodyPaths.length >= 2, "body draws a rim pass and a fill pass", bodyPaths.length);
+const rimD = bodyPaths[0].getAttribute("d");
+const fillD = bodyPaths[1].getAttribute("d");
+eq(rimD, fillD, "rim and fill reuse the exact same silhouette path");
+check(/^M/.test(rimD) && /Z$/.test(rimD.trim()), "silhouette is one closed subpath");
+const silNums = (rimD.match(/-?\d+(?:\.\d+)?/g) || []).map(Number);
+const silXs = silNums.filter(function (_, i) { return i % 2 === 0; });
+const silYs = silNums.filter(function (_, i) { return i % 2 === 1; });
+const silX = Math.min.apply(null, silXs) + ".." + Math.max.apply(null, silXs);
+const silY = Math.min.apply(null, silYs) + ".." + Math.max.apply(null, silYs);
+check(Math.min.apply(null, silXs) >= 0, "silhouette starts inside the left edge", silX);
+check(Math.max.apply(null, silXs) <= 433, "silhouette ends inside the right edge", silX);
+check(Math.min.apply(null, silYs) >= 0, "silhouette starts inside the top edge", silY);
+check(Math.max.apply(null, silYs) <= 577, "silhouette ends inside the bottom edge", silY);
+// Horizontally centred so the companion never sits lopsided in its box.
+const silMid = (Math.min.apply(null, silXs) + Math.max.apply(null, silXs)) / 2;
+check(Math.abs(silMid - 216.5) < 12, "silhouette is horizontally centred", silMid);
 
 // Every independently-animated part must carry a transform-origin pivot so the
 // anim engine can rotate/scale around the correct joint.
-["body", "head", "face", "halo", "lowerBody", "leftEar", "rightEar",
-  "leftEye", "rightEye", "leftEyebrow", "rightEyebrow",
-  "mouth", "leftArm", "rightArm", "leftHand", "rightHand",
-  "leftLeg", "rightLeg"].forEach(function (p) {
+["body", "leftEye", "rightEye", "leftEyebrow", "rightEyebrow", "nose",
+  "leftCheek", "rightCheek", "mouth", "leftArm", "rightArm", "leftHand",
+  "rightHand", "leftLeg", "rightLeg"].forEach(function (p) {
   const part = built.parts[p];
-  check(!!part.style.transformOrigin, "pivot set on " + p, part.style.transformOrigin);
+  check(part != null && !!part.style.transformOrigin, "pivot set on " + p, part && part.style.transformOrigin);
 });
 
 // Eyes hold real pupil sub-nodes (needed for independent gaze).
@@ -144,6 +176,16 @@ eq(built.parts.leftPupil.attrs["class"], "cloud-pupil", "pupil class tag present
 // ── Mouth starts on a known expression and keeps its expression marker ──
 const mouthPath = built.parts.mouth.querySelector("path");
 eq(mouthPath.getAttribute("data-expression"), "neutral", "mouth defaults to neutral smile");
+
+// Regression guard: static/cloud_anim.js hardcodes its MOUTH table in rig
+// coordinates and swaps `d` on the first pose it applies. If the rig's neutral
+// path sits at a different y than MOUTH.neutral, the mouth visibly jumps on
+// the first expression change. Keep the two locked together.
+const animSrc = fs.readFileSync(path.join(ROOT, "static", "cloud_anim.js"), "utf8");
+const animNeutral = (animSrc.match(/neutral:\s*"([^"]+)"/) || [])[1];
+check(!!animNeutral, "cloud_anim MOUTH.neutral is locatable");
+eq(mouthPath.getAttribute("d"), animNeutral,
+   "rig neutral mouth matches cloud_anim MOUTH.neutral (no first-pose jump)");
 
 // ── mount() attaches into the rig-mount host exactly once ───────────────
 const container = new FakeEl("div", doc);
