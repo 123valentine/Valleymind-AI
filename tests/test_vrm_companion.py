@@ -471,5 +471,131 @@ class VrmPreviewRouteTests(unittest.TestCase):
         self.assertGreater(len(resp.data), 100)
 
 
+class VrmCompanionPhase1Tests(unittest.TestCase):
+    """Phase-1 'living companion' contracts.
+
+    Lock in: varied natural idle, restrained roaming, drag/free positioning
+    (user-preferred), persistence of position/visibility across views, phone
+    sizing/re-framing, a reduced-motion / hidden-tab pause, and the sleep/wake
+    voice-state PREPARATION (which never claims a working wake word).
+    """
+
+    def _html(self):
+        return (ROOT / "index.html").read_text(encoding="utf-8")
+
+    def _companion(self):
+        return (ROOT / "static" / "vrm_companion.js").read_text(encoding="utf-8")
+
+    def _settings(self):
+        return (ROOT / "static" / "settings.js").read_text(encoding="utf-8")
+
+    # ── varied natural idle ────────────────────────────────────────────────
+    def test_varied_idle_rotates_at_random_intervals(self):
+        js = self._companion()
+        self.assertIn("function scheduleIdleVariation(", js)
+        self.assertIn("const IDLE_MIN_MS = 9000;", js)
+        self.assertIn("const IDLE_MAX_MS = 21000;", js)
+        self.assertIn("function clearIdleTimer(", js)
+        # Rotation reuses the ONE authoritative entry point and never turns the
+        # broad autonomous loop on.
+        self.assertIn('engine.trigger("idle")', js)
+        self.assertNotIn("setAuto(true)", js)
+        self.assertIn("scheduleIdleVariation();", js)
+        # Rotates ONLY while resting: any driven state clears the idle timer.
+        self.assertIn('if (s !== "idle") { clearIdleTimer(); clearRoamTimer(); }', js)
+
+    # ── restrained roaming + free positioning ──────────────────────────────
+    def test_restrained_roaming_reuses_walking_and_clamping(self):
+        js = self._companion()
+        self.assertIn("function scheduleRoam(", js)
+        self.assertIn("function roamStep(", js)
+        self.assertIn("const ROAM_MIN_MS = 32000;", js)
+        # Roaming moves through the SAME gait + viewport clamp as guidance.
+        self.assertIn("walkTo(tx, ty", js)
+        self.assertIn("function clampToViewport(", js)
+        # Roam pauses once the user has placed the avatar by hand.
+        self.assertIn("prefs.userPlaced !== true", js)
+
+    def test_drag_repositions_and_marks_user_preferred(self):
+        js = self._companion()
+        self.assertIn("function wireDrag(", js)
+        self.assertIn('"pointerdown"', js)
+        self.assertIn('"pointermove"', js)
+        self.assertIn("prefs.userPlaced = true", js)
+        # Position is persisted (x / y already exist) and roaming is paused.
+        self.assertIn("clearRoamTimer();", js)
+        # Home / dock / reset clear the manual-placement lock so roaming can resume.
+        self.assertGreaterEqual(js.count("prefs.userPlaced = false"), 3)
+        # A press inside the chat panel is never a drag/tap.
+        self.assertIn("chat.contains(e.target)", js)
+
+    def test_tap_opens_existing_chat_not_a_new_control(self):
+        js = self._companion()
+        # The discreet touch control surface reuses the EXISTING chat panel.
+        self.assertIn("toggleChat();", js)
+        self.assertIn("function toggleChat(", js)
+
+    # ── persistence across views (no duplication / no teardown) ─────────────
+    def test_visible_over_internal_fullscreen_views(self):
+        html = self._html()
+        # Raised above Help & Learn / Settings (99999) so the companion remains
+        # present while navigating; the old value is gone.
+        self.assertIn("z-index: 100000;", html)
+        self.assertNotIn("z-index: 99998", html)
+        # Still a single engine + a single module (no duplicate renderer/mixer).
+        js = self._companion()
+        self.assertEqual(js.count("new Companion("), 1)
+        self.assertIn("visibilitychange", js)
+        # Hidden tab pauses the GPU instead of destroying the engine.
+        self.assertIn("engine.setRendering(false)", js)
+
+    # ── phone sizing / re-framing ──────────────────────────────────────────
+    def test_resize_and_orientation_reframe_and_clamp(self):
+        js = self._companion()
+        self.assertIn("function refit(", js)
+        self.assertIn("engine.frameFullBody", js)
+        self.assertIn("function clampPosition(", js)
+        self.assertIn('window.addEventListener("resize", onViewportChange)', js)
+        self.assertIn('window.addEventListener("orientationchange", onViewportChange)', js)
+        # Phone height is applied in px so it is never rounded to a cramped box.
+        self.assertIn('el.style.height = px + "px";', js)
+
+    # ── reduced motion ─────────────────────────────────────────────────────
+    def test_reduced_motion_disables_autonomous_movement(self):
+        js = self._companion()
+        self.assertIn("function reducedMotion(", js)
+        self.assertIn("prefers-reduced-motion: reduce", js)
+        self.assertIn("function motionOk()", js)
+        # Both the idle rotation and roaming bail out under reduced-motion.
+        self.assertIn("if (!motionOk()) return;", js)
+        self.assertIn("motionOk()", js)
+
+    # ── voice-interaction state preparation (no faked wake word) ────────────
+    def test_sleep_wake_state_is_preparation_not_a_claimed_wake_word(self):
+        js = self._companion()
+        self.assertIn("function sleep()", js)
+        self.assertIn("function wake()", js)
+        self.assertIn("function isAwake()", js)
+        self.assertIn("awake: true,", js)
+        # Awake gates BOTH the immediate and the post-reply listen paths.
+        self.assertGreaterEqual(js.count("if (!isAwake()) return;"), 3)
+        # No always-on recognition loop is introduced; the wake-word engine is a
+        # documented native-Android follow-up, not something faked here.
+        self.assertNotIn("continuous = true", js)
+
+    def test_new_controls_surface_in_settings(self):
+        settings = self._settings()
+        self.assertIn("function vmCompanionSetRoam(", settings)
+        self.assertIn("function vmCompanionSetAwake(", settings)
+        self.assertIn("Wander around", settings)
+        self.assertIn("Awake & ready", settings)
+        self.assertIn('"vmSetRoam"', settings)
+        self.assertIn('"vmSetAwake"', settings)
+
+    def test_module_is_cache_busted(self):
+        html = self._html()
+        self.assertRegex(html, r'<script type="module" src="/static/vrm_companion\.js\?vm=\d+"')
+
+
 if __name__ == "__main__":
     unittest.main()

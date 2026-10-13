@@ -77,7 +77,7 @@
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-<script src="/static/settings.js?v=3"></script>
+<script src="/static/settings.js?v=4"></script>
 <script src="/static/pref_setup_model.js?v=3"></script>
 <script src="/static/onboarding.js?v=3"></script>
     <script src="/static/music_studio.js?v=10"></script>
@@ -2350,7 +2350,7 @@
      character is not active. Boot is lazy -- the WebGL engine only starts
      once this overlay is actually shown. -->
 <div id="vmVrmCompanion" role="region" aria-label="ValleyMind VRM companion"
-     style="display:none; position:fixed; top:auto; right:18px; bottom:auto; left:auto; z-index:99998; pointer-events:none;">
+     style="display:none; position:fixed; top:auto; right:18px; bottom:auto; left:auto; z-index:100000; pointer-events:none;">
   <!-- The avatar floats directly on the app background: no card, background,
        border, shadow, badge or debug label. Only the alpha-composited character
        is visible, and pointer events pass through so it never blocks the app
@@ -2386,7 +2386,11 @@
 <style>
 #vmVrmCompanion {
     position: fixed !important;
-    z-index: 99998;
+    /* Above the full-screen internal views (Help & Learn / Settings at 99999)
+       so the companion stays present while the user moves between views; it
+       remains below the app's own transient modal dialogs (100001+) and the
+       brand splash (999999). */
+    z-index: 100000;
     width: 34vh;
     height: 16vh;
     min-height: 120px;
@@ -2398,10 +2402,19 @@
     background: transparent;
     border: none;
     box-shadow: none;
-    /* Never intercept clicks: the app stays clickable beneath the character. */
+    /* The container never intercepts clicks: the app stays clickable beneath
+       the character. Only the canvas opts back in (below) so the avatar itself
+       can be dragged and tapped. */
     pointer-events: none;
 }
-#vmVrmCompanionCanvas { display: block; width: 100%; height: 100%; }
+#vmVrmCompanionCanvas {
+    display: block; width: 100%; height: 100%;
+    /* Direct manipulation: drag to reposition, tap to open chat. Everything
+       outside the avatar still passes through to the app. */
+    pointer-events: auto;
+    touch-action: none;
+    cursor: grab;
+}
 .vmvrm-mini-btn {
     background: rgba(15, 23, 42, 0.78);
     color: #cbd5e1;
@@ -2483,10 +2496,12 @@
     padding: 5px 8px; font-size: 12px;
 }
 /* Phones: keep the avatar compact so it never covers the workspace tab bar or
-   the in-workspace input row, and shrink the floating chat to the screen. */
+   the in-workspace input row. The height is set in px by the companion module
+   (applySize) so a phone never rounds it down to a cramped box; only the width
+   is constrained here, and the floating chat shrinks to the screen. */
 @media (max-width: 760px) {
-    #vmVrmCompanion { width: 40vw; height: 19vw; min-height: 92px; max-width: 200px; max-height: 104px; }
-    .vmvrm-chat { width: min(300px, 84vw); right: 0; }
+    #vmVrmCompanion { width: 46vw; max-width: 230px; }
+    .vmvrm-chat { width: min(300px, 86vw); right: 0; }
 }
 /* First-use access prompt (clean, non-blocking, dark + light safe). */
 #vmCompanionAccess {
@@ -12127,7 +12142,7 @@ if ('serviceWorker' in navigator) {
   }
 }
 </script>
-<script type="module" src="/static/vrm_companion.js?vm=3"></script>
+<script type="module" src="/static/vrm_companion.js?vm=4"></script>
 
 </body>
 </html>

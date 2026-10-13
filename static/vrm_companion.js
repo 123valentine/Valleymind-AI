@@ -33,6 +33,8 @@ const DEFAULTS = {
   dock: "br",        // "br" | "bl" | "tr" | "tl" (used until the avatar is moved)
   x: null,           // manual position (px) once placed
   y: null,
+  userPlaced: false, // true once the user drags the avatar: roam pauses, position is preferred
+  roam: true,        // restrained autonomous roaming while idle (off under reduced-motion)
   charName: "ValleyMind", // display name (shown in Settings; keeps CJK glyphs intact)
   voiceKey: "",      // "marcus" | "elena" | "angelina" ("" = follow the Cloud preference)
   visionOn: false,   // user preference: attach screen context to the brain
@@ -41,6 +43,11 @@ const DEFAULTS = {
   taskPermissions: [], // granted task permissions (vision/scroll/navigate/click/type)
   muted: false,      // hands-free voice off (auto-listen + spoken replies suppressed)
   voiceFirst: true,  // resume hands-free listening after each turn (access-permitted)
+  // Voice-interaction state prep for a future hands-free wake word. "awake"
+  // gates automatic listening exactly like muted does; a real wake-word engine
+  // (native Android, see the report) will flip sleep()/wake(). There is no
+  // always-on listening loop here -- that is deliberately NOT faked.
+  awake: true,
 };
 
 const STATUS_LABEL = {
@@ -165,6 +172,19 @@ let voiceWired = false;
 let uiBuilt = false;
 let resumeTimer = null;   // delayed hands-free re-listen (cleared on stop/hide/mute)
 let walkRaf = 0;          // walking animation handle (cancel on hide/stop)
+let idleTimer = null;     // varied-idle rotation (only while resting in "idle")
+let roamTimer = null;     // restrained autonomous roaming (only while idle + allowed)
+
+// ── motion preference ─────────────────────────────────────────────────────
+// Respect the OS/browser "reduce motion" setting: skip idle clip rotation and
+// autonomous roaming (the base idle clip keeps looping, so the companion still
+// breathes/blinks -- it simply never walks or switches pose on its own).
+function reducedMotion() {
+  try {
+    return !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+  } catch (e) { return false; }
+}
+function motionOk() { return !reducedMotion(); }
 
 let lastEngineLog = "";
 
@@ -208,13 +228,106 @@ function clearAccentTimer() {
   if (accentTimer) { clearTimeout(accentTimer); accentTimer = null; }
 }
 
+// ── varied natural idle ───────────────────────────────────────────────────
+// The desktop companion runs with the engine's autonomous loop OFF (every clip
+// is event-driven), so a single idle clip would otherwise loop forever. This
+// scheduler rotates among the shared idle pool at a RANDOM interval so the
+// character reads as alive without ever cycling through unrelated animations.
+// It is only armed while resting in "idle" and is cleared the moment a driven
+// state (listening / thinking / speaking / working) or a walk takes over, so it
+// can never interrupt the conversation. Respects reduced-motion.
+const IDLE_MIN_MS = 9000;
+const IDLE_MAX_MS = 21000;
+
+function clearIdleTimer() {
+  if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
+}
+
+function scheduleIdleVariation() {
+  clearIdleTimer();
+  if (!motionOk()) return;
+  if (!engine || engine.status.stage !== "ready") return;
+  const delay = IDLE_MIN_MS + Math.random() * (IDLE_MAX_MS - IDLE_MIN_MS);
+  idleTimer = setTimeout(() => {
+    idleTimer = null;
+    // Only ever re-pose while genuinely resting; a walk, a reaction or a
+    // background tab defers the rotation instead of skipping it.
+    if (stateKey !== "idle" || busy || walkRaf || document.hidden) {
+      scheduleIdleVariation();
+      return;
+    }
+    engine.setAuto(false);
+    engine.trigger("idle"); // picks a fresh idle clip (never an immediate repeat)
+    scheduleIdleVariation();
+  }, delay);
+}
+
+// ── restrained autonomous roaming ─────────────────────────────────────────
+// Purposeful, infrequent movement within the visible area using the SAME
+// walkTo()/clamping path as voice-driven navigation: identity-safe clips, real
+// gait, never follows the cursor. Paused after a manual drag (userPlaced) and
+// disabled under reduced-motion or when the user turns "Wander" off.
+const ROAM_MIN_MS = 32000;
+const ROAM_MAX_MS = 96000;
+
+function clearRoamTimer() {
+  if (roamTimer) { clearTimeout(roamTimer); roamTimer = null; }
+}
+
+function roamAllowed() {
+  return prefs.roam !== false && prefs.userPlaced !== true && motionOk();
+}
+
+function scheduleRoam() {
+  clearRoamTimer();
+  if (!roamAllowed()) return;
+  const delay = ROAM_MIN_MS + Math.random() * (ROAM_MAX_MS - ROAM_MIN_MS);
+  roamTimer = setTimeout(() => {
+    roamTimer = null;
+    if (stateKey !== "idle" || busy || walkRaf || document.hidden || !isVisible()) {
+      scheduleRoam();
+      return;
+    }
+    roamStep();
+    scheduleRoam();
+  }, delay);
+}
+
+// A single small wander: pick a target a bounded distance away and let walkTo()
+// clamp it inside the safe area (clear of phone tab bars / input rows).
+function roamStep() {
+  const el = $id("vmVrmCompanion");
+  if (!el) return;
+  const r = el.getBoundingClientRect();
+  const narrow = (window.innerWidth || 1280) <= 760;
+  const margin = 12;
+  const w = r.width || 120;
+  const h = r.height || 120;
+  const minX = margin;
+  const maxX = Math.max(minX, (window.innerWidth || 1280) - w - margin);
+  const minY = narrow ? 104 : margin;
+  const maxY = Math.max(minY, (window.innerHeight || 800) - h - (narrow ? 92 : margin));
+  const dx = (Math.random() * 2 - 1) * Math.min(200, maxX - minX);
+  const dy = (Math.random() * 2 - 1) * Math.min(110, maxY - minY);
+  const tx = Math.max(minX, Math.min(maxX, r.left + dx));
+  const ty = Math.max(minY, Math.min(maxY, r.top + dy));
+  walkTo(tx, ty, { ms: 1100 + Math.random() * 800 });
+}
+
+
 function setStatus(status) {
   const s = STATUS_BEHAVIOUR[status] ? status : "idle";
   if (s === stateKey && engine && engine.status.stage === "ready") {
     paintStatus();
+    // Keep the resting schedulers armed even on an idempotent idle set (e.g.
+    // right after show()), but never stack a second timer.
+    if (s === "idle" && !idleTimer) { scheduleIdleVariation(); scheduleRoam(); }
     return;
   }
   clearAccentTimer();
+  // Leaving the resting state cancels idle rotation + roaming immediately so a
+  // driven state (listening / thinking / speaking / working) is never interrupted.
+  if (s !== "idle") { clearIdleTimer(); clearRoamTimer(); }
   stateKey = s;
   // Any non-speaking state must leave the mouth shut: the amplitude listener
   // only runs while audio plays, so without this the mouth stayed open (or kept
@@ -229,8 +342,10 @@ function setStatus(status) {
       engine.trigger(behaviour);
     } else if (s === "idle") {
       // Idle is the resting state: a real idle clip (breathing/blinking), never
-      // an unrelated animation.
+      // an unrelated animation. A scheduler rotates idle variants over time.
       engine.trigger("idle");
+      scheduleIdleVariation();
+      scheduleRoam();
     } else if (behaviour && behaviour !== "idle") {
       // A momentary conversational/app reaction (happy/sad/curious/…) plays
       // once, then the companion returns to idle on its own.
@@ -256,8 +371,45 @@ function paintStatus() {
 function applySize() {
   const el = $id("vmVrmCompanion");
   if (!el) return;
-  el.style.height = prefs.sizePct + "vh";
-  if (engine) engine.resize();
+  const narrow = (window.innerWidth || 1280) <= 760;
+  if (narrow) {
+    // Phones: an inline vh height can round down to a cramped box, so enforce a
+    // comfortably visible minimum while still honouring the size pref upward.
+    const px = Math.max(132, Math.round((window.innerHeight || 800) * prefs.sizePct / 100));
+    el.style.height = px + "px";
+  } else {
+    el.style.height = prefs.sizePct + "vh";
+  }
+  refit();
+}
+
+// Re-fit the renderer AND the camera framing together. Resizing alone changes
+// camera.aspect without re-framing, which crops a full-body shot on a phone in
+// landscape/portrait. Re-running the same frameFullBody() keeps the whole body
+// in shot at every size/orientation.
+function refit() {
+  if (!engine) return;
+  try {
+    engine.resize();
+    if (typeof engine.frameFullBody === "function") engine.frameFullBody();
+  } catch (e) { }
+}
+
+function clampPosition() {
+  const el = $id("vmVrmCompanion");
+  if (!el) return;
+  const w = el.offsetWidth || 120;
+  const h = el.offsetHeight || 120;
+  const r = el.getBoundingClientRect();
+  const x = Math.max(0, Math.min((window.innerWidth || 1280) - w, r.left));
+  const y = Math.max(0, Math.min((window.innerHeight || 800) - h, r.top));
+  if (x !== r.left || y !== r.top) {
+    el.style.left = Math.round(x) + "px";
+    el.style.top = Math.round(y) + "px";
+    el.style.right = "auto";
+    el.style.bottom = "auto";
+    if (prefs.x != null) { prefs.x = Math.round(x); prefs.y = Math.round(y); savePrefs(); }
+  }
 }
 
 function dockOffsets(dock) {
@@ -292,16 +444,91 @@ function home() {
   prefs.y = null;
   prefs.dock = DEFAULTS.dock;
   prefs.sizePct = DEFAULTS.sizePct;
+  // Home is an explicit user reset: roaming may resume from the docked rest pose.
+  prefs.userPlaced = false;
   savePrefs();
   applySize();
   applyPosition();
+  scheduleRoam();
   syncControls();
 }
 
-// The character is a standalone, stateless overlay now: there is no drag
-// handle, so it always sits at its docked corner (or where purposeful
-// movement left it) and can never be lost. Position is reset from the main
-// Settings → Companion section.
+// ── direct manipulation (drag to reposition, tap to open chat) ─────────────
+// The overlay box stays pointer-transparent so the app beneath it is never
+// blocked; only the avatar canvas opts in (see index.html). A press that does
+// not move is treated as a tap and opens/closes the EXISTING chat panel (the
+// discreet touch control surface: mic + input live there, no new buttons on the
+// character). A press that moves is a drag: the position becomes user-preferred
+// (roaming pauses) and is persisted, so it survives navigation and reloads.
+let dragState = null;
+
+function wireDrag() {
+  const el = $id("vmVrmCompanion");
+  if (!el || el._vmDragWired) return;
+  el._vmDragWired = true;
+  el.style.touchAction = "none";
+  el.addEventListener("pointerdown", (e) => {
+    if (e.button != null && e.button !== 0) return;
+    // The chat panel is a live child of this box; presses inside it (typing,
+    // tapping Mic/Send) must never be read as a drag or a tap-to-toggle.
+    const chat = $id("vmVrmCompanionChat");
+    if (chat && chat.contains(e.target)) return;
+    const r = el.getBoundingClientRect();
+    dragState = { id: e.pointerId, dx: e.clientX - r.left, dy: e.clientY - r.top, sx: e.clientX, sy: e.clientY, t: Date.now(), moved: false };
+    try { el.setPointerCapture(e.pointerId); } catch (err) { }
+    cancelWalk();
+    el.style.cursor = "grabbing";
+  });
+  el.addEventListener("pointermove", (e) => {
+    if (!dragState || e.pointerId !== dragState.id) return;
+    if (!dragState.moved &&
+      Math.abs(e.clientX - dragState.sx) + Math.abs(e.clientY - dragState.sy) > 4) {
+      dragState.moved = true;
+    }
+    if (!dragState.moved) return;
+    const w = el.offsetWidth || 120;
+    const h = el.offsetHeight || 120;
+    const x = Math.max(0, Math.min((window.innerWidth || 1280) - w, e.clientX - dragState.dx));
+    const y = Math.max(0, Math.min((window.innerHeight || 800) - h, e.clientY - dragState.dy));
+    el.style.left = Math.round(x) + "px";
+    el.style.top = Math.round(y) + "px";
+    el.style.right = "auto";
+    el.style.bottom = "auto";
+  });
+  const end = (e) => {
+    if (!dragState || (e.pointerId != null && e.pointerId !== dragState.id)) return;
+    const wasTap = !dragState.moved && (Date.now() - dragState.t) < 400;
+    if (dragState.moved) {
+      const r = el.getBoundingClientRect();
+      prefs.x = Math.round(r.left);
+      prefs.y = Math.round(r.top);
+      prefs.userPlaced = true; // manual placement wins; autonomous roaming pauses
+      savePrefs();
+      clearRoamTimer();
+    } else if (wasTap) {
+      toggleChat();
+    }
+    dragState = null;
+    el.style.cursor = "grab";
+  };
+  el.addEventListener("pointerup", end);
+  el.addEventListener("pointercancel", end);
+}
+
+// Keep the avatar on-screen and correctly framed after a resize, rotation or
+// viewport change (mobile URL bar, keyboard, orientation). Debounced so the
+// GPU is not re-sized on every intermediate event.
+let resizeTimer = null;
+function onViewportChange() {
+  if (resizeTimer) clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => {
+    resizeTimer = null;
+    applySize();
+    clampPosition();
+  }, 120);
+}
+window.addEventListener("resize", onViewportChange);
+window.addEventListener("orientationchange", onViewportChange);
 
 // ── chat UI ───────────────────────────────────────────────────────────────
 function paintTranscript() {
@@ -620,6 +847,7 @@ function clearResumeTimer() {
 function resumeListening() {
   clearResumeTimer();
   if (!voiceActive() || !accessAllowed() || prefs.muted || prefs.voiceFirst === false) return;
+  if (!isAwake()) return;
   const el = $id("vmVrmCompanion");
   if (!el || el.style.display === "none") return;
   if (!window.VMCloudVoice || !window.VMCloudVoice.supported()) return;
@@ -627,6 +855,7 @@ function resumeListening() {
   resumeTimer = setTimeout(() => {
     resumeTimer = null;
     if (!voiceActive() || !accessAllowed() || prefs.muted || busy) return;
+    if (!isAwake()) return;
     if (window.VMCloudVoice.isListening()) return;
     try { window.VMCloudVoice.start(); } catch (e) { }
   }, 900);
@@ -932,6 +1161,7 @@ function toggleMute() {
 
 function startVoiceSession() {
   if (!voiceActive() || prefs.muted || !accessAllowed()) return;
+  if (!isAwake()) return;
   if (!window.VMCloudVoice || !window.VMCloudVoice.supported()) {
     setStatus("confused");
     logLine("Voice input isn't supported in this browser.");
@@ -943,6 +1173,37 @@ function startVoiceSession() {
   if (!window.VMCloudVoice.isListening()) {
     try { window.VMCloudVoice.start(); } catch (e) { }
   }
+}
+
+// ── voice-interaction state (sleep / wake) ────────────────────────────────
+// Prepares a hands-free "wake" lifecycle without ever faking an always-on mic.
+// "Awake" is the default. sleep() stops listening and silences speech and
+// pauses automatic re-listen; wake() re-arms it on the existing consent. A real
+// wake-word detector belongs in a native Android service (browser tabs cannot
+// listen while backgrounded) and would simply call wake()/sleep() here -- see
+// the report's "native Android" section. No wake phrase is claimed to work.
+function isAwake() { return prefs.awake !== false; }
+
+function sleep() {
+  prefs.awake = false;
+  savePrefs();
+  clearResumeTimer();
+  if (window.VMCloudVoice) {
+    try { if (window.VMCloudVoice.isListening()) window.VMCloudVoice.stopListening(); } catch (e) { }
+    try { window.VMCloudVoice.stop(); } catch (e) { }
+  }
+  setFaceTalking(false);
+  setStatus("idle");
+  syncControls();
+  paintStatus();
+}
+
+function wake() {
+  prefs.awake = true;
+  savePrefs();
+  syncControls();
+  paintStatus();
+  if (accessAllowed() && !prefs.muted) startVoiceSession();
 }
 
 // ── screen awareness (permission-first, VMCloudVision) ────────────────────
@@ -1096,6 +1357,9 @@ function buildUI() {
   on($id("vmVrmCompanionMicBtn"), "click", toggleVoice);
   on($id("vmVrmCompanionScreenBtn"), "click", toggleVision);
 
+  // Direct manipulation: drag to reposition, tap to open the chat panel.
+  wireDrag();
+
   // First-use access prompt (Allow / Not now). Distinct consent from task
   // permissions: it only gates automatic hands-free listening.
   const allowBtn = $id("vmCompanionAccessAllow");
@@ -1165,8 +1429,10 @@ function setDock(d) {
   prefs.dock = ["br", "bl", "tr", "tl"].indexOf(d) !== -1 ? d : "br";
   prefs.x = null;
   prefs.y = null;
+  prefs.userPlaced = false; // an explicit dock clears the manual-placement lock
   savePrefs();
   applyPosition();
+  scheduleRoam();
   syncControls();
 }
 
@@ -1213,6 +1479,20 @@ function setVoiceFirst(on) {
   syncControls();
 }
 
+// Wander toggle: autonomous roaming while idle. Turning it off leaves the
+// companion exactly where it is (no snap); Home still returns it to the dock.
+function setRoam(on) {
+  prefs.roam = !!on;
+  savePrefs();
+  if (prefs.roam) scheduleRoam(); else clearRoamTimer();
+  syncControls();
+}
+
+// Awake toggle: the hands-free readiness gate (see sleep()/wake()).
+function setAwake(on) {
+  if (!!on) wake(); else sleep();
+}
+
 function getProps() {
   return {
     mode: getMode(),
@@ -1221,6 +1501,9 @@ function getProps() {
     sizePct: prefs.sizePct,
     dock: prefs.dock,
     skin: prefs.skin || "",
+    roam: prefs.roam !== false,
+    userPlaced: prefs.userPlaced === true,
+    awake: prefs.awake !== false,
     charName: prefs.charName || DEFAULTS.charName,
     voiceKey: prefs.voiceKey || "",
     visionOn: !!prefs.visionOn,
@@ -1266,6 +1549,9 @@ async function show() {
   el.style.display = "block";
   applySize();
   applyPosition();
+  // A persisted manual position can fall outside a smaller viewport (e.g. a
+  // phone after the window shrank or rotated): pull it back into view.
+  clampPosition();
   syncControls();
   const chatPanel = $id("vmVrmCompanionChat");
   if (chatPanel) chatPanel.classList.toggle("open", !!prefs.chatOpen);
@@ -1289,6 +1575,8 @@ function hide() {
   setDataset();
   cancelWalk();
   clearResumeTimer();
+  clearIdleTimer();
+  clearRoamTimer();
   if (window.VMCloudVoice) { try { window.VMCloudVoice.stop(); } catch (e) { } }
   setFaceTalking(false);
   const el = $id("vmVrmCompanion");
@@ -1371,6 +1659,15 @@ window.vmVrmCompanion = {
   setVision: setVision,
   setMuted: setMuted,
   setVoiceFirst: setVoiceFirst,
+  // ── life / wandering / voice state (Phase-1 companion) ───────────────────
+  setRoam: setRoam,
+  sleep: sleep,
+  wake: wake,
+  setAwake: setAwake,
+  isAwake: isAwake,
+  refit: refit,
+  // Discards a manual placement and returns to the docked rest pose.
+  resetPlacement: function () { prefs.userPlaced = false; savePrefs(); home(); },
   /**
    * The documented seam between "AI decides the state" and the avatar:
    * persistent driven states (listening / thinking / speaking / working) lock
@@ -1408,6 +1705,35 @@ prefs = readPrefs();
 setDataset();
 buildUI();
 window.vmVrmCompanion.prefs = prefs;
+
+// Hidden tab: stop spending GPU time and pause the resting schedulers; resume
+// cleanly when the tab is visible again (the renderer is only re-enabled when
+// the companion is actually meant to be on screen). This keeps battery/CPU use
+// down on a phone without ever destroying or recreating the single engine.
+document.addEventListener("visibilitychange", () => {
+  if (!engine) return;
+  if (document.hidden) {
+    clearIdleTimer();
+    clearRoamTimer();
+    engine.setRendering(false);
+  } else if (isVisible()) {
+    engine.setRendering(true);
+    if (stateKey === "idle") { scheduleIdleVariation(); scheduleRoam(); }
+  }
+});
+
+// React live to a change of the OS "reduce motion" preference.
+if (window.matchMedia) {
+  try {
+    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const onPref = () => {
+      if (motionOk()) { if (stateKey === "idle") { scheduleIdleVariation(); scheduleRoam(); } }
+      else { clearIdleTimer(); clearRoamTimer(); }
+    };
+    if (mq.addEventListener) mq.addEventListener("change", onPref);
+    else if (mq.addListener) mq.addListener(onPref);
+  } catch (e) { /* matchMedia quirks are non-fatal */ }
+}
 
 // Cookie-authenticated opens / refreshes / new tabs: show immediately once
 // the app shell reports auth (mirrors the Cloud character's showIfAuthed()).

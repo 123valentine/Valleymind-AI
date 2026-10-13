@@ -883,10 +883,12 @@ function renderCompanionInto(container) {
     _SH.card("Size & Position", '<div style="display:flex;flex-direction:column;gap:16px;">' +
       '<div><p style="color:#94a3b8;font-size:10px;margin:0 0 4px;text-transform:uppercase;letter-spacing:0.12em;font-family:\'Space Grotesk\',sans-serif;">Size <b id="vmSetSizeVal" style="color:#e2e8f0;">' + p.sizePct + '%</b></p><input id="vmSetSize" type="range" min="10" max="24" step="1" value="' + p.sizePct + '" oninput="vmCompanionSetSize(this.value)" style="width:100%;"></div>' +
       '<div><p style="color:#94a3b8;font-size:10px;margin:0 0 4px;text-transform:uppercase;letter-spacing:0.12em;font-family:\'Space Grotesk\',sans-serif;">Docked position</p>' + _SH.select([{ value: "br", label: "Bottom-right" }, { value: "bl", label: "Bottom-left" }, { value: "tr", label: "Top-right" }, { value: "tl", label: "Top-left" }], "vmSetDock", p.dock, "vmCompanionSetDock(this.value)") + '</div>' +
+      '<div>' + _SH.row("Wander around", _SH.toggle("vmSetRoam", p.roam, "vmCompanionSetRoam(this.checked)"), "Let the character roam a little while idle. Turn off to keep it still. Dragging it by hand also pauses wandering.") + '</div>' +
       '<div>' + _SH.btn("Reset position & size", "vmCompanionResetHome()") + '</div>' +
       '</div>') +
     _SH.card("Voice & Microphone", '<div style="display:flex;flex-direction:column;">' +
       _SH.row("Hands-free voice", _SH.toggle("vmSetMuted", !p.muted, "vmCompanionSetMuted(!this.checked)"), "When off, the companion stops listening and stays silent.") +
+      _SH.row("Awake & ready", _SH.toggle("vmSetAwake", p.awake, "vmCompanionSetAwake(this.checked)"), "Sleep pauses hands-free listening without turning the character off. Wake re-arms it.") +
       _SH.row("Resume listening after replies", _SH.toggle("vmSetVoiceFirst", p.voiceFirst, "vmCompanionSetVoiceFirst(this.checked)"), "Keep listening for your next sentence without a tap.") +
       _SH.row("Screen context (vision)", _SH.toggle("vmSetVision", p.visionOn, "vmCompanionSetVision(this.checked)"), "Let the companion see your screen when you ask. Asks for permission first.") +
       '<div style="margin-top:12px;"><p style="color:#94a3b8;font-size:10px;margin:0 0 4px;text-transform:uppercase;letter-spacing:0.12em;font-family:\'Space Grotesk\',sans-serif;">Voice</p>' + _SH.select([{ value: "", label: "Follow account voice" }, { value: "marcus", label: "Marcus" }, { value: "elena", label: "Elena" }, { value: "angelina", label: "Angelina" }], "vmSetVoice", p.voiceKey, "vmCompanionSetVoiceKey(this.value)") + '</div>' +
@@ -948,6 +950,15 @@ function vmCompanionSetMuted(muted) {
 function vmCompanionSetVoiceFirst(on) {
   var vm = _vmCompanion(); if (!vm) return;
   if (vm.setVoiceFirst) vm.setVoiceFirst(!!on);
+}
+function vmCompanionSetRoam(on) {
+  var vm = _vmCompanion(); if (!vm) return;
+  if (vm.setRoam) vm.setRoam(!!on);
+}
+function vmCompanionSetAwake(on) {
+  var vm = _vmCompanion(); if (!vm) return;
+  if (vm.setAwake) vm.setAwake(!!on);
+  refreshCompanionSettings();
 }
 function vmCompanionSetVision(on) {
   var vm = _vmCompanion(); if (!vm) return;
