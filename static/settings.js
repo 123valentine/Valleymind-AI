@@ -7,6 +7,7 @@ var SETTINGS_SECTIONS = [
   { id: "memory",        label: "Memory" },
   { id: "accessibility", label: "Accessibility" },
   { id: "appearance",    label: "Appearance" },
+  { id: "companion",     label: "Companion" },
   { id: "language",      label: "Language & Region" },
   { id: "culture",       label: "Culture" },
   { id: "notifications", label: "Notifications" },
@@ -66,6 +67,7 @@ function renderSettingsContent(id) {
     case "creator":       renderCreatorSection(container);       break;
     case "preferences":   renderPreferencesSection(container);   break;
     case "appearance":    renderAppearanceSection(container);    break;
+    case "companion":     renderCompanionSection(container);     break;
     case "notifications": renderNotificationsSection(container); break;
     case "knowledge":     renderKnowledgeSection(container);     break;
     case "media":         renderMediaSection(container);         break;
@@ -787,6 +789,194 @@ function setSettingsAccent(color) {
 }
 
 // ══════════════════════════════════════════════════════════════
+// COMPANION
+// ══════════════════════════════════════════════════════════════
+// The standalone VRM character has no attached controls any more; every knob
+// lives here. All state is owned by static/vrm_companion.js and reached through
+// the window.vmVrmCompanion surface, so this section is a pure view + wire-up.
+
+var VM_COMPANION_PERMS = [
+  { id: "vision", label: "See the screen" },
+  { id: "scroll", label: "Scroll pages" },
+  { id: "navigate", label: "Open workspaces" },
+  { id: "click", label: "Click buttons" },
+  { id: "type", label: "Type into fields" },
+];
+
+function renderCompanionSection(container) {
+  renderCompanionInto(container);
+}
+
+function refreshCompanionSettings() {
+  var container = document.getElementById("settingsContent");
+  if (container && _settingsCurrentSection === "companion") renderCompanionInto(container);
+}
+
+function renderCompanionInto(container) {
+  var vm = window.vmVrmCompanion;
+  if (!vm || !vm.getProps) {
+    container.innerHTML = _SH.sectionHeader("Companion", "Your standalone VRM companion") +
+      '<p style="color:#64748b;font-size:13px;">The companion isn\'t available in this view.</p>';
+    return;
+  }
+  var p = vm.getProps();
+  var isVrm = p.mode === "vrm";
+
+  // Access / microphone line + action.
+  var accessLabel = "Not asked yet";
+  var accessBtn = _SH.btn("Allow microphone", "vmCompanionAllowAccess()", "rgba(0,212,255,0.8)") +
+    " " + _SH.btn("Not now", "vmCompanionDeclineAccess()");
+  if (p.access === "allowed") {
+    accessLabel = "Microphone allowed — hands-free voice is on";
+    accessBtn = _SH.btn("Turn off mic access", "vmCompanionDeclineAccess()");
+  } else if (p.access === "declined") {
+    accessLabel = "Microphone off";
+    accessBtn = _SH.btn("Allow microphone", "vmCompanionAllowAccess()", "rgba(0,212,255,0.8)");
+  }
+
+  // Skin swatches (Original + presets).
+  var swatches = '<button type="button" class="vmvrm-swatch' + (p.skin === "" ? " on" : "") + '" data-skin="" title="Original" style="background:#a5937f;" onclick="vmCompanionSetSkin(\'\')" aria-label="Original skin"></button>';
+  (vm.SKIN_PRESETS || []).forEach(function (sp) {
+    swatches += '<button type="button" class="vmvrm-swatch' + (sp.name === p.skin ? " on" : "") + '" data-skin="' + sp.name + '" title="' + sp.name + '" style="background:' + sp.hex + ';" onclick="vmCompanionSetSkin(\'' + sp.name + '\')" aria-label="' + sp.name + ' skin"></button>';
+  });
+
+  // Task permission checkboxes.
+  var perms = p.taskPermissions || [];
+  var permRows = VM_COMPANION_PERMS.map(function (pm) {
+    var on = perms.indexOf(pm.id) !== -1;
+    return '<label style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid rgba(255,255,255,0.04);cursor:pointer;">' +
+      '<input type="checkbox" data-task-perm="' + pm.id + '"' + (on ? " checked" : "") +
+      ' onchange="vmCompanionTogglePerm(this,\'' + pm.id + '\')" style="cursor:pointer;">' +
+      '<span style="color:#e2e8f0;font-size:13px;font-family:\'Inter\',sans-serif;">' + pm.label + '</span></label>';
+  }).join("");
+
+  var nameInput = '<input id="vmSetName" type="text" maxlength="40" placeholder="Companion name" value="' + escapeCompanionAttr(p.charName) + '" autocomplete="off" onchange="vmCompanionSetName(this.value)" style="width:100%;background:rgba(15,23,42,0.85);border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:10px 12px;color:#e2e8f0;font-size:13px;outline:none;font-family:\'Inter\',sans-serif;box-sizing:border-box;">';
+
+  // The task plan / controls / input used to be an on-screen dashboard. It now
+  // lives here, inline, with the same element ids so the module's existing
+  // renderTask()/wireTaskControls() keep working unchanged.
+  var taskPanel =
+    '<div id="vmVrmCompanionTask">' +
+      '<div class="vmvrm-task-status" id="vmVrmCompanionTaskStatus">No active task</div>' +
+      '<div class="vmvrm-task-plan" id="vmVrmCompanionTaskList"></div>' +
+      '<div class="vmvrm-task-msg" id="vmVrmCompanionTaskMsg"></div>' +
+      '<div class="vmvrm-task-controls">' +
+        '<button type="button" class="vmvrm-mini-btn primary" id="vmVrmCompanionTaskApprove" title="Approve the proposed step">Approve</button>' +
+        '<button type="button" class="vmvrm-mini-btn" id="vmVrmCompanionTaskDeny" title="Deny the proposed step">Deny</button>' +
+        '<button type="button" class="vmvrm-mini-btn" id="vmVrmCompanionTaskPause" title="Pause the task">Pause</button>' +
+        '<button type="button" class="vmvrm-mini-btn" id="vmVrmCompanionTaskResume" title="Resume the paused task">Resume</button>' +
+        '<button type="button" class="vmvrm-mini-btn" id="vmVrmCompanionTaskStop" title="Stop / cancel the task">Stop</button>' +
+      '</div>' +
+      '<div class="vmvrm-task-row">' +
+        '<input type="text" id="vmVrmCompanionTaskInput" placeholder="Describe a task…" maxlength="2000" autocomplete="off" aria-label="Describe a task">' +
+        '<button type="button" class="vmvrm-mini-btn primary" id="vmVrmCompanionTaskPlan" title="Plan task">Plan</button>' +
+      '</div>' +
+    '</div>';
+
+  container.innerHTML = _SH.sectionHeader("Companion", "Your standalone VRM character — appearance, voice and permissions") +
+    _SH.card("Character", '<div style="display:flex;flex-direction:column;gap:14px;">' +
+      '<div>' + _SH.row("Show companion", _SH.toggle("vmSetVisible", p.visible, "vmCompanionSetVisible(this.checked)"), "Hide or restore the character. Hiding is always reversible here.") + '</div>' +
+      '<div>' + _SH.row("Active character", '<div class="vmvrm-mode"><button type="button" class="vmvrm-mode-btn' + (isVrm ? " on" : "") + '" data-vm-mode="vrm" onclick="vmCompanionSetMode(\'vrm\')">VRM companion</button><button type="button" class="vmvrm-mode-btn' + (!isVrm ? " on" : "") + '" data-vm-mode="cloud" onclick="vmCompanionSetMode(\'cloud\')">Cloud (legacy)</button></div>', "Only one is ever visible.") + '</div>' +
+      '<div><p style="color:#94a3b8;font-size:10px;margin:0 0 4px;text-transform:uppercase;letter-spacing:0.12em;font-family:\'Space Grotesk\',sans-serif;">Name</p>' + nameInput + '</div>' +
+      '<div><p style="color:#94a3b8;font-size:10px;margin:0 0 6px;text-transform:uppercase;letter-spacing:0.12em;font-family:\'Space Grotesk\',sans-serif;">Skin tone</p><div class="vmvrm-skins" id="vmSetSkins">' + swatches + '</div></div>' +
+      '</div>') +
+    _SH.card("Size & Position", '<div style="display:flex;flex-direction:column;gap:16px;">' +
+      '<div><p style="color:#94a3b8;font-size:10px;margin:0 0 4px;text-transform:uppercase;letter-spacing:0.12em;font-family:\'Space Grotesk\',sans-serif;">Size <b id="vmSetSizeVal" style="color:#e2e8f0;">' + p.sizePct + '%</b></p><input id="vmSetSize" type="range" min="10" max="24" step="1" value="' + p.sizePct + '" oninput="vmCompanionSetSize(this.value)" style="width:100%;"></div>' +
+      '<div><p style="color:#94a3b8;font-size:10px;margin:0 0 4px;text-transform:uppercase;letter-spacing:0.12em;font-family:\'Space Grotesk\',sans-serif;">Docked position</p>' + _SH.select([{ value: "br", label: "Bottom-right" }, { value: "bl", label: "Bottom-left" }, { value: "tr", label: "Top-right" }, { value: "tl", label: "Top-left" }], "vmSetDock", p.dock, "vmCompanionSetDock(this.value)") + '</div>' +
+      '<div>' + _SH.btn("Reset position & size", "vmCompanionResetHome()") + '</div>' +
+      '</div>') +
+    _SH.card("Voice & Microphone", '<div style="display:flex;flex-direction:column;">' +
+      _SH.row("Hands-free voice", _SH.toggle("vmSetMuted", !p.muted, "vmCompanionSetMuted(!this.checked)"), "When off, the companion stops listening and stays silent.") +
+      _SH.row("Resume listening after replies", _SH.toggle("vmSetVoiceFirst", p.voiceFirst, "vmCompanionSetVoiceFirst(this.checked)"), "Keep listening for your next sentence without a tap.") +
+      _SH.row("Screen context (vision)", _SH.toggle("vmSetVision", p.visionOn, "vmCompanionSetVision(this.checked)"), "Let the companion see your screen when you ask. Asks for permission first.") +
+      '<div style="margin-top:12px;"><p style="color:#94a3b8;font-size:10px;margin:0 0 4px;text-transform:uppercase;letter-spacing:0.12em;font-family:\'Space Grotesk\',sans-serif;">Voice</p>' + _SH.select([{ value: "", label: "Follow account voice" }, { value: "marcus", label: "Marcus" }, { value: "elena", label: "Elena" }, { value: "angelina", label: "Angelina" }], "vmSetVoice", p.voiceKey, "vmCompanionSetVoiceKey(this.value)") + '</div>' +
+      '<div style="margin-top:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.05);"><p style="color:#e2e8f0;font-size:13px;margin:0 0 8px;">Microphone access: <span style="color:#94a3b8;">' + accessLabel + '</span></p>' + accessBtn + '</div>' +
+      '</div>') +
+    _SH.card("Tasks", '<p style="color:#94a3b8;font-size:12px;margin:0 0 12px;line-height:1.5;">ValleyMind can carry out multi-step tasks in the app — say something like \u201copen the Studio\u201d or \u201cscroll down\u201d. It only acts on what you allow here, and anything impactful asks for your confirmation first.</p>' +
+      '<div style="display:flex;flex-direction:column;">' + permRows + '</div>' +
+      '<div style="margin-top:14px;border-top:1px solid rgba(255,255,255,0.06);padding-top:12px;">' + taskPanel + '</div>' +
+      '<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">' +
+      _SH.btn("Open chat", "vmCompanionOpenChat()") +
+      '</div>') +
+    '<p style="color:#475569;font-size:11px;margin-top:4px;">Status: <span id="vmCompanionStatusLine">' + escapeCompanionAttr(p.statusLabel) + '</span></p>';
+
+  // Reflect any selected-state classes the module owns, then bind the inline
+  // task controls and paint the current plan into them.
+  if (vm.syncControls) vm.syncControls();
+  if (vm.wireTaskControls) vm.wireTaskControls();
+  if (vm.renderTask) vm.renderTask();
+}
+
+function escapeCompanionAttr(s) {
+  return String(s == null ? "" : s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+function _vmCompanion() { return window.vmVrmCompanion || null; }
+
+function vmCompanionSetVisible(on) {
+  var vm = _vmCompanion();
+  if (!vm) return;
+  if (on && vm.getMode() !== "vrm") vm.setMode("vrm", { fromUser: true });
+  vm.setVisible(!!on);
+  refreshCompanionSettings();
+}
+function vmCompanionSetMode(mode) {
+  var vm = _vmCompanion(); if (!vm) return;
+  vm.setMode(mode, { fromUser: true });
+  refreshCompanionSettings();
+}
+function vmCompanionSetSkin(name) {
+  var vm = _vmCompanion(); if (!vm) return;
+  vm.setSkin(name);
+}
+function vmCompanionSetSize(v) {
+  var vm = _vmCompanion(); if (!vm) return;
+  vm.setSize(v);
+  var lbl = document.getElementById("vmSetSizeVal");
+  if (lbl) lbl.textContent = v + "%";
+}
+function vmCompanionSetDock(v) { var vm = _vmCompanion(); if (vm) vm.setDock(v); }
+function vmCompanionSetName(v) { var vm = _vmCompanion(); if (vm) vm.setCharName(v); }
+function vmCompanionSetVoiceKey(v) { var vm = _vmCompanion(); if (vm) vm.setVoiceKey(v); }
+function vmCompanionSetMuted(muted) {
+  var vm = _vmCompanion(); if (!vm) return;
+  vm.setMuted(!!muted);
+  refreshCompanionSettings();
+}
+function vmCompanionSetVoiceFirst(on) {
+  var vm = _vmCompanion(); if (!vm) return;
+  if (vm.setVoiceFirst) vm.setVoiceFirst(!!on);
+}
+function vmCompanionSetVision(on) {
+  var vm = _vmCompanion(); if (!vm) return;
+  vm.setVision(!!on);
+}
+function vmCompanionAllowAccess() {
+  var vm = _vmCompanion(); if (!vm) return;
+  vm.allowAccess();
+  refreshCompanionSettings();
+}
+function vmCompanionDeclineAccess() {
+  var vm = _vmCompanion(); if (!vm) return;
+  vm.declineAccess();
+  refreshCompanionSettings();
+}
+function vmCompanionResetHome() { var vm = _vmCompanion(); if (vm) vm.home(); }
+// The task panel renders inline in this section, so "opening tasks" just
+// re-renders Companion (kept as a named entry point for the module surface).
+function vmCompanionOpenTasks() { refreshCompanionSettings(); }
+function vmCompanionOpenChat() { var vm = _vmCompanion(); if (vm) { vm.toggleChat(); closeSettings(); } }
+function vmCompanionTogglePerm(el, name) {
+  var vm = _vmCompanion(); if (!vm) return;
+  var perms = (vm.getTaskPermissions() || []).slice();
+  if (el.checked) { if (perms.indexOf(name) === -1) perms.push(name); }
+  else { perms = perms.filter(function (x) { return x !== name; }); }
+  vm.setTaskPermissions(perms);
+}
+
+// ══════════════════════════════════════════════════════════════
 // NOTIFICATIONS
 // ══════════════════════════════════════════════════════════════
 
@@ -1312,10 +1502,17 @@ function renderUsageSection(container) {
 // ── Open/Close Settings ──────────────────────────────────────
 
 window.openSettings = function () {
+  window.openSettingsSection("account");
+};
+
+// Open Settings straight to a named section (used by the companion's task
+// launch to surface Settings → Companion). Kept as one path so the overlay,
+// nav build and section render can never drift apart.
+window.openSettingsSection = function (id) {
   var overlay = document.getElementById("settingsOverlay");
   if (overlay) overlay.style.display = "flex";
   buildSettingsNav();
-  switchSettingsSection("account");
+  switchSettingsSection(id || "account");
 };
 
 window.closeSettings = function () {

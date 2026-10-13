@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ValleyMind · VRM Companion Preview</title>
+<style>
+  :root {
+    --bg: #0b0d14;
+    --panel: #12151f;
+    --panel-2: #171b27;
+    --line: #262c3c;
+    --text: #e7ebf5;
+    --muted: #8e97ad;
+    --accent: #6ea8ff;
+    --accent-2: #7ee0c0;
+    --warn: #ffb36b;
+    --bad: #ff7a8a;
+    --radius: 10px;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 13px/1.45 "Segoe UI", system-ui, -apple-system, sans-serif;
+    display: grid;
+    grid-template-columns: 1fr 372px;
+    overflow: hidden;
+  }
+  /* ── stage ─────────────────────────────────────────────────────────── */
+  #stage { position: relative; overflow: hidden; }
+  #view { width: 100%; height: 100%; display: block; }
+
+  #hud {
+    position: absolute; left: 16px; top: 16px; right: 16px;
+    display: flex; gap: 10px; align-items: flex-start; flex-wrap: wrap;
+    pointer-events: none;
+  }
+  .card {
+    background: rgba(18,21,31,.86);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 9px 12px;
+    backdrop-filter: blur(7px);
+  }
+  .brand { font-weight: 700; letter-spacing: .3px; }
+  .brand span { color: var(--accent); }
+  .now { font-variant-numeric: tabular-nums; }
+  .now b { color: var(--accent-2); font-weight: 700; }
+  .bar {
+    height: 4px; border-radius: 3px; background: #232838; overflow: hidden;
+    margin-top: 7px; min-width: 168px;
+  }
+  .bar > i { display: block; height: 100%; width: 0%; background: linear-gradient(90deg, var(--accent), var(--accent-2)); }
+
+  #boot {
+    position: absolute; inset: 0; display: grid; place-items: center;
+    background: rgba(11,13,20,.9); text-align: center; padding: 24px;
+  }
+  #boot .inner { max-width: 560px; }
+  #boot h1 { font-size: 17px; margin: 0 0 6px; }
+  #boot p { color: var(--muted); margin: 0 0 14px; }
+  .spin {
+    width: 26px; height: 26px; margin: 0 auto 14px;
+    border: 2px solid var(--line); border-top-color: var(--accent);
+    border-radius: 50%; animation: sp .8s linear infinite;
+  }
+  @keyframes sp { to { transform: rotate(360deg); } }
+  #boot.done { display: none; }
+  #boot.failed .spin { display: none; }
+  #boot.failed h1 { color: var(--bad); }
+
+  /* ── sidebar ───────────────────────────────────────────────────────── */
+  aside {
+    background: var(--panel);
+    border-left: 1px solid var(--line);
+    display: flex; flex-direction: column;
+    min-height: 0;
+  }
+  .tabs { display: flex; border-bottom: 1px solid var(--line); flex: 0 0 auto; }
+  .tabs button {
+    flex: 1; padding: 11px 6px; background: none; border: 0;
+    color: var(--muted); font: inherit; font-weight: 600; cursor: pointer;
+    border-bottom: 2px solid transparent;
+  }
+  .tabs button.on { color: var(--text); border-bottom-color: var(--accent); background: var(--panel-2); }
+  .body { flex: 1 1 auto; overflow-y: auto; padding: 14px; min-height: 0; }
+  .body[hidden] { display: none; }
+
+  h2 {
+    font-size: 10.5px; text-transform: uppercase; letter-spacing: 1.1px;
+    color: var(--muted); margin: 0 0 9px; font-weight: 700;
+  }
+  section { margin-bottom: 20px; }
+  section:last-child { margin-bottom: 4px; }
+
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .grid.two { grid-template-columns: repeat(2, 1fr); }
+  button.btn {
+    padding: 9px 6px; background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--line); border-radius: 8px; font: inherit;
+    font-weight: 600; cursor: pointer; transition: .12s;
+  }
+  button.btn:hover { border-color: var(--accent); background: #1d2230; }
+  button.btn:active { transform: translateY(1px); }
+  button.btn.on { background: var(--accent); border-color: var(--accent); color: #08101f; }
+  button.btn.auto { grid-column: 1 / -1; }
+
+  input[type="search"], select {
+    width: 100%; background: #0d1017; color: var(--text);
+    border: 1px solid var(--line); border-radius: 8px;
+    padding: 8px 9px; font: inherit;
+  }
+  select { margin-top: 7px; }
+  select:focus, input:focus { outline: 1px solid var(--accent); outline-offset: -1px; }
+  .row { display: flex; align-items: center; gap: 9px; }
+  .row + .row { margin-top: 9px; }
+  .row label { flex: 0 0 54px; color: var(--muted); }
+  input[type="range"] { flex: 1; accent-color: var(--accent); }
+  .val { flex: 0 0 46px; text-align: right; font-variant-numeric: tabular-nums; color: var(--accent-2); }
+
+  table.kv { width: 100%; border-collapse: collapse; font-size: 12px; }
+  table.kv td { padding: 4px 0; border-bottom: 1px solid #1b2030; vertical-align: top; }
+  table.kv td:first-child { color: var(--muted); width: 46%; }
+  table.kv td:last-child { text-align: right; font-variant-numeric: tabular-nums; }
+
+  .swatches { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px 6px; }
+  .swatchRow { display: flex; flex-direction: column; align-items: center; gap: 5px; }
+  .swatch {
+    width: 38px; height: 38px; border: 0; border-radius: 50%; cursor: pointer;
+    padding: 0; box-shadow: inset 0 0 0 1px rgba(255,255,255,.16), 0 1px 3px rgba(0,0,0,.4);
+    transition: transform .12s, box-shadow .12s;
+  }
+  .swatch:hover { transform: scale(1.1); }
+  .swatch.on { box-shadow: 0 0 0 2px var(--panel-2), 0 0 0 4px var(--accent-2); }
+  .swatchName { font-size: 10.5px; color: var(--muted); text-align: center; line-height: 1.15; }
+  #skinReadout { margin-top: 10px; }
+  #skinNameLbl { font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #skinHexLbl { font-variant-numeric: tabular-nums; color: var(--accent-2); white-space: nowrap; }
+
+  .pill {
+    display: inline-block; padding: 1px 7px; border-radius: 999px;
+    font-size: 10.5px; font-weight: 700; background: #1e2434; color: var(--accent-2);
+  }
+  .note { color: var(--muted); font-size: 11.5px; margin: 8px 0 0; }
+  .err { color: var(--bad); font-size: 11.5px; margin: 6px 0 0; }
+  #log {
+    max-height: 190px; overflow-y: auto; background: #0a0c12;
+    border: 1px solid var(--line); border-radius: 8px; padding: 8px;
+    font-family: Consolas, "SF Mono", monospace; font-size: 11px; color: #a9b4cb;
+  }
+  #log div { padding: 1px 0; }
+  #log .bad { color: var(--bad); }
+</style>
+</head>
+<body>
+  <div id="stage">
+    <canvas id="view"></canvas>
+
+    <div id="hud">
+      <div class="card brand">ValleyMind <span>VRM Companion Preview</span></div>
+      <div class="card now" id="nowCard">
+        <div><b id="nowClip">—</b> · <span id="nowBehaviour">idle</span></div>
+        <div class="bar"><i id="nowBar"></i></div>
+      </div>
+    </div>
+
+    <div id="boot">
+      <div class="inner">
+        <div class="spin"></div>
+        <h1 id="bootTitle">Loading ValleyMind</h1>
+        <p id="bootMsg">Fetching clip catalogue…</p>
+      </div>
+    </div>
+  </div>
+
+  <aside>
+    <div class="tabs">
+      <button id="tabTest" class="on">Test</button>
+      <button id="tabClips">Clips</button>
+      <button id="tabInfo">Info</button>
+    </div>
+
+    <!-- ── TEST ─────────────────────────────────────────────────────── -->
+    <div class="body" id="paneTest">
+      <section>
+        <h2>Autonomous behaviour</h2>
+        <button class="btn auto on" id="btnAuto">Auto behaviour: ON</button>
+        <p class="note" id="autoNote">
+          Idle/breathing runs on its own. The companion randomly walks, talks, listens,
+          thinks and reacts with natural cross-faded transitions. Turn off to pin one clip.
+        </p>
+      </section>
+
+      <section>
+        <h2>Test modes</h2>
+        <div class="grid" id="modeGrid">
+          <button class="btn" data-mode="idle">Idle</button>
+          <button class="btn" data-mode="talking">Talk</button>
+          <button class="btn" data-mode="listening">Listen</button>
+          <button class="btn" data-mode="thinking">Think</button>
+          <button class="btn" data-mode="walking">Walk</button>
+          <button class="btn" data-mode="happy">Happy</button>
+          <button class="btn" data-mode="sad">Sad</button>
+          <button class="btn" data-mode="angry">Angry</button>
+          <button class="btn" data-mode="waving">Wave</button>
+          <button class="btn" data-mode="nodding">Nod</button>
+          <button class="btn" data-mode="pointing">Point</button>
+          <button class="btn" data-mode="headshake">Shake</button>
+        </div>
+        <p class="note">Each button picks a random clip from that behaviour pool, so repeat
+          clicks show you the whole library.</p>
+      </section>
+
+      <section>
+        <h2>Transport</h2>
+        <div class="grid two">
+          <button class="btn on" id="btnPlay">Pause</button>
+          <button class="btn" id="btnRestart">Restart</button>
+        </div>
+        <div class="row" style="margin-top:9px">
+          <label>Loop</label>
+          <button class="btn on" id="btnLoop" style="flex:1">ON</button>
+        </div>
+        <div class="row">
+          <label>Speed</label>
+          <input type="range" id="speed" min="0.25" max="2" step="0.05" value="1" />
+          <span class="val" id="speedVal">1.00x</span>
+        </div>
+      </section>
+
+      <section>
+        <h2>Skin color</h2>
+        <div class="swatches" id="skinSwatches"></div>
+        <div class="row" id="skinReadout">
+          <button class="btn" id="btnSkinReset">Original</button>
+          <span id="skinNameLbl">Preserve original appearance</span>
+          <span id="skinHexLbl"></span>
+        </div>
+        <p class="note">Live, non-destructive MToon tint of the skin materials only —
+          hair, eyes, clothes, textures, materials and the .vrm on disk are untouched.
+          Click a swatch to preview; "Original" restores the shipped appearance.</p>
+      </section>
+    </div>
+
+    <!-- ── CLIPS ────────────────────────────────────────────────────── -->
+    <div class="body" id="paneClips" hidden>
+      <section>
+        <h2>Animation selector</h2>
+        <input type="search" id="search" placeholder="Search 166 clips…" autocomplete="off" />
+        <select id="clipList" size="15"></select>
+        <p class="note" id="clipCount"></p>
+        <p class="note" id="clipMeta"></p>
+      </section>
+    </div>
+
+    <!-- ── INFO ─────────────────────────────────────────────────────── -->
+    <div class="body" id="paneInfo" hidden>
+      <section>
+        <h2>Runtime</h2>
+        <table class="kv">
+          <tr><td>Stage</td><td id="iStage">—</td></tr>
+          <tr><td>VRM version</td><td id="iVrm">—</td></tr>
+          <tr><td>Humanoid bones</td><td id="iBones">—</td></tr>
+          <tr><td>Body height</td><td id="iHeight">—</td></tr>
+          <tr><td>Catalogue clips</td><td id="iTotal">—</td></tr>
+          <tr><td>Clips decoded</td><td id="iLoaded">0</td></tr>
+          <tr><td>Current clip</td><td id="iClip">—</td></tr>
+          <tr><td>Clip tracks</td><td id="iTracks">—</td></tr>
+          <tr><td>Mixer time</td><td id="iTime">—</td></tr>
+        </table>
+        <p class="err" id="iErrors"></p>
+      </section>
+
+      <section>
+        <h2>Licence breakdown</h2>
+        <table class="kv" id="iLicence"></table>
+        <p class="note">
+          Clips ship unmodified from the Hanami VRM Animation library. Apache-2.0 and MIT
+          notices stay with the library; the two Quaternius sitting clips are CC0-1.0.
+          <br /><br />
+          <b>Body and face are separate:</b> this page drives the body from one
+          <code>AnimationMixer</code>, while expressions, gaze and mouth live in
+          <span class="pill">face.js</span>. Real TTS lip-sync will drive
+          <code>face.setTalkLevel()</code> only — no body-engine change.
+        </p>
+      </section>
+
+      <section>
+        <h2>Log</h2>
+        <div id="log"></div>
+      </section>
+    </div>
+  </aside>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "/vrm-preview/assets/node_modules/three/build/three.module.js",
+    "three/": "/vrm-preview/assets/node_modules/three/",
+    "three/addons/": "/vrm-preview/assets/node_modules/three/examples/jsm/",
+    "@pixiv/three-vrm": "/vrm-preview/assets/node_modules/@pixiv/three-vrm/lib/three-vrm.module.js",
+    "@pixiv/three-vrm-core": "/vrm-preview/assets/node_modules/@pixiv/three-vrm-core/lib/three-vrm-core.module.js",
+    "@pixiv/three-vrm-animation": "/vrm-preview/assets/node_modules/@pixiv/three-vrm-animation/lib/three-vrm-animation.module.js"
+  }
+}
+</script>
+<script type="module" src="/vrm-preview/assets/page.js"></script>
+</body>
+</html>

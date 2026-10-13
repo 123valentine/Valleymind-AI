@@ -207,7 +207,7 @@ class ProgressFrontendStaticTestCase(unittest.TestCase):
 
     def test_model_loads_before_onboarding(self):
         html = self._index_html()
-        i_settings = html.find('<script src="/static/settings.js"></script>')
+        i_settings = html.find('<script src="/static/settings.js')
         i_model = html.find('<script src="/static/pref_setup_model.js')
         i_onboarding = html.find('<script src="/static/onboarding.js')
         self.assertNotEqual(i_model, -1, "pref_setup_model.js must be loaded")

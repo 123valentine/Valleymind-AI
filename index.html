@@ -77,15 +77,17 @@
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-<script src="/static/settings.js"></script>
+<script src="/static/settings.js?v=3"></script>
 <script src="/static/pref_setup_model.js?v=3"></script>
 <script src="/static/onboarding.js?v=3"></script>
     <script src="/static/music_studio.js?v=10"></script>
+<script src="/static/music_workstation.js?v=1"></script>
 <script src="/static/massive_editing.js?v=3"></script>
 <script src="/static/tutorials.js"></script>
 <script src="/static/cloud.js?v=2"></script>
-<script src="/static/cloud_voice.js?v=2"></script>
+<script src="/static/cloud_voice.js?v=3"></script>
 <script src="/static/cloud_vision.js?v=2"></script>
+<script src="/static/task_controller.js?v=1"></script>
 <script src="/static/cloud_rig.js?v=2"></script>
 <script src="/static/cloud_anim.js?v=2"></script>
 <script id="tailwind-config">
@@ -2288,6 +2290,13 @@
             try { window.VMCloudRig.mountRoot(); } catch (err) { }
         }
         el = document.getElementById("vmCloudCharacter") || el;
+        // Mutual exclusion: while the VRM body is the active companion, never
+        // re-assert Cloud. Its inline !important would otherwise outrank the
+        // stylesheet rule that hides it in VRM mode.
+        if (document.body && document.body.getAttribute("data-vm-companion") === "vrm") {
+            el.style.setProperty("display", "none", "important");
+            return;
+        }
         el.style.setProperty("display", "block", "important");
         el.style.setProperty("visibility", "visible", "important");
         el.style.setProperty("opacity", "1", "important");
@@ -2331,6 +2340,197 @@
     } else {
         document.addEventListener("DOMContentLoaded", showIfAuthed);
     }
+})();
+</script>
+
+<!-- ValleyMind VRM desktop-companion overlay (static shell; the ES module
+     static/vrm_companion.js drives it). It mounts the SAME body engine the
+     /vrm-preview page runs, and is mutually exclusive with the Cloud
+     character: the body[data-vm-companion] attribute hides whichever
+     character is not active. Boot is lazy -- the WebGL engine only starts
+     once this overlay is actually shown. -->
+<div id="vmVrmCompanion" role="region" aria-label="ValleyMind VRM companion"
+     style="display:none; position:fixed; top:auto; right:18px; bottom:auto; left:auto; z-index:99998; pointer-events:none;">
+  <!-- The avatar floats directly on the app background: no card, background,
+       border, shadow, badge or debug label. Only the alpha-composited character
+       is visible, and pointer events pass through so it never blocks the app
+       beneath it. The only interactive surface is the optional chat panel.
+       There is no on-screen task dashboard any more — task diagnostics live in
+       Settings → Companion, and tasks are driven by voice. -->
+  <canvas id="vmVrmCompanionCanvas" aria-hidden="true"></canvas>
+  <div class="vmvrm-chat" id="vmVrmCompanionChat">
+    <div class="vmvrm-chat-log" id="vmVrmCompanionLog"></div>
+    <div class="vmvrm-chat-row">
+      <input type="text" id="vmVrmCompanionInput" placeholder="Message ValleyMind…" maxlength="2000" autocomplete="off" aria-label="Message the VRM companion">
+      <button type="button" class="vmvrm-mini-btn" id="vmVrmCompanionMicBtn" title="Voice input">Mic</button>
+      <button type="button" class="vmvrm-mini-btn" id="vmVrmCompanionScreenBtn" title="Screen context (asks for permission)">Screen</button>
+      <button type="button" class="vmvrm-mini-btn primary" id="vmVrmCompanionSend" title="Send">Send</button>
+    </div>
+  </div>
+</div>
+<!-- First-use companion access prompt. This is the user's own consent screen
+     (distinct from consequential-action approvals and from the browser's mic
+     permission prompt). "Allow" enables automatic hands-free listening; it is
+     asked once and remembered in localStorage["valleymind.companion_access"]. -->
+<div id="vmCompanionAccess" role="dialog" aria-modal="true" aria-labelledby="vmCompanionAccessTitle" style="display:none">
+  <div class="vm-access-card">
+    <div class="vm-access-icon" aria-hidden="true">✦</div>
+    <h3 id="vmCompanionAccessTitle">Allow ValleyMind Companion access?</h3>
+    <p>ValleyMind Companion can listen for your voice so you can talk hands-free. It only listens after you say yes, shows a live status while it listens, and never records after you mute or hide it.</p>
+    <div class="vm-access-actions">
+      <button type="button" class="vm-access-btn primary" id="vmCompanionAccessAllow">Allow</button>
+      <button type="button" class="vm-access-btn" id="vmCompanionAccessDeny">Not now</button>
+    </div>
+  </div>
+</div>
+<style>
+#vmVrmCompanion {
+    position: fixed !important;
+    z-index: 99998;
+    width: 34vh;
+    height: 16vh;
+    min-height: 120px;
+    font-family: 'Inter', system-ui, sans-serif;
+    isolation: isolate;
+    user-select: none;
+    -webkit-user-drag: none;
+    /* No box: only the alpha-composited avatar is visible over the app. */
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    /* Never intercept clicks: the app stays clickable beneath the character. */
+    pointer-events: none;
+}
+#vmVrmCompanionCanvas { display: block; width: 100%; height: 100%; }
+.vmvrm-mini-btn {
+    background: rgba(15, 23, 42, 0.78);
+    color: #cbd5e1;
+    border: 1px solid rgba(148, 163, 184, 0.3);
+    border-radius: 7px;
+    padding: 3px 8px;
+    font-size: 11px;
+    line-height: 1.2;
+    cursor: pointer;
+}
+.vmvrm-mini-btn:hover { background: rgba(30, 41, 59, 0.9); color: #e2e8f0; }
+.vmvrm-mini-btn.primary { background: rgba(14, 116, 144, 0.75); border-color: rgba(56, 189, 248, 0.5); color: #e0f7ff; }
+.vmvrm-mini-btn.on { box-shadow: inset 0 0 0 1px rgba(56, 189, 248, 0.8); }
+.vmvrm-chat {
+    display: none;
+    position: absolute; bottom: 100%; margin-bottom: 8px;
+    right: 0; width: 300px; max-height: 54vh;
+    background: rgba(8, 12, 24, 0.96);
+    border: 1px solid rgba(148, 163, 184, 0.3);
+    border-radius: 10px;
+    z-index: 3;
+    pointer-events: auto;
+}
+.vmvrm-chat.open { display: block; }
+.vmvrm-chat-log { height: 168px; overflow-y: auto; padding: 8px 10px; }
+.vmvrm-msg { margin: 0 0 8px; font-size: 12px; line-height: 1.4; color: #e2e8f0; }
+.vmvrm-msg-role { font-size: 9px; opacity: 0.55; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 1px; }
+.vmvrm-msg.user .vmvrm-msg-role { color: #7dd3fc; }
+.vmvrm-msg-body { white-space: pre-wrap; word-break: break-word; }
+.vmvrm-msg-body.dim { color: #9aa7b8; font-style: italic; }
+.vmvrm-chat-row { display: flex; gap: 6px; padding: 8px; border-top: 1px solid rgba(148, 163, 184, 0.15); }
+.vmvrm-chat-row input {
+    flex: 1; min-width: 0;
+    background: rgba(15, 23, 42, 0.85);
+    color: #e2e8f0;
+    border: 1px solid rgba(148, 163, 184, 0.3);
+    border-radius: 7px;
+    padding: 5px 8px;
+    font-size: 12px;
+}
+.vmvrm-skins { display: flex; gap: 6px; flex-wrap: wrap; }
+.vmvrm-swatch {
+    width: 26px; height: 26px; border-radius: 50%;
+    border: 2px solid rgba(148, 163, 184, 0.35); cursor: pointer; padding: 0;
+}
+.vmvrm-swatch.on { box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.9); border-color: #fff; }
+.vmvrm-mode { display: flex; gap: 6px; }
+.vmvrm-mode button {
+    flex: 1; cursor: pointer; font-size: 11px; padding: 5px 6px;
+    background: rgba(15, 23, 42, 0.85); color: #cbd5e1;
+    border: 1px solid rgba(148, 163, 184, 0.3); border-radius: 7px;
+}
+.vmvrm-mode button.on { box-shadow: inset 0 0 0 1px rgba(56, 189, 248, 0.8); color: #a5d8ff; }
+/* Task panel (now rendered inline inside Settings → Companion; it is no longer
+   an on-screen dashboard on the main view). */
+.vmvrm-task-status {
+    padding: 4px 4px 8px; font-size: 11px; color: #9fb3c8;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.15); margin-bottom: 6px;
+}
+.vmvrm-task-plan { max-height: 150px; overflow-y: auto; margin-bottom: 6px; }
+.vmvrm-step {
+    font-size: 11px; padding: 4px 6px; margin-bottom: 3px; border-radius: 6px;
+    background: rgba(15, 23, 42, 0.7); color: #cbd5e1;
+    border-left: 3px solid rgba(148, 163, 184, 0.35);
+    display: flex; justify-content: space-between; gap: 6px;
+}
+.vmvrm-step.current { border-left-color: #38bdf8; color: #e0f7ff; }
+.vmvrm-step.done { opacity: 0.6; border-left-color: #22c55e; }
+.vmvrm-step.flag { border-left-color: #f59e0b; }
+.vmvrm-step .vmvrm-step-badge { font-size: 9px; opacity: 0.75; white-space: nowrap; }
+.vmvrm-task-msg { font-size: 11px; color: #fbbf24; min-height: 14px; margin-bottom: 6px; word-break: break-word; }
+.vmvrm-task-controls { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 8px; }
+.vmvrm-task-controls .vmvrm-mini-btn { flex: 0 0 auto; }
+.vmvrm-task-row { display: flex; gap: 6px; border-top: 1px solid rgba(148, 163, 184, 0.15); padding-top: 8px; }
+.vmvrm-task-row input {
+    flex: 1; min-width: 0;
+    background: rgba(15, 23, 42, 0.85); color: #e2e8f0;
+    border: 1px solid rgba(148, 163, 184, 0.3); border-radius: 7px;
+    padding: 5px 8px; font-size: 12px;
+}
+/* Phones: keep the avatar compact so it never covers the workspace tab bar or
+   the in-workspace input row, and shrink the floating chat to the screen. */
+@media (max-width: 760px) {
+    #vmVrmCompanion { width: 40vw; height: 19vw; min-height: 92px; max-width: 200px; max-height: 104px; }
+    .vmvrm-chat { width: min(300px, 84vw); right: 0; }
+}
+/* First-use access prompt (clean, non-blocking, dark + light safe). */
+#vmCompanionAccess {
+    position: fixed; inset: 0; z-index: 99999; display: none;
+    align-items: center; justify-content: center;
+    background: rgba(2, 6, 23, 0.55); backdrop-filter: blur(3px);
+    padding: 20px;
+}
+#vmCompanionAccess.open { display: flex; }
+.vm-access-card {
+    max-width: 380px; width: 100%;
+    background: linear-gradient(180deg, #0f172a, #0b1120);
+    border: 1px solid rgba(148, 163, 184, 0.3);
+    border-radius: 16px; padding: 22px; text-align: center;
+    box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+    color: #e2e8f0;
+}
+.vm-access-icon { font-size: 26px; line-height: 1; margin-bottom: 10px; color: #38bdf8; }
+.vm-access-card h3 { margin: 0 0 8px; font-size: 18px; color: #f1f5f9; }
+.vm-access-card p { margin: 0 0 18px; font-size: 13px; line-height: 1.5; color: #9fb3c8; }
+.vm-access-actions { display: flex; gap: 10px; justify-content: center; }
+.vm-access-btn {
+    border: 1px solid rgba(148, 163, 184, 0.35); border-radius: 10px;
+    background: rgba(148, 163, 184, 0.12); color: #e2e8f0;
+    padding: 8px 16px; font-size: 13px; cursor: pointer;
+}
+.vm-access-btn.primary { background: #0ea5e9; border-color: #0ea5e9; color: #04202e; font-weight: 600; }
+/* Mutual exclusion: the non-active companion is hidden regardless of the
+   lifecycle calls the app shell makes. */
+body[data-vm-companion="vrm"] #vmCloudCharacter,
+body[data-vm-companion="vrm"] #vmCloudCompanion { display: none !important; }
+body[data-vm-companion="cloud"] #vmVrmCompanion { display: none !important; }
+</style>
+<script>
+(function () {
+    // Apply the persisted character mode to <body> immediately so the CSS
+    // mutual-exclusion rules above apply before any lifecycle code runs.
+    var key = "valleymind.vrm_companion";
+    var mode = "vrm";
+    try {
+        var p = JSON.parse(localStorage.getItem(key) || "{}");
+        if (p && p.mode === "cloud") mode = "cloud";
+    } catch (e) { }
+    document.body.setAttribute("data-vm-companion", mode);
 })();
 </script>
 
@@ -3923,13 +4123,23 @@ function setAppVisible(isVisible) {
     // Persistent Cloud companion: show once the user is authenticated and
     // tear it down (voice, screen share, renderer, listeners) whenever the
     // app shell disappears (logout/session end).
-    if (isVisible) {
+if (isVisible) {
         // Minimal authenticated Cloud character (visual isolation test).
         if (typeof window.vmCloudCharacterShow === "function") {
             try { window.vmCloudCharacterShow(); } catch (e) { console.warn("[cloudcharacter] show failed:", e); }
         }
+        // VRM desktop companion (mutually exclusive with the Cloud companion):
+        // dispatches by the persisted character mode and shows/hides itself.
+        if (typeof window.vmVrmCompanionDispatch === "function") {
+            try { window.vmVrmCompanionDispatch(); } catch (e) { console.warn("[vrmcompanion] dispatch failed:", e); }
+        }
+        // Persistent Cloud companion: only when the VRM companion is not active.
         if (typeof window.vmCloudCompanionShow === "function") {
-            try { window.vmCloudCompanionShow(); } catch (e) { console.warn("[companion] show failed:", e); }
+            try {
+                if (!(window.vmVrmCompanion && window.vmVrmCompanion.getMode() === "vrm")) {
+                    window.vmCloudCompanionShow();
+                }
+            } catch (e) { console.warn("[companion] show failed:", e); }
         }
     } else {
         if (typeof window.vmCloudCharacterHide === "function") {
@@ -3937,6 +4147,9 @@ function setAppVisible(isVisible) {
         }
         if (typeof window.vmCloudCompanionCleanup === "function") {
             try { window.vmCloudCompanionCleanup(); } catch (e) { console.warn("[companion] cleanup failed:", e); }
+        }
+        if (typeof window.vmVrmCompanionCleanup === "function") {
+            try { window.vmVrmCompanionCleanup(); } catch (e) { console.warn("[vrmcompanion] cleanup failed:", e); }
         }
     }
 }
@@ -11899,6 +12112,22 @@ if ('serviceWorker' in navigator) {
   });
 }
 </script>
+
+<!-- ValleyMind VRM companion modules: the SAME engine the /vrm-preview page
+     runs, brought into the main app shell via the identical import map. -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "/vrm-preview/assets/node_modules/three/build/three.module.js",
+    "three/": "/vrm-preview/assets/node_modules/three/",
+    "three/addons/": "/vrm-preview/assets/node_modules/three/examples/jsm/",
+    "@pixiv/three-vrm": "/vrm-preview/assets/node_modules/@pixiv/three-vrm/lib/three-vrm.module.js",
+    "@pixiv/three-vrm-core": "/vrm-preview/assets/node_modules/@pixiv/three-vrm-core/lib/three-vrm-core.module.js",
+    "@pixiv/three-vrm-animation": "/vrm-preview/assets/node_modules/@pixiv/three-vrm-animation/lib/three-vrm-animation.module.js"
+  }
+}
+</script>
+<script type="module" src="/static/vrm_companion.js?vm=3"></script>
 
 </body>
 </html>

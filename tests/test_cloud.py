@@ -833,6 +833,31 @@ class CloudVoiceStaticTestCase(unittest.TestCase):
         self.assertIn("stopSpeech(true)", js)
         self.assertIn('"interrupted"', js)
 
+    def test_cloud_voice_falls_back_to_browser_speech(self):
+        """When /api/tts cannot use the hosted Qwen voice (engine == "browser"),
+        the reply must still be spoken through the browser's own speech engine
+        instead of being silently dropped -- the regression that caused replies
+        to be generated but never heard."""
+        js = self._voice_js()
+        self.assertIn("speechSynthesis", js)
+        self.assertIn("SpeechSynthesisUtterance", js)
+        self.assertIn("function browserSpeak(", js)
+        # The fallback lives INSIDE the same speak() pipeline (same hooks).
+        self.assertIn("browserSpeak(clean, key, seq)", js)
+        # The persona key still drives the fallback voice choice.
+        self.assertIn("function pickSynthVoice(", js)
+        self.assertIn('key === "elena"', js)
+        # stop() must silence an in-progress synthesis utterance too.
+        self.assertIn("speechSynthesis.cancel()", js)
+
+    def test_cloud_voice_fallback_keeps_mic_privacy(self):
+        js = self._voice_js()
+        # The browser-speech fallback is OUTPUT only; it never adds a mic path
+        # or a second API call. getUsermedia/mediaDevices are still forbidden.
+        self.assertNotIn("getUserMedia", js)
+        self.assertNotIn("navigator.mediaDevices", js)
+        self.assertNotIn('"/api/cloud/chat"', js)
+
 
 class CloudVisionStaticTestCase(unittest.TestCase):
     """Step 4 screen-context foundation: static guarantees for cloud_vision.js.
@@ -1587,6 +1612,16 @@ class CloudLiveAnimBridgeTestCase(unittest.TestCase):
         self.assertEqual(voice.count('document.createElement("audio")'), 1)
         self.assertEqual(voice.count('"/api/tts"'), 1)
         self.assertIn("setLevelListener", voice)
+
+    def test_amplitude_tap_fans_out_to_every_subscriber(self):
+        # The shared player has ONE amplitude analyser but TWO mouth consumers
+        # (the Cloud rig and the VRM companion). A single listener slot silently
+        # dropped whichever registered first, so one character's mouth stopped
+        # tracking the voice entirely. The tap must notify every subscriber.
+        voice = self._voice_js()
+        self.assertIn("levelListeners", voice)
+        self.assertIn("levelListeners.push(fn)", voice)
+        self.assertIn("levelListeners[i](lvl)", voice)
 
     def test_analyser_is_terminated_so_playback_is_never_silenced(self):
         voice = self._voice_js()

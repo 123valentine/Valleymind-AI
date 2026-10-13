@@ -1551,6 +1551,21 @@ def api_music_sing_refine():
     return jsonify({"status": "success", "changes": plan, "summary": ""})
 
 
+# ── ValleyMind Music Workstation (provider-abstracted engine) ──────────────
+# The newer workstation API (create/remix/extend/reference/vocal/stems/master/
+# lyrics/copilot/jobs/projects-versions) lives in core.music and reuses this
+# app's authentication gate plus its existing project directory, so the older
+# /api/music production endpoints above keep working unchanged.
+from core import music as _music_workstation  # noqa: E402
+
+_music_workstation.register_routes(
+    app,
+    _require_login,
+    safe_user_id=_safe_user_id,
+    projects_dir=lambda: _MUSIC_PROJECTS_DIR,
+)
+
+
 @app.route("/login", methods=["POST"])
 @app.route("/auth/login", methods=["POST"])
 def login():
@@ -3715,6 +3730,93 @@ def api_cloud_state():
         return jsonify({"status": "success", "state": state})
     except Exception as exc:
         print(f"[CRITICAL] /api/cloud/state crashed: {exc}")
+        return jsonify({"status": "error", "message": "Internal server error"}), 500
+
+
+# ── Task execution layer ─────────────────────────────────────────────────
+# The companion's safe, observable action system. The server NEVER runs
+# generated code or shell commands: core.tasks only validates/plans a bounded
+# set of browser-scoped actions, gates consequential ones behind explicit user
+# confirmation, and records outcomes idempotently. The browser performs the
+# actual interaction through the SEPARATE static/task_controller.js adapter.
+
+@app.route("/api/task/plan", methods=["POST"])
+def api_task_plan():
+    from core import tasks as task_model
+    try:
+        user_id, error = _require_login()
+        if error:
+            return error
+        data = request.get_json(silent=True) or {}
+        request_text = str(data.get("request") or "").strip()
+        if not request_text:
+            return jsonify({"status": "error", "message": "request is required"}), 400
+        permissions = task_model.normalize_permissions(data.get("permissions"))
+        request_id = str(data.get("request_id") or "").strip()[:64]
+        if request_id:
+            cached = task_model.get_cached_plan(request_id)
+            if cached is not None:
+                return jsonify({
+                    "status": "success",
+                    "plan": cached,
+                    "source": cached.get("source", "cache"),
+                    "cached": True,
+                })
+        plan = task_model.build_plan(request_text, permissions=permissions)
+        if request_id:
+            task_model.cache_plan(request_id, plan)
+        return jsonify({"status": "success", "plan": plan, "source": plan.get("source"), "cached": False})
+    except task_model.ActionValidationError as exc:
+        return jsonify({"status": "error", "message": str(exc)}), 400
+    except Exception as exc:
+        print(f"[CRITICAL] /api/task/plan crashed: {exc}")
+        return jsonify({"status": "error", "message": "Internal server error"}), 500
+
+
+@app.route("/api/task/outcome", methods=["POST"])
+def api_task_outcome():
+    from core import tasks as task_model
+    try:
+        user_id, error = _require_login()
+        if error:
+            return error
+        data = request.get_json(silent=True) or {}
+        try:
+            result = task_model.record_outcome(
+                user_id,
+                task_id=data.get("task_id"),
+                step_id=data.get("step_id"),
+                state=data.get("state"),
+                outcome=data.get("outcome"),
+                message=data.get("message", ""),
+            )
+        except ValueError as exc:
+            return jsonify({"status": "error", "message": str(exc)}), 400
+        return jsonify(result)
+    except Exception as exc:
+        print(f"[CRITICAL] /api/task/outcome crashed: {exc}")
+        return jsonify({"status": "error", "message": "Internal server error"}), 500
+
+
+@app.route("/api/task/status", methods=["GET"])
+def api_task_status():
+    from core import tasks as task_model
+    try:
+        user_id, error = _require_login()
+        if error:
+            return error
+        try:
+            limit = int(request.args.get("limit", 20))
+        except (TypeError, ValueError):
+            limit = 20
+        return jsonify({
+            "status": "success",
+            "states": list(task_model.TASK_STATES),
+            "permissions": list(task_model.PERMISSIONS),
+            "tasks": task_model.get_tasks(user_id, limit=limit),
+        })
+    except Exception as exc:
+        print(f"[CRITICAL] /api/task/status crashed: {exc}")
         return jsonify({"status": "error", "message": "Internal server error"}), 500
 
 
@@ -6615,6 +6717,44 @@ def email_test_endpoint():
 
     ok = all(r["status"] in ("PASS", "SKIP") for r in results)
     return jsonify({"status": "success" if ok else "error", "results": results}), 200
+
+
+# -- VRM companion preview ------------------------------------------------------
+# Isolated visual test surface for the ValleyMind VRM + the Hanami .vrma library.
+# All page logic, its catalogue and its Three.js/VRM modules live in vrm_preview/.
+# The only things reached outside that folder are the two shared read-only assets
+# the page must borrow: the existing valleymind.vrm and the Hanami clip library.
+#
+# Every rule is /vrm-preview-prefixed and Werkzeug ranks static prefixes above the
+# project-root catch-all at the top of this file, so nothing existing is shadowed
+# and no other ValleyMind surface changes behaviour.
+_VRM_PREVIEW_DIR = PROJECT_ROOT / "vrm_preview"
+_VRM_PREVIEW_CLIPS = PROJECT_ROOT / "Hanami-main" / "Hanami-main" / "vrma"
+
+
+@app.route("/vrm-preview")
+@app.route("/vrm-preview/")
+def vrm_preview_page():
+    """Companion animation test page. Stateless: no DB, session or auth."""
+    return send_from_directory(str(_VRM_PREVIEW_DIR), "index.html")
+
+
+@app.route("/vrm-preview/assets/<path:filename>")
+def vrm_preview_assets(filename):
+    """vrm_preview/'s own files: companion.js, face.js, clips.json, node_modules/."""
+    return send_from_directory(str(_VRM_PREVIEW_DIR), filename)
+
+
+@app.route("/vrm-preview/model")
+def vrm_preview_model():
+    """The existing valleymind.vrm, streamed in place (never copied or modified)."""
+    return send_from_directory(str(PROJECT_ROOT), "valleymind.vrm")
+
+
+@app.route("/vrm-preview/clips/<path:filename>")
+def vrm_preview_clip(filename):
+    """Hanami .vrma library, read-only. Path form also serves the extra/ subfolder."""
+    return send_from_directory(str(_VRM_PREVIEW_CLIPS), filename)
 
 
 if __name__ == "__main__":

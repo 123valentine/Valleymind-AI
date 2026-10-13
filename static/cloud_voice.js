@@ -20,6 +20,7 @@
 
   var player = null;
   var speaking = false;
+  var browserSpeaking = false;
   var speechSeq = 0;
 
   function $id(s) { return document.getElementById(s); }
@@ -82,7 +83,11 @@
   var levelSource = null;
   var levelData = null;
   var levelRaf = 0;
-  var levelListener = null;
+  // Multiple subscribers: the Cloud rig and the VRM companion both animate a
+  // mouth from the SAME amplitude tap, and each one no-ops while it is not the
+  // active character. A single slot silently dropped whichever registered
+  // first, leaving one character with unsynchronised (or dead) lip movement.
+  var levelListeners = [];
   var levelBlocked = false;
 
   function sameOriginAudio(el) {
@@ -141,8 +146,11 @@
     if (levelRaf) return;
     var tick = function () {
       levelRaf = requestAnimationFrame(tick);
-      if (!levelListener) return;
-      try { levelListener(readLevel()); } catch (e) {}
+      if (!levelListeners.length) return;
+      var lvl = readLevel();
+      for (var i = 0; i < levelListeners.length; i++) {
+        try { levelListeners[i](lvl); } catch (e) {}
+      }
     };
     if (typeof requestAnimationFrame !== "function") return;
     levelRaf = requestAnimationFrame(tick);
@@ -154,8 +162,9 @@
   }
 
   function setLevelListener(fn) {
-    levelListener = typeof fn === "function" ? fn : null;
-    return !!levelListener;
+    if (typeof fn !== "function") return false;
+    if (levelListeners.indexOf(fn) === -1) levelListeners.push(fn);
+    return true;
   }
 
   function resumeLevelCtx() {
@@ -263,6 +272,11 @@
     var seq = ++speechSeq;
     var wasSpeaking = speaking;
     speaking = false;
+    browserSpeaking = false;
+    // If the browser speech-synthesis engine is the active voice, silence it too.
+    try {
+      if (window.speechSynthesis) window.speechSynthesis.cancel();
+    } catch (e) {}
     stopLevelLoop();
     var el = getPlayer();
     try {
@@ -285,6 +299,82 @@
     stopSpeech(true);
     stopListening();
     clearTimer();
+  }
+
+  // ── Browser speech-synthesis fallback ────────────────────────────────────
+  // /api/tts returns engine:"browser" (with a reason) whenever the hosted Qwen
+  // voice is unavailable — no API key, budget cap reached, or synthesis failed.
+  // core/tts.py documents that the frontend should fall back to the browser's
+  // own speech synthesis, but that was never wired up, so replies were generated
+  // and then silently never spoken. This reuses the SAME speak() pipeline (same
+  // hooks, same seq guard, same persona key) — it is not a second voice system.
+  function synthVoices() {
+    try {
+      return (window.speechSynthesis && window.speechSynthesis.getVoices)
+        ? (window.speechSynthesis.getVoices() || [])
+        : [];
+    } catch (e) { return []; }
+  }
+
+  function pickSynthVoice(key) {
+    var voices = synthVoices();
+    if (!voices.length) return null;
+    var en = [];
+    for (var i = 0; i < voices.length; i++) {
+      if (String(voices[i].lang || "").toLowerCase().indexOf("en") === 0) en.push(voices[i]);
+    }
+    var pool = en.length ? en : voices;
+    var female = (key === "elena" || key === "angelina");
+    var names = female
+      ? ["zira", "samantha", "jenny", "aria", "female", "susan", "karen", "moira", "tessa", "google us english"]
+      : ["david", "mark", "guy", "male", "daniel", "alex", "fred", "george", "oliver", "google uk english male"];
+    for (var a = 0; a < pool.length; a++) {
+      var nm = String(pool[a].name || "").toLowerCase();
+      for (var b = 0; b < names.length; b++) {
+        if (nm.indexOf(names[b]) !== -1) return pool[a];
+      }
+    }
+    for (var c = 0; c < pool.length; c++) { if (pool[c].localService) return pool[c]; }
+    return pool[0];
+  }
+
+  function browserSpeak(clean, key, seq) {
+    var synth = window.speechSynthesis;
+    if (!synth || typeof window.SpeechSynthesisUtterance !== "function") {
+      fire("onSpeakEnd", "tts unavailable");
+      return false;
+    }
+    try { synth.cancel(); } catch (e) {}
+    var u;
+    try { u = new window.SpeechSynthesisUtterance(String(clean).slice(0, 1500)); }
+    catch (e) { fire("onSpeakEnd", "tts unavailable"); return false; }
+    try { var v = pickSynthVoice(key); if (v) u.voice = v; } catch (e) {}
+    u.lang = String(navigator.language || "en-US");
+    u.rate = key === "elena" ? 1.04 : (key === "angelina" ? 1.02 : 0.98);
+    u.pitch = key === "elena" ? 1.08 : (key === "angelina" ? 1.0 : 0.92);
+    u.volume = 1;
+    u.onstart = function () {
+      if (seq !== speechSeq) return;
+      browserSpeaking = true;
+      speaking = true;
+      fire("onSpeakStart");
+    };
+    u.onend = function () {
+      if (seq !== speechSeq) return;
+      browserSpeaking = false;
+      speaking = false;
+      fire("onSpeakEnd", "");
+    };
+    u.onerror = function () {
+      if (seq !== speechSeq) return;
+      browserSpeaking = false;
+      speaking = false;
+      fire("onSpeakEnd", "tts failed");
+    };
+    try { synth.resume(); } catch (e) {}
+    try { synth.speak(u); }
+    catch (e) { fire("onSpeakEnd", "tts unavailable"); return false; }
+    return true;
   }
 
   function speak(text, opts) {
@@ -341,11 +431,13 @@
           fire("onSpeakEnd", "tts failed");
         }
       } else {
-        fire("onSpeakEnd", "tts unavailable");
+        // Hosted voice unavailable -> speak through the browser engine so the
+        // reply is still delivered aloud instead of being silently dropped.
+        browserSpeak(clean, key, seq);
       }
     }).catch(function () {
       if (seq !== speechSeq) return;
-      fire("onSpeakEnd", "tts unavailable");
+      browserSpeak(clean, key, seq);
     });
   }
 
@@ -363,7 +455,8 @@
     setHooks: setHooks,
     takeTranscript: takeTranscript,
     isListening: function () { return active; },
-    isSpeaking: function () { return speaking; },
+    isSpeaking: function () { return speaking || browserSpeaking; },
+    usingBrowserSpeech: function () { return browserSpeaking; },
     getPlayer: getPlayer,
     // Real TTS amplitude for mouth sync (same player element, no extra request).
     setLevelListener: setLevelListener,
