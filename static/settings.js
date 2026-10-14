@@ -852,6 +852,14 @@ function renderCompanionInto(container) {
 
   var nameInput = '<input id="vmSetName" type="text" maxlength="40" placeholder="Companion name" value="' + escapeCompanionAttr(p.charName) + '" autocomplete="off" onchange="vmCompanionSetName(this.value)" style="width:100%;background:rgba(15,23,42,0.85);border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:10px 12px;color:#e2e8f0;font-size:13px;outline:none;font-family:\'Inter\',sans-serif;box-sizing:border-box;">';
 
+  // Optional desktop bridge: shows/hides the standalone floating character that
+  // lives over your other windows. State is fetched from the desktop app; the
+  // toggle here only tells it to show or hide (it never starts a second copy).
+  var desktopCard = _SH.card("Desktop app",
+    '<p style="color:#94a3b8;font-size:12px;margin:0 0 12px;line-height:1.5;">Show the floating character over your other windows, outside the browser. This uses the ValleyMind Companion desktop app; it reuses the same character and signs in with the same account.</p>' +
+    _SH.row("Show companion outside ValleyMind", _SH.toggle("vmSetDesktopVisible", false, "vmCompanionSetDesktopVisible(this.checked)"), "When on, the standalone character appears on top of your other windows. When off, it stays only in this app.") +
+    '<p style="color:#475569;font-size:11px;margin:8px 0 0;">Desktop companion: <span id="vmCompanionDesktopStatus">Checking\u2026</span></p>');
+
   // The task plan / controls / input used to be an on-screen dashboard. It now
   // lives here, inline, with the same element ids so the module's existing
   // renderTask()/wireTaskControls() keep working unchanged.
@@ -880,6 +888,7 @@ function renderCompanionInto(container) {
       '<div><p style="color:#94a3b8;font-size:10px;margin:0 0 4px;text-transform:uppercase;letter-spacing:0.12em;font-family:\'Space Grotesk\',sans-serif;">Name</p>' + nameInput + '</div>' +
       '<div><p style="color:#94a3b8;font-size:10px;margin:0 0 6px;text-transform:uppercase;letter-spacing:0.12em;font-family:\'Space Grotesk\',sans-serif;">Skin tone</p><div class="vmvrm-skins" id="vmSetSkins">' + swatches + '</div></div>' +
       '</div>') +
+    desktopCard +
     _SH.card("Size & Position", '<div style="display:flex;flex-direction:column;gap:16px;">' +
       '<div><p style="color:#94a3b8;font-size:10px;margin:0 0 4px;text-transform:uppercase;letter-spacing:0.12em;font-family:\'Space Grotesk\',sans-serif;">Size <b id="vmSetSizeVal" style="color:#e2e8f0;">' + p.sizePct + '%</b></p><input id="vmSetSize" type="range" min="10" max="24" step="1" value="' + p.sizePct + '" oninput="vmCompanionSetSize(this.value)" style="width:100%;"></div>' +
       '<div><p style="color:#94a3b8;font-size:10px;margin:0 0 4px;text-transform:uppercase;letter-spacing:0.12em;font-family:\'Space Grotesk\',sans-serif;">Docked position</p>' + _SH.select([{ value: "br", label: "Bottom-right" }, { value: "bl", label: "Bottom-left" }, { value: "tr", label: "Top-right" }, { value: "tl", label: "Top-left" }], "vmSetDock", p.dock, "vmCompanionSetDock(this.value)") + '</div>' +
@@ -907,6 +916,7 @@ function renderCompanionInto(container) {
   if (vm.syncControls) vm.syncControls();
   if (vm.wireTaskControls) vm.wireTaskControls();
   if (vm.renderTask) vm.renderTask();
+  vmCompanionRefreshDesktopState();
 }
 
 function escapeCompanionAttr(s) {
@@ -985,6 +995,57 @@ function vmCompanionTogglePerm(el, name) {
   if (el.checked) { if (perms.indexOf(name) === -1) perms.push(name); }
   else { perms = perms.filter(function (x) { return x !== name; }); }
   vm.setTaskPermissions(perms);
+}
+
+// ── Desktop app bridge (show/hide the standalone floating character) ─────────
+// The desktop app (Electron) exposes a tiny loopback-only server on a fixed
+// port. Loopback is a secure context, so this works from the local site and the
+// hosted site alike. It only toggles visibility of the existing character.
+var VM_DESKTOP_CONTROL_URL = "http://127.0.0.1:8737";
+var VM_DESKTOP_HINT = "Open \u201cValleyMind Companion\u201d from your Desktop shortcut, then try again.";
+
+function vmCompanionDesktopPref(label, color) {
+  var el = document.getElementById("vmCompanionDesktopStatus");
+  if (el) { el.textContent = label; el.style.color = color || "#475569"; }
+}
+function vmCompanionSetDesktopToggle(on) {
+  var t = document.getElementById("vmSetDesktopVisible");
+  if (t) t.checked = !!on;
+}
+function vmCompanionRefreshDesktopState() {
+  if (!window.fetch || !document.getElementById("vmSetDesktopVisible")) return;
+  fetch(VM_DESKTOP_CONTROL_URL + "/state", { method: "GET" })
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (j) {
+      if (j && j.running) {
+        vmCompanionSetDesktopToggle(j.visible);
+        vmCompanionDesktopPref(j.visible ? "Running \u2014 showing on your desktop" : "Running \u2014 hidden");
+      } else {
+        throw new Error("no state");
+      }
+    })
+    .catch(function () {
+      vmCompanionSetDesktopToggle(false);
+      vmCompanionDesktopPref("Not running \u2014 " + VM_DESKTOP_HINT, "#f59e0b");
+    });
+}
+function vmCompanionSetDesktopVisible(on) {
+  vmCompanionDesktopPref("Updating\u2026");
+  fetch(VM_DESKTOP_CONTROL_URL + "/visibility", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ visible: !!on }),
+  })
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (j) {
+      if (!j || !j.ok) throw new Error("no response");
+      vmCompanionSetDesktopToggle(!!j.visible);
+      vmCompanionDesktopPref(j.visible ? "Showing on your desktop" : "Hidden \u2014 the character stays in this app");
+    })
+    .catch(function () {
+      vmCompanionSetDesktopToggle(false);
+      vmCompanionDesktopPref("Couldn\u2019t reach the desktop app \u2014 " + VM_DESKTOP_HINT, "#f59e0b");
+    });
 }
 
 // ══════════════════════════════════════════════════════════════

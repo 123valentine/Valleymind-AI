@@ -6757,6 +6757,28 @@ def vrm_preview_clip(filename):
     return send_from_directory(str(_VRM_PREVIEW_CLIPS), filename)
 
 
+# ── Windows desktop companion (Electron shell) ───────────────────────────────
+# The desktop wrapper loads THIS surface from the same local server, so the
+# existing session cookie, /auth/status, /api/cloud/chat, /api/tts and every
+# /vrm-preview asset route are reused same-origin — no new AI path, no secrets
+# in the frontend. Additive and desktop-only; the browser app is untouched.
+_DESKTOP_WEB_DIR = PROJECT_ROOT / "desktop" / "web"
+
+
+@app.route("/desktop")
+@app.route("/desktop/")
+def desktop_companion_page():
+    """Transparent companion surface for the Electron desktop wrapper."""
+    return send_from_directory(str(_DESKTOP_WEB_DIR), "companion.html")
+
+
+@app.route("/desktop/assets/<path:filename>")
+def desktop_companion_asset(filename):
+    """The desktop surface's own css/js. (Electron's main.js/preload.js are NOT
+    under web/ and are therefore never served over HTTP.)"""
+    return send_from_directory(str(_DESKTOP_WEB_DIR), filename)
+
+
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "8000"))
     app.run(host="0.0.0.0", port=port, debug=os.getenv("FLASK_DEBUG", "").lower() == "true")

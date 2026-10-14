@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ValleyMind Companion</title>
+<link rel="stylesheet" href="/desktop/assets/companion.css" />
+<!--
+  Same-origin shims for the EXISTING shared scripts. cloud_voice.js (the site's
+  one voice module) calls the app's globals apiFetch()/authHeaders(); here the
+  desktop page only ever talks to its OWN local Flask origin, so cookies carry
+  the session and no cross-origin base URL / token store is needed. Defining
+  these first lets cloud_voice.js run byte-for-byte unchanged.
+-->
+<script>
+  window.API_BASE_URL = "";
+  window.apiUrl = function (p) { return p; };
+  window.authHeaders = function (extra) { return Object.assign({}, extra || {}); };
+  window.apiFetch = function (path, options) {
+    options = options || {};
+    var controller = new AbortController();
+    var timeout = window.setTimeout(function () { controller.abort(); }, options.timeoutMs || 60000);
+    return fetch(path, Object.assign({ credentials: "include", signal: controller.signal }, options))
+      .finally(function () { window.clearTimeout(timeout); });
+  };
+</script>
+<!-- The site's single voice system (STT/TTS/amplitude). Reused, not reimplemented. -->
+<script src="/static/cloud_voice.js"></script>
+<script type="importmap">
+{
+  "imports": {
+    "three": "/vrm-preview/assets/node_modules/three/build/three.module.js",
+    "three/": "/vrm-preview/assets/node_modules/three/",
+    "three/addons/": "/vrm-preview/assets/node_modules/three/examples/jsm/",
+    "@pixiv/three-vrm": "/vrm-preview/assets/node_modules/@pixiv/three-vrm/lib/three-vrm.module.js",
+    "@pixiv/three-vrm-core": "/vrm-preview/assets/node_modules/@pixiv/three-vrm-core/lib/three-vrm-core.module.js",
+    "@pixiv/three-vrm-animation": "/vrm-preview/assets/node_modules/@pixiv/three-vrm-animation/lib/three-vrm-animation.module.js"
+  }
+}
+</script>
+</head>
+<body>
+  <!-- Drag handle. Empty transparent area + the character are draggable via
+       -webkit-app-region; every control below opts back out with no-drag. -->
+  <div id="dragbar">
+    <span class="brandDot"></span>
+    <span class="brandName">ValleyMind</span>
+    <span id="status" class="pill" data-s="boot">Starting…</span>
+  </div>
+
+  <canvas id="stage"></canvas>
+
+  <!-- Floating control rail -->
+  <div id="rail" class="no-drag">
+    <button id="btnChat" class="ctl" title="Chat">Chat</button>
+    <button id="btnPause" class="ctl" title="Pause / resume movement">Pause</button>
+    <button id="btnTop" class="ctl" title="Toggle always-on-top">On top</button>
+    <button id="btnReset" class="ctl" title="Reset window position">Reset</button>
+    <button id="btnQuit" class="ctl danger" title="Quit">Quit</button>
+  </div>
+
+  <!-- Transcript + composer -->
+  <div id="panel" class="no-drag" hidden>
+    <div id="log" aria-live="polite"></div>
+    <div id="bar">
+      <button id="btnMic" class="ctl round" title="Hold a conversation (tap to talk)">Mic</button>
+      <input id="input" type="text" placeholder="Type to ValleyMind…" autocomplete="off" />
+      <button id="btnSend" class="ctl primary">Send</button>
+    </div>
+  </div>
+
+  <script type="module" src="/desktop/assets/companion.js"></script>
+</body>
+</html>
