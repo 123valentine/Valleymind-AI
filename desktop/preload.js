@@ -8,8 +8,10 @@
  * generic "invoke arbitrary channel" escape hatch.
  *
  * Two window roles share this preload:
- *   - the login window  (pathname "/"      ) polls /auth/status until the user
- *     has signed in, then tells the main process to reveal the companion.
+ *   - the login window  (pathname "/", with ?login=1) polls /auth/status until
+ *     the user has signed in, then tells the main process to reveal the
+ *     companion. In single-app mode the main app window also loads "/" (without
+ *     ?login=1) and must NOT trigger that handshake, so the query flag gates it.
  *   - the companion     (pathname "/desktop") asks the main process to open the
  *     login window when it finds no session, and reports readiness.
  */
@@ -25,6 +27,10 @@ const api = {
   resetPosition: () => ipcRenderer.send("desktop:reset-position"),
   toggleAlwaysOnTop: () => ipcRenderer.send("desktop:toggle-always-on-top"),
   setIgnoreMouse: (on) => ipcRenderer.send("desktop:set-ignore-mouse", !!on),
+  // In-shell control of the floating companion (single-app mode). Works with no
+  // background controller: the Settings toggle drives the window directly.
+  setCompanionVisible: (on) => ipcRenderer.send("desktop:set-visible", !!on),
+  getCompanionVisible: () => ipcRenderer.invoke("desktop:get-visible"),
   // main -> companion
   onAuthOk: (cb) => {
     if (typeof cb === "function") ipcRenderer.on("auth:ok", () => cb());
@@ -32,12 +38,21 @@ const api = {
   onPauseMovement: (cb) => {
     if (typeof cb === "function") ipcRenderer.on("desktop:pause-movement", () => cb());
   },
+  onCompanionVisibility: (cb) => {
+    if (typeof cb === "function") ipcRenderer.on("desktop:visibility", (_e, on) => cb(!!on));
+  },
 };
 
 contextBridge.exposeInMainWorld("vmDesktop", api);
 
-// The login window ("/") watches for a completed sign-in and reports it once.
-if (typeof window !== "undefined" && window.location && window.location.pathname === "/") {
+// The login window ("/?login=1") watches for a completed sign-in and reports it
+// once. The main app window loads "/" too but without ?login=1, so it is skipped.
+if (
+  typeof window !== "undefined" &&
+  window.location &&
+  window.location.pathname === "/" &&
+  /[?&]login=1(?:&|$)/.test(window.location.search)
+) {
   let done = false;
   const iv = setInterval(async () => {
     if (done) return;

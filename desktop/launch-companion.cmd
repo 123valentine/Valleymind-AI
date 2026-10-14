@@ -3,13 +3,15 @@ setlocal EnableExtensions
 rem ============================================================
 rem  ValleyMind Companion - fallback launcher / troubleshooter
 rem
-rem  The Desktop shortcut "ValleyMind Companion" launches electron.exe
-rem  directly (no console window). Double-click THIS file only if that
-rem  shortcut is missing, or if you want to watch startup diagnostics.
+rem  Normal use needs nothing here: the website's Settings toggle
+rem  ("Show companion outside ValleyMind") starts the companion through
+rem  the background controller (desktop\controller.py), which is set up
+rem  once with desktop\install-companion.ps1.
 rem
-rem  It starts the existing Electron shell, which in turn starts the
-rem  existing Flask backend (python app.py) using the project's own
-rem  Python environment.
+rem  Double-click THIS file only to start the companion directly, e.g.
+rem  to watch startup diagnostics. It starts the existing Electron shell,
+rem  which in turn starts the existing Flask backend (python app.py)
+rem  using the project's own Python environment.
 rem ============================================================
 cd /d "%~dp0"
 

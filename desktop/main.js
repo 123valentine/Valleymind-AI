@@ -9,9 +9,16 @@
  *      window that loads /desktop from that same local server (same-origin, so
  *      the existing session cookie + /api/cloud/chat + /api/tts are reused
  *      unchanged; API keys never leave the server).
- *   3. Show the app's own login window once if there is no session.
+ *   3. Show the character's body without requiring a login; the login window is
+ *      opened only when the AI is used (i.e. a request returns 401/403).
  *   4. Provide window shell features: drag (CSS app-region), screen-boundary
  *      clamping, position persistence, always-on-top toggle, tray, clean quit.
+ *   5. Follow the background controller's desired-visibility state (poll), so
+ *      the website's Settings toggle can show/hide this window. This app is
+ *      launched on demand by desktop/controller.py; it does not own the port.
+ *   6. Single-app mode (`--app`): also host the main ValleyMind window and let
+ *      its Settings toggle drive this window directly over Electron IPC, so the
+ *      companion needs no separate controller when running inside the app.
  *
  * The companion is NOT a browser tab: Electron owns a real always-on-top OS
  * window, so the character stays visible over other applications.
@@ -26,19 +33,31 @@ const { spawn } = require("child_process");
 
 const PROJECT_ROOT = path.resolve(__dirname, "..");
 const TRAY_ICON = path.join(__dirname, "tray.png");
-// Fixed loopback port the website's Settings toggle talks to. Loopback is a
-// secure context, so this works from the local site and the hosted site alike.
-const CONTROL_PORT = 8737;
+// The always-on background controller (desktop/controller.py) owns this stable
+// loopback endpoint. The website talks to it; this app polls it for the desired
+// visibility and reports its own local changes back. Loopback is a secure
+// context, so the same mechanism works from the local site and the hosted site.
+const CONTROL_URL = "http://127.0.0.1:8737";
+
+// Single-app mode. Run as `electron . --app` and the shell becomes the ONE
+// ValleyMind Windows app: a normal window hosting the web UI plus the floating
+// companion window it controls directly over IPC. Without the flag the shell
+// keeps its original companion-only behaviour (launched by the controller).
+const APP_MODE = process.argv.includes("--app");
 
 let serverProc = null;
 let serverPort = 0;
-let controlServer = null;
 let companionVisible = true;
+let controllerSeen = false;
+let desiredPollTimer = null;
+let lastLocalChange = 0;
 let mainWin = null;
+let appWin = null;
 let loginWin = null;
 let tray = null;
 let quitting = false;
 let alwaysOnTop = true;
+let lastBroadcast = null;
 
 // ── Backend lifecycle ───────────────────────────────────────────────────────
 function findPython() {
@@ -125,60 +144,97 @@ function stopServer() {
   serverProc = null;
 }
 
-// ── Desktop visibility bridge ────────────────────────────────────────────────
-// The website's Settings toggle ("Show companion outside ValleyMind") talks to
-// this small loopback-only HTTP server. It ONLY shows / hides the existing
-// companion window; it never starts a second process or a duplicate character.
+// ── Desktop visibility bridge (client half) ──────────────────────────────────
+// This app does NOT own the control port. The background controller
+// (desktop/controller.py) does, because it must already be listening when the
+// user flips the website toggle — a web page cannot launch an .exe. Here we:
+//   * poll GET /desired (desired state + liveness heartbeat), and
+//   * POST /sync when the user changes visibility locally (tray / relaunch)
+// so the website toggle and the window never disagree. If no controller is
+// running (e.g. the app was started by hand), we simply keep the window
+// visible and nothing else changes.
 function applyVisibility() {
   if (!mainWin || mainWin.isDestroyed()) return;
   if (companionVisible) showCompanion();
   else if (mainWin.isVisible()) mainWin.hide();
+  if (lastBroadcast !== companionVisible) {
+    lastBroadcast = companionVisible;
+    broadcastVisibility();
+  }
 }
 
-function startControlServer() {
-  controlServer = http.createServer((req, res) => {
-    res.setHeader("Access-Control-Allow-Origin", req.headers.origin || "*");
-    res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-    res.setHeader("Access-Control-Allow-Private-Network", "true");
-    res.setHeader("Vary", "Origin");
-
-    if (req.method === "OPTIONS") { res.writeHead(204); res.end(); return; }
-
-    const url = (req.url || "/").split("?")[0];
-    if (req.method === "GET" && url === "/state") {
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ running: true, visible: companionVisible }));
-      return;
-    }
-    if (req.method === "POST" && url === "/visibility") {
-      let body = "";
-      req.on("data", (chunk) => { body += chunk; if (body.length > 4096) req.destroy(); });
-      req.on("end", () => {
-        let visible = true;
-        try { visible = JSON.parse(body || "{}").visible !== false; } catch (e) { /* default: show */ }
-        companionVisible = !!visible;
-        applyVisibility();
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ ok: true, visible: companionVisible }));
-      });
-      return;
-    }
-    res.writeHead(404, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ ok: false, error: "not_found" }));
-  });
-  controlServer.on("error", (err) => {
-    console.warn(`[desktop] visibility bridge unavailable on ${CONTROL_PORT}: ${err.message}`);
-  });
-  controlServer.listen(CONTROL_PORT, "127.0.0.1", () => {
-    console.log(`[desktop] visibility bridge on http://127.0.0.1:${CONTROL_PORT}`);
-  });
+// Tell every open window (the main app window, the companion surface) the
+// current visibility so the Settings toggle always reflects reality. Used by
+// the in-shell IPC control path, independent of any HTTP controller.
+function broadcastVisibility() {
+  const v = !!companionVisible;
+  for (const w of BrowserWindow.getAllWindows()) {
+    if (w && !w.isDestroyed()) w.webContents.send("desktop:visibility", v);
+  }
 }
 
-function stopControlServer() {
-  if (!controlServer) return;
-  try { controlServer.close(); } catch (e) { /* ignore */ }
-  controlServer = null;
+// The in-shell control entry point: show/hide the floating window and, if a
+// background controller happens to be running (browser/hosted case), keep it in
+// sync. No controller is required for this to work.
+function setCompanionVisible(on) {
+  companionVisible = !!on;
+  applyVisibility();
+  syncDesiredState(companionVisible);
+}
+
+function pollDesiredState() {
+  const req = http.get(`${CONTROL_URL}/desired`, { timeout: 1500 }, (res) => {
+    let raw = "";
+    res.on("data", (c) => { raw += c; if (raw.length > 4096) req.destroy(); });
+    res.on("end", () => {
+      let j = null;
+      try { j = JSON.parse(raw); } catch (e) { /* ignore */ }
+      if (res.statusCode === 200 && j && typeof j.visible === "boolean") {
+        controllerSeen = true;
+        // A very recent local change wins for a moment so the controller's
+        // slightly older value can't immediately undo the user's tray toggle.
+        if (Date.now() - lastLocalChange > 1500) {
+          companionVisible = j.visible;
+          applyVisibility();
+        }
+      }
+    });
+  });
+  req.on("timeout", () => req.destroy());
+  req.on("error", () => { /* no controller — leave visibility as-is */ });
+}
+
+function startDesiredPolling() {
+  if (desiredPollTimer) return;
+  pollDesiredState();
+  desiredPollTimer = setInterval(pollDesiredState, 700);
+}
+
+function stopDesiredPolling() {
+  if (desiredPollTimer) {
+    clearInterval(desiredPollTimer);
+    desiredPollTimer = null;
+  }
+}
+
+// Best-effort: tell the controller about a locally-initiated change so the
+// website toggle stays in sync. Silent when no controller is running.
+function syncDesiredState(visible) {
+  lastLocalChange = Date.now();
+  const payload = JSON.stringify({ visible: !!visible });
+  const req = http.request(
+    `${CONTROL_URL}/sync`,
+    {
+      method: "POST",
+      timeout: 1500,
+      headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(payload) },
+    },
+    (res) => res.resume()
+  );
+  req.on("timeout", () => req.destroy());
+  req.on("error", () => { /* no controller */ });
+  req.write(payload);
+  req.end();
 }
 
 // ── Window geometry ─────────────────────────────────────────────────────────
@@ -273,6 +329,37 @@ function showCompanion() {
   }
 }
 
+// The main ValleyMind window (single-app mode only). It loads the SAME web app
+// (/), so every existing feature, the session cookie and the in-app companion
+// are unchanged. Its Settings toggle drives the floating window over IPC.
+function createAppWindow() {
+  if (appWin && !appWin.isDestroyed()) {
+    appWin.focus();
+    return;
+  }
+  appWin = new BrowserWindow({
+    width: 1200,
+    height: 820,
+    minWidth: 900,
+    minHeight: 600,
+    title: "ValleyMind",
+    backgroundColor: "#0b141a",
+    show: false,
+    webPreferences: {
+      preload: path.join(__dirname, "preload.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+    },
+  });
+  appWin.setMenuBarVisibility(false);
+  appWin.loadURL(`http://127.0.0.1:${serverPort}/`);
+  appWin.once("ready-to-show", () => appWin && appWin.show());
+  appWin.on("closed", () => {
+    appWin = null;
+  });
+}
+
 function openLogin() {
   if (loginWin && !loginWin.isDestroyed()) {
     loginWin.focus();
@@ -292,7 +379,7 @@ function openLogin() {
       sandbox: false,
     },
   });
-  loginWin.loadURL(`http://127.0.0.1:${serverPort}/`);
+  loginWin.loadURL(`http://127.0.0.1:${serverPort}/?login=1`);
   loginWin.on("closed", () => {
     loginWin = null;
     // Logged-out exit: if the companion never authenticated, nothing to show.
@@ -341,8 +428,7 @@ function createTray() {
 
 function toggleCompanion() {
   if (!mainWin || mainWin.isDestroyed()) return;
-  if (mainWin.isVisible()) { companionVisible = false; mainWin.hide(); }
-  else { companionVisible = true; showCompanion(); }
+  setCompanionVisible(!companionVisible);
 }
 
 function resetPosition() {
@@ -387,6 +473,9 @@ function wireIpc() {
   ipcMain.on("desktop:set-ignore-mouse", (_e, on) => {
     if (mainWin && !mainWin.isDestroyed()) mainWin.setIgnoreMouseEvents(!!on, { forward: true });
   });
+  // In-shell control of the floating companion (no controller, no port).
+  ipcMain.handle("desktop:get-visible", () => !!companionVisible);
+  ipcMain.on("desktop:set-visible", (_e, on) => setCompanionVisible(!!on));
 }
 
 // ── Boot ────────────────────────────────────────────────────────────────────
@@ -397,9 +486,16 @@ async function bootstrap() {
     startServer(serverPort);
     await waitForServer(serverPort);
     hardenSession();
+    // In single-app mode the floating companion starts hidden: the user opts in
+    // from Settings (the in-app companion is always available regardless).
+    if (APP_MODE) companionVisible = false;
     createCompanionWindow();
     createTray();
-    startControlServer();
+    if (APP_MODE) createAppWindow();
+    // Start following the controller only once the window exists, so the
+    // desired-state poll (which is also the liveness heartbeat) begins when the
+    // companion is actually ready.
+    startDesiredPolling();
   } catch (err) {
     console.error(`[desktop] bootstrap failed: ${err.message}`);
     const { dialog } = require("electron");
@@ -420,14 +516,17 @@ const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
   app.quit();
 } else {
-  app.on("second-instance", () => { companionVisible = true; showCompanion(); });
+  app.on("second-instance", () => {
+    if (appWin && !appWin.isDestroyed()) appWin.focus();
+    setCompanionVisible(true);
+  });
   app.whenReady().then(bootstrap);
 }
 
 app.on("window-all-closed", () => app.quit());
 app.on("before-quit", () => {
   quitting = true;
-  stopControlServer();
+  stopDesiredPolling();
   stopServer();
   if (tray) {
     try {

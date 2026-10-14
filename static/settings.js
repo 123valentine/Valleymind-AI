@@ -856,7 +856,7 @@ function renderCompanionInto(container) {
   // lives over your other windows. State is fetched from the desktop app; the
   // toggle here only tells it to show or hide (it never starts a second copy).
   var desktopCard = _SH.card("Desktop app",
-    '<p style="color:#94a3b8;font-size:12px;margin:0 0 12px;line-height:1.5;">Show the floating character over your other windows, outside the browser. This uses the ValleyMind Companion desktop app; it reuses the same character and signs in with the same account.</p>' +
+    '<p style="color:#94a3b8;font-size:12px;margin:0 0 12px;line-height:1.5;">Show the floating character over your other windows, outside the browser. Turning this on starts it automatically \u2014 no shortcut needed \u2014 and it reuses the same character and account.</p>' +
     _SH.row("Show companion outside ValleyMind", _SH.toggle("vmSetDesktopVisible", false, "vmCompanionSetDesktopVisible(this.checked)"), "When on, the standalone character appears on top of your other windows. When off, it stays only in this app.") +
     '<p style="color:#475569;font-size:11px;margin:8px 0 0;">Desktop companion: <span id="vmCompanionDesktopStatus">Checking\u2026</span></p>');
 
@@ -998,11 +998,23 @@ function vmCompanionTogglePerm(el, name) {
 }
 
 // ── Desktop app bridge (show/hide the standalone floating character) ─────────
-// The desktop app (Electron) exposes a tiny loopback-only server on a fixed
-// port. Loopback is a secure context, so this works from the local site and the
-// hosted site alike. It only toggles visibility of the existing character.
+// The always-on background controller (desktop/controller.py) owns the small
+// loopback-only endpoint on a fixed port. It launches the Electron companion on
+// demand, so turning the toggle on starts everything automatically - no Desktop
+// shortcut needed. Loopback is a secure context, so this works from the local
+// site and the hosted site alike. It only controls the existing character.
 var VM_DESKTOP_CONTROL_URL = "http://127.0.0.1:8737";
-var VM_DESKTOP_HINT = "Open \u201cValleyMind Companion\u201d from your Desktop shortcut, then try again.";
+var VM_DESKTOP_SETUP_HINT = "The desktop helper isn\u2019t running. Run desktop\\install-companion.ps1 once to enable automatic start.";
+var _vmDesktopPollToken = 0;
+var _vmDesktopSubscribed = false;
+
+// When ValleyMind runs INSIDE the desktop app, window.vmDesktop exposes a direct
+// IPC bridge: the floating companion is controlled with no separate controller
+// process and no loopback port, and the main app window stays untouched. In a
+// normal browser it is absent, so we fall back to the loopback controller.
+function _vmDesktopBridge() {
+  return (window.vmDesktop && typeof window.vmDesktop.setCompanionVisible === "function") ? window.vmDesktop : null;
+}
 
 function vmCompanionDesktopPref(label, color) {
   var el = document.getElementById("vmCompanionDesktopStatus");
@@ -1013,6 +1025,28 @@ function vmCompanionSetDesktopToggle(on) {
   if (t) t.checked = !!on;
 }
 function vmCompanionRefreshDesktopState() {
+  if (!document.getElementById("vmSetDesktopVisible")) return;
+  var bridge = _vmDesktopBridge();
+  if (bridge) {
+    if (typeof bridge.onCompanionVisibility === "function" && !_vmDesktopSubscribed) {
+      _vmDesktopSubscribed = true;
+      bridge.onCompanionVisibility(function (on) {
+        vmCompanionSetDesktopToggle(!!on);
+        vmCompanionDesktopPref(on ? "Showing outside ValleyMind" : "Hidden \u2014 the character stays in this app");
+      });
+    }
+    if (typeof bridge.getCompanionVisible === "function") {
+      Promise.resolve(bridge.getCompanionVisible())
+        .then(function (on) {
+          vmCompanionSetDesktopToggle(!!on);
+          vmCompanionDesktopPref(on ? "Showing outside ValleyMind" : "Hidden \u2014 the character stays in this app");
+        })
+        .catch(function () {
+          vmCompanionDesktopPref("Desktop companion unavailable", "#f59e0b");
+        });
+    }
+    return;
+  }
   if (!window.fetch || !document.getElementById("vmSetDesktopVisible")) return;
   fetch(VM_DESKTOP_CONTROL_URL + "/state", { method: "GET" })
     .then(function (r) { return r.ok ? r.json() : null; })
@@ -1026,11 +1060,55 @@ function vmCompanionRefreshDesktopState() {
     })
     .catch(function () {
       vmCompanionSetDesktopToggle(false);
-      vmCompanionDesktopPref("Not running \u2014 " + VM_DESKTOP_HINT, "#f59e0b");
+      vmCompanionDesktopPref("Not running \u2014 " + VM_DESKTOP_SETUP_HINT, "#f59e0b");
     });
 }
+// After switching on, the companion takes a moment to boot. Poll until it is
+// actually up (or give up gracefully) so the status text is honest.
+function vmCompanionPollDesktopUntilVisible(token) {
+  var started = Date.now();
+  (function tick() {
+    if (token !== _vmDesktopPollToken) return;
+    if (!document.getElementById("vmSetDesktopVisible")) return; // panel closed
+    fetch(VM_DESKTOP_CONTROL_URL + "/state", { method: "GET" })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (j) {
+        if (token !== _vmDesktopPollToken) return;
+        if (j && j.running && j.visible) {
+          vmCompanionSetDesktopToggle(true);
+          vmCompanionDesktopPref("Showing on your desktop");
+          return;
+        }
+        if (Date.now() - started > 45000) {
+          vmCompanionDesktopPref("Still starting the companion\u2026 it will appear shortly.", "#f59e0b");
+          return;
+        }
+        setTimeout(tick, 1500);
+      })
+      .catch(function () {
+        if (token !== _vmDesktopPollToken) return;
+        if (Date.now() - started <= 45000) { vmCompanionDesktopPref("Starting the companion\u2026"); setTimeout(tick, 1500); }
+        else vmCompanionDesktopPref("Still starting the companion\u2026 it will appear shortly.", "#f59e0b");
+      });
+  })();
+}
 function vmCompanionSetDesktopVisible(on) {
-  vmCompanionDesktopPref("Updating\u2026");
+  var bridge = _vmDesktopBridge();
+  if (bridge) {
+    // In-app: drive the floating window directly over IPC. No controller, no
+    // port, no separate process. Optimistically reflect the toggle, then settle.
+    var btoken = ++_vmDesktopPollToken;
+    vmCompanionDesktopPref(on ? "Turning on\u2026" : "Hiding\u2026");
+    vmCompanionSetDesktopToggle(!!on);
+    try { bridge.setCompanionVisible(!!on); } catch (e) { /* ignore */ }
+    setTimeout(function () {
+      if (btoken !== _vmDesktopPollToken) return;
+      vmCompanionDesktopPref(on ? "Showing outside ValleyMind" : "Hidden \u2014 the character stays in this app");
+    }, 400);
+    return;
+  }
+  var token = ++_vmDesktopPollToken;
+  vmCompanionDesktopPref(on ? "Turning on\u2026" : "Hiding\u2026");
   fetch(VM_DESKTOP_CONTROL_URL + "/visibility", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -1039,12 +1117,22 @@ function vmCompanionSetDesktopVisible(on) {
     .then(function (r) { return r.ok ? r.json() : null; })
     .then(function (j) {
       if (!j || !j.ok) throw new Error("no response");
-      vmCompanionSetDesktopToggle(!!j.visible);
-      vmCompanionDesktopPref(j.visible ? "Showing on your desktop" : "Hidden \u2014 the character stays in this app");
+      if (!on) {
+        vmCompanionSetDesktopToggle(false);
+        vmCompanionDesktopPref("Hidden \u2014 the character stays in this app");
+        return;
+      }
+      vmCompanionSetDesktopToggle(true);
+      if (j.starting) {
+        vmCompanionDesktopPref("Starting the companion\u2026");
+        vmCompanionPollDesktopUntilVisible(token);
+      } else {
+        vmCompanionDesktopPref("Showing on your desktop");
+      }
     })
     .catch(function () {
       vmCompanionSetDesktopToggle(false);
-      vmCompanionDesktopPref("Couldn\u2019t reach the desktop app \u2014 " + VM_DESKTOP_HINT, "#f59e0b");
+      vmCompanionDesktopPref("Couldn\u2019t reach the desktop helper \u2014 " + VM_DESKTOP_SETUP_HINT, "#f59e0b");
     });
 }
 
