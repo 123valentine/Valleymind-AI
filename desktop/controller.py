@@ -20,17 +20,20 @@ It only:
   * launches / signals the heavier Electron + Flask companion on demand.
 
 The companion (desktop/main.js) polls this controller for the desired
-visibility and reports back, so the two always agree. The controller binds to
-127.0.0.1 only and answers browser requests only from loopback origins or an
+visibility and reports its REAL window visibility back, so the two always
+agree. `/state` therefore reports what the window is ACTUALLY doing (from the
+companion's report), never merely what was requested — so the website toggle
+can never claim the character is on screen when it is not. The controller binds
+to 127.0.0.1 only and answers browser requests only from loopback origins or an
 explicit allow-list — see VM_COMPANION_ALLOWED_ORIGINS.
 
 Endpoints
 ---------
-  GET  /state       -> {"running": bool, "visible": bool}   (website)
-  POST /visibility  -> {"visible": bool}                    (website -> launch/hide)
-  GET  /desired     -> {"visible": bool, "running": true}   (companion poll + heartbeat)
-  POST /sync        -> {"visible": bool}                    (companion reports a local change)
-  POST /shutdown     -> stop the controller (used by the uninstaller)
+  GET  /state       -> {"running", "visible", "desired"}   (website; visible = ACTUAL)
+  POST /visibility  -> {"visible": bool}                   (website -> set intent / launch)
+  GET  /desired     -> {"visible": bool, "running": true}  (companion poll + heartbeat)
+  POST /sync        -> {"visible": bool}                   (companion reports ACTUAL visibility)
+  POST /shutdown    -> stop the controller (used by the uninstaller)
 
 Usage
 -----
@@ -116,6 +119,8 @@ class _State:
     def __init__(self):
         self.lock = threading.Lock()
         self.desired_visible = False   # intent from the website / companion
+        self.actual_visible = False    # window's REAL visibility, reported by the companion
+        self.actual_at = 0.0           # when the actual visibility was last reported
         self.last_beat = 0.0           # last companion heartbeat (time.time())
         self.child = None              # Popen of the Electron companion we spawned
 
@@ -251,8 +256,11 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/state":
             with STATE.lock:
                 running = STATE.running()
-                visible = bool(STATE.desired_visible) if running else False
-            return self._send(200, {"running": running, "visible": visible}, origin)
+                # Report ACTUAL visibility reported by the companion, never the
+                # merely-requested value, so the UI cannot show a false ON.
+                visible = bool(STATE.actual_visible) if running else False
+                desired = bool(STATE.desired_visible)
+            return self._send(200, {"running": running, "visible": visible, "desired": desired}, origin)
         if path == "/desired":
             with STATE.lock:
                 STATE.last_beat = time.time()
@@ -298,11 +306,14 @@ class Handler(BaseHTTPRequestHandler):
             )
 
         if path == "/sync":
+            # The companion reports its REAL window visibility here. This is the
+            # value /state returns, so the two can never disagree silently.
             visible = data.get("visible", True) is not False
             with STATE.lock:
-                STATE.desired_visible = bool(visible)
-                desired = STATE.desired_visible
-            return self._send(200, {"ok": True, "visible": desired}, origin)
+                STATE.actual_visible = bool(visible)
+                STATE.actual_at = time.time()
+                actual = STATE.actual_visible
+            return self._send(200, {"ok": True, "visible": actual}, origin)
 
         if path == "/shutdown":
             self._send(200, {"ok": True, "stopping": True}, origin)

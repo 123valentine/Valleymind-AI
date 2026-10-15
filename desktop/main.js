@@ -199,10 +199,11 @@ function stopServer() {
 // (desktop/controller.py) does, because it must already be listening when the
 // user flips the website toggle — a web page cannot launch an .exe. Here we:
 //   * poll GET /desired (desired state + liveness heartbeat), and
-//   * POST /sync when the user changes visibility locally (tray / relaunch)
-// so the website toggle and the window never disagree. If no controller is
-// running (e.g. the app was started by hand) the window simply stays hidden
-// until the user asks for it.
+//   * POST /visibility (intent) + POST /sync (the window's REAL state), so the
+//     website toggle and the window never disagree.
+//
+// If no controller is running (e.g. the app was started by hand) the window
+// simply stays hidden until the user asks for it.
 function applyVisibility() {
   if (!mainWin || mainWin.isDestroyed()) return;
   if (companionVisible) showCompanion();
@@ -211,6 +212,53 @@ function applyVisibility() {
     lastBroadcast = companionVisible;
     broadcastVisibility();
   }
+  reportActualVisibility();
+}
+
+// Single fire-and-forget POST to the controller. Never throws and never blocks
+// boot: if no controller is listening the request simply fails silently.
+function postControl(pathname, bodyObj) {
+  let payload;
+  try {
+    payload = JSON.stringify(bodyObj);
+  } catch (e) {
+    return;
+  }
+  const req = http.request(
+    `${CONTROL_URL}${pathname}`,
+    {
+      method: "POST",
+      timeout: 1500,
+      headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(payload) },
+    },
+    (res) => res.resume()
+  );
+  req.on("timeout", () => req.destroy());
+  req.on("error", () => { /* no controller */ });
+  req.write(payload);
+  req.end();
+}
+
+// Publish the user's INTENT (tray toggle, in-app toggle, relaunch) so the
+// website toggle and the controller agree on what was requested.
+function syncDesiredState(visible) {
+  lastLocalChange = Date.now();
+  postControl("/visibility", { visible: !!visible });
+}
+
+// Report the window's REAL visibility so the controller (and therefore the
+// website's /state) reflects what is actually on screen, not what was asked.
+// Throttled: only on an actual change, or at most every 2s so a freshly started
+// controller still learns the current state.
+let lastReportedActual = null;
+let lastReportedAt = 0;
+function reportActualVisibility() {
+  const actual = companionIsVisible();
+  const now = Date.now();
+  if (actual === lastReportedActual && now - lastReportedAt < 2000) return;
+  lastReportedActual = actual;
+  lastReportedAt = now;
+  postControl("/sync", { visible: actual });
 }
 
 // Tell every open window (the main app window, the companion surface) the
@@ -229,7 +277,8 @@ function broadcastVisibility() {
 function setCompanionVisible(on) {
   companionVisible = !!on;
   applyVisibility();
-  syncDesiredState(companionVisible);
+  syncDesiredState(companionVisible);   // publish the new intent to the controller
+  reportActualVisibility();             // and the resulting REAL window state
 }
 
 function pollDesiredState() {
@@ -265,26 +314,6 @@ function stopDesiredPolling() {
     clearInterval(desiredPollTimer);
     desiredPollTimer = null;
   }
-}
-
-// Best-effort: tell the controller about a locally-initiated change so the
-// website toggle stays in sync. Silent when no controller is running.
-function syncDesiredState(visible) {
-  lastLocalChange = Date.now();
-  const payload = JSON.stringify({ visible: !!visible });
-  const req = http.request(
-    `${CONTROL_URL}/sync`,
-    {
-      method: "POST",
-      timeout: 1500,
-      headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(payload) },
-    },
-    (res) => res.resume()
-  );
-  req.on("timeout", () => req.destroy());
-  req.on("error", () => { /* no controller */ });
-  req.write(payload);
-  req.end();
 }
 
 // ── Window geometry ─────────────────────────────────────────────────────────
@@ -531,7 +560,7 @@ function companionIsVisible() {
 function wireIpc() {
   // Readiness is a REPORT, never a request to show: the companion stays hidden
   // until the user (or the website toggle) asks for it.
-  ipcMain.on("desktop:ready", () => broadcastVisibility());
+  ipcMain.on("desktop:ready", () => { broadcastVisibility(); reportActualVisibility(); });
   ipcMain.on("desktop:open-login", () => openLogin());
   ipcMain.on("auth:login-done", () => {
     if (loginWin && !loginWin.isDestroyed()) loginWin.close();
@@ -573,6 +602,9 @@ async function bootstrap() {
     createCompanionWindow();
     createTray();
     if (APP_MODE) createAppWindow();
+    // Tell the controller the window's REAL starting state (hidden) so its
+    // /state reports the truth from the very first query.
+    reportActualVisibility();
     // Start following the controller only once the window exists, so the
     // desired-state poll (which is also the liveness heartbeat) begins when the
     // companion is actually ready.

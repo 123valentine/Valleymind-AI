@@ -144,8 +144,16 @@ var _SH = {
     return '<select id="' + id + '"' + oc + ' style="width:100%;background:rgba(15,23,42,0.85);border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:10px 12px;color:#e2e8f0;font-size:13px;outline:none;font-family:\'Inter\',sans-serif;cursor:pointer;">' + opts + '</select>';
   },
   toggle: function (id, checked, onChange) {
-    var cb = onChange ? ' onchange="' + onChange + '"' : ' onchange="this.parentNode.querySelector(\'.slider\').style.background=this.checked?\'rgba(0,212,255,0.7)\':\'rgba(255,255,255,0.1)\'"';
-    return '<label style="position:relative;display:inline-block;width:36px;height:20px;cursor:pointer;flex-shrink:0;"><input id="' + id + '" type="checkbox" ' + (checked ? "checked" : "") + ' style="opacity:0;width:0;height:0;"' + cb + '><span class="slider" style="position:absolute;inset:0;background:' + (checked ? "rgba(0,212,255,0.7)" : "rgba(255,255,255,0.1)") + ';border-radius:10px;transition:0.2s;"></span><span style="position:absolute;top:2px;left:' + (checked ? "18px" : "2px") + ';width:16px;height:16px;border-radius:50%;background:#fff;transition:0.2s;"></span></label>';
+    // The switch's appearance is driven by CSS from the checkbox's :checked
+    // state (see the .vm-switch rules). Nothing here paints the on/off look, so
+    // the switch can never drift out of sync with the checkbox: setting
+    // el.checked (from a click or from JS) is enough to update the visuals.
+    var cb = onChange ? ' onchange="' + onChange + '"' : '';
+    return '<label class="vm-switch">' +
+      '<input id="' + id + '" type="checkbox" ' + (checked ? "checked" : "") + cb + '>' +
+      '<span class="vm-switch-track"></span>' +
+      '<span class="vm-switch-knob"></span>' +
+      '</label>';
   },
   row: function (label, control, desc) {
     return '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.04);"><div style="flex:1;"><span style="color:#e2e8f0;font-size:13px;font-family:\'Inter\',sans-serif;">' + label + '</span>' + (desc ? '<p style="color:#64748b;font-size:11px;margin:2px 0 0;font-family:\'Inter\',sans-serif;">' + desc + '</p>' : '') + '</div>' + control + '</div>';
@@ -1063,9 +1071,12 @@ function vmCompanionRefreshDesktopState() {
       vmCompanionDesktopPref("Not running \u2014 " + VM_DESKTOP_SETUP_HINT, "#f59e0b");
     });
 }
-// After switching on, the companion takes a moment to boot. Poll until it is
-// actually up (or give up gracefully) so the status text is honest.
-function vmCompanionPollDesktopUntilVisible(token) {
+// Confirm the REAL native window state instead of trusting the request. Polls
+// the controller until the window actually matches the intent, then reconciles
+// the switch. On timeout it restores the last known real state - never a false
+// ON for a window that is not on screen.
+function vmCompanionPollDesktopUntilVisible(token, desired) {
+  desired = !!desired;
   var started = Date.now();
   (function tick() {
     if (token !== _vmDesktopPollToken) return;
@@ -1074,75 +1085,86 @@ function vmCompanionPollDesktopUntilVisible(token) {
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (j) {
         if (token !== _vmDesktopPollToken) return;
-        if (j && j.running && j.visible) {
-          vmCompanionSetDesktopToggle(true);
-          vmCompanionDesktopPref("Showing on your desktop");
+        if (j && j.visible === desired) {
+          vmCompanionSetDesktopToggle(desired);
+          vmCompanionDesktopPref(desired ? "Showing on your desktop" : "Hidden \u2014 the character stays in this app");
           return;
         }
         if (Date.now() - started > 45000) {
-          vmCompanionDesktopPref("Still starting the companion\u2026 it will appear shortly.", "#f59e0b");
+          if (!(j && j.visible === true)) vmCompanionSetDesktopToggle(false);
+          vmCompanionDesktopPref(desired
+            ? "The companion didn\u2019t appear. " + VM_DESKTOP_SETUP_HINT
+            : "Couldn\u2019t confirm the companion is hidden.", "#f59e0b");
           return;
         }
-        setTimeout(tick, 1500);
+        vmCompanionDesktopPref(desired ? "Starting the companion\u2026" : "Hiding the companion\u2026");
+        setTimeout(tick, 1200);
       })
       .catch(function () {
         if (token !== _vmDesktopPollToken) return;
-        if (Date.now() - started <= 45000) { vmCompanionDesktopPref("Starting the companion\u2026"); setTimeout(tick, 1500); }
-        else vmCompanionDesktopPref("Still starting the companion\u2026 it will appear shortly.", "#f59e0b");
+        if (Date.now() - started > 45000) {
+          vmCompanionSetDesktopToggle(false);
+          vmCompanionDesktopPref("Lost contact with the desktop helper. " + VM_DESKTOP_SETUP_HINT, "#f59e0b");
+        } else setTimeout(tick, 1200);
       });
   })();
 }
 function vmCompanionSetDesktopVisible(on) {
+  on = !!on;
+  var token = ++_vmDesktopPollToken;
+  // Move the switch immediately for a responsive feel. The final state is then
+  // reconciled to the CONFIRMED native visibility (and reverted on failure), so
+  // the switch never claims ON for a window that is not actually on screen.
+  vmCompanionSetDesktopToggle(on);
+  vmCompanionDesktopPref(on ? "Turning on\u2026" : "Hiding\u2026");
+
   var bridge = _vmDesktopBridge();
   if (bridge) {
     // In-app: drive the floating window directly over IPC. No controller, no
-    // port, no separate process. Report the ACTUAL resulting visibility that
-    // the main process hands back, so the toggle and status text never lie.
-    var btoken = ++_vmDesktopPollToken;
-    vmCompanionDesktopPref(on ? "Turning on\u2026" : "Hiding\u2026");
-    vmCompanionSetDesktopToggle(!!on);
+    // port, no separate process. The promise resolves to the ACTUAL resulting
+    // visibility, so the toggle and status text never lie.
     var pending;
-    try { pending = bridge.setCompanionVisible(!!on); } catch (e) { pending = Promise.reject(e); }
+    try { pending = bridge.setCompanionVisible(on); } catch (e) { pending = Promise.reject(e); }
     Promise.resolve(pending)
       .then(function (actual) {
-        if (btoken !== _vmDesktopPollToken) return;
-        var vis = (typeof actual === "boolean") ? actual : !!on;
+        if (token !== _vmDesktopPollToken) return;
+        var vis = (typeof actual === "boolean") ? actual : on;
         vmCompanionSetDesktopToggle(vis);
         vmCompanionDesktopPref(vis ? "Showing outside ValleyMind" : "Hidden \u2014 the character stays in this app");
       })
       .catch(function () {
-        if (btoken !== _vmDesktopPollToken) return;
+        if (token !== _vmDesktopPollToken) return;
         vmCompanionSetDesktopToggle(false);
         vmCompanionDesktopPref("Couldn\u2019t control the companion window", "#f59e0b");
       });
     return;
   }
-  var token = ++_vmDesktopPollToken;
-  vmCompanionDesktopPref(on ? "Turning on\u2026" : "Hiding\u2026");
+
+  if (!window.fetch) {
+    vmCompanionSetDesktopToggle(false);
+    vmCompanionDesktopPref("This browser can\u2019t reach the desktop helper. " + VM_DESKTOP_SETUP_HINT, "#f59e0b");
+    return;
+  }
   fetch(VM_DESKTOP_CONTROL_URL + "/visibility", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ visible: !!on }),
+    body: JSON.stringify({ visible: on }),
   })
     .then(function (r) { return r.ok ? r.json() : null; })
     .then(function (j) {
-      if (!j || !j.ok) throw new Error("no response");
-      if (!on) {
+      if (token !== _vmDesktopPollToken) return;
+      if (!j || !j.ok) {
         vmCompanionSetDesktopToggle(false);
-        vmCompanionDesktopPref("Hidden \u2014 the character stays in this app");
+        vmCompanionDesktopPref("The desktop helper refused the request. " + VM_DESKTOP_SETUP_HINT, "#f59e0b");
         return;
       }
-      vmCompanionSetDesktopToggle(true);
-      if (j.starting) {
-        vmCompanionDesktopPref("Starting the companion\u2026");
-        vmCompanionPollDesktopUntilVisible(token);
-      } else {
-        vmCompanionDesktopPref("Showing on your desktop");
-      }
+      // Confirm the REAL window state rather than trusting the request.
+      vmCompanionPollDesktopUntilVisible(token, on);
     })
     .catch(function () {
+      if (token !== _vmDesktopPollToken) return;
       vmCompanionSetDesktopToggle(false);
-      vmCompanionDesktopPref("Couldn\u2019t reach the desktop helper \u2014 " + VM_DESKTOP_SETUP_HINT, "#f59e0b");
+      vmCompanionDesktopPref("Not running \u2014 " + VM_DESKTOP_SETUP_HINT, "#f59e0b");
     });
 }
 

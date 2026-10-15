@@ -77,7 +77,20 @@
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-<script src="/static/settings.js?v=6"></script>
+<style>
+  /* Settings toggle switch. The visual state is driven ONLY by :checked, so the
+     switch always matches its checkbox. (Previously the on/off look was baked
+     into inline styles at render time and never updated on click, which is why
+     the switch appeared not to move.) */
+  .vm-switch { position: relative; display: inline-block; width: 36px; height: 20px; cursor: pointer; flex-shrink: 0; vertical-align: middle; }
+  .vm-switch input { position: absolute; opacity: 0; width: 0; height: 0; margin: 0; }
+  .vm-switch .vm-switch-track { position: absolute; inset: 0; background: rgba(255,255,255,0.1); border-radius: 10px; transition: background 0.2s ease; }
+  .vm-switch .vm-switch-knob { position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,0.45); transition: left 0.2s ease; }
+  .vm-switch input:checked + .vm-switch-track { background: rgba(0,212,255,0.7); }
+  .vm-switch input:checked ~ .vm-switch-knob { left: 18px; }
+  .vm-switch input:focus-visible + .vm-switch-track { box-shadow: 0 0 0 2px rgba(0,212,255,0.45); }
+</style>
+<script src="/static/settings.js?v=7"></script>
 <script src="/static/pref_setup_model.js?v=3"></script>
 <script src="/static/onboarding.js?v=3"></script>
     <script src="/static/music_studio.js?v=10"></script>

@@ -167,7 +167,7 @@ class DesktopStaticTests(unittest.TestCase):
         main = self._read("desktop/main.js")
         self.assertIn("let companionVisible = false;", main)
         self.assertNotIn("let companionVisible = true;", main)
-        self.assertIn('ipcMain.on("desktop:ready", () => broadcastVisibility())', main)
+        self.assertIn('ipcMain.on("desktop:ready", () => { broadcastVisibility(); reportActualVisibility(); })', main)
         # No remaining code path force-shows the companion.
         self.assertNotIn("setCompanionVisible(true)", main)
 
@@ -181,6 +181,26 @@ class DesktopStaticTests(unittest.TestCase):
         main = self._read("desktop/main.js")
         self.assertIn("function companionIsVisible()", main)
         self.assertIn("return companionIsVisible();", main)
+
+    def test_shell_reports_actual_visibility_to_controller(self):
+        # main.js must report the window's REAL visibility (not just the desired
+        # state) so the controller's /state can never lie: "reported" is what
+        # happens, "requested" is only intent.
+        main = self._read("desktop/main.js")
+        self.assertIn("function reportActualVisibility()", main)
+        self.assertIn('postControl("/sync", { visible: actual })', main)
+        self.assertIn('postControl("/visibility", { visible: !!visible })', main)
+        # A local change publishes intent AND the resulting real state.
+        self.assertIn("reportActualVisibility();             // and the resulting REAL window state", main)
+
+    def test_settings_toggle_confirms_real_visibility(self):
+        # The switch must reflect CONFIRMED native visibility, not an optimistic
+        # request: it polls controller /state and reverts on failure.
+        settings = self._read("static/settings.js")
+        self.assertIn("function vmCompanionPollDesktopUntilVisible(token, desired)", settings)
+        self.assertIn("j.visible === desired", settings)
+        # And the visual switch is CSS-driven (a real checkbox), not inline JS.
+        self.assertIn("vm-switch", settings)
 
     def test_backend_readiness_is_robust_and_truthful(self):
         # Readiness is a real /auth/status probe, not a fixed sleep. The wait
@@ -403,13 +423,38 @@ class ControllerServerTests(unittest.TestCase):
         _, body, _ = self._req("/state")
         self.assertTrue(body["running"], "a recent /desired poll counts as liveness")
 
-    def test_sync_updates_desired_state(self):
+    def test_sync_reports_actual_visibility_to_state(self):
+        # The companion reports its REAL window visibility via /sync; /state then
+        # reflects that — not merely the requested value — so the UI can never
+        # show a false ON.
+        self._req("/desired")  # establish liveness (heartbeat) without a child
         self._req("/sync", "POST", {"visible": True})
-        _, body, _ = self._req("/desired")
+        status, body, _ = self._req("/state")
+        self.assertEqual(status, 200)
+        self.assertTrue(body["running"])
         self.assertTrue(body["visible"])
         self._req("/sync", "POST", {"visible": False})
-        _, body, _ = self._req("/desired")
+        _, body, _ = self._req("/state")
         self.assertFalse(body["visible"])
+
+    def test_state_reports_actual_not_merely_requested(self):
+        # Ask for ON, but the companion reports the window is STILL hidden (e.g.
+        # it is starting, or failed to show): /state must say visible=false while
+        # exposing the requested value separately as `desired`.
+        self._req("/desired")
+        self._req("/visibility", "POST", {"visible": True})
+        _, body, _ = self._req("/state")
+        self.assertTrue(body["desired"], "the request is tracked as the desired state")
+        self.assertFalse(body["visible"], "actual visibility is reported, not the request")
+        # Only once the companion confirms does /state flip to visible=true.
+        self._req("/sync", "POST", {"visible": True})
+        _, body, _ = self._req("/state")
+        self.assertTrue(body["visible"])
+
+    def test_state_exposes_desired_field(self):
+        _, body, _ = self._req("/state")
+        self.assertIn("desired", body)
+        self.assertIn("visible", body)
 
     def test_cors_allows_loopback_and_known_hosts(self):
         for origin in ("http://127.0.0.1:8000", "http://localhost:5000", "https://valleymind-ai.vercel.app"):
