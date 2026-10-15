@@ -1005,23 +1005,92 @@ function vmCompanionTogglePerm(el, name) {
   vm.setTaskPermissions(perms);
 }
 
-// ── Desktop app bridge (show/hide the standalone floating character) ─────────
-// The always-on background controller (desktop/controller.py) owns the small
-// loopback-only endpoint on a fixed port. It launches the Electron companion on
-// demand, so turning the toggle on starts everything automatically - no Desktop
-// shortcut needed. Loopback is a secure context, so this works from the local
-// site and the hosted site alike. It only controls the existing character.
+// ── Companion visibility control (ONE interface, per-platform adapters) ──────
+// The Settings toggle "Show companion outside ValleyMind" is the SINGLE user
+// control. It drives vmCompanionControl(), which selects exactly one adapter:
+//   * windows-app     - the packaged Windows app (Electron IPC: no helper, no
+//                       port, no separate process; the app owns the window)
+//   * android-overlay - a native Android wrapper exposing window.vmCompanionAndroid
+//                       (system overlay). Not present in a browser/PWA.
+//   * controller      - the loopback helper (desktop/controller.py) used by the
+//                       hosted website on a desktop, so it keeps working.
+// Every adapter reports what the platform ACTUALLY did; unsupported
+// environments get an accurate limitation instead of a fake success.
+//
+// The always-on controller (desktop/controller.py) owns the small loopback-only
+// endpoint on a fixed port and launches the companion on demand, so turning the
+// toggle on starts everything automatically - no manual launcher needed.
+// Loopback is a secure context, so this works from the local and hosted site.
 var VM_DESKTOP_CONTROL_URL = "http://127.0.0.1:8737";
 var VM_DESKTOP_SETUP_HINT = "The desktop helper isn\u2019t running. Run desktop\\install-companion.ps1 once to enable automatic start.";
 var _vmDesktopPollToken = 0;
 var _vmDesktopSubscribed = false;
 
-// When ValleyMind runs INSIDE the desktop app, window.vmDesktop exposes a direct
-// IPC bridge: the floating companion is controlled with no separate controller
-// process and no loopback port, and the main app window stays untouched. In a
-// normal browser it is absent, so we fall back to the loopback controller.
+// Adapter: packaged Windows app. window.vmDesktop is a direct IPC bridge - no
+// controller process and no loopback port - so the main app window is untouched.
 function _vmDesktopBridge() {
   return (window.vmDesktop && typeof window.vmDesktop.setCompanionVisible === "function") ? window.vmDesktop : null;
+}
+// Adapter: a native Android wrapper (Capacitor/WebView + system overlay). Absent
+// today, so a browser/PWA is honestly reported as unable to float an overlay.
+function _vmCompanionAndroidBridge() {
+  return (window.vmCompanionAndroid && typeof window.vmCompanionAndroid.setVisible === "function") ? window.vmCompanionAndroid : null;
+}
+// Coarse platform detection, only used to choose an ACCURATE limitation message.
+function _vmCompanionPlatform() {
+  var ua = (typeof navigator !== "undefined" && navigator.userAgent) || "";
+  if (/Android/i.test(ua)) return "android";
+  if (/iPhone|iPad|iPod/i.test(ua)) return "ios";
+  if (/Windows/i.test(ua)) return "windows";
+  if (/Macintosh|Mac OS X/i.test(ua)) return "mac";
+  if (/Linux|X11/i.test(ua)) return "linux";
+  return "other";
+}
+// What to say when no native overlay mechanism exists here - never Windows-only
+// wording on a phone, and never a claim that something was shown.
+function vmCompanionLimitationMessage() {
+  var p = _vmCompanionPlatform();
+  if (p === "android") return "This browser or installed PWA can\u2019t float the character over other apps. That needs the ValleyMind Android app (system overlay).";
+  if (p === "ios") return "iOS doesn\u2019t allow a floating overlay from a browser or PWA. This needs the ValleyMind iOS app.";
+  if (p === "windows" || p === "mac" || p === "linux") return "Not running \u2014 " + VM_DESKTOP_SETUP_HINT;
+  return "Floating the companion outside the app isn\u2019t available in this environment.";
+}
+// Select the ONE adapter for this environment. The toggle talks only to this,
+// so Windows and Android share the exact same control flow.
+function vmCompanionControl() {
+  var ipc = _vmDesktopBridge();
+  if (ipc) {
+    return {
+      kind: "windows-app",
+      set: function (on) { return ipc.setCompanionVisible(on); }, // resolves to the ACTUAL visibility
+      subscribe: (typeof ipc.onCompanionVisibility === "function") ? ipc.onCompanionVisibility : null,
+      get: (typeof ipc.getCompanionVisible === "function") ? function () { return ipc.getCompanionVisible(); } : null,
+      unsupported: "Couldn\u2019t control the companion window",
+    };
+  }
+  var android = _vmCompanionAndroidBridge();
+  if (android) {
+    return {
+      kind: "android-overlay",
+      set: function (on) { return android.setVisible(on); },      // resolves to the ACTUAL overlay state
+      subscribe: (typeof android.onVisibility === "function") ? android.onVisibility : null,
+      get: (typeof android.getVisible === "function") ? function () { return android.getVisible(); } : null,
+      unsupported: "Android couldn\u2019t show the overlay",
+    };
+  }
+  var p = _vmCompanionPlatform();
+  if (p === "android" || p === "ios") {
+    // A browser/PWA on mobile can never create a system overlay: say so plainly
+    // rather than pretending (and without a pointless loopback call).
+    return {
+      kind: "unsupported",
+      set: function () { return Promise.reject(new Error("unsupported")); },
+      subscribe: null,
+      get: null,
+      unsupported: vmCompanionLimitationMessage(),
+    };
+  }
+  return { kind: "controller", set: null, subscribe: null, get: null, unsupported: vmCompanionLimitationMessage() };
 }
 
 function vmCompanionDesktopPref(label, color) {
@@ -1034,28 +1103,35 @@ function vmCompanionSetDesktopToggle(on) {
 }
 function vmCompanionRefreshDesktopState() {
   if (!document.getElementById("vmSetDesktopVisible")) return;
-  var bridge = _vmDesktopBridge();
-  if (bridge) {
-    if (typeof bridge.onCompanionVisibility === "function" && !_vmDesktopSubscribed) {
+  var ctrl = vmCompanionControl();
+  if (ctrl.kind === "unsupported") {
+    vmCompanionSetDesktopToggle(false);
+    vmCompanionDesktopPref(ctrl.unsupported, "#f59e0b");
+    return;
+  }
+  if (ctrl.kind !== "controller") {
+    // Native adapters (Windows app / Android overlay): subscribe to changes and
+    // read the current ACTUAL state. No loopback port is involved.
+    if (ctrl.subscribe && !_vmDesktopSubscribed) {
       _vmDesktopSubscribed = true;
-      bridge.onCompanionVisibility(function (on) {
+      ctrl.subscribe(function (on) {
         vmCompanionSetDesktopToggle(!!on);
         vmCompanionDesktopPref(on ? "Showing outside ValleyMind" : "Hidden \u2014 the character stays in this app");
       });
     }
-    if (typeof bridge.getCompanionVisible === "function") {
-      Promise.resolve(bridge.getCompanionVisible())
+    if (ctrl.get) {
+      Promise.resolve(ctrl.get())
         .then(function (on) {
           vmCompanionSetDesktopToggle(!!on);
           vmCompanionDesktopPref(on ? "Showing outside ValleyMind" : "Hidden \u2014 the character stays in this app");
         })
         .catch(function () {
-          vmCompanionDesktopPref("Desktop companion unavailable", "#f59e0b");
+          vmCompanionDesktopPref(ctrl.unsupported, "#f59e0b");
         });
     }
     return;
   }
-  if (!window.fetch || !document.getElementById("vmSetDesktopVisible")) return;
+  if (!window.fetch) { vmCompanionDesktopPref(vmCompanionLimitationMessage(), "#f59e0b"); return; }
   fetch(VM_DESKTOP_CONTROL_URL + "/state", { method: "GET" })
     .then(function (r) { return r.ok ? r.json() : null; })
     .then(function (j) {
@@ -1068,7 +1144,7 @@ function vmCompanionRefreshDesktopState() {
     })
     .catch(function () {
       vmCompanionSetDesktopToggle(false);
-      vmCompanionDesktopPref("Not running \u2014 " + VM_DESKTOP_SETUP_HINT, "#f59e0b");
+      vmCompanionDesktopPref(vmCompanionLimitationMessage(), "#f59e0b");
     });
 }
 // Confirm the REAL native window state instead of trusting the request. Polls
@@ -1113,18 +1189,17 @@ function vmCompanionSetDesktopVisible(on) {
   on = !!on;
   var token = ++_vmDesktopPollToken;
   // Move the switch immediately for a responsive feel. The final state is then
-  // reconciled to the CONFIRMED native visibility (and reverted on failure), so
-  // the switch never claims ON for a window that is not actually on screen.
+  // reconciled to the CONFIRMED state (and reverted on failure), so the switch
+  // never claims ON for a character that is not actually showing.
   vmCompanionSetDesktopToggle(on);
   vmCompanionDesktopPref(on ? "Turning on\u2026" : "Hiding\u2026");
 
-  var bridge = _vmDesktopBridge();
-  if (bridge) {
-    // In-app: drive the floating window directly over IPC. No controller, no
-    // port, no separate process. The promise resolves to the ACTUAL resulting
-    // visibility, so the toggle and status text never lie.
+  var ctrl = vmCompanionControl();
+  if (ctrl.kind !== "controller") {
+    // Native adapters: the promise resolves to the ACTUAL resulting state, so
+    // the toggle and status text never lie. "unsupported" rejects and reverts.
     var pending;
-    try { pending = bridge.setCompanionVisible(on); } catch (e) { pending = Promise.reject(e); }
+    try { pending = ctrl.set(on); } catch (e) { pending = Promise.reject(e); }
     Promise.resolve(pending)
       .then(function (actual) {
         if (token !== _vmDesktopPollToken) return;
@@ -1135,14 +1210,14 @@ function vmCompanionSetDesktopVisible(on) {
       .catch(function () {
         if (token !== _vmDesktopPollToken) return;
         vmCompanionSetDesktopToggle(false);
-        vmCompanionDesktopPref("Couldn\u2019t control the companion window", "#f59e0b");
+        vmCompanionDesktopPref(ctrl.unsupported, "#f59e0b");
       });
     return;
   }
 
   if (!window.fetch) {
     vmCompanionSetDesktopToggle(false);
-    vmCompanionDesktopPref("This browser can\u2019t reach the desktop helper. " + VM_DESKTOP_SETUP_HINT, "#f59e0b");
+    vmCompanionDesktopPref(vmCompanionLimitationMessage(), "#f59e0b");
     return;
   }
   fetch(VM_DESKTOP_CONTROL_URL + "/visibility", {
@@ -1164,7 +1239,7 @@ function vmCompanionSetDesktopVisible(on) {
     .catch(function () {
       if (token !== _vmDesktopPollToken) return;
       vmCompanionSetDesktopToggle(false);
-      vmCompanionDesktopPref("Not running \u2014 " + VM_DESKTOP_SETUP_HINT, "#f59e0b");
+      vmCompanionDesktopPref(vmCompanionLimitationMessage(), "#f59e0b");
     });
 }
 

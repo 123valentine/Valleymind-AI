@@ -202,6 +202,27 @@ class DesktopStaticTests(unittest.TestCase):
         # And the visual switch is CSS-driven (a real checkbox), not inline JS.
         self.assertIn("vm-switch", settings)
 
+    def test_companion_visibility_uses_one_platform_adapter_interface(self):
+        # ONE shared control interface selects a platform adapter (Windows app
+        # IPC, Android overlay, or the loopback controller) so both platforms
+        # share the same flow -- no second control, no duplicate companion.
+        settings = self._read("static/settings.js")
+        self.assertIn("function vmCompanionControl()", settings)
+        self.assertIn('"windows-app"', settings)
+        self.assertIn('"android-overlay"', settings)
+        self.assertIn('"controller"', settings)
+        self.assertIn("window.vmCompanionAndroid", settings)
+
+    def test_unsupported_environment_reports_accurate_limitation(self):
+        # A browser/PWA (especially on mobile) can never create a system overlay:
+        # it must NOT pretend to activate one, and must not show Windows-only
+        # wording on a phone. The limitation is explicit and platform-aware.
+        settings = self._read("static/settings.js")
+        self.assertIn("function vmCompanionLimitationMessage()", settings)
+        self.assertIn("ValleyMind Android app", settings)
+        self.assertIn("ValleyMind iOS app", settings)
+        self.assertIn('kind: "unsupported"', settings)
+
     def test_backend_readiness_is_robust_and_truthful(self):
         # Readiness is a real /auth/status probe, not a fixed sleep. The wait
         # must fail fast when the child exits and report the child's own output.
