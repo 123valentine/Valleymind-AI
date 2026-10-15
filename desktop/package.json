@@ -5,7 +5,8 @@
   "description": "Windows desktop wrapper for the existing ValleyMind VRM companion. Reuses the existing Flask backend, VRM assets, animation engine and voice system; adds no new AI logic.",
   "main": "main.js",
   "scripts": {
-    "start": "electron ."
+    "start": "electron . --app",
+    "start:companion": "electron ."
   },
   "author": "ValleyMind",
   "license": "MIT",

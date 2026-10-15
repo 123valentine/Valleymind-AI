@@ -1,36 +1,19 @@
 @echo off
-setlocal EnableExtensions
-rem ============================================================
-rem  ValleyMind Companion - fallback launcher / troubleshooter
+setlocal
+rem ── ValleyMind desktop app (unified, single window) ─────────────────────────
+rem Launches the ONE ValleyMind desktop application: the main app window plus
+rem the built-in floating companion. There is no separate companion app to
+rem install -- the Settings toggle "Show companion outside ValleyMind" turns the
+rem floating window on and off.
 rem
-rem  Normal use needs nothing here: the website's Settings toggle
-rem  ("Show companion outside ValleyMind") starts the companion through
-rem  the background controller (desktop\controller.py), which is set up
-rem  once with desktop\install-companion.ps1.
-rem
-rem  Double-click THIS file only to start the companion directly, e.g.
-rem  to watch startup diagnostics. It starts the existing Electron shell,
-rem  which in turn starts the existing Flask backend (python app.py)
-rem  using the project's own Python environment.
-rem ============================================================
-cd /d "%~dp0"
-
+rem The companion-only mode (started automatically by desktop/controller.py when
+rem the hosted WEBSITE toggle is used) still exists; this script intentionally
+rem runs the full app with --app.
 set "ELECTRON=%~dp0node_modules\electron\dist\electron.exe"
 if not exist "%ELECTRON%" (
-  echo.
-  echo  [ValleyMind] Electron is not installed in this project.
-  echo  Install it once by running, in this folder:
-  echo.
-  echo      npm install
-  echo.
+  echo Electron is not installed in this project.
+  echo Run "npm install" inside the desktop folder once, then try again.
   pause
   exit /b 1
 )
-
-rem Match main.js findPython(): prefer the project's own virtual environments.
-if exist "%~dp0..\env311\Scripts\python.exe" set "VM_PYTHON=%~dp0..\env311\Scripts\python.exe"
-if not defined VM_PYTHON if exist "%~dp0..\env\Scripts\python.exe" set "VM_PYTHON=%~dp0..\env\Scripts\python.exe"
-
-echo [ValleyMind] Starting companion...
-start "" "%ELECTRON%" .
-exit /b 0
+start "" "%ELECTRON%" "%~dp0" --app

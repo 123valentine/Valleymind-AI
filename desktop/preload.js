@@ -28,8 +28,10 @@ const api = {
   toggleAlwaysOnTop: () => ipcRenderer.send("desktop:toggle-always-on-top"),
   setIgnoreMouse: (on) => ipcRenderer.send("desktop:set-ignore-mouse", !!on),
   // In-shell control of the floating companion (single-app mode). Works with no
-  // background controller: the Settings toggle drives the window directly.
-  setCompanionVisible: (on) => ipcRenderer.send("desktop:set-visible", !!on),
+  // background controller: the Settings toggle drives the window directly. The
+  // returned promise resolves to the ACTUAL resulting visibility so the toggle
+  // never claims the window is on screen when it is not.
+  setCompanionVisible: (on) => ipcRenderer.invoke("desktop:set-visible", !!on),
   getCompanionVisible: () => ipcRenderer.invoke("desktop:get-visible"),
   // main -> companion
   onAuthOk: (cb) => {

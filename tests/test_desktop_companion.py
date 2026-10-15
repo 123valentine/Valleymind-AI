@@ -156,9 +156,86 @@ class DesktopStaticTests(unittest.TestCase):
         main = self._read("desktop/main.js")
         self.assertIn('process.argv.includes("--app")', main)
         self.assertIn("createAppWindow", main)
-        self.assertIn('ipcMain.on("desktop:set-visible"', main)
+        self.assertIn('ipcMain.handle("desktop:set-visible"', main)
         self.assertIn('ipcMain.handle("desktop:get-visible"', main)
         self.assertIn("broadcastVisibility", main)
+
+    def test_companion_starts_hidden_and_ready_never_shows(self):
+        # Starting the integration (or the companion reporting ready) must never
+        # reveal the floating window: it defaults hidden and desktop:ready only
+        # reports the current state.
+        main = self._read("desktop/main.js")
+        self.assertIn("let companionVisible = false;", main)
+        self.assertNotIn("let companionVisible = true;", main)
+        self.assertIn('ipcMain.on("desktop:ready", () => broadcastVisibility())', main)
+        # No remaining code path force-shows the companion.
+        self.assertNotIn("setCompanionVisible(true)", main)
+
+    def test_login_and_relaunch_do_not_force_show(self):
+        # Signing in or relaunching the app must not turn the floating window on;
+        # the Settings toggle is the only control for its appearance.
+        main = self._read("desktop/main.js")
+        self.assertIn("if (companionVisible) showCompanion();", main)
+
+    def test_set_visible_reports_true_visibility(self):
+        main = self._read("desktop/main.js")
+        self.assertIn("function companionIsVisible()", main)
+        self.assertIn("return companionIsVisible();", main)
+
+    def test_backend_readiness_is_robust_and_truthful(self):
+        # Readiness is a real /auth/status probe, not a fixed sleep. The wait
+        # must fail fast when the child exits and report the child's own output.
+        # The timeout is only a safety cap; the slow-start cause is fixed at the
+        # source (see the two tests below).
+        main = self._read("desktop/main.js")
+        self.assertIn("/auth/status", main)
+        self.assertIn("function serverLogTail", main)
+        self.assertIn("before it was ready", main)
+        self.assertIn("Backend output:", main)
+        self.assertIn("if (serverExited)", main)
+
+    def test_heavy_groq_import_is_lazy(self):
+        # groq pulls in a large pydantic tree (~7s to import). Importing it at
+        # module load made the backend miss the readiness window, so it must be
+        # imported on first use inside a helper instead.
+        ext = self._read("core/external_apis.py")
+        self.assertIn("def _groq_client", ext)
+        self.assertNotIn("\nfrom groq import Groq", ext)  # not a top-level import
+        self.assertIn("    from groq import Groq", ext)   # inside the helper only
+        self.assertNotIn("client = Groq(", ext)           # call sites use the helper
+
+    def test_auth_migration_does_not_block_startup(self):
+        # The Mongo auth migration used to run at import, before the port bound,
+        # so a slow/offline DB pushed startup past the readiness window. It must
+        # now run in a background daemon thread.
+        app_src = self._read("app.py")
+        self.assertIn("def _run_auth_migration", app_src)
+        self.assertIn("target=_run_auth_migration", app_src)
+        self.assertIn("daemon=True", app_src)
+
+    def test_unified_start_launches_the_single_app(self):
+        pkg = json.loads(self._read("desktop/package.json"))
+        self.assertIn("--app", pkg["scripts"]["start"])
+        # The companion-only (browser-relay) mode stays available, but is not the
+        # default entry point any more.
+        self.assertIn("start:companion", pkg["scripts"])
+
+    def test_closing_main_window_quits_the_unified_app(self):
+        # Requirement: closing ValleyMind fully shuts down the companion and the
+        # backend. Closing the main window (not minimizing) must quit the app.
+        main = self._read("desktop/main.js")
+        self.assertIn("if (APP_MODE && !quitting) app.quit();", main)
+
+    def test_minimize_never_hides_the_companion(self):
+        main = self._read("desktop/main.js")
+        self.assertNotIn('on("minimize"', main)
+        self.assertNotIn("'minimize'", main)
+
+    def test_settings_reports_actual_visibility_over_ipc(self):
+        settings = self._read("static/settings.js")
+        self.assertIn('typeof actual === "boolean"', settings)
+        preload = self._read("desktop/preload.js")
+        self.assertIn('ipcRenderer.invoke("desktop:set-visible"', preload)
 
     def test_login_handshake_gated_to_login_window_only(self):
         # A window at "/" performs the sign-in handshake ONLY with ?login=1, so

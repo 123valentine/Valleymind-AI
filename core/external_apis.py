@@ -5,13 +5,26 @@ import threading
 from datetime import datetime
 from urllib.parse import urlparse
 import requests
-from groq import Groq
 
 from core.auto_model import get_latest_groq_model
 from core.config import get_config
 
 
 LIVE_DATA_UNAVAILABLE = "__LIVE_DATA_UNAVAILABLE__"
+
+
+def _groq_client(api_key, base_url):
+    """Build a Groq client on first use.
+
+    ``groq`` pulls in a large pydantic model tree that costs several seconds to
+    parse at import time. Importing it lazily keeps that cost out of backend
+    boot, which is exactly what the desktop companion's readiness check waits
+    on. Behaviour is unchanged: the client is constructed the first time it is
+    used.
+    """
+    from groq import Groq
+
+    return Groq(api_key=api_key, base_url=base_url)
 
 # Per-thread capture of the sources behind the most recent search, so the chat
 # layer can surface them in the UI without threading a return value through the
@@ -145,7 +158,7 @@ def _summarize_with_groq(query: str, context: str, intent: str) -> str:
         return ""
 
     try:
-        client = Groq(api_key=api_key, base_url=config.groq_base_url)
+        client = _groq_client(api_key, config.groq_base_url)
         chat_completion = client.chat.completions.create(
             messages=[
                 {
@@ -366,7 +379,7 @@ def classify_live_request(message: str, recent_context: str = "") -> str:
         )
 
     try:
-        client = Groq(api_key=api_key, base_url=config.groq_base_url)
+        client = _groq_client(api_key, config.groq_base_url)
         chat_completion = client.chat.completions.create(
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
@@ -452,7 +465,7 @@ def classify_research_intent(message: str, recent_context: str = "") -> dict:
         )
 
     try:
-        client = Groq(api_key=api_key, base_url=config.groq_base_url)
+        client = _groq_client(api_key, config.groq_base_url)
         chat_completion = client.chat.completions.create(
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},

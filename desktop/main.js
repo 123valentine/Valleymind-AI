@@ -47,7 +47,10 @@ const APP_MODE = process.argv.includes("--app");
 
 let serverProc = null;
 let serverPort = 0;
-let companionVisible = true;
+// The floating companion starts HIDDEN in every mode. The Settings toggle (or
+// the website toggle, relayed by the controller) is the ONLY thing that reveals
+// it; starting the desktop integration must never pop the character on screen.
+let companionVisible = false;
 let controllerSeen = false;
 let desiredPollTimer = null;
 let lastLocalChange = 0;
@@ -58,6 +61,13 @@ let tray = null;
 let quitting = false;
 let alwaysOnTop = true;
 let lastBroadcast = null;
+// Backend boot diagnostics: we buffer the child's stdout/stderr so a failed
+// start can be reported truthfully instead of a bare timeout.
+let serverLog = [];
+let serverReady = false;
+let serverExited = false;
+let serverExitCode = null;
+const SERVER_LOG_MAX = 80;
 
 // ── Backend lifecycle ───────────────────────────────────────────────────────
 function findPython() {
@@ -92,8 +102,21 @@ function freePort() {
   });
 }
 
+function pushServerLog(text) {
+  serverLog.push(String(text));
+  if (serverLog.length > SERVER_LOG_MAX) serverLog.splice(0, serverLog.length - SERVER_LOG_MAX);
+}
+
+function serverLogTail(lines = 18) {
+  return serverLog.slice(-lines).join("").trim();
+}
+
 function startServer(port) {
   const py = findPython();
+  serverLog = [];
+  serverReady = false;
+  serverExited = false;
+  serverExitCode = null;
   console.log(`[desktop] starting backend: ${py} app.py  (PORT=${port})`);
   serverProc = spawn(py, ["app.py"], {
     cwd: PROJECT_ROOT,
@@ -101,29 +124,56 @@ function startServer(port) {
     stdio: ["ignore", "pipe", "pipe"],
     windowsHide: true,
   });
-  serverProc.stdout.on("data", (d) => process.stdout.write(`[server] ${d}`));
-  serverProc.stderr.on("data", (d) => process.stderr.write(`[server] ${d}`));
+  serverProc.stdout.on("data", (d) => { pushServerLog(d); process.stdout.write(`[server] ${d}`); });
+  serverProc.stderr.on("data", (d) => { pushServerLog(d); process.stderr.write(`[server] ${d}`); });
   serverProc.on("exit", (code) => {
     console.log(`[desktop] backend exited (${code})`);
+    serverExited = true;
+    serverExitCode = code;
     serverProc = null;
-    if (!quitting) app.quit();
+    // Dying AFTER a healthy start is a real crash: quit so the user can retry.
+    // Dying BEFORE it was ever ready is a startup failure: leave it for
+    // waitForServer to report the captured output instead of quitting silently.
+    if (!quitting && serverReady) app.quit();
   });
   serverProc.on("error", (err) => {
+    pushServerLog(`[desktop] failed to start backend: ${err.message}`);
     console.error(`[desktop] failed to start backend: ${err.message}`);
   });
 }
 
-function waitForServer(port, timeoutMs = 90000) {
+// Readiness is the backend answering /auth/status with 200. This is a real
+// probe, not a fixed sleep. The underlying startup cost was fixed at the source
+// (the app no longer blocks the port on Mongo/auth-migration work, and the heavy
+// `groq` import is lazy) so a warm boot is now ~8s. The timeout below is only a
+// safety cap for pathological machines; fail-fast on child exit is the fast path.
+function waitForServer(port, timeoutMs = 120000) {
   const url = `http://127.0.0.1:${port}/auth/status`;
   const start = Date.now();
   return new Promise((resolve, reject) => {
     const tick = () => {
+      if (serverExited) {
+        const tail = serverLogTail();
+        reject(new Error(
+          `the backend process exited (code ${serverExitCode}) before it was ready` +
+          (tail ? `.\n\n${tail}` : "")
+        ));
+        return;
+      }
       fetch(url)
         .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
-        .then(() => resolve(true))
+        .then(() => { serverReady = true; resolve(true); })
         .catch(() => {
-          if (Date.now() - start > timeoutMs) reject(new Error("backend did not become ready in time"));
-          else setTimeout(tick, 400);
+          if (serverExited) { tick(); return; }
+          if (Date.now() - start > timeoutMs) {
+            const tail = serverLogTail();
+            reject(new Error(
+              `the backend did not become ready within ${Math.round(timeoutMs / 1000)}s` +
+              (tail ? `.\n\n${tail}` : "")
+            ));
+          } else {
+            setTimeout(tick, 400);
+          }
         });
     };
     tick();
@@ -151,8 +201,8 @@ function stopServer() {
 //   * poll GET /desired (desired state + liveness heartbeat), and
 //   * POST /sync when the user changes visibility locally (tray / relaunch)
 // so the website toggle and the window never disagree. If no controller is
-// running (e.g. the app was started by hand), we simply keep the window
-// visible and nothing else changes.
+// running (e.g. the app was started by hand) the window simply stays hidden
+// until the user asks for it.
 function applyVisibility() {
   if (!mainWin || mainWin.isDestroyed()) return;
   if (companionVisible) showCompanion();
@@ -353,10 +403,26 @@ function createAppWindow() {
     },
   });
   appWin.setMenuBarVisibility(false);
+  // Show reliably: `ready-to-show` can be delayed a long time (or never fire
+  // under software rendering) for the heavy app page, which would leave the
+  // window hidden. Fall back to first paint, then to a short timer.
+  let appShown = false;
+  const showApp = () => {
+    if (appShown || !appWin || appWin.isDestroyed()) return;
+    appShown = true;
+    appWin.show();
+  };
+  appWin.once("ready-to-show", showApp);
+  appWin.webContents.once("did-finish-load", showApp);
+  setTimeout(showApp, 4000);
   appWin.loadURL(`http://127.0.0.1:${serverPort}/`);
-  appWin.once("ready-to-show", () => appWin && appWin.show());
   appWin.on("closed", () => {
     appWin = null;
+    // Unified app: closing the main ValleyMind window closes the whole
+    // application. Quitting triggers before-quit -> stopServer and tears down
+    // the companion window too, so nothing is left running in the background.
+    // (Minimizing does NOT close the window, so the companion stays visible.)
+    if (APP_MODE && !quitting) app.quit();
   });
 }
 
@@ -456,13 +522,23 @@ function hardenSession() {
 }
 
 // ── IPC ─────────────────────────────────────────────────────────────────────
+// The ACTUAL on-screen state of the floating window, as opposed to the desired
+// state. Used to answer the Settings toggle truthfully.
+function companionIsVisible() {
+  return !!(mainWin && !mainWin.isDestroyed() && mainWin.isVisible());
+}
+
 function wireIpc() {
-  ipcMain.on("desktop:ready", () => applyVisibility());
+  // Readiness is a REPORT, never a request to show: the companion stays hidden
+  // until the user (or the website toggle) asks for it.
+  ipcMain.on("desktop:ready", () => broadcastVisibility());
   ipcMain.on("desktop:open-login", () => openLogin());
   ipcMain.on("auth:login-done", () => {
     if (loginWin && !loginWin.isDestroyed()) loginWin.close();
     if (mainWin && !mainWin.isDestroyed()) mainWin.webContents.send("auth:ok");
-    showCompanion();
+    // Never force the floating window on: reveal it only if that is already the
+    // user's chosen state.
+    if (companionVisible) showCompanion();
   });
   ipcMain.on("desktop:quit", () => app.quit());
   ipcMain.on("desktop:reset-position", resetPosition);
@@ -474,8 +550,13 @@ function wireIpc() {
     if (mainWin && !mainWin.isDestroyed()) mainWin.setIgnoreMouseEvents(!!on, { forward: true });
   });
   // In-shell control of the floating companion (no controller, no port).
-  ipcMain.handle("desktop:get-visible", () => !!companionVisible);
-  ipcMain.on("desktop:set-visible", (_e, on) => setCompanionVisible(!!on));
+  ipcMain.handle("desktop:get-visible", () => companionIsVisible());
+  // Returns the ACTUAL resulting visibility so the Settings toggle reports the
+  // truth instead of optimistically claiming the window is on screen.
+  ipcMain.handle("desktop:set-visible", (_e, on) => {
+    setCompanionVisible(!!on);
+    return companionIsVisible();
+  });
 }
 
 // ── Boot ────────────────────────────────────────────────────────────────────
@@ -485,10 +566,10 @@ async function bootstrap() {
     serverPort = await freePort();
     startServer(serverPort);
     await waitForServer(serverPort);
+    console.log(`[desktop] backend ready on port ${serverPort}`);
     hardenSession();
-    // In single-app mode the floating companion starts hidden: the user opts in
-    // from Settings (the in-app companion is always available regardless).
-    if (APP_MODE) companionVisible = false;
+    // The floating companion always starts hidden (companionVisible is already
+    // false); it appears only when the Settings/website toggle asks for it.
     createCompanionWindow();
     createTray();
     if (APP_MODE) createAppWindow();
@@ -499,10 +580,12 @@ async function bootstrap() {
   } catch (err) {
     console.error(`[desktop] bootstrap failed: ${err.message}`);
     const { dialog } = require("electron");
+    const tail = serverLogTail();
     try {
       dialog.showErrorBox(
         "ValleyMind Companion could not start",
         `The local backend did not start.\n\n${err.message}\n\n` +
+          (tail ? `Backend output:\n${tail}\n\n` : "") +
           "Check that Python and the project dependencies are installed, then try again."
       );
     } catch (e) {
@@ -517,8 +600,10 @@ if (!gotLock) {
   app.quit();
 } else {
   app.on("second-instance", () => {
+    // Relaunching just raises what is already on screen. It must NOT turn the
+    // floating window on -- the Settings toggle is the only control for that.
     if (appWin && !appWin.isDestroyed()) appWin.focus();
-    setCompanionVisible(true);
+    else if (mainWin && !mainWin.isDestroyed() && mainWin.isVisible()) mainWin.focus();
   });
   app.whenReady().then(bootstrap);
 }

@@ -237,8 +237,9 @@ def _id_summary(doc_id) -> str:
     return s[:12] + "***" if len(s) > 12 else s
 
 
-# Run migration at module load (once, before any request is served).
-_run_auth_migration()
+# The startup migration is intentionally NOT run here: it is scheduled off the
+# boot path further down this module (see "Background workers") so a slow or
+# offline MongoDB can never delay the port from binding.
 
 
 # Jinja helper used by the marketing templates' footer copyright year.
@@ -6622,15 +6623,18 @@ except Exception as _exc:  # never let a watchdog hiccup stop the app from servi
 # record id. Verified accounts stay verified. Disable locally with
 # AUTH_MIGRATION_ENABLED=false.
 if os.getenv("AUTH_MIGRATION_ENABLED", "true").strip().lower() != "false":
-    try:
-        from core.auth_migration import normalize_user_records
-        _mig = normalize_user_records(users_collection())
-        if not _mig.get("skipped"):
-            print(f"[AUTH-MIGRATE] startup result: {_mig}")
-        else:
-            print(f"[AUTH-MIGRATE] startup skipped: {_mig.get('skipped')}")
-    except Exception as _exc:  # never block serving on a migration hiccup
-        print(f"[AUTH-MIGRATE] startup failed (non-fatal): {_exc}")
+    # Run off the boot path: connecting to Mongo (serverSelectionTimeoutMS is
+    # 10s) and scanning every user record used to happen at import, *before*
+    # app.run() could bind the port. On a cold/slow/offline network that pushed
+    # startup past the desktop companion's readiness window and surfaced as
+    # "backend did not become ready in time". The migration is idempotent, so a
+    # daemon thread lets the server start serving immediately and still performs
+    # the exact same normalization.
+    Thread(
+        name="vm-auth-migration",
+        target=_run_auth_migration,
+        daemon=True,
+    ).start()
 
 
 # ── Startup email diagnostic (runs once per process) ────────────────────────

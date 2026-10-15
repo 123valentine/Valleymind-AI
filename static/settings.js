@@ -1096,15 +1096,25 @@ function vmCompanionSetDesktopVisible(on) {
   var bridge = _vmDesktopBridge();
   if (bridge) {
     // In-app: drive the floating window directly over IPC. No controller, no
-    // port, no separate process. Optimistically reflect the toggle, then settle.
+    // port, no separate process. Report the ACTUAL resulting visibility that
+    // the main process hands back, so the toggle and status text never lie.
     var btoken = ++_vmDesktopPollToken;
     vmCompanionDesktopPref(on ? "Turning on\u2026" : "Hiding\u2026");
     vmCompanionSetDesktopToggle(!!on);
-    try { bridge.setCompanionVisible(!!on); } catch (e) { /* ignore */ }
-    setTimeout(function () {
-      if (btoken !== _vmDesktopPollToken) return;
-      vmCompanionDesktopPref(on ? "Showing outside ValleyMind" : "Hidden \u2014 the character stays in this app");
-    }, 400);
+    var pending;
+    try { pending = bridge.setCompanionVisible(!!on); } catch (e) { pending = Promise.reject(e); }
+    Promise.resolve(pending)
+      .then(function (actual) {
+        if (btoken !== _vmDesktopPollToken) return;
+        var vis = (typeof actual === "boolean") ? actual : !!on;
+        vmCompanionSetDesktopToggle(vis);
+        vmCompanionDesktopPref(vis ? "Showing outside ValleyMind" : "Hidden \u2014 the character stays in this app");
+      })
+      .catch(function () {
+        if (btoken !== _vmDesktopPollToken) return;
+        vmCompanionSetDesktopToggle(false);
+        vmCompanionDesktopPref("Couldn\u2019t control the companion window", "#f59e0b");
+      });
     return;
   }
   var token = ++_vmDesktopPollToken;
