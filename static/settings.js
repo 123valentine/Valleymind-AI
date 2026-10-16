@@ -1093,6 +1093,36 @@ function vmCompanionControl() {
   return { kind: "controller", set: null, subscribe: null, get: null, unsupported: vmCompanionLimitationMessage() };
 }
 
+// ── Presentation-mode coordinator (embedded <-> external) ───────────────────
+// The toggle switches between the EMBEDDED companion (inside ValleyMind) and the
+// EXTERNAL floating window. static/companion_presentation.js owns the invariant
+// that exactly ONE presentation is visible and that a switch never leaves the
+// companion invisible; here we only inject the real embedded-companion handle.
+// The embedded companion is hidden ONLY after external visibility is CONFIRMED,
+// and restored on OFF / failure, so the character can never vanish because of a
+// mode switch. The hide is non-persisting (vm.hide() never writes prefs), so a
+// reload always starts with the embedded companion visible again.
+var _vmPresentation = null;
+function _vmCompanionPresentation() {
+  if (_vmPresentation) return _vmPresentation;
+  var factory = (window.VmCompanionPresentation && window.VmCompanionPresentation.createCoordinator);
+  if (typeof factory !== "function") return null;
+  _vmPresentation = factory({
+    getEmbedded: function () {
+      var vm = window.vmVrmCompanion;
+      return (vm && typeof vm.isVisible === "function" && typeof vm.hide === "function" && typeof vm.show === "function") ? vm : null;
+    },
+  });
+  return _vmPresentation;
+}
+// Apply a KNOWN external visibility to the embedded companion: `on === true`
+// (external CONFIRMED on) hides the embedded companion; false restores it.
+function _vmCompanionApplyExternal(on) {
+  var pres = _vmCompanionPresentation();
+  if (!pres) return;
+  pres.reconcile(!!on);
+}
+
 function vmCompanionDesktopPref(label, color) {
   var el = document.getElementById("vmCompanionDesktopStatus");
   if (el) { el.textContent = label; el.style.color = color || "#475569"; }
@@ -1115,6 +1145,7 @@ function vmCompanionRefreshDesktopState() {
     if (ctrl.subscribe && !_vmDesktopSubscribed) {
       _vmDesktopSubscribed = true;
       ctrl.subscribe(function (on) {
+        _vmCompanionApplyExternal(!!on);
         vmCompanionSetDesktopToggle(!!on);
         vmCompanionDesktopPref(on ? "Showing outside ValleyMind" : "Hidden \u2014 the character stays in this app");
       });
@@ -1122,10 +1153,14 @@ function vmCompanionRefreshDesktopState() {
     if (ctrl.get) {
       Promise.resolve(ctrl.get())
         .then(function (on) {
+          _vmCompanionApplyExternal(!!on);
           vmCompanionSetDesktopToggle(!!on);
           vmCompanionDesktopPref(on ? "Showing outside ValleyMind" : "Hidden \u2014 the character stays in this app");
         })
         .catch(function () {
+          // Couldn't read the real state: never leave the companion hidden on a
+          // false assumption — restore the embedded companion.
+          _vmCompanionApplyExternal(false);
           vmCompanionDesktopPref(ctrl.unsupported, "#f59e0b");
         });
     }
@@ -1136,6 +1171,7 @@ function vmCompanionRefreshDesktopState() {
     .then(function (r) { return r.ok ? r.json() : null; })
     .then(function (j) {
       if (j && j.running) {
+        _vmCompanionApplyExternal(!!j.visible);
         vmCompanionSetDesktopToggle(j.visible);
         vmCompanionDesktopPref(j.visible ? "Running \u2014 showing on your desktop" : "Running \u2014 hidden");
       } else {
@@ -1143,6 +1179,7 @@ function vmCompanionRefreshDesktopState() {
       }
     })
     .catch(function () {
+      _vmCompanionApplyExternal(false);
       vmCompanionSetDesktopToggle(false);
       vmCompanionDesktopPref(vmCompanionLimitationMessage(), "#f59e0b");
     });
@@ -1162,12 +1199,20 @@ function vmCompanionPollDesktopUntilVisible(token, desired) {
       .then(function (j) {
         if (token !== _vmDesktopPollToken) return;
         if (j && j.visible === desired) {
+          // External visibility is CONFIRMED: hide the embedded companion when
+          // it is on, restore it when it is off. This is the only place the
+          // embedded companion is hidden/shown by the toggle.
+          _vmCompanionApplyExternal(desired);
           vmCompanionSetDesktopToggle(desired);
           vmCompanionDesktopPref(desired ? "Showing on your desktop" : "Hidden \u2014 the character stays in this app");
           return;
         }
         if (Date.now() - started > 45000) {
-          if (!(j && j.visible === true)) vmCompanionSetDesktopToggle(false);
+          // Never claim a state we could not confirm: reconcile to the REAL
+          // visibility the controller last reported.
+          var actual = !!(j && j.visible === true);
+          _vmCompanionApplyExternal(actual);
+          if (!actual) vmCompanionSetDesktopToggle(false);
           vmCompanionDesktopPref(desired
             ? "The companion didn\u2019t appear. " + VM_DESKTOP_SETUP_HINT
             : "Couldn\u2019t confirm the companion is hidden.", "#f59e0b");
@@ -1179,6 +1224,8 @@ function vmCompanionPollDesktopUntilVisible(token, desired) {
       .catch(function () {
         if (token !== _vmDesktopPollToken) return;
         if (Date.now() - started > 45000) {
+          // Lost the helper: it cannot be showing, so bring the character back.
+          _vmCompanionApplyExternal(false);
           vmCompanionSetDesktopToggle(false);
           vmCompanionDesktopPref("Lost contact with the desktop helper. " + VM_DESKTOP_SETUP_HINT, "#f59e0b");
         } else setTimeout(tick, 1200);
@@ -1193,6 +1240,12 @@ function vmCompanionSetDesktopVisible(on) {
   // never claims ON for a character that is not actually showing.
   vmCompanionSetDesktopToggle(on);
   vmCompanionDesktopPref(on ? "Turning on\u2026" : "Hiding\u2026");
+  // Going back to the embedded mode is requested: bring the embedded companion
+  // back AT ONCE so the character never sits invisible while the external window
+  // is being hidden. (Hidden only ever happened because external was confirmed
+  // on, so this restores exactly what we hid.) The confirmation step below
+  // reconciles again if the external window could not actually be hidden.
+  if (!on) _vmCompanionApplyExternal(false);
 
   var ctrl = vmCompanionControl();
   if (ctrl.kind !== "controller") {
@@ -1204,11 +1257,15 @@ function vmCompanionSetDesktopVisible(on) {
       .then(function (actual) {
         if (token !== _vmDesktopPollToken) return;
         var vis = (typeof actual === "boolean") ? actual : on;
+        // Only after the native window CONFIRMS its state do we hide/show the
+        // embedded companion, so a failed activation never leaves it hidden.
+        _vmCompanionApplyExternal(vis);
         vmCompanionSetDesktopToggle(vis);
         vmCompanionDesktopPref(vis ? "Showing outside ValleyMind" : "Hidden \u2014 the character stays in this app");
       })
       .catch(function () {
         if (token !== _vmDesktopPollToken) return;
+        _vmCompanionApplyExternal(false);
         vmCompanionSetDesktopToggle(false);
         vmCompanionDesktopPref(ctrl.unsupported, "#f59e0b");
       });
@@ -1216,6 +1273,7 @@ function vmCompanionSetDesktopVisible(on) {
   }
 
   if (!window.fetch) {
+    _vmCompanionApplyExternal(false);
     vmCompanionSetDesktopToggle(false);
     vmCompanionDesktopPref(vmCompanionLimitationMessage(), "#f59e0b");
     return;
@@ -1229,6 +1287,7 @@ function vmCompanionSetDesktopVisible(on) {
     .then(function (j) {
       if (token !== _vmDesktopPollToken) return;
       if (!j || !j.ok) {
+        _vmCompanionApplyExternal(false);
         vmCompanionSetDesktopToggle(false);
         vmCompanionDesktopPref("The desktop helper refused the request. " + VM_DESKTOP_SETUP_HINT, "#f59e0b");
         return;
@@ -1238,6 +1297,7 @@ function vmCompanionSetDesktopVisible(on) {
     })
     .catch(function () {
       if (token !== _vmDesktopPollToken) return;
+      _vmCompanionApplyExternal(false);
       vmCompanionSetDesktopToggle(false);
       vmCompanionDesktopPref(vmCompanionLimitationMessage(), "#f59e0b");
     });

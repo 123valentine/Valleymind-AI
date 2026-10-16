@@ -16,6 +16,8 @@ Run with:
 """
 import importlib.util
 import json
+import shutil
+import subprocess
 import sys
 import threading
 import time
@@ -30,6 +32,9 @@ DESKTOP = ROOT / "desktop"
 sys.path.insert(0, str(ROOT))
 
 import app as app_module
+
+NODE = shutil.which("node")
+PRESENTATION_RUNNER = ROOT / "tests" / "_companion_presentation_test.js"
 
 
 class DesktopStaticTests(unittest.TestCase):
@@ -292,6 +297,100 @@ class DesktopStaticTests(unittest.TestCase):
         self.assertIn("setCompanionVisible", settings)
         # The loopback controller fallback for the browser/hosted case remains.
         self.assertIn("http://127.0.0.1:8737", settings)
+
+
+class CompanionPresentationTests(unittest.TestCase):
+    """Embedded<->external presentation-mode switching.
+
+    The ONE Settings toggle moves the SAME companion between the embedded
+    presentation (inside ValleyMind) and the external floating window. The rules
+    that make the switch safe live in a small, pure coordinator
+    (static/companion_presentation.js) plus the confirmation-gated wiring in
+    static/settings.js. These are structural + Node-executed checks; they are
+    NOT a substitute for genuine Windows/Electron verification.
+    """
+
+    def _read(self, rel):
+        return (ROOT / rel).read_text(encoding="utf-8")
+
+    def test_presentation_coordinator_module_exists(self):
+        js = self._read("static/companion_presentation.js")
+        self.assertIn("createCoordinator", js)
+        self.assertIn("externalConfirmedVisible", js)
+        self.assertIn("externalHidden", js)
+        self.assertIn("reconcile", js)
+        # Pure module: it must not touch the DOM, the network or the bridge.
+        for bad in ("document.", "fetch(", "window.vmDesktop", "vmVrmCompanion"):
+            self.assertNotIn(bad, js, f"coordinator must stay pure: found {bad}")
+
+    def test_index_loads_coordinator_before_settings(self):
+        html = self._read("index.html")
+        module = html.find("/static/companion_presentation.js")
+        settings = html.find('<script src="/static/settings.js')
+        self.assertNotEqual(module, -1, "companion_presentation.js must be loaded")
+        self.assertNotEqual(settings, -1, "settings.js must be loaded")
+        self.assertLess(module, settings, "the coordinator must load before settings.js")
+        # Cache-busted, matching the versioned-URL convention for /static.
+        self.assertRegex(html, r'<script src="/static/companion_presentation\.js\?v=\d+"')
+
+    def test_settings_uses_the_presentation_coordinator(self):
+        settings = self._read("static/settings.js")
+        self.assertIn("VmCompanionPresentation", settings)
+        self.assertIn("createCoordinator", settings)
+        self.assertIn("function _vmCompanionApplyExternal(", settings)
+        self.assertIn("getEmbedded", settings)
+
+    def test_hide_is_confirmation_gated_not_optimistic(self):
+        # ON must NOT hide the embedded companion until the external window is
+        # CONFIRMED visible. The native adapter resolves to the actual state; the
+        # controller path confirms via polling.
+        settings = self._read("static/settings.js")
+        self.assertIn("_vmCompanionApplyExternal(vis);", settings)     # native confirm
+        self.assertIn("_vmCompanionApplyExternal(desired);", settings)  # controller confirm
+        self.assertIn("j.visible === desired", settings)
+
+    def test_failure_restores_the_embedded_companion(self):
+        # Every failure/timeout path must bring the embedded companion back, so a
+        # failed transition never leaves the companion invisible.
+        settings = self._read("static/settings.js")
+        self.assertIn("_vmCompanionApplyExternal(false);", settings)
+        # Going back to embedded restores it at once (never both hidden).
+        self.assertIn("if (!on) _vmCompanionApplyExternal(false);", settings)
+
+    def test_unsupported_environment_never_hides_embedded(self):
+        settings = self._read("static/settings.js")
+        # The unsupported branch of the state refresh returns before it can touch
+        # the embedded companion; the limitation message stays truthful.
+        self.assertIn('if (ctrl.kind === "unsupported") {', settings)
+        self.assertIn('vmCompanionDesktopPref(ctrl.unsupported, "#f59e0b");', settings)
+
+    def test_embedded_hide_is_non_persisting(self):
+        # The coordinator hides/shows the embedded companion through hide()/show(),
+        # which never persist a hidden state: reloads keep the established default
+        # (visible) and only setVisible() (the explicit "Show companion" toggle)
+        # writes prefs.visible.
+        js = self._read("static/vrm_companion.js")
+        hide_body = js.split("function hide() {", 1)[1].split("\n}", 1)[0]
+        self.assertNotIn("prefs.visible", hide_body, "hide() must not persist a hidden state")
+        self.assertIn("if (prefs.visible === false) { hide(); return; }", js)
+        self.assertIn("prefs.visible = !!on;", js)  # persisted only by setVisible()
+
+    @unittest.skipIf(NODE is None, "node is not available")
+    def test_presentation_coordinator_node_runner_passes(self):
+        proc = subprocess.run(
+            [NODE, str(PRESENTATION_RUNNER)],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            cwd=str(ROOT),
+        )
+        self.assertEqual(
+            proc.returncode, 0,
+            msg="coordinator runner exited non-zero\nstdout:\n%s\nstderr:\n%s" % (proc.stdout, proc.stderr),
+        )
+        summary = json.loads(proc.stdout.splitlines()[-1])
+        self.assertEqual(summary["failed"], [], summary)
+        self.assertGreater(summary["passed"], 0, "coordinator runner asserted nothing")
 
 
 class DesktopRouteTests(unittest.TestCase):
