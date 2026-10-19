@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The shell is a full-screen WebView of the existing ValleyMind app, so
+         the system theme only needs to be a plain, dark, no-action-bar base. -->
+    <style name="Theme.ValleyMind" parent="Theme.AppCompat.NoActionBar">
+        <item name="android:windowBackground">@color/vm_background</item>
+        <item name="android:statusBarColor">@color/vm_background</item>
+        <item name="android:navigationBarColor">@color/vm_background</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="colorAccent">@color/vm_accent</item>
+    </style>
+</resources>

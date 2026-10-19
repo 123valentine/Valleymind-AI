@@ -1073,9 +1073,15 @@ function vmCompanionControl() {
     return {
       kind: "android-overlay",
       set: function (on) { return android.setVisible(on); },      // resolves to the ACTUAL overlay state
-      subscribe: (typeof android.onVisibility === "function") ? android.onVisibility : null,
+      subscribe: (typeof android.onCompanionVisibility === "function") ? android.onCompanionVisibility : null,
       get: (typeof android.getVisible === "function") ? function () { return android.getVisible(); } : null,
-      unsupported: "Android couldn\u2019t show the overlay",
+      // Android cannot float a window without the user granting "draw over other
+      // apps". We ask BEFORE claiming anything is on, and can deep-link the user
+      // to the system screen that grants it.
+      needsPermission: (typeof android.hasPermission === "function") ? function () { return !!android.hasPermission(); } : null,
+      requestPermission: (typeof android.requestPermission === "function") ? function () { return android.requestPermission(); } : null,
+      permissionMessage: "ValleyMind needs permission to draw over other apps. Opening Android settings\u2026",
+      unsupported: "Couldn\u2019t control the companion window",
     };
   }
   var p = _vmCompanionPlatform();
@@ -1304,6 +1310,20 @@ function vmCompanionSetDesktopVisible(on) {
   // on, so this restores exactly what we hid.) The confirmation step below
   // reconciles again if the external window could not actually be hidden.
   if (!on) _vmCompanionApplyExternal(false);
+
+  if (on && ctrl.needsPermission && !ctrl.needsPermission()) {
+    // Turning ON requires a platform permission the user has NOT granted yet
+    // (Android "draw over other apps"). Never claim the overlay is on: keep the
+    // switch off, keep the embedded companion visible, explain why, and open the
+    // system screen that grants it. When the user returns, the native side
+    // re-checks permission and pushes the real state back to this toggle.
+    _vmCompanionDiag("permission-required", { adapter: ctrl.kind });
+    _vmCompanionApplyExternal(false);
+    vmCompanionSetDesktopToggle(false);
+    vmCompanionDesktopPref(ctrl.permissionMessage || ctrl.unsupported, "#f59e0b");
+    if (ctrl.requestPermission) { try { ctrl.requestPermission(); } catch (e) { /* ignore */ } }
+    return;
+  }
 
   if (ctrl.kind !== "controller") {
     // Native adapters: the promise resolves to the ACTUAL resulting state, so

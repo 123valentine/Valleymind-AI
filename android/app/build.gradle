@@ -1,0 +1,46 @@
+plugins {
+    id "com.android.application"
+    id "org.jetbrains.kotlin.android"
+}
+
+android {
+    namespace "ai.valleymind.companion"
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "ai.valleymind.companion"
+        minSdk 26
+        targetSdk 34
+        versionCode 1
+        versionName "1.0.0"
+
+        // Base URL of the running ValleyMind backend the WebView loads. The same
+        // origin serves the app UI, the companion overlay page and the API, so
+        // the WebView session cookie authenticates all of them. Change it here
+        // to point at a self-hosted backend; use http://10.0.2.2:5000 from the
+        // Android emulator to reach a server on the host machine.
+        buildConfigField "String", "VALLEY_BASE_URL", "\"https://valleymind-ai.onrender.com\""
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    kotlinOptions {
+        jvmTarget = "17"
+    }
+}
+
+dependencies {
+    implementation "androidx.core:core-ktx:1.13.1"
+    implementation "androidx.appcompat:appcompat:1.7.0"
+    implementation "androidx.webkit:webkit:1.11.0"
+    implementation "androidx.activity:activity-ktx:1.9.2"
+}

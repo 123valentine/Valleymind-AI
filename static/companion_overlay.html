@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>ValleyMind Companion</title>
+<link rel="stylesheet" href="/static/companion_overlay.css" />
+<!--
+  Same-origin shims so the site's ONE voice module (cloud_voice.js) runs
+  byte-for-byte unchanged: it expects apiFetch()/authHeaders() to exist. The
+  overlay WebView talks only to the ValleyMind origin, so cookies carry the
+  session and no token store is needed.
+-->
+<script>
+  window.API_BASE_URL = "";
+  window.apiUrl = function (p) { return p; };
+  window.authHeaders = function (extra) { return Object.assign({}, extra || {}); };
+  window.apiFetch = function (path, options) {
+    options = options || {};
+    var controller = new AbortController();
+    var timeout = window.setTimeout(function () { controller.abort(); }, options.timeoutMs || 60000);
+    return fetch(path, Object.assign({ credentials: "include", signal: controller.signal }, options))
+      .finally(function () { window.clearTimeout(timeout); });
+  };
+</script>
+<!-- The site's single voice system (STT/TTS/amplitude), reused not reimplemented. -->
+<script src="/static/cloud_voice.js"></script>
+<script type="importmap">
+{
+  "imports": {
+    "three": "/vrm-preview/assets/node_modules/three/build/three.module.js",
+    "three/": "/vrm-preview/assets/node_modules/three/",
+    "three/addons/": "/vrm-preview/assets/node_modules/three/examples/jsm/",
+    "@pixiv/three-vrm": "/vrm-preview/assets/node_modules/@pixiv/three-vrm/lib/three-vrm.module.js",
+    "@pixiv/three-vrm-core": "/vrm-preview/assets/node_modules/@pixiv/three-vrm-core/lib/three-vrm-core.module.js",
+    "@pixiv/three-vrm-animation": "/vrm-preview/assets/node_modules/@pixiv/three-vrm-animation/lib/three-vrm-animation.module.js"
+  }
+}
+</script>
+</head>
+<body>
+  <!--
+    The floating surface. The character fills the window; a compact HUD carries
+    the only controls (chat, mic, put away). Android moves the window; the page
+    never draws its own chrome, so it composes over other apps cleanly.
+  -->
+  <div id="vmOverlayRoot">
+    <canvas id="stage"></canvas>
+
+    <div id="hud">
+      <span id="status" class="pill" data-s="boot">Starting…</span>
+      <button id="btnChat" class="ctl" title="Chat">Chat</button>
+      <button id="btnMic" class="ctl round" title="Talk">Mic</button>
+      <button id="btnHide" class="ctl danger" title="Put the companion away">Hide</button>
+    </div>
+
+    <div id="panel" hidden>
+      <div id="log" aria-live="polite"></div>
+      <div id="bar">
+        <input id="input" type="text" placeholder="Type to ValleyMind…" autocomplete="off" />
+        <button id="btnSend" class="ctl primary">Send</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="/static/companion_overlay.js"></script>
+</body>
+</html>
