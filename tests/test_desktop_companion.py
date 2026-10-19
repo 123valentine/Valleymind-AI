@@ -364,6 +364,29 @@ class CompanionPresentationTests(unittest.TestCase):
         self.assertIn('if (ctrl.kind === "unsupported") {', settings)
         self.assertIn('vmCompanionDesktopPref(ctrl.unsupported, "#f59e0b");', settings)
 
+    def test_toggle_revert_is_diagnosable(self):
+        # A reverted switch must never be a silent mystery: the wiring records the
+        # environment (adapter, platform, bridge presence) and the exact reason at
+        # every outcome, and keeps a bounded in-page trail for inspection. It must
+        # never record credentials or conversation content.
+        settings = self._read("static/settings.js")
+        self.assertIn("function _vmCompanionDiag(", settings)
+        self.assertIn("window.__vmCompanionDiag", settings)
+        # Environment snapshot fields.
+        for field in ("adapter:", "platform:", "electronApp:", "desktopBridge:",
+                      "androidBridge:", "controlUrl:", "origin:"):
+            self.assertIn(field, settings)
+        # A diag call at each decisive outcome.
+        for stage in ('"toggle-request"', '"native-result"', '"native-error"',
+                      '"controller-unreachable"', '"controller-refused"',
+                      '"confirm-ok"', '"confirm-timeout"', '"confirm-lost-helper"',
+                      '"controller-state-error"', '"native-get"', '"native-broadcast"'):
+            self.assertIn(stage, settings, f"missing diagnostic stage {stage}")
+        # Every status update is recorded (so the visible reason is captured too).
+        self.assertIn('_vmCompanionDiag("status"', settings)
+        # The trail is bounded.
+        self.assertRegex(settings, r"__vmCompanionDiag\.length > \d+")
+
     def test_embedded_hide_is_non_persisting(self):
         # The coordinator hides/shows the embedded companion through hide()/show(),
         # which never persist a hidden state: reloads keep the established default

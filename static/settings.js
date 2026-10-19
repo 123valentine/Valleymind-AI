@@ -1123,16 +1123,59 @@ function _vmCompanionApplyExternal(on) {
   pres.reconcile(!!on);
 }
 
+function _vmCompanionDiag(stage, detail) {
+  try {
+    var d = {
+      t: Date.now(),
+      stage: String(stage),
+      adapter: vmCompanionControl().kind,
+      platform: _vmCompanionPlatform(),
+      origin: (typeof location !== "undefined" && location.origin) || "",
+      electronApp: !!(_vmDesktopBridge() && window.vmDesktop && window.vmDesktop.isDesktop),
+      desktopBridge: !!_vmDesktopBridge(),
+      androidBridge: !!_vmCompanionAndroidBridge(),
+      controlUrl: VM_DESKTOP_CONTROL_URL,
+    };
+    if (detail) { for (var k in detail) { if (Object.prototype.hasOwnProperty.call(detail, k)) d[k] = detail[k]; } }
+    if (!window.__vmCompanionDiag) window.__vmCompanionDiag = [];
+    window.__vmCompanionDiag.push(d);
+    if (window.__vmCompanionDiag.length > 60) window.__vmCompanionDiag.shift();
+    if (typeof console !== "undefined" && console.warn) console.warn("[vm-companion-toggle] " + d.stage, d);
+    return d;
+  } catch (e) {
+    return null;
+  }
+}
+
 function vmCompanionDesktopPref(label, color) {
   var el = document.getElementById("vmCompanionDesktopStatus");
   if (el) { el.textContent = label; el.style.color = color || "#475569"; }
+  _vmCompanionDiag("status", { label: label, warn: color === "#f59e0b" });
 }
 function vmCompanionSetDesktopToggle(on) {
   var t = document.getElementById("vmSetDesktopVisible");
   if (t) t.checked = !!on;
 }
+// Loopback control calls retry a few times: the helper may be mid-startup, or
+// Windows may briefly stall a loopback connection. Without this, a single blip
+// would look like "unreachable" and could revert the toggle. Only after every
+// attempt fails do we treat the helper as genuinely unreachable.
+function _vmCompanionFetch(path, opts) {
+  var url = VM_DESKTOP_CONTROL_URL + path;
+  var attempts = 4;
+  function attempt(n) {
+    return fetch(url, opts).catch(function (e) {
+      if (n <= 1) throw e;
+      return new Promise(function (res) { setTimeout(res, 300); }).then(function () {
+        return attempt(n - 1);
+      });
+    });
+  }
+  return attempt(attempts);
+}
 function vmCompanionRefreshDesktopState() {
   if (!document.getElementById("vmSetDesktopVisible")) return;
+  _vmCompanionDiag("panel-refresh");
   var ctrl = vmCompanionControl();
   if (ctrl.kind === "unsupported") {
     vmCompanionSetDesktopToggle(false);
@@ -1145,6 +1188,7 @@ function vmCompanionRefreshDesktopState() {
     if (ctrl.subscribe && !_vmDesktopSubscribed) {
       _vmDesktopSubscribed = true;
       ctrl.subscribe(function (on) {
+        _vmCompanionDiag("native-broadcast", { visible: !!on });
         _vmCompanionApplyExternal(!!on);
         vmCompanionSetDesktopToggle(!!on);
         vmCompanionDesktopPref(on ? "Showing outside ValleyMind" : "Hidden \u2014 the character stays in this app");
@@ -1153,13 +1197,15 @@ function vmCompanionRefreshDesktopState() {
     if (ctrl.get) {
       Promise.resolve(ctrl.get())
         .then(function (on) {
+          _vmCompanionDiag("native-get", { visible: !!on });
           _vmCompanionApplyExternal(!!on);
           vmCompanionSetDesktopToggle(!!on);
           vmCompanionDesktopPref(on ? "Showing outside ValleyMind" : "Hidden \u2014 the character stays in this app");
         })
-        .catch(function () {
+        .catch(function (e) {
           // Couldn't read the real state: never leave the companion hidden on a
           // false assumption — restore the embedded companion.
+          _vmCompanionDiag("native-get-error", { error: (e && e.message) || String(e) });
           _vmCompanionApplyExternal(false);
           vmCompanionDesktopPref(ctrl.unsupported, "#f59e0b");
         });
@@ -1167,7 +1213,7 @@ function vmCompanionRefreshDesktopState() {
     return;
   }
   if (!window.fetch) { vmCompanionDesktopPref(vmCompanionLimitationMessage(), "#f59e0b"); return; }
-  fetch(VM_DESKTOP_CONTROL_URL + "/state", { method: "GET" })
+  _vmCompanionFetch("/state", { method: "GET" })
     .then(function (r) { return r.ok ? r.json() : null; })
     .then(function (j) {
       if (j && j.running) {
@@ -1178,7 +1224,8 @@ function vmCompanionRefreshDesktopState() {
         throw new Error("no state");
       }
     })
-    .catch(function () {
+    .catch(function (e) {
+      _vmCompanionDiag("controller-state-error", { error: (e && e.message) || String(e) });
       _vmCompanionApplyExternal(false);
       vmCompanionSetDesktopToggle(false);
       vmCompanionDesktopPref(vmCompanionLimitationMessage(), "#f59e0b");
@@ -1194,7 +1241,7 @@ function vmCompanionPollDesktopUntilVisible(token, desired) {
   (function tick() {
     if (token !== _vmDesktopPollToken) return;
     if (!document.getElementById("vmSetDesktopVisible")) return; // panel closed
-    fetch(VM_DESKTOP_CONTROL_URL + "/state", { method: "GET" })
+    _vmCompanionFetch("/state", { method: "GET" })
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (j) {
         if (token !== _vmDesktopPollToken) return;
@@ -1202,6 +1249,7 @@ function vmCompanionPollDesktopUntilVisible(token, desired) {
           // External visibility is CONFIRMED: hide the embedded companion when
           // it is on, restore it when it is off. This is the only place the
           // embedded companion is hidden/shown by the toggle.
+          _vmCompanionDiag("confirm-ok", { desired: desired, state: j });
           _vmCompanionApplyExternal(desired);
           vmCompanionSetDesktopToggle(desired);
           vmCompanionDesktopPref(desired ? "Showing on your desktop" : "Hidden \u2014 the character stays in this app");
@@ -1211,6 +1259,7 @@ function vmCompanionPollDesktopUntilVisible(token, desired) {
           // Never claim a state we could not confirm: reconcile to the REAL
           // visibility the controller last reported.
           var actual = !!(j && j.visible === true);
+          _vmCompanionDiag("confirm-timeout", { desired: desired, state: j, waitedMs: Date.now() - started });
           _vmCompanionApplyExternal(actual);
           if (!actual) vmCompanionSetDesktopToggle(false);
           vmCompanionDesktopPref(desired
@@ -1221,10 +1270,11 @@ function vmCompanionPollDesktopUntilVisible(token, desired) {
         vmCompanionDesktopPref(desired ? "Starting the companion\u2026" : "Hiding the companion\u2026");
         setTimeout(tick, 1200);
       })
-      .catch(function () {
+      .catch(function (e) {
         if (token !== _vmDesktopPollToken) return;
         if (Date.now() - started > 45000) {
           // Lost the helper: it cannot be showing, so bring the character back.
+          _vmCompanionDiag("confirm-lost-helper", { desired: desired, error: (e && e.message) || String(e) });
           _vmCompanionApplyExternal(false);
           vmCompanionSetDesktopToggle(false);
           vmCompanionDesktopPref("Lost contact with the desktop helper. " + VM_DESKTOP_SETUP_HINT, "#f59e0b");
@@ -1234,12 +1284,20 @@ function vmCompanionPollDesktopUntilVisible(token, desired) {
 }
 function vmCompanionSetDesktopVisible(on) {
   on = !!on;
+  _vmCompanionDiag("toggle-request", { requested: on });
   var token = ++_vmDesktopPollToken;
-  // Move the switch immediately for a responsive feel. The final state is then
-  // reconciled to the CONFIRMED state (and reverted on failure), so the switch
-  // never claims ON for a character that is not actually showing.
-  vmCompanionSetDesktopToggle(on);
-  vmCompanionDesktopPref(on ? "Turning on\u2026" : "Hiding\u2026");
+  var ctrl = vmCompanionControl();
+  if (on && ctrl.kind === "controller") {
+    // The controller path can only confirm ON once the floating window really
+    // appears. Do NOT flip the switch on optimistically: a slow or missing
+    // helper would then show as a confusing "on, then straight back off".
+    vmCompanionDesktopPref("Turning on\u2026");
+  } else {
+    // Native adapters confirm within milliseconds and hiding is instant, so move
+    // the switch now for a responsive feel and reconcile to the confirmed state.
+    vmCompanionSetDesktopToggle(on);
+    vmCompanionDesktopPref(on ? "Turning on\u2026" : "Hiding\u2026");
+  }
   // Going back to the embedded mode is requested: bring the embedded companion
   // back AT ONCE so the character never sits invisible while the external window
   // is being hidden. (Hidden only ever happened because external was confirmed
@@ -1247,7 +1305,6 @@ function vmCompanionSetDesktopVisible(on) {
   // reconciles again if the external window could not actually be hidden.
   if (!on) _vmCompanionApplyExternal(false);
 
-  var ctrl = vmCompanionControl();
   if (ctrl.kind !== "controller") {
     // Native adapters: the promise resolves to the ACTUAL resulting state, so
     // the toggle and status text never lie. "unsupported" rejects and reverts.
@@ -1257,14 +1314,16 @@ function vmCompanionSetDesktopVisible(on) {
       .then(function (actual) {
         if (token !== _vmDesktopPollToken) return;
         var vis = (typeof actual === "boolean") ? actual : on;
+        _vmCompanionDiag("native-result", { requested: on, actual: actual, resolved: vis });
         // Only after the native window CONFIRMS its state do we hide/show the
         // embedded companion, so a failed activation never leaves it hidden.
         _vmCompanionApplyExternal(vis);
         vmCompanionSetDesktopToggle(vis);
         vmCompanionDesktopPref(vis ? "Showing outside ValleyMind" : "Hidden \u2014 the character stays in this app");
       })
-      .catch(function () {
+      .catch(function (e) {
         if (token !== _vmDesktopPollToken) return;
+        _vmCompanionDiag("native-error", { requested: on, error: (e && e.message) || String(e) });
         _vmCompanionApplyExternal(false);
         vmCompanionSetDesktopToggle(false);
         vmCompanionDesktopPref(ctrl.unsupported, "#f59e0b");
@@ -1278,7 +1337,7 @@ function vmCompanionSetDesktopVisible(on) {
     vmCompanionDesktopPref(vmCompanionLimitationMessage(), "#f59e0b");
     return;
   }
-  fetch(VM_DESKTOP_CONTROL_URL + "/visibility", {
+  _vmCompanionFetch("/visibility", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ visible: on }),
@@ -1287,6 +1346,7 @@ function vmCompanionSetDesktopVisible(on) {
     .then(function (j) {
       if (token !== _vmDesktopPollToken) return;
       if (!j || !j.ok) {
+        _vmCompanionDiag("controller-refused", { requested: on, response: j });
         _vmCompanionApplyExternal(false);
         vmCompanionSetDesktopToggle(false);
         vmCompanionDesktopPref("The desktop helper refused the request. " + VM_DESKTOP_SETUP_HINT, "#f59e0b");
@@ -1295,8 +1355,9 @@ function vmCompanionSetDesktopVisible(on) {
       // Confirm the REAL window state rather than trusting the request.
       vmCompanionPollDesktopUntilVisible(token, on);
     })
-    .catch(function () {
+    .catch(function (e) {
       if (token !== _vmDesktopPollToken) return;
+      _vmCompanionDiag("controller-unreachable", { requested: on, error: (e && e.message) || String(e) });
       _vmCompanionApplyExternal(false);
       vmCompanionSetDesktopToggle(false);
       vmCompanionDesktopPref(vmCompanionLimitationMessage(), "#f59e0b");

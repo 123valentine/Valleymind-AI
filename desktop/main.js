@@ -54,6 +54,10 @@ let companionVisible = false;
 let controllerSeen = false;
 let desiredPollTimer = null;
 let lastLocalChange = 0;
+// The last desired value we actually APPLIED from the controller. Kept separate
+// from local toggles so a stale/echoed controller value can never undo a fresh
+// local choice, while a genuinely new controller request is still applied.
+let appliedDesired = null;
 let mainWin = null;
 let appWin = null;
 let loginWin = null;
@@ -290,9 +294,17 @@ function pollDesiredState() {
       try { j = JSON.parse(raw); } catch (e) { /* ignore */ }
       if (res.statusCode === 200 && j && typeof j.visible === "boolean") {
         controllerSeen = true;
-        // A very recent local change wins for a moment so the controller's
-        // slightly older value can't immediately undo the user's tray toggle.
-        if (Date.now() - lastLocalChange > 1500) {
+        // Apply only a CHANGE from the last controller value we actually
+        // APPLIED, and only after the local-change grace period. A repeated
+        // (stale/echoed) value equal to what we already applied is ignored, so
+        // it can never undo a fresh local toggle -- this is what previously
+        // made the switch flip on then snap straight back off. A value that
+        // DIFFERS is a real new request (e.g. the website toggle) and is
+        // applied once the grace period has passed. We record the value only
+        // when we apply it, so a request that lands during the grace period is
+        // not lost: it is simply retried on the next poll.
+        if (j.visible !== appliedDesired && Date.now() - lastLocalChange > 1500) {
+          appliedDesired = j.visible;
           companionVisible = j.visible;
           applyVisibility();
         }
