@@ -5,4 +5,30 @@
     <string name="overlay_channel_desc">Keeps the ValleyMind companion visible over other apps.</string>
     <string name="overlay_notification_title">ValleyMind companion is on</string>
     <string name="overlay_notification_text">Showing over other apps. Tap to return to ValleyMind.</string>
+
+    <!-- Main WebView error screen (startup failure). -->
+    <string name="load_error_title">Can\'t reach ValleyMind</string>
+    <string name="load_error_message_timeout">The ValleyMind server didn\'t respond in time. It may still be starting up — try again in a moment.</string>
+    <string name="load_error_message_network">Couldn\'t load the ValleyMind app. Check your internet connection and try again.</string>
+    <string name="load_error_message_http">The ValleyMind server returned an error (HTTP %1$d).</string>
+    <string name="load_error_message_ssl">The connection to the ValleyMind server isn\'t secure, so it wasn\'t loaded.</string>
+    <string name="load_error_message_renderer">The app renderer stopped unexpectedly. Try again.</string>
+    <string name="load_error_server_label">Server: %1$s</string>
+    <string name="load_error_retry">Retry</string>
+    <string name="load_error_change_server">Change server</string>
+
+    <!-- Runtime base-URL picker (local backend testing over the same Wi-Fi). -->
+    <string name="base_url_dialog_title">ValleyMind server</string>
+    <string name="base_url_dialog_message">Use the hosted app, or point at a local backend on the same Wi-Fi (for example http://192.168.1.40:8000).</string>
+    <string name="base_url_dialog_hint">https://valleymind-ai.onrender.com</string>
+    <string name="base_url_dialog_invalid">Enter a valid http:// or https:// address</string>
+    <string name="base_url_dialog_save">Save &amp; load</string>
+    <string name="base_url_dialog_reset">Use hosted app</string>
+    <string name="base_url_dialog_cancel">Cancel</string>
+
+    <!-- Floating companion overlay error (fail closed: never show the full app). -->
+    <string name="overlay_error_title">Companion unavailable</string>
+    <string name="overlay_error_message">The companion page couldn\'t be loaded, so it was not shown over other apps.</string>
+    <string name="overlay_error_retry">Retry</string>
+    <string name="overlay_error_hide">Hide</string>
 </resources>

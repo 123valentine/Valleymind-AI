@@ -1,6 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Full-screen WebView hosting the existing ValleyMind web app. The floating
-     companion is a SEPARATE native overlay window, not part of this layout. -->
+<!-- Full-screen WebView hosting the existing ValleyMind web app, plus a native
+     error screen. The WebView has no timeout of its own, so if the backend is
+     cold or unreachable the page never finishes loading and the user would be
+     stranded forever. The native error screen (shown on timeout, network,
+     HTTP or renderer failure) always offers a Retry, so the app never sits on
+     a blank/loading screen indefinitely. The floating companion is a SEPARATE
+     native overlay window, not part of this layout. -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
@@ -11,4 +16,61 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:fitsSystemWindows="true" />
+
+    <LinearLayout
+        android:id="@+id/errorView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@color/vm_background"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:padding="28dp"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/errorTitle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:text="@string/load_error_title"
+            android:textColor="#E2E8F0"
+            android:textSize="20sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/errorMessage"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:gravity="center"
+            android:textColor="#94A3B8"
+            android:textSize="14sp" />
+
+        <TextView
+            android:id="@+id/errorServer"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:gravity="center"
+            android:textColor="#64748B"
+            android:textSize="12sp" />
+
+        <Button
+            android:id="@+id/btnRetry"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="22dp"
+            android:minWidth="180dp"
+            android:text="@string/load_error_retry" />
+
+        <Button
+            android:id="@+id/btnChangeServer"
+            style="@style/Widget.AppCompat.Button.Borderless"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:minWidth="180dp"
+            android:text="@string/load_error_change_server"
+            android:textColor="@color/vm_accent" />
+    </LinearLayout>
 </FrameLayout>

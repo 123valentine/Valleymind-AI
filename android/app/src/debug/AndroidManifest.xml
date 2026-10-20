@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- DEBUG BUILDS ONLY (manifest merger folds this into the debug variant).
+     The hosted ValleyMind app is https, so cleartext is needed for exactly one
+     thing: pointing Change server at a local backend over the same Wi-Fi
+     (http://<lan-ip>:8000). Release builds do NOT merge this file, so they keep
+     the platform default — cleartext blocked — and the app's auth traffic can
+     never be downgraded to plain http. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application android:usesCleartextTraffic="true" />
+
+</manifest>

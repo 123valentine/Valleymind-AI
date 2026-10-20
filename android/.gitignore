@@ -1,0 +1,10 @@
+# Gradle / Android build outputs and machine-specific files — never committed.
+.gradle/
+build/
+app/build/
+local.properties
+captures/
+.externalNativeBuild/
+.cxx/
+*.iml
+.idea/
