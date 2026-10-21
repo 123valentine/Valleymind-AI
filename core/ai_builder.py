@@ -25,6 +25,7 @@ from pathlib import Path
 import httpx
 
 from core.config import PROJECT_ROOT
+from core.cost_control import BLOCKED_MESSAGE, provider_blocked, record_error, record_success
 
 ZEN_BASE_URL = "https://opencode.ai/zen/v1"
 
@@ -218,7 +219,7 @@ def build_candidates(builder_id=None, model=None) -> list:
 
 
 def configured() -> bool:
-    return bool(api_key())
+    return bool(api_key()) and not provider_blocked("opencode")
 
 
 def _auth_headers() -> dict:
@@ -233,6 +234,9 @@ def _user_facing_error(exc) -> str:
     low = msg.lower()
     status = getattr(exc, "status", None)
     kind = getattr(exc, "kind", None)
+    if ("temporarily paused" in low or "paid api usage" in low
+            or "free api quota" in low or "quota has been exhausted" in low):
+        return BLOCKED_MESSAGE
     if status == 429 or kind == "rate_limit" or "429" in msg:
         return "The AI Builders are busy right now — ValleyMind is automatically retrying."
     if status in (500, 502, 503, 504) or kind in ("timeout", "connection") \
@@ -310,6 +314,8 @@ def chat_stream(model: str, messages: list, max_tokens: int = 8192, temperature:
     Yields dicts: {"content": str, "reasoning": str, "finish": str|None}.
     Raises BuilderModelError (with a retryable flag) on HTTP/transport errors.
     """
+    if provider_blocked("opencode"):
+        raise BuilderModelError(BLOCKED_MESSAGE, retryable=False)
     key = api_key()
     if not key:
         raise BuilderModelError("OPENCODE_API_KEY is not configured", retryable=False)
@@ -334,6 +340,7 @@ def chat_stream(model: str, messages: list, max_tokens: int = 8192, temperature:
                     body = resp.read().decode("utf-8", "replace")[:500]
                 except Exception:
                     pass
+                record_error("opencode", status_code=resp.status_code, body=body)
                 raise BuilderModelError(
                     f"OpenCode API HTTP {resp.status_code}: {body}",
                     status=resp.status_code,
@@ -361,9 +368,12 @@ def chat_stream(model: str, messages: list, max_tokens: int = 8192, temperature:
                     "reasoning": delta.get("reasoning_content") or "",
                     "finish": choice.get("finish_reason"),
                 }
+            record_success("opencode")
     except httpx.TimeoutException as exc:
+        record_error("opencode", exc=exc)
         raise BuilderModelError(f"OpenCode API timeout: {exc}", retryable=True, kind="timeout")
     except httpx.RequestError as exc:
+        record_error("opencode", exc=exc)
         raise BuilderModelError(f"OpenCode API connection error: {exc}", retryable=True, kind="connection")
 
 

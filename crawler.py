@@ -46,6 +46,17 @@ def _validate_env():
         print("[ERROR] PINECONE_API_KEY environment variable is not set.")
         print("        Add it to your .env file or set it in the shell.")
         sys.exit(1)
+    # Fail closed if the vector store's free quota is not verified: this script
+    # can create an index and upsert vectors, both of which can bill.
+    try:
+        from core.cost_control import provider_blocked
+    except Exception:
+        return
+    if provider_blocked("pinecone"):
+        print("[ERROR] Pinecone free quota is not verified (fail closed).")
+        print("        Confirm the allowance in core/free_quota_limits.json "
+              "or set FREE_QUOTA_PINECONE=available, then retry.")
+        sys.exit(1)
 
 
 def _fetch_html(url: str) -> str:

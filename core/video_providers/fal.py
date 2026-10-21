@@ -21,6 +21,7 @@ from typing import Any
 
 import requests
 
+from core.cost_control import BLOCKED_MESSAGE, provider_blocked, record_error, record_success
 from core.video_providers.base import BaseVideoProvider, VideoTask, VideoTaskStatus
 
 
@@ -42,6 +43,8 @@ def _model() -> str:
 
 
 def _available() -> bool:
+    if provider_blocked("fal"):
+        return False
     return bool(_api_key())
 
 
@@ -86,6 +89,10 @@ class FalVideoProvider(BaseVideoProvider):
     priority = 20  # tried after Alibaba (priority 10)
 
     def submit(self, task: VideoTask, **kwargs: Any) -> VideoTask:
+        if provider_blocked("fal"):
+            task.status = VideoTaskStatus.FAILED
+            task.error = BLOCKED_MESSAGE
+            return task
         start = time.perf_counter()
         try:
             key = _api_key()
@@ -114,6 +121,7 @@ class FalVideoProvider(BaseVideoProvider):
             task.metadata["fal_model"] = model
             task.metadata["submit_latency_ms"] = (time.perf_counter() - start) * 1000
             self.record_success()
+            record_success("fal")
             print(f"[VIDEO] fal submit OK — request_id={request_id} model={model}")
             return task
 
@@ -121,6 +129,7 @@ class FalVideoProvider(BaseVideoProvider):
             task.status = VideoTaskStatus.FAILED
             task.error = str(exc)
             self.record_failure()
+            record_error("fal", exc=exc)
             print(f"[VIDEO] fal submit FAILED: {exc}")
             return task
 
@@ -164,6 +173,7 @@ class FalVideoProvider(BaseVideoProvider):
             task.status = VideoTaskStatus.FAILED
             task.error = str(exc)
             self.record_failure()
+            record_error("fal", exc=exc)
             print(f"[VIDEO] fal poll FAILED: {exc}")
             return task
 

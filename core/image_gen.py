@@ -30,6 +30,9 @@ def _save_image(data: bytes, ext: str = "png") -> str:
 
 
 def _call_gemini_text(prompt: str, system_prompt: str, api_key: str, model: str = "gemini-2.0-flash", timeout: int = 15) -> str:
+    from core.cost_control import provider_blocked, record_error, record_success
+    if provider_blocked("gemini"):
+        raise RuntimeError("Gemini: free quota unavailable")
     gemini_base_url = os.getenv("GEMINI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta").rstrip("/")
     payload = {
         "contents": [{"parts": [{"text": prompt}], "role": "user"}],
@@ -41,6 +44,7 @@ def _call_gemini_text(prompt: str, system_prompt: str, api_key: str, model: str 
         timeout=timeout,
     )
     if response.status_code != 200:
+        record_error("gemini", status_code=response.status_code, body=response.text[:200])
         raise RuntimeError(f"Gemini text HTTP {response.status_code}: {response.text[:300]}")
     data = response.json()
     candidates = data.get("candidates") or []
@@ -48,6 +52,7 @@ def _call_gemini_text(prompt: str, system_prompt: str, api_key: str, model: str 
         raise RuntimeError("Gemini text returned empty candidates.")
     parts = (candidates[0].get("content") or {}).get("parts") or []
     text = "".join(p.get("text", "") for p in parts)
+    record_success("gemini")
     return text.strip()
 
 

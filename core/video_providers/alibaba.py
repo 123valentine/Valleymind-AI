@@ -24,6 +24,7 @@ from typing import Any
 import requests
 
 from core.config import PROJECT_ROOT, get_config
+from core.cost_control import BLOCKED_MESSAGE, provider_blocked, record_error, record_success
 from core.video_providers.base import BaseVideoProvider, VideoTask, VideoTaskStatus
 
 
@@ -56,6 +57,8 @@ def _api_key() -> str:
 
 
 def _available() -> bool:
+    if provider_blocked("alibaba"):
+        return False
     return bool(_api_key())
 
 
@@ -105,6 +108,10 @@ class AlibabaVideoProvider(BaseVideoProvider):
     priority = 10
 
     def submit(self, task: VideoTask, **kwargs: Any) -> VideoTask:
+        if provider_blocked("alibaba"):
+            task.status = VideoTaskStatus.FAILED
+            task.error = BLOCKED_MESSAGE
+            return task
         start = time.perf_counter()
         try:
             key = _api_key()
@@ -150,6 +157,7 @@ class AlibabaVideoProvider(BaseVideoProvider):
             task.metadata["submit_latency_ms"] = (time.perf_counter() - start) * 1000
             task.metadata["provider_model"] = model
             self.record_success()
+            record_success("alibaba")
 
             print(f"[VIDEO] Alibaba submit OK — task_id={provider_task_id}")
             return task
@@ -160,6 +168,7 @@ class AlibabaVideoProvider(BaseVideoProvider):
             task.error = str(exc)
             task.metadata["submit_latency_ms"] = elapsed
             self.record_failure()
+            record_error("alibaba", exc=exc)
             print(f"[VIDEO] Alibaba submit FAILED: {exc}")
             return task
 
@@ -231,6 +240,7 @@ class AlibabaVideoProvider(BaseVideoProvider):
             task.status = VideoTaskStatus.FAILED
             task.error = str(exc)
             self.record_failure()
+            record_error("alibaba", exc=exc)
             print(f"[VIDEO] Alibaba poll FAILED: {exc}")
             return task
 

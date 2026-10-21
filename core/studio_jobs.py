@@ -35,6 +35,8 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 import core.video_i2v as i2v
+from core.cost_control import BLOCKED_MESSAGE as _QUOTA_MESSAGE
+from core.cost_control import provider_blocked
 from core.db import studio_jobs_collection, studio_runs_collection, video_spend_collection
 
 # Clip states
@@ -865,6 +867,18 @@ def _run(job_id: str) -> None:
         pending = [c for c in clips if c["status"] == PENDING]
 
         # 2. Submit new clips up to the batch limit, honouring the budget cap.
+        #    Free-quota gate: if the video provider is blocked (exhausted or
+        #    unverified free allowance), abort submissions up front rather than
+        #    failing every clip one by one. No spend, no paid fallback.
+        if pending and not job["test_mode"] and not _fake() and provider_blocked("alibaba"):
+            for rest in pending:
+                rest["status"] = ABORTED
+                rest["error"] = _QUOTA_MESSAGE
+            job["submission_capped"] = True
+            job["quota_blocked"] = True
+            save_job(job)
+            print(f"[JOB] video provider free quota unavailable; aborting {len(pending)} clip(s)")
+            pending = []
         charge = _clip_charge(job)
         while pending and running < batch and not capped:
             if not job["test_mode"] and not _fake():

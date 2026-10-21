@@ -26,6 +26,7 @@ import tempfile
 import requests
 
 from core.config import get_config
+from core.cost_control import provider_blocked, record_error, record_success
 
 _BASE = os.getenv("DASHSCOPE_BASE", "https://dashscope-intl.aliyuncs.com").rstrip("/")
 VL_URL = f"{_BASE}/api/v1/services/aigc/multimodal-generation/generation"
@@ -39,7 +40,7 @@ MAX_PAYLOAD_MB = float(os.getenv("VL_MAX_PAYLOAD_MB", "8"))
 
 
 def available() -> bool:
-    return bool(get_config().alibaba_api_key) and vision_enabled()
+    return bool(get_config().alibaba_api_key) and vision_enabled() and not provider_blocked("alibaba")
 
 
 def vision_enabled() -> bool:
@@ -101,6 +102,7 @@ def analyze_video(video_path: str, prompt: str, *, system: str = "",
                              timeout=timeout)
         if resp.status_code != 200:
             body = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else {}
+            record_error("alibaba", status_code=resp.status_code, body=str(body.get("message", "")))
             return {"error": f"VL HTTP {resp.status_code}: {str(body.get('message', ''))[:180]}"}
         data = resp.json()
         content = ((data.get("output") or {}).get("choices") or [{}])[0].get("message", {}).get("content")
@@ -110,6 +112,7 @@ def analyze_video(video_path: str, prompt: str, *, system: str = "",
         elif isinstance(content, str):
             text = content.strip()
         usage = data.get("usage") or {}
+        record_success("alibaba")
         return {"text": text, "tokens": int(usage.get("total_tokens", 0) or 0)}
     except Exception as exc:
         return {"error": f"VL call failed: {exc}"}

@@ -37,6 +37,8 @@ from typing import Any, Dict, Iterable, List, Optional
 
 import httpx
 
+from core.cost_control import BLOCKED_MESSAGE, provider_blocked, record_error, record_success
+
 BRAND = "ValleyMind AI"
 SUPPORT_EMAIL = "supportvalleymind@gmail.com"
 ACCENT = "#00c2b8"
@@ -91,6 +93,9 @@ def _deliver(payload: Dict[str, Any], *, request_id: str = "") -> Dict[str, Any]
         return f"{(time.monotonic() - t0) * 1000:.0f}ms"
 
     c = _cfg()
+    if provider_blocked("resend"):
+        print(f"[EMAIL][rid={rid}] blocked: free quota unavailable")
+        return {"success": False, "error": "provider_blocked"}
     if not available():
         missing = [k for k in ("api_key", "sender") if not c[k]]
         print(f"[EMAIL][rid={rid}] config_incomplete missing={missing} elapsed={_elapsed()}")
@@ -104,6 +109,7 @@ def _deliver(payload: Dict[str, Any], *, request_id: str = "") -> Dict[str, Any]
         resp = httpx.post(RESEND_ENDPOINT, json=payload, headers=headers,
                           timeout=RESEND_TOTAL_TIMEOUT)
     except Exception as exc:
+        record_error("resend", exc=exc)
         print(f"[EMAIL][rid={rid}] network_fail {type(exc).__name__} elapsed={_elapsed()}")
         return {"success": False, "error": type(exc).__name__}
 
@@ -112,6 +118,7 @@ def _deliver(payload: Dict[str, Any], *, request_id: str = "") -> Dict[str, Any]
             data = resp.json()
         except Exception:
             data = {}
+        record_success("resend")
         print(f"[EMAIL][rid={rid}] send_ok elapsed={_elapsed()}")
         return {"success": True, "id": data.get("id")}
 
@@ -121,6 +128,7 @@ def _deliver(payload: Dict[str, Any], *, request_id: str = "") -> Dict[str, Any]
         err_name = str(resp.json().get("name") or "")
     except Exception:
         err_name = ""
+    record_error("resend", status_code=resp.status_code, body=str(resp.text)[:200])
     print(f"[EMAIL][rid={rid}] send_fail status={resp.status_code} name={err_name} elapsed={_elapsed()}")
     return {"success": False, "error": f"resend_status_{resp.status_code}"}
 
@@ -251,6 +259,9 @@ def send_promotional_batch(recipients: Iterable[str], title: str, body_html: str
         batch.append(item)
 
     rid = uuid.uuid4().hex[:12]
+    if provider_blocked("resend"):
+        print(f"[EMAIL][rid={rid}] batch blocked: free quota unavailable")
+        return {"success": False, "error": "provider_blocked"}
     if not batch:
         return {"success": False, "error": "no_recipients"}
     if len(batch) > 100:

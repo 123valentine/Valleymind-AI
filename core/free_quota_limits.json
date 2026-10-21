@@ -1,0 +1,29 @@
+{
+  "_README": [
+    "Free-quota overrides for ValleyMind's quota manager (core/quota_manager.py).",
+    "Nothing here is invented by the code: until YOU verify a provider's free",
+    "allowance against its dashboard, an overridable provider that could charge",
+    "money defaults to UNKNOWN and is BLOCKED (fail closed).",
+    "",
+    "Set an entry under 'providers' only when you have confirmed, in the",
+    "provider's own dashboard, that the account still has free quota.",
+    "Alternatively set an env var: FREE_QUOTA_<PROVIDER>=available (and",
+    "optionally FREE_QUOTA_<PROVIDER>_RESET_AT=<ISO-8601>).",
+    "",
+    "state must be one of: available | exhausted | rate_limited | invalid_key | unknown",
+    "reset_at is optional epoch-seconds or ISO-8601; when reached, an exhausted",
+    "or rate-limited provider is re-evaluated against its default.",
+    "",
+    "Valid provider keys: alibaba, fal, opencode, resend, openrouter, pinecone,",
+    "tinyfish, currents, newscatcher, newsapi, apisports."
+  ],
+  "_example": {
+    "alibaba": {
+      "state": "available",
+      "source": "provider_confirmed",
+      "reset_at": null,
+      "note": "Verified free trial tokens on 2026-10-01; re-check before it lapses."
+    }
+  },
+  "providers": {}
+}

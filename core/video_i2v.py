@@ -32,6 +32,12 @@ from pathlib import Path
 import requests
 
 from core.config import PROJECT_ROOT, get_config
+from core.cost_control import (
+    BLOCKED_MESSAGE,
+    provider_blocked,
+    record_error,
+    record_success,
+)
 
 _DASHSCOPE_BASE = os.getenv("DASHSCOPE_BASE", "https://dashscope-intl.aliyuncs.com").rstrip("/")
 I2V_URL = f"{_DASHSCOPE_BASE}/api/v1/services/aigc/video-generation/video-synthesis"
@@ -88,6 +94,8 @@ def _headers(async_mode: bool = False) -> dict:
 
 
 def available() -> bool:
+    if provider_blocked("alibaba"):
+        return False
     return bool(get_config().alibaba_api_key)
 
 
@@ -134,6 +142,8 @@ def submit_clip(prompt: str, image_ref: str, duration=None, tag: str = "", fake:
     free local clip even when the global fake switch is off."""
     if fake or _fake_mode():
         return {"task_id": f"fake:{tag or abs(hash((prompt, image_ref))) % 100000}"}
+    if provider_blocked("alibaba"):
+        return {"error": BLOCKED_MESSAGE, "status_code": 0}
     if not available():
         return {"error": "image-to-video is not configured", "status_code": 0}
     try:
@@ -156,12 +166,15 @@ def submit_clip(prompt: str, image_ref: str, duration=None, tag: str = "", fake:
     except Exception as exc:
         return {"error": f"i2v submit failed: {exc}", "status_code": 0}
     if resp.status_code == 429:
+        record_error("alibaba", status_code=429, body=resp.text[:200])
         return {"error": "rate limited (429)", "status_code": 429}
     if resp.status_code != 200:
+        record_error("alibaba", status_code=resp.status_code, body=resp.text[:200])
         return {"error": f"i2v submit HTTP {resp.status_code}: {resp.text[:200]}", "status_code": resp.status_code}
     task_id = (resp.json().get("output") or {}).get("task_id", "")
     if not task_id:
         return {"error": f"i2v returned no task_id: {str(resp.json())[:180]}", "status_code": 200}
+    record_success("alibaba")
     return {"task_id": task_id}
 
 
@@ -175,6 +188,8 @@ def submit_clip_t2v(prompt: str, duration=None, tag: str = "", fake: bool = Fals
     poll_clip() handles both."""
     if fake or _fake_mode():
         return {"task_id": f"fake:{tag or abs(hash(prompt)) % 100000}"}
+    if provider_blocked("alibaba"):
+        return {"error": BLOCKED_MESSAGE, "status_code": 0}
     if not available():
         return {"error": "video generation is not configured", "status_code": 0}
     try:
@@ -190,12 +205,15 @@ def submit_clip_t2v(prompt: str, duration=None, tag: str = "", fake: bool = Fals
     except Exception as exc:
         return {"error": f"t2v submit failed: {exc}", "status_code": 0}
     if resp.status_code == 429:
+        record_error("alibaba", status_code=429, body=resp.text[:200])
         return {"error": "rate limited (429)", "status_code": 429}
     if resp.status_code != 200:
+        record_error("alibaba", status_code=resp.status_code, body=resp.text[:200])
         return {"error": f"t2v submit HTTP {resp.status_code}: {resp.text[:200]}", "status_code": resp.status_code}
     task_id = (resp.json().get("output") or {}).get("task_id", "")
     if not task_id:
         return {"error": f"t2v returned no task_id: {str(resp.json())[:180]}", "status_code": 200}
+    record_success("alibaba")
     return {"task_id": task_id}
 
 
@@ -213,6 +231,8 @@ def poll_clip(task_id: str) -> dict:
         return {"status": "SUCCEEDED", "video_url": path} if path else {"status": "FAILED", "error": "fake render failed"}
     if not tid:
         return {"status": "FAILED", "error": "no task id"}
+    if provider_blocked("alibaba"):
+        return {"status": "FAILED", "error": BLOCKED_MESSAGE}
     try:
         out = requests.get(f"{TASK_URL}/{tid}", headers=_headers(), timeout=30).json().get("output") or {}
     except Exception as exc:
@@ -225,8 +245,12 @@ def poll_clip(task_id: str) -> dict:
             results = out.get("results") or []
             if results and isinstance(results[0], dict):
                 url = results[0].get("url", "")
-        return {"status": "SUCCEEDED", "video_url": url} if url else {"status": "FAILED", "error": "succeeded but no URL"}
+        if url:
+            record_success("alibaba")
+            return {"status": "SUCCEEDED", "video_url": url}
+        return {"status": "FAILED", "error": "succeeded but no URL"}
     if status in ("FAILED", "CANCELED", "UNKNOWN"):
+        record_error("alibaba", body=str(out.get("message", ""))[:200])
         return {"status": "FAILED", "error": str(out.get("message", ""))[:180]}
     return {"status": "RUNNING"}
 

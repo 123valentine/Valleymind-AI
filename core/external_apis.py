@@ -8,6 +8,12 @@ import requests
 
 from core.auto_model import get_latest_groq_model
 from core.config import get_config
+from core.cost_control import (
+    BLOCKED_MESSAGE,
+    provider_blocked,
+    record_error,
+    record_success,
+)
 
 
 LIVE_DATA_UNAVAILABLE = "__LIVE_DATA_UNAVAILABLE__"
@@ -575,6 +581,9 @@ def _format_items(source: str, items: list) -> str:
 
 
 def _search_currents(query: str) -> str:
+    if provider_blocked("currents"):
+        _log("Currents skipped: free quota unavailable")
+        return ""
     api_key = _configured_currents_key()
     if not api_key:
         _log("Currents skipped: no configured news key")
@@ -591,8 +600,10 @@ def _search_currents(query: str) -> str:
         timeout=12,
     )
     if response.status_code != 200:
+        record_error("currents", status_code=response.status_code, body=response.text[:200])
         raise RuntimeError(f"Currents HTTP {response.status_code}: {response.text[:240]}")
 
+    record_success("currents")
     data = response.json()
     articles = data.get("news") or []
     items = [
@@ -609,6 +620,9 @@ def _search_currents(query: str) -> str:
 
 
 def _search_newscatcher(query: str) -> str:
+    if provider_blocked("newscatcher"):
+        _log("Newscatcher skipped: free quota unavailable")
+        return ""
     api_key = _configured_newscatcher_key()
     if not api_key:
         _log("Newscatcher skipped: no configured news key")
@@ -622,8 +636,10 @@ def _search_newscatcher(query: str) -> str:
         timeout=12,
     )
     if response.status_code != 200:
+        record_error("newscatcher", status_code=response.status_code, body=response.text[:200])
         raise RuntimeError(f"Newscatcher HTTP {response.status_code}: {response.text[:240]}")
 
+    record_success("newscatcher")
     data = response.json()
     articles = data.get("articles") or []
     items = [
@@ -678,6 +694,9 @@ def _search_football_news(message: str, entities: dict) -> str:
 
 
 def _search_newsapi(query: str) -> str:
+    if provider_blocked("newsapi"):
+        _log("Primary news API skipped: free quota unavailable")
+        return ""
     api_key = _configured_news_key()
     if not api_key:
         _log("Primary news API skipped: API_KEY missing")
@@ -699,8 +718,10 @@ def _search_newsapi(query: str) -> str:
     _log("Calling primary news API")
     response = requests.get(endpoint, params=params, timeout=12)
     if response.status_code != 200:
+        record_error("newsapi", status_code=response.status_code, body=response.text[:200])
         raise RuntimeError(f"NewsAPI HTTP {response.status_code}: {response.text[:240]}")
 
+    record_success("newsapi")
     data = response.json()
     articles = data.get("articles") or []
     items = [
@@ -727,6 +748,9 @@ def _fetch_url_content(url: str, max_chars: int = 4000) -> str:
     Falls back to empty string on failure — never raises.
     Includes SSRF protection to block private/metadata IPs.
     """
+    if provider_blocked("tinyfish"):
+        _log("TinyFish Fetch skipped: free quota unavailable")
+        return ""
     api_key = _tinyfish_api_key()
     if not api_key:
         _log("TinyFish Fetch skipped: TINYFISH_API_KEY not set")
@@ -772,8 +796,10 @@ def _fetch_url_content(url: str, max_chars: int = 4000) -> str:
             timeout=20,
         )
         if resp.status_code != 200:
+            record_error("tinyfish", status_code=resp.status_code, body=resp.text[:200])
             _log(f"TinyFish Fetch HTTP {resp.status_code}")
             return ""
+        record_success("tinyfish")
         data = resp.json()
         content = data.get("content") or data.get("text") or ""
         if not content:
@@ -791,6 +817,9 @@ def _fetch_url_content(url: str, max_chars: int = 4000) -> str:
 
 
 def _search_tinyfish(query: str, site: str = "") -> str:
+    if provider_blocked("tinyfish"):
+        _log("TinyFish skipped: free quota unavailable")
+        return ""
     api_key = _tinyfish_api_key()
     if not api_key:
         _log("TinyFish skipped: TINYFISH_API_KEY not set")
@@ -833,6 +862,7 @@ def _search_tinyfish(query: str, site: str = "") -> str:
             else:
                 raise RuntimeError(f"HTTP {resp.status_code}: {resp.text[:240]}")
         except Exception as exc2:
+            record_error("tinyfish", exc=exc2)
             raise RuntimeError(f"TinyFish failed (urllib + requests fallback): {_safe_error(exc2)}") from exc2
 
     try:
@@ -871,6 +901,7 @@ def _search_tinyfish(query: str, site: str = "") -> str:
             "published": "",
         })
     _record_structured_results(structured)
+    record_success("tinyfish")
     _log(f"TinyFish success: {len(items)} results")
     return _format_items("Live search results", items)
 
@@ -982,6 +1013,9 @@ def _search_wikipedia(query: str) -> str:
 
 
 def _search_api_sports(query: str) -> str:
+    if provider_blocked("apisports"):
+        _log("API-SPORTS skipped: free quota unavailable")
+        return LIVE_DATA_UNAVAILABLE
     try:
         api_key = _require_sports_key()
     except RuntimeError as exc:
@@ -1029,9 +1063,11 @@ def _search_api_sports(query: str) -> str:
         return LIVE_DATA_UNAVAILABLE
 
     if response.status_code == 429:
+        record_error("apisports", status_code=429)
         _log("API-SPORTS rate limited")
         return LIVE_DATA_UNAVAILABLE
     if response.status_code != 200:
+        record_error("apisports", status_code=response.status_code, body=response.text[:200])
         _log(f"API-SPORTS HTTP {response.status_code}: {response.text[:240]}")
         return LIVE_DATA_UNAVAILABLE
 
@@ -1055,12 +1091,15 @@ def _search_api_sports(query: str) -> str:
             "published": "",
         })
     _log(f"API-SPORTS success: {len(items)} live fixtures")
+    record_success("apisports")
     if not items:
         return "Live sports results:\n- No live football fixtures were returned."
     return _format_items("Live sports results", items)
 
 
 def _api_sports_get(path: str, params: dict) -> dict:
+    if provider_blocked("apisports"):
+        raise RuntimeError(BLOCKED_MESSAGE)
     api_key = _require_sports_key()
 
     try:
@@ -1081,11 +1120,14 @@ def _api_sports_get(path: str, params: dict) -> dict:
         raise RuntimeError("API-SPORTS returned invalid JSON") from exc
 
     if response.status_code == 429:
+        record_error("apisports", status_code=429)
         raise RuntimeError("API-SPORTS rate limited")
     if response.status_code != 200:
+        record_error("apisports", status_code=response.status_code, body=response.text[:200])
         raise RuntimeError(f"API-SPORTS HTTP {response.status_code}: {response.text[:240]}")
     if not isinstance(data, dict):
         raise RuntimeError("API-SPORTS returned invalid data")
+    record_success("apisports")
     return data
 
 

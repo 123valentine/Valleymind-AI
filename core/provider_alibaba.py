@@ -17,6 +17,12 @@ from typing import Any
 import requests
 
 from core.config import PROJECT_ROOT, get_config
+from core.cost_control import (
+    BLOCKED_MESSAGE,
+    provider_blocked,
+    record_error,
+    record_success,
+)
 from core.provider_manager import (
     BaseProvider,
     Capability,
@@ -43,6 +49,11 @@ def _api_key() -> str:
 
 
 def _available() -> bool:
+    """Alibaba bills per call, so a disabled cost-control switch makes every
+    Alibaba provider invisible to discovery (the free image/search fallbacks
+    then take over)."""
+    if provider_blocked("alibaba"):
+        return False
     return bool(_api_key())
 
 
@@ -77,6 +88,8 @@ class AlibabaStudioTextProvider(BaseProvider):
 
     def execute(self, **kwargs: Any) -> ProviderResult:
         start = time.perf_counter()
+        if provider_blocked("alibaba"):
+            return ProviderResult(success=False, error=BLOCKED_MESSAGE, provider_name=self.name)
         try:
             key = _api_key()
             if not key:
@@ -106,6 +119,7 @@ class AlibabaStudioTextProvider(BaseProvider):
                 raise RuntimeError("Alibaba Studio returned empty choices")
 
             content = (choices[0].get("message") or {}).get("content", "")
+            record_success("alibaba")
             elapsed = (time.perf_counter() - start) * 1000
             return ProviderResult(
                 success=True,
@@ -114,6 +128,7 @@ class AlibabaStudioTextProvider(BaseProvider):
                 latency_ms=elapsed,
             )
         except Exception as exc:
+            record_error("alibaba", exc=exc)
             elapsed = (time.perf_counter() - start) * 1000
             return ProviderResult(
                 success=False,
@@ -133,6 +148,8 @@ class AlibabaStudioImageProvider(BaseProvider):
 
     def execute(self, **kwargs: Any) -> ProviderResult:
         start = time.perf_counter()
+        if provider_blocked("alibaba"):
+            return ProviderResult(success=False, error=BLOCKED_MESSAGE, provider_name=self.name)
         try:
             key = _api_key()
             if not key:
@@ -198,6 +215,7 @@ class AlibabaStudioImageProvider(BaseProvider):
             ext = img_response.headers.get("content-type", "image/png").split("/")[-1]
             saved = _save_image(img_response.content, ext)
 
+            record_success("alibaba")
             elapsed = (time.perf_counter() - start) * 1000
             return ProviderResult(
                 success=True,
@@ -210,6 +228,7 @@ class AlibabaStudioImageProvider(BaseProvider):
                 latency_ms=elapsed,
             )
         except Exception as exc:
+            record_error("alibaba", exc=exc)
             elapsed = (time.perf_counter() - start) * 1000
             return ProviderResult(
                 success=False,
@@ -229,6 +248,8 @@ class AlibabaStudioEmbeddingsProvider(BaseProvider):
 
     def execute(self, **kwargs: Any) -> ProviderResult:
         start = time.perf_counter()
+        if provider_blocked("alibaba"):
+            return ProviderResult(success=False, error=BLOCKED_MESSAGE, provider_name=self.name)
         try:
             key = _api_key()
             if not key:
@@ -254,6 +275,7 @@ class AlibabaStudioEmbeddingsProvider(BaseProvider):
             embedding_data = data.get("data") or []
             vectors = [item["embedding"] for item in embedding_data]
 
+            record_success("alibaba")
             elapsed = (time.perf_counter() - start) * 1000
             return ProviderResult(
                 success=True,
@@ -262,6 +284,7 @@ class AlibabaStudioEmbeddingsProvider(BaseProvider):
                 latency_ms=elapsed,
             )
         except Exception as exc:
+            record_error("alibaba", exc=exc)
             elapsed = (time.perf_counter() - start) * 1000
             return ProviderResult(
                 success=False,
@@ -291,6 +314,8 @@ class QwenImageProvider(BaseProvider):
 
     def execute(self, **kwargs: Any) -> ProviderResult:
         start = time.perf_counter()
+        if provider_blocked("alibaba"):
+            return ProviderResult(success=False, error=BLOCKED_MESSAGE, provider_name=self.name)
         try:
             key = _api_key()
             if not key:
@@ -336,6 +361,7 @@ class QwenImageProvider(BaseProvider):
             if not image_url:
                 raise RuntimeError("Qwen image timed out before returning a URL")
 
+            record_success("alibaba")
             latency = (time.perf_counter() - start) * 1000
             print(f"[IMAGE] Qwen image ready in {latency:.0f}ms ({model})")
             return ProviderResult(
@@ -346,6 +372,7 @@ class QwenImageProvider(BaseProvider):
                 latency_ms=latency,
             )
         except Exception as exc:
+            record_error("alibaba", exc=exc)
             latency = (time.perf_counter() - start) * 1000
             print(f"[IMAGE] Qwen image failed: {exc}")
             return ProviderResult(success=False, error=str(exc), provider_name=self.name, latency_ms=latency)

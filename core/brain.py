@@ -604,9 +604,12 @@ def _provider_call(name: str, messages: list, timeout: int) -> str:
     while still reusing the shared, tested per-provider request code."""
     config = get_config()
     name = (name or "").strip().lower()
+    from core.cost_control import provider_blocked
     if name == "groq":
         if not config.groq_api_key:
             raise RuntimeError("Groq: no API key")
+        if provider_blocked("groq"):
+            raise RuntimeError("Groq: free quota unavailable")
         model = get_latest_groq_model()
         if not model:
             raise RuntimeError("Groq: no model resolved")
@@ -615,17 +618,23 @@ def _provider_call(name: str, messages: list, timeout: int) -> str:
         if not config.openrouter_api_key:
             raise RuntimeError("OpenRouter: no API key")
         model = config.openrouter_model or "openai/gpt-4o-mini"
+        if provider_blocked("openrouter", model):
+            raise RuntimeError("OpenRouter: free quota unavailable")
         url = config.openrouter_base_url or "https://openrouter.ai/api/v1"
         return _call_openai_compat(messages, model, config.openrouter_api_key, url, "OpenRouter", timeout)
     if name == "nvidia":
         if not config.nvidia_api_key:
             raise RuntimeError("Nvidia: no API key")
+        if provider_blocked("nvidia"):
+            raise RuntimeError("Nvidia: free quota unavailable")
         model = config.nvidia_model or NVIDIA_DEFAULT_MODEL
         url = config.nvidia_base_url or "https://integrate.api.nvidia.com/v1"
         return _call_openai_compat(messages, model, config.nvidia_api_key, url, "Nvidia", timeout)
     if name == "gemini":
         if not config.gemini_api_key:
             raise RuntimeError("Gemini: no API key")
+        if provider_blocked("gemini"):
+            raise RuntimeError("Gemini: free quota unavailable")
         model = config.gemini_model or "gemini-2.0-flash"
         return _call_gemini(messages, model, config.gemini_api_key, config.gemini_base_url or "", timeout)
     raise RuntimeError(f"unknown provider: {name}")
@@ -679,10 +688,11 @@ def _call_llm_cluster_impl(
     """
     config = get_config()
     last_error: Exception | None = None
+    from core.cost_control import provider_blocked
 
     # ── 1. Primary: Groq API ───────────────────────────────────────────────
     groq_key = config.groq_api_key
-    if groq_key:
+    if groq_key and not provider_blocked("groq"):
         try:
             groq_model = get_latest_groq_model()
             if groq_model:
@@ -697,8 +707,8 @@ def _call_llm_cluster_impl(
 
     # ── 2. Fallback 1: OpenRouter ────────────────────────────────────────────
     openrouter_key = config.openrouter_api_key
-    if openrouter_key:
-        openrouter_model = config.openrouter_model or "meta-llama/llama-3-8b-instruct:free"
+    openrouter_model = config.openrouter_model or "meta-llama/llama-3-8b-instruct:free"
+    if openrouter_key and not provider_blocked("openrouter", openrouter_model):
         openrouter_url = config.openrouter_base_url or "https://openrouter.ai/api/v1"
         try:
             response = _call_openai_compat(
@@ -714,7 +724,7 @@ def _call_llm_cluster_impl(
 
     # ── 3. Fallback 2: NVIDIA NIM ─────────────────────────────────────────────
     nvidia_key = config.nvidia_api_key
-    if nvidia_key:
+    if nvidia_key and not provider_blocked("nvidia"):
         nvidia_model = config.nvidia_model or NVIDIA_DEFAULT_MODEL
         nvidia_url = config.nvidia_base_url or "https://integrate.api.nvidia.com/v1"
         try:
@@ -731,7 +741,7 @@ def _call_llm_cluster_impl(
 
     # ── 4. Fallback 3: Gemini ─────────────────────────────────────────────────
     gemini_key = config.gemini_api_key
-    if gemini_key:
+    if gemini_key and not provider_blocked("gemini"):
         gemini_model = config.gemini_model or "gemini-2.0-flash"
         gemini_url = config.gemini_base_url or ""
         try:

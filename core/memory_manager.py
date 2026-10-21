@@ -53,6 +53,13 @@ class MemoryManager:
             or os.getenv("OPENROUTER_API_KEY", "").strip()
         )
 
+        from core.cost_control import provider_blocked
+        if provider_blocked("pinecone"):
+            self._pc = None
+            self._index = None
+            logger.info("MemoryManager disabled — vector store quota unavailable")
+            return
+
         missing = []
         if not self.pinecone_api_key:
             missing.append("PINECONE_API_KEY_MEMORY")
@@ -90,6 +97,9 @@ class MemoryManager:
     # ── embedding (async via httpx) ──────────────────────────────────
 
     async def _embed(self, text: str) -> list[float]:
+        from core.cost_control import provider_blocked, record_error, record_success
+        if provider_blocked("openrouter"):
+            raise RuntimeError("embeddings unavailable: free quota not verified")
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 resp = await client.post(
@@ -102,14 +112,17 @@ class MemoryManager:
                 )
                 resp.raise_for_status()
                 payload = resp.json()
+                record_success("openrouter")
                 return payload["data"][0]["embedding"]
         except httpx.HTTPStatusError as exc:
+            record_error("openrouter", status_code=exc.response.status_code, body=exc.response.text[:200])
             logger.error("OpenRouter HTTP %s: %s", exc.response.status_code, exc.response.text[:300])
             raise
         except (KeyError, IndexError) as exc:
             logger.error("Unexpected OpenRouter response shape: %s", exc)
             raise
         except httpx.RequestError as exc:
+            record_error("openrouter", exc=exc)
             logger.error("OpenRouter request failed: %s", exc)
             raise
 
@@ -117,6 +130,9 @@ class MemoryManager:
 
     def _embed_sync(self, text: str) -> list[float]:
         import requests as _requests
+        from core.cost_control import provider_blocked, record_error, record_success
+        if provider_blocked("openrouter"):
+            raise RuntimeError("embeddings unavailable: free quota not verified")
         try:
             resp = _requests.post(
                 self.OPENROUTER_URL,
@@ -128,8 +144,11 @@ class MemoryManager:
                 timeout=30,
             )
             resp.raise_for_status()
+            record_success("openrouter")
             return resp.json()["data"][0]["embedding"]
         except _requests.RequestException as exc:
+            status = getattr(getattr(exc, "response", None), "status_code", None)
+            record_error("openrouter", status_code=status, exc=exc)
             logger.error("OpenRouter sync request failed: %s", exc)
             raise
         except (KeyError, IndexError) as exc:
@@ -210,6 +229,8 @@ class MemoryManager:
         if not user_input.strip() or not ai_response.strip():
             logger.warning("save_to_memory skipped — empty input or response")
             return
+        if self._index is None:
+            return
 
         try:
             vector = await self._embed(f"User: {user_input}\nAssistant: {ai_response}")
@@ -237,6 +258,8 @@ class MemoryManager:
         exclude_texts: Optional[list[str]] = None,
     ) -> str:
         if not user_input.strip():
+            return ""
+        if self._index is None:
             return ""
 
         try:
@@ -273,6 +296,8 @@ class MemoryManager:
     ) -> str:
         if not user_input.strip():
             return ""
+        if self._index is None:
+            return ""
 
         try:
             query_vector = self._embed_sync(user_input)
@@ -297,6 +322,8 @@ class MemoryManager:
     def save_sync(self, user_input: str, ai_response: str, session_id: str, namespace: str = ""):
         if not user_input.strip() or not ai_response.strip():
             logger.warning("save_sync skipped — empty input or response")
+            return
+        if self._index is None:
             return
 
         try:

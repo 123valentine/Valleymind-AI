@@ -188,6 +188,8 @@ class VideoDispatcher:
             task = provider.submit(task, **kwargs)
 
             if task.status != VideoTaskStatus.FAILED:
+                # Remember who owns this task so _poll asks the right provider.
+                task.metadata["_provider"] = provider.name
                 return task
 
             print(f"[VIDEO] Provider {provider.name} failed, trying next...")
@@ -199,19 +201,25 @@ class VideoDispatcher:
         return task
 
     def _poll(self, task: VideoTask, **kwargs: Any) -> VideoTask:
-        """Poll the provider that submitted this task."""
-        # Find the provider that matches this task's provider_task_id
-        for provider in self._providers:
-            if provider.health != "down":
-                try:
-                    return provider.poll(task, **kwargs)
-                except Exception as exc:
-                    task.error = str(exc)
-                    return task
+        """Poll the provider that actually submitted this task.
 
-        task.status = VideoTaskStatus.FAILED
-        task.error = "No available provider to poll"
-        return task
+        Asking the wrong provider about a task id it never issued means the run
+        can never complete — which is exactly what happened when Alibaba failed
+        over to fal. The submitter is recorded at submit time.
+        """
+        submitter = str(task.metadata.get("_provider") or "")
+        provider = next((p for p in self._providers if p.name == submitter), None)
+        if provider is None:
+            provider = next((p for p in self._providers if p.health != "down"), None)
+        if provider is None:
+            task.status = VideoTaskStatus.FAILED
+            task.error = "No available provider to poll"
+            return task
+        try:
+            return provider.poll(task, **kwargs)
+        except Exception as exc:
+            task.error = str(exc)
+            return task
 
     def _poll_until_done(self, task: VideoTask, **kwargs: Any) -> VideoTask:
         """Poll until terminal state or timeout."""
