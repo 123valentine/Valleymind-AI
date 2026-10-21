@@ -91,7 +91,7 @@
   .vm-switch input:focus-visible + .vm-switch-track { box-shadow: 0 0 0 2px rgba(0,212,255,0.45); }
 </style>
 <script src="/static/companion_presentation.js?v=1"></script>
-<script src="/static/settings.js?v=12"></script>
+<script src="/static/settings.js?v=13"></script>
 <script src="/static/pref_setup_model.js?v=3"></script>
 <script src="/static/onboarding.js?v=3"></script>
     <script src="/static/music_studio.js?v=10"></script>
@@ -8150,7 +8150,11 @@ function rtSpeakTurn(persona, text) {
             timeoutMs: 60000
         }).then(function (res) { return res.json(); }).then(function (data) {
             if (rtInterrupted) { rtRingHide(); if (rtCurrentResolve) rtCurrentResolve(); return; }
-            if (data && data.engine === "qwen_tts" && data.url) {
+            // Any engine that returns a playable URL is used: the Qwen default,
+            // the per-persona local Piper voice, or the free edge fallback. The
+            // playback path (one persistent <audio>, sequential, stop/barge-in)
+            // is unchanged — only the engine that produced the bytes varies.
+            if (data && data.url) {
                 if (!rtPlayer) rtPlayer = document.getElementById("rtPlayer");
                 rtStopSpeaking();
                 rtSpeaking = true;
@@ -8161,9 +8165,10 @@ function rtSpeakTurn(persona, text) {
                 if (pr && pr.catch) pr.catch(function () { rtSpeaking = false; rtRingHide(); rtRender(); if (rtCurrentResolve) rtCurrentResolve(); });
                 rtRender();
             } else {
-                // Qwen unavailable â€” stay honest: show a note, don't fake a device voice.
+                // No audio engine could produce a playable file — stay honest:
+                // show a note, don't fake a device voice.
                 rtRingHide();
-                rtSetStatus("(voice unavailable â€” showing text)");
+                rtSetStatus("(voice unavailable \u2014 showing text)");
                 setTimeout(function () { if (rtCurrentResolve) rtCurrentResolve(); }, 500);
             }
         }).catch(function () { rtRingHide(); setTimeout(function () { if (rtCurrentResolve) rtCurrentResolve(); }, 300); });

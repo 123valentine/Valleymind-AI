@@ -10,25 +10,32 @@ class BaseUrlConfigTest {
 
     @Test
     fun `production url is valid and unchanged`() {
-        val production = "https://valleymind-ai.onrender.com"
+        val production = "https://valleymind-ai-opms.onrender.com"
         assertTrue(BaseUrlConfig.isValid(production))
         assertEquals(production, BaseUrlConfig.normalize(production))
         assertFalse(BaseUrlConfig.isLocal(production))
     }
 
     @Test
+    fun `the build default is the opms production backend and the overlay shares it`() {
+        assertEquals("https://valleymind-ai-opms.onrender.com", BuildConfig.VALLEY_BASE_URL)
+        assertEquals(BuildConfig.VALLEY_BASE_URL, BaseUrlConfig.normalize(BuildConfig.VALLEY_BASE_URL))
+        assertEquals(BuildConfig.VALLEY_BASE_URL, CompanionOverlayService.DEFAULT_BASE_URL)
+    }
+
+    @Test
     fun `trailing slashes are stripped`() {
-        assertEquals("https://valleymind-ai.onrender.com", BaseUrlConfig.normalize("https://valleymind-ai.onrender.com///"))
+        assertEquals("https://valleymind-ai-opms.onrender.com", BaseUrlConfig.normalize("https://valleymind-ai-opms.onrender.com///"))
     }
 
     @Test
     fun `whitespace is trimmed`() {
-        assertEquals("https://valleymind-ai.onrender.com", BaseUrlConfig.normalize("  https://valleymind-ai.onrender.com  "))
+        assertEquals("https://valleymind-ai-opms.onrender.com", BaseUrlConfig.normalize("  https://valleymind-ai-opms.onrender.com  "))
     }
 
     @Test
     fun `scheme is lowercased`() {
-        assertEquals("https://valleymind-ai.onrender.com", BaseUrlConfig.normalize("HTTPS://valleymind-ai.onrender.com"))
+        assertEquals("https://valleymind-ai-opms.onrender.com", BaseUrlConfig.normalize("HTTPS://valleymind-ai-opms.onrender.com"))
     }
 
     @Test

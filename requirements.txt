@@ -18,3 +18,4 @@ imageio-ffmpeg
 Pillow
 boto3
 psutil
+edge-tts

@@ -20,8 +20,10 @@ import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
+import android.webkit.PermissionRequest
 import android.webkit.RenderProcessGoneDetail
 import android.webkit.SslErrorHandler
+import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
@@ -72,6 +74,9 @@ class CompanionOverlayService : Service() {
     private var params: WindowManager.LayoutParams? = null
     private var baseUrl: String = DEFAULT_BASE_URL
 
+    /** Native TTS fallback for the overlay page (no speechSynthesis in WebView). */
+    private var systemTts: SystemTts? = null
+
     /** The companion URL this service last asked the WebView to load. */
     private var requestedUrl: String? = null
 
@@ -97,6 +102,12 @@ class CompanionOverlayService : Service() {
             }
         }
         override fun onWebBridgeAttached() = pushStateToOverlay()
+        override fun speakNative(text: String, voiceId: String?, done: (Boolean) -> Unit) {
+            systemTts?.speak(text, voiceId, done) ?: done(false)
+        }
+        override fun stopNativeSpeech() {
+            systemTts?.stop()
+        }
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -193,7 +204,31 @@ class CompanionOverlayService : Service() {
             settings.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
         }
         WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG)
+        if (systemTts == null) {
+            systemTts = SystemTts(this).also { it.init() }
+        }
+        // The overlay page speaks through native TTS; its completion is evaluated
+        // back into this WebView.
+        NativeTtsRegistry.install { name, ok ->
+            val js = "window.__vmTtsDone_" + name + " && window.__vmTtsDone_" + name + "(" + ok + ");"
+            wv.post { wv.evaluateJavascript(js, null) }
+        }
         wv.addJavascriptInterface(CompanionBridge(overlayHost), "VmAndroidBridge")
+        // Tap-to-talk needs the microphone. Without a WebChromeClient,
+        // getUserMedia / recognition are refused inside the overlay WebView.
+        wv.webChromeClient = object : WebChromeClient() {
+            override fun onPermissionRequest(request: PermissionRequest?) {
+                if (request == null) return
+                val wantsAudio = request.resources?.any {
+                    it == PermissionRequest.RESOURCE_AUDIO_CAPTURE
+                } == true
+                val granted = ContextCompat.checkSelfPermission(
+                    this@CompanionOverlayService, android.Manifest.permission.RECORD_AUDIO
+                ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                if (wantsAudio && granted) request.grant(arrayOf(PermissionRequest.RESOURCE_AUDIO_CAPTURE))
+                else request.deny()
+            }
+        }
         wv.webViewClient = object : WebViewClient() {
 
             // Hard scope guard: nothing but the companion page may ever be the
@@ -414,6 +449,9 @@ class CompanionOverlayService : Service() {
         errorPanel = null
         params = null
         requestedUrl = null
+        try { systemTts?.shutdown() } catch (e: Exception) { /* ignore */ }
+        systemTts = null
+        NativeTtsRegistry.install(null)
         isVisible = false
         isRunning = false
     }
@@ -481,7 +519,7 @@ class CompanionOverlayService : Service() {
         const val ACTION_SHOW = "ai.valleymind.companion.action.SHOW"
         const val ACTION_HIDE = "ai.valleymind.companion.action.HIDE"
         const val EXTRA_BASE_URL = "base_url"
-        const val DEFAULT_BASE_URL = "https://valleymind-ai.onrender.com"
+        val DEFAULT_BASE_URL: String = BuildConfig.VALLEY_BASE_URL
         private const val CHANNEL_ID = "vm_companion_overlay"
         private const val NOTIF_ID = 7317
 

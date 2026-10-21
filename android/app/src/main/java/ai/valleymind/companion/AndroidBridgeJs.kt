@@ -22,6 +22,7 @@ object AndroidBridgeJs {
   var B = window.VmAndroidBridge;
   if (!B) { return; }
   var listeners = [];
+  var __vmTtsSeq = 0;
 
   function state() {
     try { return JSON.parse(B.getStateJson()); }
@@ -61,7 +62,24 @@ object AndroidBridgeJs {
         })();
       });
     },
-    onCompanionVisibility: function (cb) { if (typeof cb === "function") { listeners.push(cb); } }
+    onCompanionVisibility: function (cb) { if (typeof cb === "function") { listeners.push(cb); } },
+
+    // ── Native TTS fallback ──────────────────────────────────────────────
+    // Android's WebView has no speechSynthesis, so the companion's replies are
+    // spoken by the device's own TTS engine. The completion callback is named
+    // here and invoked by native as window.__vmTtsDone_<name>(ok).
+    hasNativeTts: function () { try { return typeof B.ttsSpeak === "function"; } catch (e) { return false; } },
+    ttsSpeak: function (text, voiceId, done) {
+      if (typeof B.ttsSpeak !== "function") { if (done) done(false); return false; }
+      var name = "vmTts" + (++__vmTtsSeq);
+      window["__vmTtsDone_" + name] = function (ok) {
+        try { delete window["__vmTtsDone_" + name]; } catch (e) { window["__vmTtsDone_" + name] = undefined; }
+        if (typeof done === "function") done(!!ok);
+      };
+      try { return !!B.ttsSpeak(String(text || ""), voiceId || null, name); }
+      catch (e) { if (done) done(false); return false; }
+    },
+    ttsStop: function () { try { if (typeof B.ttsStop === "function") B.ttsStop(); } catch (e) { /* ignore */ } }
   };
 
   try { B.notifyBridgeReady(); } catch (e) { /* ignore */ }

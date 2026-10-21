@@ -134,6 +134,81 @@ class OverlaySurfaceTests(unittest.TestCase):
         self.assertIn("setVisible(false)", js)
 
 
+class OverlayChromeTests(unittest.TestCase):
+    """The overlay is character-first: no panel, and the mic is the only control
+    besides the required icon-only hide affordance."""
+
+    def _read(self, rel):
+        return (ROOT / rel).read_text(encoding="utf-8")
+
+    def test_overlay_page_verifier_markers_survive(self):
+        # OverlayPageVerifier.PAGE_MARKER_JS checks for exactly these ids.
+        html = self._read("static/companion_overlay.html")
+        self.assertIn('id="vmOverlayRoot"', html)
+        self.assertIn('id="stage"', html)
+        self.assertIn('id="btnHide"', html)
+
+    def test_overlay_has_no_control_panel_or_reply_controls(self):
+        html = self._read("static/companion_overlay.html")
+        for gone in ("btnChat", "btnSend", "id=\"panel\"", "id=\"input\"", "id=\"hud\"", "id=\"log\""):
+            self.assertNotIn(gone, html, f"overlay still carries {gone}")
+        css = self._read("static/companion_overlay.css")
+        for gone in ("#panel", "#hud", ".pill", ".bubble", "#input"):
+            self.assertNotIn(gone, css, f"overlay css still styles {gone}")
+
+    def test_overlay_keeps_a_mic_attached_to_the_body(self):
+        js = self._read("static/companion_overlay.js")
+        self.assertIn('id="btnMic"', self._read("static/companion_overlay.html"))
+        # The mic follows the model's own world->screen projection.
+        self.assertIn("projectWorld", js)
+        self.assertIn("getRawBoneNode", js)
+
+    def test_overlay_loads_the_turn_state_machine(self):
+        html = self._read("static/companion_overlay.html")
+        self.assertIn("/static/companion_turn_sm.js", html)
+        js = self._read("static/companion_overlay.js")
+        self.assertIn("window.VMTurnSM", js)
+
+    def test_overlay_offers_the_four_free_voice_profiles(self):
+        js = self._read("static/companion_overlay.js")
+        for pid in ("marcus", "angelina", "elena", "companion"):
+            self.assertIn(pid, js, f"missing voice profile {pid}")
+        self.assertIn("vmVoiceProfile", js)
+
+    def test_overlay_declares_a_native_tts_fallback(self):
+        # Android WebView has no speechSynthesis; the page must fall back to the
+        # native engine rather than silently dropping the reply.
+        js = self._read("static/companion_overlay.js")
+        self.assertIn("ttsSpeak", js)
+        self.assertIn("speakNative", js)
+
+
+class TurnStateMachineTests(unittest.TestCase):
+    """The tap-to-talk turn machine runs as a pure-node test AND is wired in the
+    overlay page."""
+
+    def test_turn_sm_module_exists(self):
+        self.assertTrue((ROOT / "static" / "companion_turn_sm.js").is_file())
+
+    @unittest.skipIf(NODE is None, "node is not available")
+    def test_turn_sm_node_runner_passes(self):
+        runner = ROOT / "tests" / "_companion_turn_sm_test.js"
+        proc = subprocess.run(
+            [NODE, str(runner)],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            cwd=str(ROOT),
+        )
+        self.assertEqual(
+            proc.returncode, 0,
+            msg="turn state machine runner exited non-zero\nstdout:\n%s\nstderr:\n%s" % (proc.stdout, proc.stderr),
+        )
+        summary = json.loads(proc.stdout.splitlines()[-1])
+        self.assertEqual(summary["failed"], [], summary)
+        self.assertGreater(summary["passed"], 0, "turn state machine asserted nothing")
+
+
 class WebAdapterIntegrationTests(unittest.TestCase):
     """settings.js selects the Android adapter and gates on permission."""
 

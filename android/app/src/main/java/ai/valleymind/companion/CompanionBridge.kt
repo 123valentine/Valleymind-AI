@@ -24,6 +24,13 @@ class CompanionBridge(private val host: Host) {
         fun overlayStateJson(): String
         fun setOverlayVisible(on: Boolean)
         fun onWebBridgeAttached()
+        /**
+         * Speak [text] through the native TTS engine. [done] must be invoked
+         * exactly once when the utterance ends (or fails). Implementations that
+         * have no engine should call done(false) immediately.
+         */
+        fun speakNative(text: String, voiceId: String?, done: (Boolean) -> Unit) { done(false) }
+        fun stopNativeSpeech() { /* no-op by default */ }
     }
 
     @JavascriptInterface
@@ -43,4 +50,25 @@ class CompanionBridge(private val host: Host) {
 
     @JavascriptInterface
     fun notifyBridgeReady() = host.onWebBridgeAttached()
+
+    /**
+     * Native TTS entry point. Speech runs on the main thread and completion is
+     * delivered back to the WebView through NativeTtsRegistry, which the host
+     * installs (it owns the WebView). Returns false if the engine could not even
+     * start the utterance.
+     */
+    @JavascriptInterface
+    fun ttsSpeak(text: String, voiceId: String?, callbackName: String?): Boolean {
+        val clean = text.trim()
+        if (clean.isEmpty()) return false
+        host.speakNative(clean, voiceId) { ok ->
+            if (!callbackName.isNullOrBlank()) {
+                NativeTtsRegistry.deliver(callbackName, ok)
+            }
+        }
+        return true
+    }
+
+    @JavascriptInterface
+    fun ttsStop() = host.stopNativeSpeech()
 }

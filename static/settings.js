@@ -8,6 +8,7 @@ var SETTINGS_SECTIONS = [
   { id: "accessibility", label: "Accessibility" },
   { id: "appearance",    label: "Appearance" },
   { id: "companion",     label: "Companion" },
+  { id: "voice",         label: "Voice" },
   { id: "language",      label: "Language & Region" },
   { id: "culture",       label: "Culture" },
   { id: "notifications", label: "Notifications" },
@@ -68,6 +69,7 @@ function renderSettingsContent(id) {
     case "preferences":   renderPreferencesSection(container);   break;
     case "appearance":    renderAppearanceSection(container);    break;
     case "companion":     renderCompanionSection(container);     break;
+    case "voice":         renderVoiceSection(container);         break;
     case "notifications": renderNotificationsSection(container); break;
     case "knowledge":     renderKnowledgeSection(container);     break;
     case "media":         renderMediaSection(container);         break;
@@ -91,8 +93,14 @@ function _showSaved() {
   if (el) { el.style.opacity = "1"; setTimeout(function () { el.style.opacity = "0"; }, 2000); }
 }
 
-function settingsApiSave(section, data) {
-  return apiFetch("/api/settings/" + section, {
+function settingsApiSave(section, data, opts) {
+  // opts.merge: send a PARTIAL section save that the server merges into the
+  // existing section instead of replacing it. Used by saves that only touch one
+  // key (e.g. persona_voices) and must not wipe unrelated keys such as accent,
+  // personality_style, and voice_preference. Default is unchanged: existing
+  // callers keep exact-replacement semantics.
+  var url = "/api/settings/" + section + (opts && opts.merge ? "?merge=1" : "");
+  return apiFetch(url, {
     method: "PUT",
     credentials: "include",
     headers: authHeaders({ "Content-Type": "application/json" }),
@@ -811,6 +819,56 @@ var VM_COMPANION_PERMS = [
   { id: "type", label: "Type into fields" },
 ];
 
+// ── Persona voice catalogue ──────────────────────────────────────────────
+// The four speaking personas of the Round Table / companion. Each keeps its own
+// independently selectable voice. The EXISTING server voice stays the default
+// and the fallback: nothing here changes the Qwen default playback path (see
+// /api/tts and rtSpeakTurn in index.html). The two female local Piper voices
+// are offered as OPT-IN, non-default previews so the user can compare them
+// against the current voice before any default is ever switched.
+//
+// `id` is what gets stored; `label` is what the user reads; `server` is the
+// existing online reference voice id (used only for the reference preview);
+// `piper` is the local model id (only present on the two new opt-in voices).
+var VM_PERSONA_VOICES = {
+  personas: [
+    { key: "marcus", label: "Marcus", defaultVoice: "guy" },
+    { key: "elena", label: "Elena", defaultVoice: "aria" },
+    { key: "angelina", label: "Angelina", defaultVoice: "jenny" },
+    { key: "companion", label: "Companion", defaultVoice: "christopher" },
+  ],
+  voices: [
+    { id: "guy", label: "Guy — current Marcus voice (reference)", server: "en-US-GuyNeural", default: true },
+    { id: "aria", label: "Aria — current Elena voice (reference)", server: "en-US-AriaNeural", default: true },
+    { id: "jenny", label: "Jenny — current Angelina voice (reference)", server: "en-US-JennyNeural", default: true },
+    { id: "christopher", label: "Christopher — current Companion voice (reference)", server: "en-US-ChristopherNeural", default: true },
+    { id: "kristin_piper", label: "Kristin (local, opt-in preview)", piper: "en_US-kristin-medium", default: false },
+    { id: "ljspeech_piper", label: "LJSpeech (local, opt-in preview)", piper: "en_US-ljspeech-medium", default: false },
+  ],
+};
+
+function _personaVoiceOptions() {
+  return VM_PERSONA_VOICES.voices.map(function (v) {
+    return { value: v.id, label: v.label };
+  });
+}
+
+function _personaVoiceById(id) {
+  var list = VM_PERSONA_VOICES.voices;
+  for (var i = 0; i < list.length; i++) { if (list[i].id === id) return list[i]; }
+  return null;
+}
+
+function _readPersonaVoices() {
+  var out = {};
+  try { out = JSON.parse(localStorage.getItem("vmPersonaVoices") || "{}") || {}; } catch (e) { out = {}; }
+  return out;
+}
+
+function _writePersonaVoices(map) {
+  try { localStorage.setItem("vmPersonaVoices", JSON.stringify(map)); } catch (e) { /* storage blocked */ }
+}
+
 function renderCompanionSection(container) {
   renderCompanionInto(container);
 }
@@ -908,7 +966,7 @@ function renderCompanionInto(container) {
       _SH.row("Awake & ready", _SH.toggle("vmSetAwake", p.awake, "vmCompanionSetAwake(this.checked)"), "Sleep pauses hands-free listening without turning the character off. Wake re-arms it.") +
       _SH.row("Resume listening after replies", _SH.toggle("vmSetVoiceFirst", p.voiceFirst, "vmCompanionSetVoiceFirst(this.checked)"), "Keep listening for your next sentence without a tap.") +
       _SH.row("Screen context (vision)", _SH.toggle("vmSetVision", p.visionOn, "vmCompanionSetVision(this.checked)"), "Let the companion see your screen when you ask. Asks for permission first.") +
-      '<div style="margin-top:12px;"><p style="color:#94a3b8;font-size:10px;margin:0 0 4px;text-transform:uppercase;letter-spacing:0.12em;font-family:\'Space Grotesk\',sans-serif;">Voice</p>' + _SH.select([{ value: "", label: "Follow account voice" }, { value: "marcus", label: "Marcus" }, { value: "elena", label: "Elena" }, { value: "angelina", label: "Angelina" }], "vmSetVoice", p.voiceKey, "vmCompanionSetVoiceKey(this.value)") + '</div>' +
+      '<div style="margin-top:12px;"><p style="color:#94a3b8;font-size:10px;margin:0 0 4px;text-transform:uppercase;letter-spacing:0.12em;font-family:\'Space Grotesk\',sans-serif;">Voice</p>' + _SH.select([{ value: "", label: "Follow account voice" }, { value: "marcus", label: "Marcus" }, { value: "elena", label: "Elena" }, { value: "angelina", label: "Angelina" }, { value: "companion", label: "Companion (default)" }], "vmSetVoice", p.voiceKey, "vmCompanionSetVoiceKey(this.value)") + '</div>' +
       '<div style="margin-top:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.05);"><p style="color:#e2e8f0;font-size:13px;margin:0 0 8px;">Microphone access: <span style="color:#94a3b8;">' + accessLabel + '</span></p>' + accessBtn + '</div>' +
       '</div>') +
     _SH.card("Tasks", '<p style="color:#94a3b8;font-size:12px;margin:0 0 12px;line-height:1.5;">ValleyMind can carry out multi-step tasks in the app — say something like \u201copen the Studio\u201d or \u201cscroll down\u201d. It only acts on what you allow here, and anything impactful asks for your confirmation first.</p>' +
@@ -959,7 +1017,192 @@ function vmCompanionSetSize(v) {
 }
 function vmCompanionSetDock(v) { var vm = _vmCompanion(); if (vm) vm.setDock(v); }
 function vmCompanionSetName(v) { var vm = _vmCompanion(); if (vm) vm.setCharName(v); }
-function vmCompanionSetVoiceKey(v) { var vm = _vmCompanion(); if (vm) vm.setVoiceKey(v); }
+function vmCompanionSetVoiceKey(v) {
+  var key = String(v || "").toLowerCase();
+  // The floating companion's own voice profile (four free voices). Stored under
+  // a shared same-origin key so the overlay WebView picks it up without a reload.
+  var profiles = ["marcus", "angelina", "elena", "companion"];
+  try {
+    if (profiles.indexOf(key) !== -1) localStorage.setItem("vmVoiceProfile", key);
+    else localStorage.removeItem("vmVoiceProfile");
+  } catch (e) { /* storage blocked */ }
+    var vm = _vmCompanion();
+  // The crew voice key follows the account preference; "companion" (and the
+  // follow-account option) leave it empty so the account/persona decides.
+  if (vm) vm.setVoiceKey(profiles.indexOf(key) !== -1 && key !== "companion" ? key : "");
+}
+
+// ── Per-persona voice selection ──────────────────────────────────────────
+// One row per persona, each independently selectable. This is purely additive:
+// the existing shared "Voice" select above still works and the server default
+// (Qwen) is untouched. The two local Piper voices are opt-in previews.
+function vmPersonaVoicesCard() {
+  var saved = _readPersonaVoices();
+  var rows = VM_PERSONA_VOICES.personas.map(function (per) {
+    var sel = saved[per.key] || per.defaultVoice;
+    return _SH.row(per.label,
+      '<div style="display:flex;gap:8px;align-items:center;">' +
+        _SH.select(_personaVoiceOptions(), "vmPersonaVoice-" + per.key, sel,
+          "vmPersonaSetVoice('" + per.key + "', this.value)") +
+        _SH.btn("Preview", "vmPersonaPreviewVoice('" + per.key + "')") +
+      '</div>',
+      "Each persona keeps its own voice. The current server voice stays the default; the local voices are opt-in previews.");
+  }).join("");
+  return _SH.card("Persona voices",
+    '<p style="color:#94a3b8;font-size:12px;margin:0 0 12px;line-height:1.5;">Give each speaker its own voice. The current online voice remains the default and the fallback \u2014 nothing changes until you pick one. \u201cPreview\u201d plays a short sample of the selected voice.</p>' +
+    '<div style="display:flex;flex-direction:column;">' + rows + '</div>' +
+    '<p style="color:#475569;font-size:11px;margin:10px 0 0;" id="vmPersonaVoiceStatus"></p>');
+}
+
+function vmPersonaSetVoice(personaKey, voiceId) {
+  if (!_personaVoiceById(voiceId)) return;
+  var saved = _readPersonaVoices();
+  saved[personaKey] = voiceId;
+  _writePersonaVoices(saved);
+  // Persist through the EXISTING generic settings route (cloud section) \u2014 no
+  // second settings controller, no new endpoint. Merge-flagged so this partial
+  // save cannot delete unrelated cloud keys (accent/personality_style/...).
+  settingsApiSave("cloud", { persona_voices: saved }, { merge: true }).catch(function () {});
+  var st = document.getElementById("vmPersonaVoiceStatus");
+  if (st) { st.textContent = "Saved " + personaKey + " \u2192 " + voiceId; setTimeout(function () { st.textContent = ""; }, 2500); }
+}
+
+// Preview the selected voice through the EXISTING /api/tts route. The server
+// reads the saved per-persona selection: a Piper voice is synthesised by the
+// local Piper engine, a reference voice by the existing default engine. Either
+// way the returned url is played and the ACTUAL engine is reported (never
+// mislabelled).
+var VM_PERSONA_PREVIEW_TEXT = "Hey, it's good to see you again. This is a quick preview of how I sound.";
+var _personaPreviewPlayer = null;
+
+function _personaEngineLabel(engine) {
+  if (engine === "piper_local") return "local Piper";
+  if (engine === "edge_tts_free") return "free Edge voice";
+  if (engine === "qwen_tts") return "ValleyMind voice";
+  if (engine === "browser") return "device speech";
+  return engine || "voice";
+}
+
+function vmPersonaPreviewVoice(personaKey) {
+  var saved = _readPersonaVoices();
+  var voiceId = saved[personaKey] || (VM_PERSONA_VOICES.personas.filter(function (p) { return p.key === personaKey; })[0] || {}).defaultVoice;
+  var entry = _personaVoiceById(voiceId);
+  if (!entry) return;
+  var st = document.getElementById("vmPersonaVoiceStatus");
+
+  if (st) st.textContent = "Preparing preview\u2026";
+  apiFetch("/api/tts", {
+    method: "POST", credentials: "include",
+    headers: authHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify({ text: VM_PERSONA_PREVIEW_TEXT, persona: personaKey }),
+    timeoutMs: 60000
+  }).then(function (r) { return r.json(); }).then(function (data) {
+    if (!data || !data.url) { if (st) st.textContent = "(preview unavailable)"; return; }
+    _vmPlayPreviewUrl(data.url, function (err) { if (st) st.textContent = err; });
+    if (st) {
+      st.textContent = "Playing " + entry.label + " \u2014 " + _personaEngineLabel(data.engine);
+      setTimeout(function () { if (st) st.textContent = ""; }, 3000);
+    }
+  }).catch(function () { if (st) st.textContent = "(preview unavailable)"; });
+}
+
+
+// ── Voice tab ────────────────────────────────────────────────────────────
+// A dedicated catalogue of the voices this deployment genuinely has, plus the
+// per-persona assignment below it. Every card's "Preview" plays a real sample
+// through the existing /api/tts route and reports the ACTUAL engine used (a
+// fallback is never labelled as the requested voice). Voices are only listed
+// when the project's own configuration confirms them: the four free edge
+// reference voices always exist; the two local Piper voices are shown as
+// available/local and are honestly reported as unavailable when their model
+// files are not present (the server falls back to the free engine and says so).
+function renderVoiceSection(container) {
+  container.innerHTML = _SH.sectionHeader("Voice", "Choose how each speaker sounds — and preview before you commit") +
+    vmVoiceCatalogueCard() +
+    vmPersonaVoicesCard() +
+    '<p style="color:#475569;font-size:11px;margin-top:4px;">Status: <span id="vmVoiceTabStatus"></span></p>';
+}
+
+// Build one catalogue entry for a voice definition from VM_PERSONA_VOICES.
+function _vmVoiceCatalogueEntry(v) {
+  var isPiper = !!v.piper;
+  var engineLabel = isPiper ? "Local Piper model" : "Free Edge voice";
+  var detail = isPiper
+    ? ('On-device model \u00b7 ' + v.piper + ' \u00b7 no cloud, no per-character cost')
+    : ('Online reference voice \u00b7 ' + v.server + ' \u00b7 free');
+  var who = [];
+  VM_PERSONA_VOICES.personas.forEach(function (per) {
+    if (per.defaultVoice === v.id) who.push(per.label);
+  });
+  var whoTxt = who.length ? ("Default for " + who.join(", ")) : "Opt-in alternative";
+  return _SH.card(v.label,
+    '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">' +
+      '<div style="flex:1;">' +
+        '<div style="margin:0 0 6px;">' + _SH.badge(engineLabel, isPiper ? "#00d4ff" : "#64748b") + '</div>' +
+        '<p style="color:#94a3b8;font-size:12px;margin:0 0 4px;">' + detail + '</p>' +
+        '<p style="color:#64748b;font-size:11px;margin:0;">' + whoTxt + '</p>' +
+      '</div>' +
+      _SH.btn("Preview", "vmVoicePreview('" + v.id + "')") +
+    '</div>');
+}
+
+function vmVoiceCatalogueCard() {
+  var entries = VM_PERSONA_VOICES.voices.map(_vmVoiceCatalogueEntry).join("");
+  return _SH.card("Available voices",
+    '<p style="color:#94a3b8;font-size:12px;margin:0 0 12px;line-height:1.5;">These are the voices this build actually has. \u201cPreview\u201d plays a short sample and tells you which engine produced it.</p>' +
+    entries);
+}
+
+// Preview a SPECIFIC catalogue voice (not the persona's saved selection). The
+// server validates the voice id against its allowlist; the response reports the
+// engine that actually ran, so a fallback is never shown as the chosen voice.
+function vmVoicePreview(voiceId) {
+  var entry = _personaVoiceById(voiceId);
+  if (!entry) return;
+  var st = document.getElementById("vmVoiceTabStatus");
+  if (st) st.textContent = "Preparing preview\u2026";
+  apiFetch("/api/tts", {
+    method: "POST", credentials: "include",
+    headers: authHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify({ text: VM_PERSONA_PREVIEW_TEXT, voice: voiceId }),
+    timeoutMs: 60000
+  }).then(function (r) { return r.json(); }).then(function (data) {
+    if (!data || !data.url) {
+      if (st) st.textContent = "(preview unavailable: " + ((data && data.reason) || "no audio") + ")";
+      return;
+    }
+    _vmPlayPreviewUrl(data.url, function (err) {
+      if (st) st.textContent = err;
+    });
+    if (st) {
+      var label = entry.label;
+      if (data.fallback_from === "piper_local" && data.engine !== "piper_local") {
+        st.textContent = entry.label + " unavailable \u2014 played " + _personaEngineLabel(data.engine) + " instead";
+      } else {
+        st.textContent = "Playing " + label + " \u2014 " + _personaEngineLabel(data.engine);
+      }
+      setTimeout(function () { if (st) st.textContent = ""; }, 4000);
+    }
+  }).catch(function () { if (st) st.textContent = "(preview unavailable)"; });
+}
+
+// One hidden <audio> reused for every preview so a new preview always stops the
+// previous one (no overlapping playback). Returns nothing; reports play errors
+// through the optional callback.
+function _vmPlayPreviewUrl(url, onError) {
+  if (!_personaPreviewPlayer) {
+    _personaPreviewPlayer = document.createElement("audio");
+    _personaPreviewPlayer.style.display = "none";
+    (document.body || document.documentElement).appendChild(_personaPreviewPlayer);
+  }
+  try { _personaPreviewPlayer.pause(); } catch (e) { /* not playing */ }
+  _personaPreviewPlayer.currentTime = 0;
+  _personaPreviewPlayer.src = url;
+  var pr = _personaPreviewPlayer.play();
+  if (pr && pr.catch) pr.catch(function () { if (onError) onError("(tap to allow audio)"); });
+}
+
+
 function vmCompanionSetMuted(muted) {
   var vm = _vmCompanion(); if (!vm) return;
   vm.setMuted(!!muted);

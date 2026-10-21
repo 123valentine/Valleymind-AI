@@ -20,7 +20,7 @@
     <!-- Runtime base-URL picker (local backend testing over the same Wi-Fi). -->
     <string name="base_url_dialog_title">ValleyMind server</string>
     <string name="base_url_dialog_message">Use the hosted app, or point at a local backend on the same Wi-Fi (for example http://192.168.1.40:8000).</string>
-    <string name="base_url_dialog_hint">https://valleymind-ai.onrender.com</string>
+    <string name="base_url_dialog_hint">https://valleymind-ai-opms.onrender.com</string>
     <string name="base_url_dialog_invalid">Enter a valid http:// or https:// address</string>
     <string name="base_url_dialog_save">Save &amp; load</string>
     <string name="base_url_dialog_reset">Use hosted app</string>

@@ -795,6 +795,26 @@ def normalize_persona(value: str) -> str:
     return p if p in VALID_PERSONAS else "marcus"
 
 
+def _persona_voice_selection(user_id: str, persona: str) -> str:
+    """The saved local-Piper voice id for *persona*, or "" if none.
+
+    Read server-side from the authenticated user's cloud settings. Every value
+    is validated against the piper_tts allowlist here, so the route never trusts
+    a client-supplied voice id, path, or model URL.
+    """
+    try:
+        section = _get_section_settings(user_id, "cloud")
+        chosen = (section or {}).get("persona_voices") or {}
+        if not isinstance(chosen, dict):
+            return ""
+        voice_id = str(chosen.get(persona) or "").strip().lower()
+    except Exception as exc:
+        print(f"[TTS] could not read persona_voices: {exc}")
+        return ""
+    from core import piper_tts
+    return voice_id if piper_tts.is_piper_voice(voice_id) else ""
+
+
 def load_persona_brain(user_id: str, persona: str = "marcus"):
     """Brain for a specific persona. Personality comes from that character's
     behavior.json, but long-term memory stays SHARED across all three — who is
@@ -1107,6 +1127,44 @@ def api_tts():
     persona = normalize_persona(str(data.get("persona") or "marcus"))
     if not text:
         return jsonify({"status": "error", "message": "no text"}), 400
+    # Free path: the companion's four voice profiles are served by edge-tts with
+    # no cost. Opted into explicitly so the default (Qwen) behaviour is untouched.
+    engine = str(data.get("engine") or "").strip().lower()
+    profile = str(data.get("profile") or "").strip().lower()
+    # Explicit, allowlist-validated single-voice preview (used by the Voice tab's
+    # catalogue). The client may name a supported voice id, but its value is
+    # validated here — never a path, URL, or arbitrary model. Reference voices use
+    # the free edge engine; local Piper voices use the local engine (which falls
+    # back to free, never Qwen) via synthesize_persona_local.
+    preview_voice = str(data.get("voice") or "").strip().lower()
+    if preview_voice:
+        from core import piper_tts
+        if piper_tts.is_piper_voice(preview_voice):
+            from core.tts import synthesize_persona_local
+            result = synthesize_persona_local(text, persona, preview_voice)
+            return jsonify({"status": "success", **result})
+        from core.tts import FREE_VOICE_MAP, synthesize_free
+        _ref_profile = ""
+        for _key, _vid in FREE_VOICE_MAP.items():
+            if _vid.lower() == preview_voice:
+                _ref_profile = _key
+                break
+        if _ref_profile:
+            result = synthesize_free(text, _ref_profile)
+            return jsonify({"status": "success", **result})
+        return jsonify({"status": "error", "message": "unsupported voice"}), 400
+    if engine in ("free", "edge", "edge_tts", "edge_tts_free") or profile:
+        from core.tts import synthesize_free
+        result = synthesize_free(text, profile or persona)
+        return jsonify({"status": "success", **result})
+    # Per-persona local Piper: only when THIS user explicitly saved a supported
+    # Piper voice for THIS persona. Read server-side, allowlist-validated; never
+    # trusts the client. Falls back to the free engine (never Qwen) on failure.
+    piper_voice = _persona_voice_selection(user_id, persona)
+    if piper_voice:
+        from core.tts import synthesize_persona_local
+        result = synthesize_persona_local(text, persona, piper_voice)
+        return jsonify({"status": "success", **result})
     from core.tts import synthesize_persona
     result = synthesize_persona(text, persona)
     return jsonify({"status": "success", **result})
@@ -3025,7 +3083,7 @@ def _dispatch_video_stream(user_id, message, chat_id, image_data):
     state = _spawn_video_generation(user_id, resolved_chat_id, message)
 
     return Response(
-        stream_with_context(generate()),
+        stream_with_context(_stream_video_state(state, resolved_chat_id)),
         mimetype='text/event-stream',
         headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no', 'Connection': 'keep-alive'},
     )
@@ -3396,6 +3454,27 @@ def _put_section_settings(user_id: str, section: str, data: dict):
     _save_settings(user_id, settings)
 
 
+def _merge_section_settings(user_id: str, section: str, patch: dict):
+    """Atomically merge *patch* keys into the existing section, preserving every
+    key the patch does not mention.
+
+    Why this exists: `_put_section_settings` replaces the whole section, which is
+    correct for callers that read-modify-write the full object (cloud prefs,
+    cloud_state, preferences setup status). But a partial save such as the
+    per-persona voice map must NOT wipe unrelated keys (accent,
+    personality_style, voice_preference). The read-modify-write happens here,
+    inside one load/save cycle on the server, so there is no client-side race.
+    """
+    settings = _load_settings(user_id)
+    current = settings.get(section)
+    if not isinstance(current, dict):
+        current = {}
+    merged = dict(current)
+    merged.update(patch)
+    settings[section] = merged
+    _save_settings(user_id, settings)
+
+
 @app.route("/api/settings/<section>", methods=["GET", "POST", "PUT"])
 def api_settings(section):
     user_id, error = _require_login()
@@ -3416,7 +3495,16 @@ def api_settings(section):
     body = request.get_json(silent=True) or {}
     if not isinstance(body, dict):
         return jsonify({"status": "error", "message": "Body must be a JSON object"}), 400
-    _put_section_settings(user_id, section, body)
+    # Opt-in atomic merge: a partial save (e.g. the per-persona voice map) must
+    # not delete unrelated keys in the same section. Default behaviour stays an
+    # exact section replacement so existing read-modify-write callers are
+    # unaffected. The flag is a value on the existing route — no new endpoint,
+    # no new keys accepted, same auth and response shape.
+    merge = str(request.args.get("merge") or "").strip().lower() in ("1", "true", "yes")
+    if merge:
+        _merge_section_settings(user_id, section, body)
+    else:
+        _put_section_settings(user_id, section, body)
     # Personalization must actually change the brain, so every saved section is
     # mirrored into long-term memory as preferences the assistant can read.
     _mirror_settings_to_memory(user_id, section, body)
@@ -6686,6 +6774,16 @@ def email_test_endpoint():
 
     if not email_service.available():
         return jsonify({"status": "error", "message": "Resend not configured — set RESEND_API_KEY and EMAIL_FROM",
+                        "results": results}), 200
+
+    # Free-quota gate: never hit Resend (even read-only) when its free allowance
+    # is unverified or exhausted.
+    from core.cost_control import provider_blocked
+    if provider_blocked("resend"):
+        add("api_auth", "SKIP", "Resend free quota not verified")
+        add("send", "SKIP", "Resend free quota not verified")
+        return jsonify({"status": "ok",
+                        "message": "Resend free quota not verified — live checks skipped",
                         "results": results}), 200
 
     # API-key validation against Resend (list verified domains; no mail sent).

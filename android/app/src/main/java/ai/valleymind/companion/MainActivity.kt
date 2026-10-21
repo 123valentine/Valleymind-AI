@@ -13,6 +13,7 @@ import android.os.Looper
 import android.provider.Settings
 import android.text.InputType
 import android.view.View
+import android.webkit.PermissionRequest
 import android.webkit.RenderProcessGoneDetail
 import android.webkit.SslErrorHandler
 import android.webkit.WebChromeClient
@@ -67,6 +68,9 @@ class MainActivity : AppCompatActivity(), CompanionBridge.Host {
 
     private var pendingAutoEnable = false
 
+    /** Native TTS fallback (Android WebView has no speechSynthesis). */
+    private lateinit var systemTts: SystemTts
+
     /** The origin the WebView loads; production default, runtime-overridable. */
     private var baseUrl: String = BuildConfig.VALLEY_BASE_URL
 
@@ -88,6 +92,11 @@ class MainActivity : AppCompatActivity(), CompanionBridge.Host {
         ActivityResultContracts.RequestPermission()
     ) { /* best-effort: the overlay works without notifications */ }
 
+    /** Microphone permission for tap-to-talk (mic / getUserMedia in the WebView). */
+    private val recordAudioPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { /* the page's getUserMedia/recognition retries on the next tap */ }
+
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -95,6 +104,14 @@ class MainActivity : AppCompatActivity(), CompanionBridge.Host {
 
         configStore = AppConfigStore(this)
         baseUrl = configStore.getBaseUrl(BuildConfig.VALLEY_BASE_URL)
+
+        systemTts = SystemTts(this)
+        systemTts.init()
+        // The native-TTS completion callback is evaluated in this WebView.
+        NativeTtsRegistry.install { name, ok ->
+            val js = "window.__vmTtsDone_" + name + " && window.__vmTtsDone_" + name + "(" + ok + ");"
+            webView.post { webView.evaluateJavascript(js, null) }
+        }
 
         webView = findViewById(R.id.webView)
         errorView = findViewById(R.id.errorView)
@@ -110,6 +127,7 @@ class MainActivity : AppCompatActivity(), CompanionBridge.Host {
 
         loadApp()
         maybeRequestNotificationPermission()
+        maybeRequestRecordAudio()
     }
 
     /** Creates and wires the WebView. Called again after a renderer crash. */
@@ -126,7 +144,22 @@ class MainActivity : AppCompatActivity(), CompanionBridge.Host {
         WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG)
 
         webView.addJavascriptInterface(bridge, "VmAndroidBridge")
-        webView.webChromeClient = WebChromeClient()
+        // getUserMedia / Web Speech recognition inside a WebView are denied
+        // unless the app explicitly grants them here. The main app only ever
+        // needs the microphone, and only when the app already holds RECORD_AUDIO.
+        webView.webChromeClient = object : WebChromeClient() {
+            override fun onPermissionRequest(request: PermissionRequest?) {
+                if (request == null) return
+                val wantsAudio = request.resources?.any {
+                    it == PermissionRequest.RESOURCE_AUDIO_CAPTURE
+                } == true
+                val granted = ContextCompat.checkSelfPermission(
+                    this@MainActivity, Manifest.permission.RECORD_AUDIO
+                ) == PackageManager.PERMISSION_GRANTED
+                if (wantsAudio && granted) request.grant(arrayOf(PermissionRequest.RESOURCE_AUDIO_CAPTURE))
+                else request.deny()
+            }
+        }
         webView.webViewClient = object : WebViewClient() {
             override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
                 injectBridge(view)
@@ -373,6 +406,8 @@ class MainActivity : AppCompatActivity(), CompanionBridge.Host {
 
     override fun onDestroy() {
         cancelLoadTimeout()
+        if (::systemTts.isInitialized) systemTts.shutdown()
+        NativeTtsRegistry.install(null)
         super.onDestroy()
     }
 
@@ -383,6 +418,29 @@ class MainActivity : AppCompatActivity(), CompanionBridge.Host {
                 notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
             }
         }
+    }
+
+    /**
+     * Ask for the microphone at launch. The overlay service cannot request a
+     * runtime permission (only an Activity can), so doing it here means the
+     * floating companion's onPermissionRequest can grant audio capture the moment
+     * the user taps to talk. Declining simply leaves tap-to-talk unavailable.
+     */
+    private fun maybeRequestRecordAudio() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
+            != PackageManager.PERMISSION_GRANTED) {
+            recordAudioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+        }
+    }
+
+    // ── CompanionBridge.Host: native TTS fallback ───────────────────
+
+    override fun speakNative(text: String, voiceId: String?, done: (Boolean) -> Unit) {
+        systemTts.speak(text, voiceId, done)
+    }
+
+    override fun stopNativeSpeech() {
+        systemTts.stop()
     }
 
     @Deprecated("Back should keep the floating companion alive when it is on screen.")

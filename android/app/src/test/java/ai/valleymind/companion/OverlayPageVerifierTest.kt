@@ -8,7 +8,7 @@ import org.junit.Test
 
 class OverlayPageVerifierTest {
 
-    private val production = "https://valleymind-ai.onrender.com"
+    private val production = "https://valleymind-ai-opms.onrender.com"
     private val companionPage = "$production/static/companion_overlay.html"
 
     @Test
@@ -37,7 +37,7 @@ class OverlayPageVerifierTest {
     fun `trailing slash and scheme casing do not change the verdict`() {
         assertTrue(OverlayPageVerifier.isCompanionPageUrl("$companionPage/", production))
         assertTrue(OverlayPageVerifier.isCompanionPageUrl(
-            "HTTPS://VALLEYMIND-AI.ONRENDER.COM/static/companion_overlay.html", production))
+            "HTTPS://VALLEYMIND-AI-OPMS.ONRENDER.COM/static/companion_overlay.html", production))
     }
 
     @Test
@@ -60,7 +60,7 @@ class OverlayPageVerifierTest {
         assertFalse(OverlayPageVerifier.shouldAllowNavigation(
             "https://evil.example.com/static/companion_overlay.html", production))
         assertFalse(OverlayPageVerifier.shouldAllowNavigation(
-            "http://valleymind-ai.onrender.com/static/companion_overlay.html", production))
+            "http://valleymind-ai-opms.onrender.com/static/companion_overlay.html", production))
     }
 
     @Test
@@ -87,7 +87,7 @@ class OverlayPageVerifierTest {
     @Test
     fun `the overlay reloads when the base url changed under a live document`() {
         assertTrue(OverlayPageVerifier.mustReloadForBaseChange(
-            "https://valleymind-ai.onrender.com/static/companion_overlay.html",
+            "https://valleymind-ai-opms.onrender.com/static/companion_overlay.html",
             "http://192.168.10.181:8000"))
     }
 

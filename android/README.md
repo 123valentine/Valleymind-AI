@@ -66,7 +66,7 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 Point the app at a different backend by editing `VALLEY_BASE_URL` in
 `android/app/build.gradle`:
 
-- Production: `https://valleymind-ai.onrender.com` (default)
+- Production: `https://valleymind-ai-opms.onrender.com` (default)
 - Local backend from the Android **emulator**: `http://10.0.2.2:5000`
 - Local backend from a **device** on the same LAN: `http://<host-ip>:5000`
   (cleartext HTTP is dev-only; add a network-security-config before shipping).

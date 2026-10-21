@@ -19,7 +19,7 @@ android {
         // the WebView session cookie authenticates all of them. Change it here
         // to point at a self-hosted backend; use http://10.0.2.2:5000 from the
         // Android emulator to reach a server on the host machine.
-        buildConfigField "String", "VALLEY_BASE_URL", "\"https://valleymind-ai.onrender.com\""
+        buildConfigField "String", "VALLEY_BASE_URL", "\"https://valleymind-ai-opms.onrender.com\""
     }
 
     buildTypes {

@@ -583,6 +583,109 @@ class CloudApiTestCase(unittest.TestCase):
         got = client.get("/api/settings/cloud").get_json()["data"]
         self.assertEqual(got.get("cloud_name"), "Nimbus")
 
+    # ── persona_voices: merge must not wipe unrelated cloud settings ──────
+    # Regression for the destructive whole-section replace: saving the
+    # per-persona voice map through the generic route used to delete accent,
+    # personality_style, and voice_preference.
+
+    def test_persona_voices_merge_preserves_unrelated_cloud_keys(self):
+        client = self._auth()
+        # Arrange: existing cloud settings the user already saved.
+        self._put_cloud_prefs(client, {
+            "accent": "#88ffaa",
+            "personality_style": "calm",
+            "voice_preference": "Melodic",
+            "presentation": "feminine",
+        })
+        # Act: save ONLY the persona voice map, merge-flagged (as settings.js does).
+        resp = client.put("/api/settings/cloud?merge=1",
+                          json={"persona_voices": {"elena": "kristin_piper"}})
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.get_json()["status"], "success")
+        # Assert: every previous key/value survives AND the new map is stored.
+        got = client.get("/api/settings/cloud").get_json()["data"]
+        self.assertEqual(got.get("accent"), "#88ffaa")
+        self.assertEqual(got.get("personality_style"), "calm")
+        self.assertEqual(got.get("voice_preference"), "Melodic")
+        self.assertEqual(got.get("presentation"), "feminine")
+        self.assertEqual(got.get("persona_voices"), {"elena": "kristin_piper"})
+
+    def test_persona_voices_merge_updates_one_and_keeps_others(self):
+        client = self._auth()
+        # The client (settings.js vmPersonaSetVoice) reads the stored map, mutates
+        # ONE persona, and sends the WHOLE map. Merge is a shallow top-level merge,
+        # so this cumulative send is exactly what preserves the other personas.
+        self._put_cloud_prefs(client, {
+            "accent": "#111111",
+            "persona_voices": {"marcus": "guy", "elena": "aria",
+                               "angelina": "jenny", "companion": "christopher"},
+        })
+        current = client.get("/api/settings/cloud").get_json()["data"]["persona_voices"]
+        current["marcus"] = "ljspeech_piper"   # change only marcus
+        resp = client.put("/api/settings/cloud?merge=1",
+                          json={"persona_voices": current})
+        self.assertEqual(resp.status_code, 200)
+        got = client.get("/api/settings/cloud").get_json()["data"]
+        self.assertEqual(got.get("accent"), "#111111")
+        pv = got.get("persona_voices")
+        self.assertEqual(pv.get("marcus"), "ljspeech_piper")
+        self.assertEqual(pv.get("elena"), "aria")
+        self.assertEqual(pv.get("angelina"), "jenny")
+        self.assertEqual(pv.get("companion"), "christopher")
+
+    def test_persona_voices_merge_creates_section_when_absent(self):
+        client = self._auth()
+        resp = client.put("/api/settings/cloud?merge=1",
+                          json={"persona_voices": {"elena": "kristin_piper"}})
+        self.assertEqual(resp.status_code, 200)
+        got = client.get("/api/settings/cloud").get_json()["data"]
+        self.assertEqual(got.get("persona_voices"), {"elena": "kristin_piper"})
+
+    def test_merge_flag_accepts_true_and_yes(self):
+        for flag in ("true", "yes", "TRUE", "Yes"):
+            client = self._auth()
+            self._put_cloud_prefs(client, {"accent": "#abcdef"})
+            resp = client.put("/api/settings/cloud?merge=" + flag,
+                              json={"persona_voices": {"elena": "kristin_piper"}})
+            self.assertEqual(resp.status_code, 200, flag)
+            got = client.get("/api/settings/cloud").get_json()["data"]
+            self.assertEqual(got.get("accent"), "#abcdef", flag)
+            self.assertEqual(got.get("persona_voices"), {"elena": "kristin_piper"}, flag)
+
+    def test_default_save_still_replaces_whole_section(self):
+        """Existing callers (cloud.js) send the full prefs object and rely on
+        replacement semantics — that behaviour must be unchanged without the flag."""
+        client = self._auth()
+        self._put_cloud_prefs(client, {
+            "accent": "#88ffaa", "personality_style": "calm",
+            "voice_preference": "Melodic",
+        })
+        # A plain (unflagged) PUT with a partial body still replaces the section.
+        resp = client.put("/api/settings/cloud",
+                          json={"persona_voices": {"elena": "kristin_piper"}})
+        self.assertEqual(resp.status_code, 200)
+        got = client.get("/api/settings/cloud").get_json()["data"]
+        self.assertEqual(got, {"persona_voices": {"elena": "kristin_piper"}})
+
+    def test_merge_requires_valid_body(self):
+        client = self._auth()
+        # A non-object JSON body (array/scalar) is rejected, exactly as the
+        # unflagged route already rejects it — the merge flag does not weaken it.
+        resp = client.put("/api/settings/cloud?merge=1", json=[1, 2, 3])
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.get_json()["status"], "error")
+
+    def test_merge_rejects_unknown_section(self):
+        client = self._auth()
+        resp = client.put("/api/settings/not_a_section?merge=1",
+                          json={"persona_voices": {"elena": "kristin_piper"}})
+        self.assertEqual(resp.status_code, 400)
+
+    def test_merge_requires_login(self):
+        resp = self._app.put("/api/settings/cloud?merge=1",
+                             json={"persona_voices": {"elena": "kristin_piper"}})
+        self.assertEqual(resp.status_code, 401)
+
     def test_cloud_name_mirrors_into_existing_memory(self):
         client = self._auth()
         self._put_cloud_prefs(client, {"cloud_name": "Nimbus"})
