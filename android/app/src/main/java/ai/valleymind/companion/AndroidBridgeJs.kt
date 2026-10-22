@@ -24,6 +24,36 @@ object AndroidBridgeJs {
   var listeners = [];
   var __vmTtsSeq = 0;
 
+  // ── native speech recognition bus ────────────────────────────────────
+  // The platform recogniser reports back through window.__vmAsrEvent(json).
+  // The bus lives on the window so re-injecting this shim (page start and
+  // page finish both inject it) never loses a queued event or duplicates a
+  // listener.
+  var bus = window.__vmAsrBus;
+  if (!bus) {
+    bus = { listeners: [], queue: [] };
+    window.__vmAsrBus = bus;
+  }
+
+  function emitAsr(ev) {
+    for (var i = 0; i < bus.listeners.length; i++) {
+      try { bus.listeners[i](ev); } catch (e) { /* one bad listener never blocks others */ }
+    }
+  }
+
+  window.__vmAsrEvent = function (payload) {
+    var ev;
+    try {
+      ev = (typeof payload === "string") ? JSON.parse(payload) : payload;
+    } catch (e) {
+      ev = { type: "error", reason: "bad-payload" };
+    }
+    if (!ev || typeof ev !== "object") return;
+    // Events can arrive before the page has subscribed: hold them, then flush.
+    if (!bus.listeners.length) { if (bus.queue.length < 20) bus.queue.push(ev); return; }
+    emitAsr(ev);
+  };
+
   function state() {
     try { return JSON.parse(B.getStateJson()); }
     catch (e) { return { granted: false, running: false, visible: false }; }
@@ -79,7 +109,31 @@ object AndroidBridgeJs {
       try { return !!B.ttsSpeak(String(text || ""), voiceId || null, name); }
       catch (e) { if (done) done(false); return false; }
     },
-    ttsStop: function () { try { if (typeof B.ttsStop === "function") B.ttsStop(); } catch (e) { /* ignore */ } }
+    ttsStop: function () { try { if (typeof B.ttsStop === "function") B.ttsStop(); } catch (e) { /* ignore */ } },
+
+    // ── native speech recognition ─────────────────────────────────────────
+    // The overlay page prefers the platform recogniser (it reports the end of
+    // speech itself and the audio never leaves the device). When the platform
+    // has none, the page falls back to its own recording path.
+    hasNativeAsr: function () {
+      try { return typeof B.asrSupported === "function" && !!B.asrSupported(); }
+      catch (e) { return false; }
+    },
+    asrStart: function (locale) {
+      try {
+        // Never ask native to listen when the platform has no recogniser: the
+        // page would otherwise wait for an event that can never arrive.
+        if (typeof B.asrSupported !== "function" || !B.asrSupported()) return false;
+        return typeof B.asrStart === "function" ? !!B.asrStart(locale || null) : false;
+      } catch (e) { return false; }
+    },
+    asrStop: function () { try { if (typeof B.asrStop === "function") B.asrStop(); } catch (e) { /* ignore */ } },
+    asrCancel: function () { try { if (typeof B.asrCancel === "function") B.asrCancel(); } catch (e) { /* ignore */ } },
+    onAsrEvent: function (cb) {
+      if (typeof cb !== "function") return;
+      bus.listeners.push(cb);
+      while (bus.queue.length) emitAsr(bus.queue.shift());
+    }
   };
 
   try { B.notifyBridgeReady(); } catch (e) { /* ignore */ }

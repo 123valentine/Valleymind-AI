@@ -43,15 +43,26 @@
 <body>
   <!--
     The floating surface. The character IS the UI: no panel, no card, no
-    status pill. The only visible chrome is a small mic attached to the
-    character's body (tap to talk) and a tiny icon-only × to put it away.
-    Both are positioned by the page from the model's world position, so the
-    character composes over other apps with a fully transparent background.
-  -->
-  <div id="vmOverlayRoot">
-    <canvas id="stage"></canvas>
+    status pill, and no microphone icon — the mic was a tap-to-talk button,
+    which is exactly what hands-free conversation makes redundant. You start
+    a conversation by tapping the character itself, and the companion then
+    listens, thinks and speaks on its own until you stop it.
 
-    <button id="btnMic" class="mic" type="button" aria-label="Talk to your companion" title="Tap to talk">&#127908;</button>
+    The only chrome left is:
+      - a soft halo around the character that shows the turn state
+        (listening / thinking / speaking) as colour only, never as text;
+      - a tiny stop button that appears ONLY while a conversation is running;
+      - the tiny × that puts the companion away (required by the Android page
+        verifier, which checks for #vmOverlayRoot, #stage and #btnHide).
+
+    The whole window is also the drag surface (see OverlayDragLayout): a tap
+    wakes the companion, a drag moves it.
+  -->
+  <div id="vmOverlayRoot" data-state="idle">
+    <canvas id="stage"></canvas>
+    <div id="vmHalo" class="halo" aria-hidden="true"></div>
+
+    <button id="btnStop" class="stop" type="button" aria-label="Stop the conversation" title="Stop">&#9632;</button>
     <button id="btnHide" class="hide" type="button" aria-label="Put the companion away" title="Put away">&#10005;</button>
   </div>
 

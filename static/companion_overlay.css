@@ -1,10 +1,11 @@
 /*
  * companion_overlay.css — the Android floating-companion surface.
  *
- * The Android overlay view is a TRANSPARENT window, so only the character and
- * a small mic (attached to its body) are painted; the rest of the screen
- * (other apps) shows through. There is no panel, card, border or status pill:
- * the character IS the surface. Everything else lives in the main app Settings.
+ * The Android overlay view is a TRANSPARENT window, so only the character, a
+ * soft turn-state halo and the tiny controls are painted; the rest of the
+ * screen (other apps) shows through. There is no panel, card, border or status
+ * pill: the character IS the surface. Everything else lives in the main app
+ * Settings.
  */
 
 html, body {
@@ -38,68 +39,110 @@ html, body {
 }
 
 /*
- * The mic is the ONLY prominent control, and it is attached to the character's
- * body: the page moves it every frame to follow the model's chest position
- * (see anchorMic() in companion_overlay.js). It keeps a small footprint so the
- * floating surface stays character-first.
+ * Turn-state halo.
+ *
+ * There is no microphone button any more: the character itself is the
+ * control (tap it to start, drag it to move it). What the user still needs
+ * is a quiet indication of what the companion is doing, so the state is
+ * shown as a soft ring of colour around the character — no text, no box, no
+ * panel. The ring is positioned by the page from the model's world position
+ * (see anchorHalo() in companion_overlay.js), so it stays attached to the body.
  */
-.mic {
+.halo {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 44px;
-  height: 44px;
-  margin: -22px 0 0 -22px;
+  width: 108px;
+  height: 108px;
+  margin: -54px 0 0 -54px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  background: transparent;
+  pointer-events: none;
+  opacity: 0;
+  transform: scale(0.92);
+  transition: opacity 0.2s ease, transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+  z-index: 4;
+}
+
+#vmOverlayRoot[data-state="waking"] .halo {
+  opacity: 0.85;
+  border-color: rgba(167, 139, 250, 0.75);
+  box-shadow: 0 0 18px rgba(167, 139, 250, 0.3);
+  animation: halo-pulse 1.2s ease-in-out infinite;
+}
+#vmOverlayRoot[data-state="listening"] .halo {
+  opacity: 0.9;
+  border-color: rgba(34, 211, 238, 0.8);
+  box-shadow: 0 0 20px rgba(34, 211, 238, 0.35);
+  animation: halo-pulse 1.6s ease-in-out infinite;
+}
+#vmOverlayRoot[data-state="processing"] .halo {
+  opacity: 0.9;
+  border-color: rgba(245, 158, 11, 0.8);
+  box-shadow: 0 0 20px rgba(245, 158, 11, 0.3);
+  animation: halo-pulse 1.1s ease-in-out infinite;
+}
+#vmOverlayRoot[data-state="speaking"] .halo {
+  opacity: 0.85;
+  border-color: rgba(34, 197, 94, 0.8);
+  box-shadow: 0 0 20px rgba(34, 197, 94, 0.3);
+}
+#vmOverlayRoot[data-state="error"] .halo {
+  opacity: 0.9;
+  border-color: rgba(239, 68, 68, 0.85);
+  box-shadow: 0 0 20px rgba(239, 68, 68, 0.3);
+}
+
+@keyframes halo-pulse {
+  0% { transform: scale(0.94); }
+  50% { transform: scale(1.04); }
+  100% { transform: scale(0.94); }
+}
+
+/* A brief, non-blocking cue (no-speech / duplicate / network). */
+.halo.cue {
+  animation: halo-cue 0.9s ease;
+}
+@keyframes halo-cue {
+  0% { transform: scale(1); }
+  30% { transform: scale(1.12); }
+  100% { transform: scale(1); }
+}
+
+/*
+ * The stop control. It exists ONLY while a hands-free conversation is
+ * running, and it is the one way to end that conversation. It stays small and
+ * out of the way, in the corner next to the ×.
+ */
+.stop {
+  position: absolute;
+  top: 6px;
+  right: 38px;
+  width: 26px;
+  height: 26px;
   padding: 0;
   border-radius: 50%;
-  border: 1px solid rgba(148, 163, 184, 0.45);
-  background: rgba(2, 6, 23, 0.62);
-  color: #e2e8f0;
-  font-size: 18px;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  background: rgba(2, 6, 23, 0.5);
+  color: #cbd5e1;
+  font-size: 11px;
   line-height: 1;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   touch-action: manipulation;
-  z-index: 5;
-  /* Fades in slightly when idle; brightens while the turn is active. */
-  transition: background 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease, color 0.18s ease;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+  z-index: 6;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s ease, border-color 0.18s ease, color 0.18s ease;
 }
-.mic:hover { border-color: rgba(148, 163, 184, 0.7); }
-
-/* Turn state ring: colour only, no text and no box. */
-.mic[data-s="listening"] {
-  color: #67e8f9;
-  border-color: rgba(34, 211, 238, 0.85);
-  box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.22), 0 2px 10px rgba(0, 0, 0, 0.35);
+.stop.on {
+  opacity: 0.75;
+  pointer-events: auto;
 }
-.mic[data-s="processing"] {
-  color: #fcd34d;
-  border-color: rgba(245, 158, 11, 0.85);
-  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.2), 0 2px 10px rgba(0, 0, 0, 0.35);
-}
-.mic[data-s="speaking"] {
-  color: #86efac;
-  border-color: rgba(34, 197, 94, 0.85);
-  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.2), 0 2px 10px rgba(0, 0, 0, 0.35);
-}
-.mic[data-s="error"] {
-  color: #fca5a5;
-  border-color: rgba(239, 68, 68, 0.85);
-  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.2), 0 2px 10px rgba(0, 0, 0, 0.35);
-}
-
-/* A brief, non-blocking cue (no-speech / duplicate / network). */
-.mic.cue {
-  animation: mic-cue 0.9s ease;
-}
-@keyframes mic-cue {
-  0% { transform: scale(1); }
-  30% { transform: scale(1.18); }
-  100% { transform: scale(1); }
-}
+.stop:hover { opacity: 1; border-color: rgba(239, 68, 68, 0.6); color: #fecaca; }
 
 /*
  * Icon-only × to put the companion away. Deliberately not a panel and not a

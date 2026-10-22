@@ -449,6 +449,10 @@
     interrupt: interrupt,
     stop: stop,
     speak: speak,
+    // Lets a page that starts a conversation from a gesture (the floating
+    // companion) release the audio session immediately instead of waiting for
+    // the next pointer event.
+    unlock: unlock,
     getVoiceKey: getVoiceKey,
     getVoiceLabel: getVoiceLabel,
     validKeys: VALID_KEYS.slice(),

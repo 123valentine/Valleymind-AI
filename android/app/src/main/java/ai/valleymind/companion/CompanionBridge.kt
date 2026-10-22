@@ -31,6 +31,17 @@ class CompanionBridge(private val host: Host) {
          */
         fun speakNative(text: String, voiceId: String?, done: (Boolean) -> Unit) { done(false) }
         fun stopNativeSpeech() { /* no-op by default */ }
+
+        // ── native speech recognition ───────────────────────────────────
+        // Android's WebView has no Web Speech API, so the overlay page cannot
+        // recognise speech in-page. These let the page drive the platform's own
+        // SpeechRecognizer instead of uploading microphone audio to the
+        // server. Hosts without a recogniser report "not supported", and the
+        // page then falls back to its existing recording path.
+        fun asrSupported(): Boolean = false
+        fun asrStart(locale: String?): Boolean = false
+        fun asrStop() { /* no-op by default */ }
+        fun asrCancel() { /* no-op by default */ }
     }
 
     @JavascriptInterface
@@ -71,4 +82,22 @@ class CompanionBridge(private val host: Host) {
 
     @JavascriptInterface
     fun ttsStop() = host.stopNativeSpeech()
+
+    /**
+     * Native speech-recognition entry points. The recogniser lives in the host
+     * (the overlay service owns the WebView and the context); the page only
+     * asks it to start and stop, and receives the results as
+     * window.__vmAsrEvent(json).
+     */
+    @JavascriptInterface
+    fun asrSupported(): Boolean = host.asrSupported()
+
+    @JavascriptInterface
+    fun asrStart(locale: String?): Boolean = host.asrStart(locale)
+
+    @JavascriptInterface
+    fun asrStop() = host.asrStop()
+
+    @JavascriptInterface
+    fun asrCancel() = host.asrCancel()
 }

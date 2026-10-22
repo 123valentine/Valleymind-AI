@@ -2,10 +2,11 @@
  * companion_overlay.js — renderer for the Android floating-companion surface.
  *
  * This is the SAME companion as everywhere else; only the chrome differs — and
- * now there is almost none: the character fills a fully transparent window and
- * you talk to it by tapping a small mic attached to its body. No panel, no
- * text box, no status pill. Settings and secondary controls live in the main
- * app (static/settings.js).
+ * there is almost none: the character fills a fully transparent window, you
+ * start a conversation by tapping the character, and the companion then talks
+ * on its own (listen -> think -> speak -> listen) until you stop it. No
+ * microphone icon, no panel, no text box, no status pill. Settings and
+ * secondary controls live in the main app (static/settings.js).
  *
  * Reuse map (nothing is reimplemented):
  *   body animation -> /vrm-preview/assets/companion.js  (the ONE engine)
@@ -14,6 +15,16 @@
  *   voice          -> window.VMCloudVoice               (/api/tts + microphone)
  *   STT fallback   -> POST /api/editing/transcribe      (Groq Whisper)
  *   turn logic     -> window.VMTurnSM                   (the turn state machine)
+ *
+ * LISTENING ORDER (first that actually works wins):
+ *   1. the platform recogniser (window.vmCompanionAndroid.asr*) — Android's
+ *      WebView has no Web Speech API, so the native SpeechRecognizer is the
+ *      only path that both reports the end of speech AND keeps the audio on
+ *      the device;
+ *   2. window.VMCloudVoice — the browser's own recognition (desktop / a
+ *      WebView build that ships it);
+ *   3. MediaRecorder + the server's existing transcription endpoint — the last
+ *      resort, unchanged from before.
  *
  * The overlay owns no conversation state of its own: it talks to the same
  * backend endpoints with the same session cookie as the ValleyMind app, so
@@ -24,7 +35,9 @@ import { Companion } from "/vrm-preview/assets/companion.js";
 
 const $ = (id) => document.getElementById(id);
 const canvas = $("stage");
-const micBtn = $("btnMic");
+const root = $("vmOverlayRoot");
+const halo = $("vmHalo");
+const stopBtn = $("btnStop");
 
 const engine = new Companion(canvas, () => {}, { transparent: true });
 const voice = window.VMCloudVoice || null;
@@ -38,9 +51,14 @@ const nativeTts = (window.vmCompanionAndroid && typeof window.vmCompanionAndroid
   ? window.vmCompanionAndroid
   : null;
 
+// The platform speech recogniser (same bridge, same process).
+const nativeAsr = (window.vmCompanionAndroid && typeof window.vmCompanionAndroid.asrStart === "function")
+  ? window.vmCompanionAndroid
+  : null;
+
 // The turn state machine is pure logic; the page supplies every side effect.
 const sm = (window.VMTurnSM && window.VMTurnSM.create)
-  ? window.VMTurnSM.create({ dedupeWindowMs: 15000 })
+  ? window.VMTurnSM.create({ dedupeWindowMs: 15000, maxFailures: 3 })
   : null;
 
 // ── voice profile (Task 4) ────────────────────────────────────────────────
@@ -84,15 +102,21 @@ const state = {
   vad: null,           // MediaRecorder VAD (getUserMedia) fallback
   vadRaf: 0,
   vadHadSpeech: false,
-  raf: 0,              // mic-anchor frame loop
+  raf: 0,              // halo-anchor frame loop
   watchdog: 0,
+  wakeTimer: 0,        // wakes the turn if the wake animation never reports back
+  asrTimer: 0,         // delayed start of the platform recogniser
+  errorTimer: 0,       // bounded automatic retry after a hard failure
+  behaviour: "",       // the body animation currently playing
+  speaking: false,
+  session: false,      // a hands-free conversation is running
 };
 
 // ── voice module hooks (reused, not reimplemented) ────────────────────────
 function wireVoice() {
   if (!voice) return;
   voice.setHooks({
-    onListeningChange: () => { /* the SM drives the mic indicator, not the module */ },
+    onListeningChange: () => { /* the SM drives the state, not the module */ },
     onResult: (text, final) => { if (final) dispatch({ type: "SPEECH_FINAL", text }); },
     onSpeakStart: () => { /* SM already put us in SPEAKING */ },
     onSpeakEnd: (reason) => { clearWatchdog(); dispatch({ type: reason === "tts failed" || reason === "tts blocked" || reason === "tts unavailable" ? "SPEAK_ERR" : "SPEAK_END" }); },
@@ -105,10 +129,57 @@ function wireVoice() {
   }
 }
 
+// ── platform speech recognition (native) ───────────────────────────────────
+// The recogniser reports: ready / partial / end (the platform says the
+// utterance is over) / final (the transcript) / error (a stable reason token).
+function wireNativeAsr() {
+  if (!nativeAsr || typeof nativeAsr.onAsrEvent !== "function") return;
+  nativeAsr.onAsrEvent((ev) => {
+    if (!ev || typeof ev !== "object") return;
+    const reason = String(ev.reason || "");
+    if (ev.type === "final") {
+      dispatch({ type: "SPEECH_FINAL", text: String(ev.text || "") });
+      return;
+    }
+    if (ev.type === "ready" || ev.type === "partial") {
+      // The utterance is still in progress: the watchdog measures SILENCE, not
+      // total speaking time, so a long sentence is never cut off at 12s.
+      armSpeechWatchdog(12000);
+      return;
+    }
+    if (ev.type === "end") {
+      // The platform detected the end of the utterance; the final transcript
+      // follows. Bound the wait for it.
+      armSpeechWatchdog(8000);
+      return;
+    }
+    if (ev.type !== "error") return;
+    if (reason === "no-match" || reason === "timeout" || reason === "audio") {
+      // Nothing was heard: a soft failure, the session survives.
+      dispatch({ type: "SPEECH_FINAL", text: "" });
+      return;
+    }
+    if (reason === "busy") {
+      // The platform was still busy: try again shortly, without leaving the
+      // listening state. The old watchdog must not fire during the retry.
+      clearWatchdog();
+      if (state.asrTimer) { clearTimeout(state.asrTimer); state.asrTimer = 0; }
+      state.asrTimer = window.setTimeout(() => { state.asrTimer = 0; startListening(); }, 700);
+      return;
+    }
+    if (reason === "permission") {
+      dispatch({ type: "SPEECH_ERR", reason });
+      return;
+    }
+    dispatch({ type: "SPEECH_ERR", reason });
+  });
+}
+
 // ── side-effect handlers (the SM returns these; we execute them) ──────────
 function execute(effects) {
   for (const eff of effects) {
     switch (eff.type) {
+      case "wake": triggerWake(); break;
       case "start-listen": startListening(); break;
       case "stop-listen": stopListening(); break;
       case "transcribe": transcribeAndChat(eff.blob); break;
@@ -117,6 +188,7 @@ function execute(effects) {
       case "stop-speak": stopSpeaking(); break;
       case "abort": abortInFlight(); break;
       case "feedback": cue(eff.message); break;
+      case "session-end": endSession(); break;
     }
   }
 }
@@ -124,39 +196,75 @@ function execute(effects) {
 function dispatch(event) {
   if (!sm) return;
   const res = sm.send(event);
-  setMicState(res.state);
+  applyState(res.state);
   execute(res.effects);
 }
 
-// ── mic interaction ───────────────────────────────────────────────────────
-function tapMic() {
-  if (!sm) return;
-  const text = (voice && voice.supported && voice.supported() && voice.isListening)
-    ? (voice.takeTranscript ? voice.takeTranscript() : "")
-    : "";
-  // If the speech recogniser is holding a transcript, stop-and-send wins over
-  // a plain "start listening" tap.
-  if (voice && voice.supported && voice.supported() && voice.isListening && voice.isListening() && text && text.trim().length >= 2) {
-    stopListening();
-    dispatch({ type: "TAP", text: text.trim() });
-    return;
-  }
-  dispatch({ type: "TAP" });
+// ── the wake-up: a wave, then the microphone opens ────────────────────────
+function triggerWake() {
+  if (state.wakeTimer) { clearTimeout(state.wakeTimer); state.wakeTimer = 0; }
+  // The fallback guarantees the turn advances even if the animation never
+  // reports back (missing clip, offline fetch).
+  state.wakeTimer = window.setTimeout(() => {
+    state.wakeTimer = 0;
+    dispatch({ type: "WAKE_DONE" });
+  }, 1500);
+  // The state may already have started the wave; re-triggering would restart
+  // the clip and never settle.
+  if (state.behaviour === "waving") return;
+  try {
+    const p = engine.trigger("waving");
+    if (p && typeof p.then === "function") {
+      p.then(() => {
+        if (!state.wakeTimer) return;
+        clearTimeout(state.wakeTimer);
+        state.wakeTimer = 0;
+        dispatch({ type: "WAKE_DONE" });
+      }).catch(() => { /* the fallback timer still advances the turn */ });
+    }
+  } catch (e) { /* the fallback timer still advances the turn */ }
+}
+
+// ── listening ─────────────────────────────────────────────────────────────
+function nativeAsrAvailable() {
+  try { return !!(nativeAsr && nativeAsr.hasNativeAsr && nativeAsr.hasNativeAsr()); }
+  catch (e) { return false; }
 }
 
 function startListening() {
   clearWatchdog();
+  if (nativeAsrAvailable()) {
+    // The platform recogniser needs a short gap between sessions; asking it
+    // to start immediately after the previous one is answered with
+    // ERROR_RECOGNIZER_BUSY.
+    if (state.asrTimer) { clearTimeout(state.asrTimer); state.asrTimer = 0; }
+    state.asrTimer = window.setTimeout(() => {
+      state.asrTimer = 0;
+      let started = false;
+      try { started = !!nativeAsr.asrStart(); } catch (e) { started = false; }
+      if (!started) { listenFallback(); return; }
+      armSpeechWatchdog(12000);
+    }, 300);
+    return;
+  }
+  listenFallback();
+}
+
+// The browser / recording fallbacks, used when the platform has no
+// recogniser (or refuses to start one).
+function listenFallback() {
   if (voice && voice.supported && voice.supported()) {
     try { voice.startListening(); } catch (e) { dispatch({ type: "SPEECH_TIMEOUT" }); return; }
-    // No-speech watchdog: an open mic that hears nothing must not hang the turn.
     state.watchdog = window.setTimeout(() => dispatch({ type: "SPEECH_TIMEOUT" }), 12000);
     return;
   }
-  startVadRecording(); // no in-page recognition -> record + server transcription
+  startVadRecording();
 }
 
 function stopListening() {
   clearWatchdog();
+  if (state.asrTimer) { clearTimeout(state.asrTimer); state.asrTimer = 0; }
+  if (nativeAsr && nativeAsr.asrStop) { try { nativeAsr.asrStop(); } catch (e) {} }
   if (voice && voice.stopListening) { try { voice.stopListening(); } catch (e) {} }
   stopVadRecording();
 }
@@ -166,10 +274,21 @@ function abortInFlight() {
 }
 
 function stopSpeaking() {
-  if (nativeTts) { try { nativeTts.stop(); } catch (e) {} }
+  // The bridge exposes the native engine as ttsStop() (ttsSpeak/ttsStop).
+  if (nativeTts && nativeTts.ttsStop) { try { nativeTts.ttsStop(); } catch (e) {} }
   if (voice && voice.stop) { try { voice.stop(); } catch (e) {} }
   state.speaking = false;
   if (engine.face) engine.face.setTalkLevel(0);
+}
+
+// ── the end of a hands-free conversation ──────────────────────────────────
+function endSession() {
+  if (state.errorTimer) { clearTimeout(state.errorTimer); state.errorTimer = 0; }
+  if (state.wakeTimer) { clearTimeout(state.wakeTimer); state.wakeTimer = 0; }
+  if (state.asrTimer) { clearTimeout(state.asrTimer); state.asrTimer = 0; }
+  if (nativeAsr && nativeAsr.asrCancel) { try { nativeAsr.asrCancel(); } catch (e) {} }
+  state.session = false;
+  stopBtn.classList.remove("on");
 }
 
 // ── VAD recording fallback (no Web Speech recognition available) ──────────
@@ -272,8 +391,6 @@ async function sendChat(text) {
     clearWatchdog();
     if (!r.ok || data.status !== "success" || !data.reply) { dispatch({ type: "CHAT_ERR" }); return; }
     state.chatId = data.chat_id || state.chatId;
-    // Keep the companion's own voice profile authoritative for the reply.
-    if (data.presentation && !readProfile()) data.presentation = data.presentation;
     dispatch({ type: "CHAT_OK", reply: data.reply, presentation: data.presentation });
   } catch (err) {
     clearWatchdog();
@@ -333,25 +450,57 @@ function speakNative(text) {
   state.watchdog = window.setTimeout(() => dispatch({ type: "SPEAK_TIMEOUT" }), Math.max(8000, text.length * 90));
 }
 
-// ── mic indicator + body anchor ───────────────────────────────────────────
-function setMicState(s) {
-  const map = { listening: "listening", processing: "processing", speaking: "speaking", idle: "" };
-  micBtn.dataset.s = map[s] || "";
+// ── state on screen: a colour halo and the body animation ─────────────────
+// No text, no box: the character shows what it is doing.
+function applyState(s) {
+  if (root) root.dataset.state = s;
   state.speaking = s === "speaking";
-  engine.trigger(s === "listening" ? "listening" : s === "processing" ? "thinking" : s === "speaking" ? "talking" : "idle");
+  // "error" is still a running conversation: the stop control must stay
+  // reachable so the user can end it without waiting for the retry.
+  const active = s !== "idle";
+  if (active !== state.session) {
+    state.session = active;
+    stopBtn.classList.toggle("on", active);
+  }
+  const behaviour = s === "waking" ? "waving"
+    : s === "listening" ? "listening"
+    : s === "processing" ? "thinking"
+    : s === "speaking" ? "talking"
+    : "idle";
+  // Only re-trigger the body when the behaviour actually changes, so the
+  // animation is not restarted on every state touch.
+  if (behaviour !== state.behaviour) {
+    state.behaviour = behaviour;
+    try { engine.trigger(behaviour); } catch (e) { /* the character keeps its pose */ }
+  }
+  if (s === "error" && !state.errorTimer) {
+    // A hard failure retries by itself a moment later; the SM bounds how many
+    // times that can happen.
+    state.errorTimer = window.setTimeout(() => {
+      state.errorTimer = 0;
+      dispatch({ type: "RETRY" });
+    }, 1400);
+  } else if (s !== "error" && state.errorTimer) {
+    // The user recovered first (a tap): the pending automatic retry is stale.
+    clearTimeout(state.errorTimer);
+    state.errorTimer = 0;
+  }
 }
 
 function cue(kind) {
-  micBtn.classList.remove("cue");
-  void micBtn.offsetWidth;
-  micBtn.classList.add("cue");
+  if (!halo) return;
+  halo.classList.remove("cue");
+  void halo.offsetWidth;
+  halo.classList.add("cue");
 }
 
-// Anchors the mic to the character's chest every frame using the engine's own
-// world->screen projection, so the control is genuinely attached to the body.
-function anchorMic() {
+// Anchors the halo to the character's chest every frame using the engine's own
+// world->screen projection, so the state indicator is genuinely attached to
+// the body.
+function anchorHalo() {
   const tick = () => {
     state.raf = requestAnimationFrame(tick);
+    if (!halo) return;
     const vrm = engine.vrm;
     if (!vrm || !vrm.humanoid || typeof engine.projectWorld !== "function") return;
     const chest = vrm.humanoid.getRawBoneNode("chest") || vrm.humanoid.getRawBoneNode("spine");
@@ -360,10 +509,10 @@ function anchorMic() {
     const p = chest.matrixWorld.elements;
     const [px, py] = engine.projectWorld(p[12], p[13], p[14]);
     const rect = canvas.getBoundingClientRect();
-    micBtn.style.left = (px / canvas.width) * rect.width + "px";
-    micBtn.style.top = (py / canvas.height) * rect.height + 26 + "px";
-    micBtn.style.margin = "0";
-    micBtn.style.transform = "translate(-50%, -50%)";
+    halo.style.left = (px / canvas.width) * rect.width + "px";
+    halo.style.top = (py / canvas.height) * rect.height + "px";
+    halo.style.margin = "0";
+    halo.style.transform = "translate(-50%, -50%)";
   };
   tick();
 }
@@ -372,9 +521,30 @@ function clearWatchdog() {
   if (state.watchdog) { clearTimeout(state.watchdog); state.watchdog = 0; }
 }
 
+// Arms (or re-arms) the safety timeout for the current listening turn. Speech
+// activity re-arms it, so it measures silence rather than total speaking time.
+function armSpeechWatchdog(ms) {
+  clearWatchdog();
+  state.watchdog = window.setTimeout(() => dispatch({ type: "SPEECH_TIMEOUT" }), ms);
+}
+
 function wireControls() {
-  micBtn.addEventListener("click", tapMic);
+  // Tapping the character starts the hands-free conversation (and, when the
+  // browser is holding a transcript, submits it).
+  canvas.addEventListener("click", () => {
+    if (voice && voice.unlock) { try { voice.unlock(); } catch (e) {} }
+    const text = (voice && voice.supported && voice.supported() && voice.isListening && voice.isListening())
+      ? (voice.takeTranscript ? voice.takeTranscript() : "")
+      : "";
+    dispatch({ type: "TAP", text: String(text || "").trim() });
+  });
+  // The only way to end the conversation.
+  stopBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    dispatch({ type: "STOP" });
+  });
   $("btnHide").addEventListener("click", () => {
+    dispatch({ type: "STOP" });
     if (android) { try { android.setVisible(false); return; } catch (e) { /* fall through */ } }
     window.close();
   });
@@ -388,13 +558,14 @@ function wireControls() {
 async function boot() {
   wireControls();
   wireVoice();
+  wireNativeAsr();
   try {
     await engine.boot();
   } catch (err) {
     return; // the companion cannot load without a character; nothing to show
   }
-  setMicState("idle");
-  anchorMic();
+  applyState("idle");
+  anchorHalo();
   document.addEventListener("visibilitychange", () => engine.setRendering(!document.hidden));
 }
 

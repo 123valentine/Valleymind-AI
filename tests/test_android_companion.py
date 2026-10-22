@@ -26,6 +26,7 @@ sys.path.insert(0, str(ROOT))
 
 NODE = shutil.which("node")
 ANDROID_BRIDGE_RUNNER = ROOT / "tests" / "_android_bridge_test.js"
+ANDROID_BRIDGE_JS_RUNNER = ROOT / "tests" / "_android_bridge_js_test.js"
 
 
 class AndroidProjectTests(unittest.TestCase):
@@ -135,8 +136,9 @@ class OverlaySurfaceTests(unittest.TestCase):
 
 
 class OverlayChromeTests(unittest.TestCase):
-    """The overlay is character-first: no panel, and the mic is the only control
-    besides the required icon-only hide affordance."""
+    """The overlay is character-first: no panel, no microphone icon, and only the
+    required icon-only hide affordance plus a stop control that only appears
+    while a conversation is running."""
 
     def _read(self, rel):
         return (ROOT / rel).read_text(encoding="utf-8")
@@ -156,12 +158,34 @@ class OverlayChromeTests(unittest.TestCase):
         for gone in ("#panel", "#hud", ".pill", ".bubble", "#input"):
             self.assertNotIn(gone, css, f"overlay css still styles {gone}")
 
-    def test_overlay_keeps_a_mic_attached_to_the_body(self):
+    def test_overlay_has_no_microphone_button(self):
+        # Hands-free conversation makes a tap-to-talk mic pointless: the
+        # character itself is the control.
+        html = self._read("static/companion_overlay.html")
+        self.assertNotIn('id="btnMic"', html)
+        css = self._read("static/companion_overlay.css")
+        self.assertNotIn(".mic", css)
         js = self._read("static/companion_overlay.js")
-        self.assertIn('id="btnMic"', self._read("static/companion_overlay.html"))
-        # The mic follows the model's own world->screen projection.
+        self.assertNotIn("btnMic", js)
+        self.assertNotIn("micBtn", js)
+
+    def test_overlay_shows_the_turn_state_as_a_colour_halo(self):
+        # No text box, no status pill: the state is a halo attached to the body.
+        html = self._read("static/companion_overlay.html")
+        self.assertIn('id="vmHalo"', html)
+        css = self._read("static/companion_overlay.css")
+        for state in ("listening", "processing", "speaking", "error", "waking"):
+            self.assertIn(f'[data-state="{state}"]', css)
+        js = self._read("static/companion_overlay.js")
+        # The halo follows the model's own world->screen projection.
         self.assertIn("projectWorld", js)
         self.assertIn("getRawBoneNode", js)
+
+    def test_overlay_stop_control_is_the_only_way_to_end_a_conversation(self):
+        html = self._read("static/companion_overlay.html")
+        self.assertIn('id="btnStop"', html)
+        js = self._read("static/companion_overlay.js")
+        self.assertIn('type: "STOP"', js)
 
     def test_overlay_loads_the_turn_state_machine(self):
         html = self._read("static/companion_overlay.html")
@@ -181,6 +205,105 @@ class OverlayChromeTests(unittest.TestCase):
         js = self._read("static/companion_overlay.js")
         self.assertIn("ttsSpeak", js)
         self.assertIn("speakNative", js)
+
+
+class HandsFreeConversationTests(unittest.TestCase):
+    """The floating companion keeps the conversation going on its own: one tap
+    starts it, the mic reopens after every reply, and it is bounded so a broken
+    microphone can never spin forever."""
+
+    def _read(self, rel):
+        return (ROOT / rel).read_text(encoding="utf-8")
+
+    def test_page_drives_the_loop_through_the_state_machine(self):
+        js = self._read("static/companion_overlay.js")
+        # The page only executes the effects the state machine returns.
+        self.assertIn("sm.send(event)", js)
+        self.assertIn('case "start-listen"', js)
+        self.assertIn('case "session-end"', js)
+        self.assertIn('case "wake"', js)
+
+    def test_page_prefers_the_platform_recogniser_then_falls_back(self):
+        js = self._read("static/companion_overlay.js")
+        self.assertIn("hasNativeAsr", js)
+        self.assertIn("asrStart", js)
+        self.assertIn("onAsrEvent", js)
+        # The existing fallbacks are kept, not replaced.
+        self.assertIn("voice.startListening", js)
+        self.assertIn("startVadRecording", js)
+
+    def test_native_bridge_exposes_the_recogniser(self):
+        bridge = self._read(
+            "android/app/src/main/java/ai/valleymind/companion/CompanionBridge.kt"
+        )
+        for method in ("asrSupported", "asrStart", "asrStop", "asrCancel"):
+            self.assertIn(f"fun {method}", bridge)
+        js = self._read(
+            "android/app/src/main/java/ai/valleymind/companion/AndroidBridgeJs.kt"
+        )
+        self.assertIn("window.__vmAsrEvent", js)
+        self.assertIn("onAsrEvent", js)
+
+    def test_native_recogniser_never_uploads_audio(self):
+        # The platform recogniser turns speech into text on the device.
+        asr = self._read(
+            "android/app/src/main/java/ai/valleymind/companion/CompanionAsr.kt"
+        )
+        self.assertIn("SpeechRecognizer", asr)
+        self.assertIn("EXTRA_LANGUAGE_MODEL", asr)
+        for leaked in ("/api/editing/transcribe", "HttpURLConnection", "OkHttp"):
+            self.assertNotIn(leaked, asr)
+
+
+class OverlayDragSurfaceTests(unittest.TestCase):
+    """Dragging the companion must feel right: the character itself is the drag
+    surface, a drag never also wakes the companion, and it can never be dragged
+    out of reach."""
+
+    def _read(self, rel):
+        return (ROOT / rel).read_text(encoding="utf-8")
+
+    def test_drag_surface_files_exist(self):
+        for rel in (
+            "android/app/src/main/java/ai/valleymind/companion/OverlayDragLayout.kt",
+            "android/app/src/main/java/ai/valleymind/companion/OverlayDragTracker.kt",
+        ):
+            self.assertTrue((ROOT / rel).is_file(), f"missing {rel}")
+
+    def test_service_uses_the_drag_surface_and_drops_the_handle_strip(self):
+        svc = self._read(
+            "android/app/src/main/java/ai/valleymind/companion/CompanionOverlayService.kt"
+        )
+        self.assertIn("OverlayDragLayout", svc)
+        # The old visible handle bar and its ad-hoc drag listener are gone.
+        self.assertNotIn("wireDrag", svc)
+        self.assertNotIn("setBackgroundColor(0x22000000)", svc)
+
+    def test_drag_position_is_clamped_to_the_screen(self):
+        svc = self._read(
+            "android/app/src/main/java/ai/valleymind/companion/CompanionOverlayService.kt"
+        )
+        self.assertIn("overlayBounds", svc)
+        self.assertIn("OverlayBounds", svc)
+        # The clamp uses the real window size, so the companion stays reachable.
+        self.assertIn("displayMetrics", svc)
+
+    def test_tap_and_drag_are_separated_by_the_touch_slop(self):
+        layout = self._read(
+            "android/app/src/main/java/ai/valleymind/companion/OverlayDragLayout.kt"
+        )
+        self.assertIn("scaledTouchSlop", layout)
+        self.assertIn("onInterceptTouchEvent", layout)
+        # The child is cancelled when the gesture becomes a drag, so a drag can
+        # never also fire the tap that wakes the companion.
+        self.assertIn("ACTION_CANCEL", layout)
+
+    def test_drag_logic_is_unit_tested_on_the_jvm(self):
+        path = (
+            ROOT / "android" / "app" / "src" / "test" / "java" / "ai"
+            / "valleymind" / "companion" / "OverlayDragTrackerTest.kt"
+        )
+        self.assertTrue(path.is_file(), "missing OverlayDragTrackerTest.kt")
 
 
 class TurnStateMachineTests(unittest.TestCase):
@@ -236,6 +359,69 @@ class WebAdapterIntegrationTests(unittest.TestCase):
         summary = json.loads(proc.stdout.splitlines()[-1])
         self.assertEqual(summary["failed"], [], summary)
         self.assertGreater(summary["passed"], 0, "android bridge runner asserted nothing")
+
+
+class NativeAsrBridgeTests(unittest.TestCase):
+    """The platform recogniser reaches the overlay page through an injected shim."""
+
+    def _read(self, rel):
+        return (ROOT / rel).read_text(encoding="utf-8")
+
+    def test_shim_exposes_the_asr_contract(self):
+        kt = self._read(
+            "android/app/src/main/java/ai/valleymind/companion/AndroidBridgeJs.kt"
+        )
+        for needle in (
+            "__vmAsrEvent",
+            "__vmAsrBus",
+            "hasNativeAsr",
+            "asrStart",
+            "asrStop",
+            "asrCancel",
+            "onAsrEvent",
+        ):
+            self.assertIn(needle, kt, f"the injected shim is missing {needle}")
+
+    def test_bridge_and_service_expose_the_asr_host(self):
+        bridge = self._read(
+            "android/app/src/main/java/ai/valleymind/companion/CompanionBridge.kt"
+        )
+        service = self._read(
+            "android/app/src/main/java/ai/valleymind/companion/CompanionOverlayService.kt"
+        )
+        for needle in ("asrSupported", "asrStart", "asrStop", "asrCancel"):
+            self.assertIn(needle, bridge, f"CompanionBridge is missing {needle}")
+            self.assertIn(needle, service, f"CompanionOverlayService is missing {needle}")
+        self.assertIn("CompanionAsr", service, "the service must own the recogniser")
+
+    def test_recogniser_is_created_with_the_public_api(self):
+        asr = self._read(
+            "android/app/src/main/java/ai/valleymind/companion/CompanionAsr.kt"
+        )
+        self.assertIn("SpeechRecognizer.createSpeechRecognizer(appContext)", asr)
+        self.assertIn("setRecognitionListener", asr)
+        self.assertNotIn(
+            "createSpeechRecognizer(appContext,",
+            asr,
+            "the two-argument overload is not public API for apps",
+        )
+
+    @unittest.skipIf(NODE is None, "node is not available")
+    def test_android_bridge_js_runner_passes(self):
+        proc = subprocess.run(
+            [NODE, str(ANDROID_BRIDGE_JS_RUNNER)],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            cwd=str(ROOT),
+        )
+        self.assertEqual(
+            proc.returncode, 0,
+            msg="injected bridge shim runner exited non-zero\nstdout:\n%s\nstderr:\n%s" % (proc.stdout, proc.stderr),
+        )
+        summary = json.loads(proc.stdout.splitlines()[-1])
+        self.assertEqual(summary["failed"], [], summary)
+        self.assertGreater(summary["passed"], 0, "injected bridge shim asserted nothing")
 
 
 if __name__ == "__main__":

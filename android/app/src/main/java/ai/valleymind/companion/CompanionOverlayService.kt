@@ -17,8 +17,8 @@ import android.os.IBinder
 import android.os.Looper
 import android.provider.Settings
 import android.view.Gravity
-import android.view.MotionEvent
 import android.view.View
+import android.view.WindowInsets
 import android.view.WindowManager
 import android.webkit.PermissionRequest
 import android.webkit.RenderProcessGoneDetail
@@ -37,6 +37,7 @@ import android.widget.TextView
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
+import kotlin.math.max
 import kotlin.math.roundToInt
 
 /**
@@ -62,8 +63,16 @@ import kotlin.math.roundToInt
  *   ACTION_HIDE -> detach the window, release the WebView, stop foreground
  *
  * The overlay is NOT focusable and NOT modal, so touches outside the character
- * pass through to whatever app is underneath; only the drag handle and the
+ * pass through to whatever app is underneath; only the drag surface and the
  * character's own controls capture input.
+ *
+ * DRAGGING: the whole window is the drag surface (OverlayDragLayout) — there is
+ * no separate handle strip to hunt for. A gesture that stays inside the
+ * platform touch slop is a TAP and reaches the page (that is what wakes the
+ * companion); the moment it exceeds the slop the layout takes the gesture over
+ * and the WebView receives ACTION_CANCEL, so a drag can never also fire a tap.
+ * Every position is clamped to the usable screen area, so the companion can no
+ * longer be dragged out of reach and lost.
  */
 class CompanionOverlayService : Service() {
 
@@ -73,6 +82,12 @@ class CompanionOverlayService : Service() {
     private var errorPanel: View? = null
     private var params: WindowManager.LayoutParams? = null
     private var baseUrl: String = DEFAULT_BASE_URL
+
+    /** The drag surface: the whole window moves the character. */
+    private var dragLayout: OverlayDragLayout? = null
+
+    /** Platform speech recogniser (Android's WebView has no Web Speech API). */
+    private var asr: CompanionAsr? = null
 
     /** Native TTS fallback for the overlay page (no speechSynthesis in WebView). */
     private var systemTts: SystemTts? = null
@@ -108,6 +123,39 @@ class CompanionOverlayService : Service() {
         override fun stopNativeSpeech() {
             systemTts?.stop()
         }
+        override fun asrSupported(): Boolean = asr?.supported == true
+        override fun asrStart(locale: String?): Boolean {
+            val engine = asr ?: return false
+            return engine.start(locale ?: "en-US")
+        }
+        override fun asrStop() {
+            asr?.stop()
+        }
+        override fun asrCancel() {
+            asr?.cancel()
+        }
+    }
+
+    /** Moves the overlay window while the user drags the character. */
+    private val dragHost = object : OverlayDragLayout.Host {
+        override fun onDragStart() { /* the page keeps rendering while dragging */ }
+
+        override fun onDrag(x: Int, y: Int) {
+            val lp = params ?: return
+            val view = rootView ?: return
+            if (lp.x == x && lp.y == y) return
+            lp.x = x
+            lp.y = y
+            dragLayout?.let {
+                it.windowX = x
+                it.windowY = y
+            }
+            try {
+                windowManager?.updateViewLayout(view, lp)
+            } catch (e: Exception) { /* the window was removed mid-gesture */ }
+        }
+
+        override fun onDragEnd() { /* nothing to settle: the window is already where it belongs */ }
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -188,6 +236,11 @@ class CompanionOverlayService : Service() {
 
         rootView = view
         params = lp
+        // The drag surface measures from the window's real position.
+        dragLayout?.let {
+            it.windowX = lp.x
+            it.windowY = lp.y
+        }
         windowManager?.addView(view, lp)
         isVisible = true
         isRunning = true
@@ -299,12 +352,23 @@ class CompanionOverlayService : Service() {
         }
         webView = wv
 
+        // The platform recogniser: Android's WebView has no Web Speech API, so
+        // the page drives SpeechRecognizer through the bridge and receives the
+        // transcript as window.__vmAsrEvent(json).
+        if (asr == null) {
+            asr = CompanionAsr(this).also { engine ->
+                engine.setListener(object : CompanionAsr.Listener {
+                    override fun onAsrReady() = deliverAsrEvent(asrEvent("ready"))
+                    override fun onAsrPartial(text: String) = deliverAsrEvent(asrEvent("partial", text))
+                    override fun onAsrEndOfSpeech() = deliverAsrEvent(asrEvent("end"))
+                    override fun onAsrFinal(text: String) = deliverAsrEvent(asrEvent("final", text))
+                    override fun onAsrError(reason: String) = deliverAsrEvent(asrEvent("error", null, reason))
+                })
+            }
+        }
+
         val error = buildOverlayErrorView(density)
         errorPanel = error
-
-        // A slim drag handle; the character area below stays interactive.
-        val drag = View(this).apply { setBackgroundColor(0x22000000) }
-        wireDrag(drag)
 
         val content = FrameLayout(this).apply {
             addView(wv, FrameLayout.LayoutParams(
@@ -317,11 +381,20 @@ class CompanionOverlayService : Service() {
             ).apply { gravity = Gravity.CENTER })
         }
 
-        return LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            addView(drag, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, (26 * density).roundToInt()))
-            addView(content, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
+        // The whole window is the drag surface: no handle strip, no visible
+        // chrome, and the character itself is what the user grabs.
+        val layout = OverlayDragLayout(this).apply {
+            host = dragHost
+            windowX = params?.x ?: 0
+            windowY = params?.y ?: 0
+            boundsProvider = { overlayBounds() }
+            addView(content, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.MATCH_PARENT
+            ))
         }
+        dragLayout = layout
+        return layout
     }
 
     /** Loads the ONE allowed URL, or fails closed if it cannot be built. */
@@ -414,28 +487,80 @@ class CompanionOverlayService : Service() {
         }
     }
 
-    private fun wireDrag(handle: View) {
-        var startX = 0
-        var startY = 0
-        var touchX = 0f
-        var touchY = 0f
-        handle.setOnTouchListener { _, event ->
-            val lp = params ?: return@setOnTouchListener false
-            when (event.action) {
-                MotionEvent.ACTION_DOWN -> {
-                    startX = lp.x; startY = lp.y
-                    touchX = event.rawX; touchY = event.rawY
-                    true
+    /**
+     * The rectangle the floating window may occupy.
+     *
+     * The window keeps its full size, but its TOP-LEFT position is clamped so
+     * the companion always stays completely on screen: with the old un-clamped
+     * drag (and FLAG_LAYOUT_NO_LIMITS) the character could be dragged past an
+     * edge and become unreachable — the classic "I lost my overlay" bug.
+     * System bars and display cutouts are honoured where the platform reports
+     * them; the clamp is always valid, so a narrow screen can never produce an
+     * empty range.
+     */
+    private fun overlayBounds(): OverlayBounds {
+        val dm = resources.displayMetrics
+        val lp = params
+        val w = lp?.width?.takeIf { it > 0 } ?: (210 * dm.density).roundToInt()
+        val h = lp?.height?.takeIf { it > 0 } ?: (300 * dm.density).roundToInt()
+
+        var left = 0
+        var top = 0
+        var right = dm.widthPixels
+        var bottom = dm.heightPixels
+
+        val insets = rootView?.rootWindowInsets
+        if (insets != null) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                val bars = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
+                left = bars.left
+                top = bars.top
+                right = dm.widthPixels - bars.right
+                bottom = dm.heightPixels - bars.bottom
+            } else {
+                @Suppress("DEPRECATION")
+                run {
+                    left = insets.systemWindowInsetLeft
+                    top = insets.systemWindowInsetTop
+                    right = dm.widthPixels - insets.systemWindowInsetRight
+                    bottom = dm.heightPixels - insets.systemWindowInsetBottom
                 }
-                MotionEvent.ACTION_MOVE -> {
-                    lp.x = startX + (event.rawX - touchX).roundToInt()
-                    lp.y = startY + (event.rawY - touchY).roundToInt()
-                    rootView?.let { windowManager?.updateViewLayout(it, lp) }
-                    true
-                }
-                else -> false
             }
         }
+
+        val maxX = max(left, right - w)
+        val maxY = max(top, bottom - h)
+        return OverlayBounds(left, maxX, top, maxY)
+    }
+
+    /** Delivers one recognition event into the overlay page. */
+    private fun deliverAsrEvent(json: String) {
+        webView?.post {
+            webView?.evaluateJavascript("window.__vmAsrEvent && window.__vmAsrEvent($json);", null)
+        }
+    }
+
+    private fun asrEvent(type: String, text: String? = null, reason: String? = null): String {
+        val sb = StringBuilder("{\"type\":\"").append(type).append("\"")
+        if (text != null) sb.append(",\"text\":\"").append(escapeJson(text)).append("\"")
+        if (reason != null) sb.append(",\"reason\":\"").append(escapeJson(reason)).append("\"")
+        return sb.append("}").toString()
+    }
+
+    private fun escapeJson(raw: String): String {
+        val sb = StringBuilder(raw.length + 8)
+        for (ch in raw) {
+            when {
+                ch == '\\' -> sb.append("\\\\")
+                ch == '"' -> sb.append("\\\"")
+                ch == '\n' -> sb.append("\\n")
+                ch == '\r' -> sb.append("\\r")
+                ch == '\t' -> sb.append("\\t")
+                ch < ' ' -> sb.append(String.format("\\u%04x", ch.code))
+                else -> sb.append(ch)
+            }
+        }
+        return sb.toString()
     }
 
     private fun detachOverlay() {
@@ -449,6 +574,9 @@ class CompanionOverlayService : Service() {
         errorPanel = null
         params = null
         requestedUrl = null
+        dragLayout = null
+        try { asr?.shutdown() } catch (e: Exception) { /* ignore */ }
+        asr = null
         try { systemTts?.shutdown() } catch (e: Exception) { /* ignore */ }
         systemTts = null
         NativeTtsRegistry.install(null)
