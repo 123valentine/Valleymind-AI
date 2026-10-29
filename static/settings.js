@@ -838,14 +838,30 @@ var VM_PERSONA_VOICES = {
     { key: "companion", label: "Companion", defaultVoice: "christopher" },
   ],
   voices: [
-    { id: "guy", label: "Guy — current Marcus voice (reference)", server: "en-US-GuyNeural", default: true },
-    { id: "aria", label: "Aria — current Elena voice (reference)", server: "en-US-AriaNeural", default: true },
-    { id: "jenny", label: "Jenny — current Angelina voice (reference)", server: "en-US-JennyNeural", default: true },
-    { id: "christopher", label: "Christopher — current Companion voice (reference)", server: "en-US-ChristopherNeural", default: true },
-    { id: "kristin_piper", label: "Kristin (local, opt-in preview)", piper: "en_US-kristin-medium", default: false },
-    { id: "ljspeech_piper", label: "LJSpeech (local, opt-in preview)", piper: "en_US-ljspeech-medium", default: false },
+    { id: "guy", label: "Guy — current Marcus voice (reference)", server: "en-US-GuyNeural", default: true, preset: "deep" },
+    { id: "aria", label: "Aria — current Elena voice (reference)", server: "en-US-AriaNeural", default: true, preset: "warm" },
+    { id: "jenny", label: "Jenny — current Angelina voice (reference)", server: "en-US-JennyNeural", default: true, preset: "bright" },
+    { id: "christopher", label: "Christopher — current Companion voice (reference)", server: "en-US-ChristopherNeural", default: true, preset: "fresh" },
+    { id: "kristin_piper", label: "Kristin (local, opt-in preview)", piper: "en_US-kristin-medium", default: false, preset: "warm" },
+    { id: "ljspeech_piper", label: "LJSpeech (local, opt-in preview)", piper: "en_US-ljspeech-medium", default: false, preset: "fresh" },
   ],
 };
+
+var _vmVoiceOrb = null;
+var _vmVoiceOrbContainer = null;
+var _vmVoiceOrbCurrentVoiceId = null;
+
+function _vmGetVoicePreset(voiceId) {
+  var v = _personaVoiceById(voiceId);
+  if (v && v.preset) return v.preset;
+  if (voiceId === "guy") return "deep";
+  if (voiceId === "aria") return "warm";
+  if (voiceId === "jenny") return "bright";
+  if (voiceId === "christopher") return "fresh";
+  if (voiceId === "kristin_piper") return "warm";
+  if (voiceId === "ljspeech_piper") return "fresh";
+  return "deep";
+}
 
 function _personaVoiceOptions() {
   return VM_PERSONA_VOICES.voices.map(function (v) {
@@ -1059,12 +1075,20 @@ function vmPersonaSetVoice(personaKey, voiceId) {
   var saved = _readPersonaVoices();
   saved[personaKey] = voiceId;
   _writePersonaVoices(saved);
-  // Persist through the EXISTING generic settings route (cloud section) \u2014 no
+  // Persist through the EXISTING generic settings route (cloud section) — no
   // second settings controller, no new endpoint. Merge-flagged so this partial
   // save cannot delete unrelated cloud keys (accent/personality_style/...).
   settingsApiSave("cloud", { persona_voices: saved }, { merge: true }).catch(function () {});
   var st = document.getElementById("vmPersonaVoiceStatus");
-  if (st) { st.textContent = "Saved " + personaKey + " \u2192 " + voiceId; setTimeout(function () { st.textContent = ""; }, 2500); }
+  if (st) { st.textContent = "Saved " + personaKey + " → " + voiceId; setTimeout(function () { st.textContent = ""; }, 2500); }
+  try {
+    _vmInitVoiceOrb();
+    if (_vmVoiceOrb) {
+      _vmVoiceOrb.setPreset(_vmGetVoicePreset(voiceId));
+      _vmVoiceOrb.setState("selected");
+      setTimeout(function () { try { if (_vmVoiceOrb) _vmVoiceOrb.setState("idle"); } catch (e) {} }, 800);
+    }
+  } catch (e) {}
 }
 
 // Preview the selected voice through the EXISTING /api/tts route. The server
@@ -1118,9 +1142,42 @@ function vmPersonaPreviewVoice(personaKey) {
 // files are not present (the server falls back to the free engine and says so).
 function renderVoiceSection(container) {
   container.innerHTML = _SH.sectionHeader("Voice", "Choose how each speaker sounds — and preview before you commit") +
+    '<div id="vmVoiceOrbWrap" style="display:flex;justify-content:center;margin:4px 0 18px;"><div id="vmVoiceOrb" style="width:260px;height:260px;max-width:90vw;max-height:90vw;background:transparent;border-radius:50%;overflow:hidden;"></div></div>' +
     vmVoiceCatalogueCard() +
     vmPersonaVoicesCard() +
     '<p style="color:#475569;font-size:11px;margin-top:4px;">Status: <span id="vmVoiceTabStatus"></span></p>';
+  // Initialize orb after DOM is ready
+  setTimeout(function () {
+    _vmInitVoiceOrb();
+  }, 0);
+}
+
+function _vmInitVoiceOrb() {
+  try {
+    var c = document.getElementById("vmVoiceOrb");
+    if (!c) return;
+    if (_vmVoiceOrb && _vmVoiceOrbContainer === c) return;
+    if (_vmVoiceOrb && typeof _vmVoiceOrb.destroy === "function") {
+      try { _vmVoiceOrb.destroy(); } catch (e) {}
+    }
+    _vmVoiceOrbContainer = c;
+    if (typeof window.VoiceOrb === "undefined") {
+      // Try to load module
+      var s = document.createElement("script");
+      s.type = "module";
+      s.textContent = "import('/static/VoiceOrb.js').then(m=>{window.VoiceOrb=m.VoiceOrb;window.VOICE_PRESETS=m.VOICE_PRESETS; if(window._vmInitVoiceOrbRetry) window._vmInitVoiceOrbRetry();}).catch(()=>{});";
+      document.head.appendChild(s);
+      window._vmInitVoiceOrbRetry = function () {
+        _vmInitVoiceOrb();
+        delete window._vmInitVoiceOrbRetry;
+      };
+      return;
+    }
+    _vmVoiceOrb = new window.VoiceOrb(c, { preset: "deep", ariaLabel: "Voice animation" });
+    _vmVoiceOrb.setState("idle");
+  } catch (e) {
+    console.warn("[VoiceOrb] init failed", e);
+  }
 }
 
 // Build one catalogue entry for a voice definition from VM_PERSONA_VOICES.
@@ -1161,6 +1218,24 @@ function vmVoicePreview(voiceId) {
   if (!entry) return;
   var st = document.getElementById("vmVoiceTabStatus");
   if (st) st.textContent = "Preparing preview\u2026";
+  // Update orb for selected voice
+  try {
+    _vmInitVoiceOrb();
+    if (_vmVoiceOrb) {
+      var preset = _vmGetVoicePreset(voiceId);
+      _vmVoiceOrbCurrentVoiceId = voiceId;
+      _vmVoiceOrb.setPreset(preset);
+      _vmVoiceOrb.setState("playing");
+      // Try to connect audio
+      if (!_personaPreviewPlayer) {
+        _personaPreviewPlayer = document.createElement("audio");
+        _personaPreviewPlayer.style.display = "none";
+        (document.body || document.documentElement).appendChild(_personaPreviewPlayer);
+      }
+      // Disconnect previous
+      try { if (typeof _vmVoiceOrb.disconnectAudio === "function") _vmVoiceOrb.disconnectAudio(); } catch (e) {}
+    }
+  } catch (e) {}
   apiFetch("/api/tts", {
     method: "POST", credentials: "include",
     headers: authHeaders({ "Content-Type": "application/json" }),
@@ -1169,8 +1244,34 @@ function vmVoicePreview(voiceId) {
   }).then(function (r) { return r.json(); }).then(function (data) {
     if (!data || !data.url) {
       if (st) st.textContent = "(preview unavailable: " + ((data && data.reason) || "no audio") + ")";
+      try { if (_vmVoiceOrb) _vmVoiceOrb.setState("idle"); } catch (e) {}
       return;
     }
+    // Ensure player exists
+    if (!_personaPreviewPlayer) {
+      _personaPreviewPlayer = document.createElement("audio");
+      _personaPreviewPlayer.style.display = "none";
+      (document.body || document.documentElement).appendChild(_personaPreviewPlayer);
+    }
+    try { _personaPreviewPlayer.pause(); } catch (e) {}
+    _personaPreviewPlayer.currentTime = 0;
+    _personaPreviewPlayer.src = data.url;
+    // Connect orb to audio
+    try {
+      if (_vmVoiceOrb && typeof _vmVoiceOrb.connectAudio === "function") {
+        _vmVoiceOrb.connectAudio(_personaPreviewPlayer);
+      }
+      if (_vmVoiceOrb) _vmVoiceOrb.setState("playing");
+    } catch (e) {}
+    var pr = _personaPreviewPlayer.play();
+    if (pr && pr.catch) pr.catch(function () { if (onError) onError("(tap to allow audio)"); });
+    // Handle end
+    _personaPreviewPlayer.onended = function () {
+      try { if (_vmVoiceOrb) { if (typeof _vmVoiceOrb.disconnectAudio === "function") _vmVoiceOrb.disconnectAudio(); _vmVoiceOrb.setState("idle"); } } catch (e) {}
+    };
+    _personaPreviewPlayer.onerror = function () {
+      try { if (_vmVoiceOrb) { if (typeof _vmVoiceOrb.disconnectAudio === "function") _vmVoiceOrb.disconnectAudio(); _vmVoiceOrb.setState("idle"); } } catch (e) {}
+    };
     _vmPlayPreviewUrl(data.url, function (err) {
       if (st) st.textContent = err;
     });
@@ -1183,7 +1284,10 @@ function vmVoicePreview(voiceId) {
       }
       setTimeout(function () { if (st) st.textContent = ""; }, 4000);
     }
-  }).catch(function () { if (st) st.textContent = "(preview unavailable)"; });
+  }).catch(function () { 
+    if (st) st.textContent = "(preview unavailable)"; 
+    try { if (_vmVoiceOrb) _vmVoiceOrb.setState("idle"); } catch (e) {}
+  });
 }
 
 // One hidden <audio> reused for every preview so a new preview always stops the

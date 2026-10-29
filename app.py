@@ -33,6 +33,7 @@ from core.seo import URL_ALIASES as SEO_URL_ALIASES
 from core.seo import robots_txt as seo_robots_body
 from core.seo import sitemap_xml as seo_sitemap_body
 from core.seo import render_page as seo_render_page
+from core.vision import get_vision_service
 from core.tts import speak_marcus
 from core.video_dispatcher import get_video_dispatcher
 from core import ai_builder
@@ -1145,10 +1146,21 @@ def api_tts():
             return jsonify({"status": "success", **result})
         from core.tts import FREE_VOICE_MAP, synthesize_free
         _ref_profile = ""
+        # Check if it's a server voice ID
         for _key, _vid in FREE_VOICE_MAP.items():
             if _vid.lower() == preview_voice:
                 _ref_profile = _key
                 break
+        # Also check catalogue voice IDs
+        if not _ref_profile:
+            if preview_voice == "guy":
+                _ref_profile = "marcus"
+            elif preview_voice == "aria":
+                _ref_profile = "elena"
+            elif preview_voice == "jenny":
+                _ref_profile = "angelina"
+            elif preview_voice == "christopher":
+                _ref_profile = "companion"
         if _ref_profile:
             result = synthesize_free(text, _ref_profile)
             return jsonify({"status": "success", **result})
@@ -3737,6 +3749,14 @@ def api_cloud_chat():
         # passed into the EXISTING brain for the current turn only and are never
         # persisted into long-term memory (see persist_image_data in respond()).
         image_data = _sanitize_screen_frame(data.get("image_data"))
+        # Also accept general image uploads (camera/screen share from companion)
+        raw_image = str(data.get("image") or data.get("image_data_uri") or "").strip()
+        if raw_image and not image_data:
+            # Use vision service to validate
+            vs = get_vision_service()
+            valid, _ = vs.validate_image(raw_image)
+            if valid:
+                image_data = raw_image
 
         from core import cloud as cloud_model
         prefs = _get_section_settings(user_id, "cloud")
@@ -3748,6 +3768,18 @@ def api_cloud_chat():
         _initialize_user_memory(marcus, str(_current_auth().get("email", "")).strip())
 
         if image_data:
+            # If no message or generic message, get description from vision
+            if not message or message.lower() in ("image", "(image attached)", "what is this", "what's this"):
+                try:
+                    vs = get_vision_service()
+                    desc = vs.describe_for_brain(image_data, message)
+                    if desc and not desc.startswith("[Vision analysis unavailable"):
+                        augmented = f"{augmented}\n\n[Vision Context]: {desc}"
+                        if not message or message.lower() in ("image", "(image attached)"):
+                            message = "What do you see in this image?"
+                            augmented = cloud_model.augment_cloud_message(message, prefs)
+                except Exception as e:
+                    print(f"[VISION] Failed to pre-describe: {e}")
             reply = marcus.respond(
                 augmented, chat_id=chat_id,
                 image_data=image_data, persist_image_data=False,
@@ -4506,6 +4538,79 @@ def dev_routing_log():
         "status": "success",
         "log": manager.recent_routing_log(limit=limit),
     })
+
+
+@app.route("/api/vision/analyze", methods=["POST"])
+def api_vision_analyze():
+    """Analyze an image with the unified vision service."""
+    user_id, error = _require_login()
+    if error:
+        return error
+    try:
+        data = request.get_json(silent=True) or {}
+        image_data = str(data.get("image") or data.get("image_data") or data.get("image_data_uri") or "").strip()
+        question = str(data.get("question") or data.get("message") or "").strip()
+        persona = normalize_persona(data.get("persona"))
+        chat_id = str(data.get("chat_id") or "").strip()
+        
+        if not image_data:
+            return jsonify({"status": "error", "message": "image is required"}), 400
+        
+        vs = get_vision_service()
+        valid, err = vs.validate_image(image_data)
+        if not valid:
+            return jsonify({"status": "error", "message": err}), 400
+        
+        result = vs.analyze_image(image_data, question)
+        if not result.success:
+            return jsonify({"status": "error", "message": result.error}), 503
+        
+        # Optionally route through brain if requested
+        if data.get("route_to_brain") and chat_id:
+            marcus = load_persona_brain(user_id, persona)
+            if marcus:
+                _initialize_user_memory(marcus, str(_current_auth().get("email", "")).strip())
+                augmented = question or "What do you see in this image? Describe it and answer any relevant questions."
+                reply = marcus.respond(augmented, chat_id=chat_id, image_data=image_data, persist_image_data=False)
+                return jsonify({
+                    "status": "success",
+                    "description": result.description,
+                    "reply": reply,
+                    "provider": result.provider,
+                })
+        
+        return jsonify({
+            "status": "success",
+            "description": result.description,
+            "provider": result.provider,
+            "objects": result.objects,
+            "text_content": result.text_content,
+            "scene": result.scene,
+        })
+    except Exception as exc:
+        print(f"[CRITICAL] /api/vision/analyze crashed: {exc}")
+        return jsonify({"status": "error", "message": "Internal server error"}), 500
+
+
+@app.route("/api/vision/capabilities", methods=["GET"])
+def api_vision_capabilities():
+    """Check vision service capabilities."""
+    user_id, error = _require_login()
+    if error:
+        return error
+    try:
+        vs = get_vision_service()
+        provider_name, provider_config = vs._get_vision_provider()
+        return jsonify({
+            "status": "success",
+            "available": provider_name is not None,
+            "provider": provider_name,
+            "max_image_size_mb": vs.MAX_IMAGE_SIZE_BYTES // (1024 * 1024),
+            "supported_formats": list(vs.ALLOWED_MIME_TYPES),
+        })
+    except Exception as exc:
+        print(f"[CRITICAL] /api/vision/capabilities crashed: {exc}")
+        return jsonify({"status": "error", "message": "Internal server error"}), 500
 
 
 # ── Media Library API ────────────────────────────────────────────────────────
