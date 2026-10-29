@@ -2096,15 +2096,17 @@
   #composer.focused{ border-color:rgba(0,212,255,0.45); box-shadow:0 0 0 1px rgba(0,212,255,0.15); }
   #composerRow{ display:flex; align-items:flex-end; gap:4px; }
   #chatInput:focus{ outline:none !important; box-shadow:none !important; }
-  /* Mobile: lift the persona switcher onto its own compact line above the
-     input so the textarea keeps its full width (as it was before the switcher
-     existed) and the placeholder isn't truncated. */
+  /* Mobile: stack the composer vertically — text input on top, persona
+     selector directly underneath, then the mic/send row. The textarea keeps
+     full width and is never pushed sideways by the selector. */
   @media(max-width:768px){
-    #composerRow{ flex-wrap:wrap; }
-    #personaSwitcher{ order:-1; flex-basis:100%; margin-bottom:2px; }
-    #personaBtn{ height:30px; padding:0 12px; font-size:13px; }
+    #composerRow{ flex-direction: column; }
+    #chatInput{ width: 100%; flex: none; }
+    #personaSwitcher{ width: 100%; margin-bottom: 2px; }
+    #personaBtn{ width: 100%; height:30px; padding:0 12px; font-size:13px; justify-content: center; }
     #personaBtn #personaBtnLabel{ font-weight:800; }
     #personaMenu{ left:0; right:auto; min-width:180px; }
+    #composerRow > div:last-child{ width: 100%; justify-content: flex-end; }
   }
   #composerChips{
     display:none; flex-wrap:wrap; gap:6px;
@@ -3049,6 +3051,10 @@ body[data-vm-companion="cloud"] #vmVrmCompanion { display: none !important; }
             </div>
           </div>
 
+          <!-- Textarea (autogrows via JS) -->
+          <textarea id="chatInput" rows="1" placeholder="Reply to Marcus..."
+            style="flex:1;background:transparent;border:none;outline:none;box-shadow:none;color:white;font-size:15px;line-height:1.5;resize:none;padding:8px 4px;min-height:24px;max-height:180px;font-family:'Inter',sans-serif;overflow-y:hidden;"></textarea>
+
           <!-- Persona switcher -->
           <div id="personaSwitcher" style="position:relative;">
             <button id="personaBtn" onclick="togglePersonaMenu()" title="Who you're talking to"
@@ -3059,10 +3065,6 @@ body[data-vm-companion="cloud"] #vmVrmCompanion { display: none !important; }
             </button>
             <div id="personaMenu" style="display:none;position:absolute;bottom:calc(100% + 8px);left:0;background:#0f172a;border:1px solid rgba(0,212,255,0.2);border-radius:12px;padding:6px;min-width:200px;box-shadow:0 12px 40px rgba(0,0,0,0.7);z-index:100;"></div>
           </div>
-
-          <!-- Textarea (autogrows via JS) -->
-          <textarea id="chatInput" rows="1" placeholder="Reply to Marcus..."
-            style="flex:1;background:transparent;border:none;outline:none;box-shadow:none;color:white;font-size:15px;line-height:1.5;resize:none;padding:8px 4px;min-height:24px;max-height:180px;font-family:'Inter',sans-serif;overflow-y:hidden;"></textarea>
 
           <!-- Right cluster -->
           <div style="display:flex;align-items:flex-end;gap:2px;">
@@ -4658,15 +4660,17 @@ window.toggleVoicePlayback = function (btn) {
     _voiceIcon(btn, 'loader-2');
     _msgAudioBtn = btn;
     var persona = (typeof currentPersona !== 'undefined' && currentPersona) ? currentPersona : 'marcus';
+    var msgProfile = _savedVoiceProfile(persona);
 
     apiFetch('/api/tts', {
         method: 'POST',
         credentials: 'include',
         headers: authHeaders({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify({ text: text.slice(0, 1500), persona: persona })
+        body: JSON.stringify({ text: text.slice(0, 1500), persona: persona, profile: msgProfile })
     }).then(function (r) { return r.json(); }).then(function (j) {
-        // Play the assigned Qwen voice through the persistent, unlocked element.
-        if (j && j.status === 'success' && j.engine === 'qwen_tts' && j.url) {
+        // Play the assigned voice through the persistent, unlocked element.
+        // Accepts both qwen_tts (default) and edge_tts_free (saved voice profile).
+        if (j && j.status === 'success' && j.url && (j.engine === 'qwen_tts' || j.engine === 'edge_tts_free')) {
             var pl = getPersonaPlayer();
             pl.onended = function () { _voiceIcon(btn, 'play'); _msgAudioBtn = null; };
             pl.onerror = function () { _voiceIcon(btn, 'play'); _msgAudioBtn = null; };
@@ -4674,7 +4678,7 @@ window.toggleVoicePlayback = function (btn) {
             _voiceIcon(btn, 'pause');
             pl.play().catch(function () { _voiceIcon(btn, 'play'); _msgAudioBtn = null; });
         } else {
-            // No Qwen audio from the server â€” stay silent rather than use the
+            // No audio from the server â€” stay silent rather than use the
             // device's native voice (which broke persona gender on some devices).
             _voiceIcon(btn, 'play'); _msgAudioBtn = null;
         }
@@ -6052,19 +6056,34 @@ function unlockPersonaAudio() {
 // unconfigured, over the budget cap, or offline) do we fall back to the device
 // voice â€” never on a mere play() rejection, which is what used to hijack the
 // voice with the browser default.
+// Map a saved catalogue voice id (guy/aria/jenny/christopher/...) to the
+// FREE_VOICE_MAP profile key the /api/tts free edge-tts path understands.
+// Piper voice ids (kristin_piper, ljspeech_piper) return "" — the server
+// handles them via the saved per-persona Piper selection (_persona_voice_selection).
+function _savedVoiceProfile(persona) {
+    try {
+        var saved = JSON.parse(localStorage.getItem("vmPersonaVoices") || "{}") || {};
+        var voiceId = String(saved[persona] || "");
+    } catch (e) { return ""; }
+    if (!voiceId) return "";
+    var map = { guy: "marcus", aria: "elena", jenny: "angelina", christopher: "companion" };
+    return map[voiceId] || "";
+}
+
 async function speakPersona(text, persona) {
     if (!text) return;
     unlockPersonaAudio();
     try {
+        var profile = _savedVoiceProfile(persona || currentPersona);
         var res = await apiFetch("/api/tts", {
             method: "POST",
             credentials: "include",
             headers: authHeaders({ "Content-Type": "application/json" }),
-            body: JSON.stringify({ text: text, persona: persona || currentPersona }),
+            body: JSON.stringify({ text: text, persona: persona || currentPersona, profile: profile }),
             timeoutMs: 60000
         });
         var data = await res.json();
-        if (data && data.engine === "qwen_tts" && data.url) {
+        if (data && data.url && (data.engine === "qwen_tts" || data.engine === "edge_tts_free")) {
             if (window.speechSynthesis) window.speechSynthesis.cancel();
             var el = getPersonaPlayer();
             if (el) {
@@ -6293,6 +6312,8 @@ var _sttFinal = "";
 var _sttTimer = null;
 var _voiceTurn = false;
 var _sttEndMs = 1500;   // trailing silence that counts as "done speaking"
+var _sttSession = 0;    // session counter — stale events from old sessions are ignored
+var _sttLastFinal = ""; // last final transcript added, to avoid duplicate appends
 
 function speechRecognitionSupported() {
     return !!(window.SpeechRecognition || window.webkitSpeechRecognition);
@@ -6322,28 +6343,46 @@ function startListening() {
     if (_listening || !speechRecognitionSupported()) return;
     var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     try { _recognition = new SR(); } catch (e) { return; }
+    var session = ++_sttSession;   // tag this session so stale events are ignored
     _recognition.lang = navigator.language || "en-US";
     _recognition.interimResults = true;
     _recognition.continuous = true;
     _sttFinal = "";
+    _sttLastFinal = "";
     var input = document.getElementById("chatInput");
     _recognition.onresult = function (ev) {
+        // Ignore events from a superseded session.
+        if (session !== _sttSession) return;
         var interim = "";
         for (var i = ev.resultIndex; i < ev.results.length; i++) {
-            if (ev.results[i].isFinal) _sttFinal += ev.results[i][0].transcript;
-            else interim += ev.results[i][0].transcript;
+            var t = ev.results[i][0].transcript;
+            if (ev.results[i].isFinal) {
+                // Never append the same final transcript twice.
+                if (t && t !== _sttLastFinal) {
+                    _sttLastFinal = t;
+                    _sttFinal += t;
+                }
+            } else {
+                interim += t;
+            }
         }
         if (input) { input.value = (_sttFinal + interim).trim(); if (typeof autoGrowInput === "function") autoGrowInput(); }
         if (_sttTimer) clearTimeout(_sttTimer);
         _sttTimer = setTimeout(endOfSpeech, _sttEndMs);   // wait for a real pause
     };
     _recognition.onerror = function (ev) {
+        // Ignore errors from a superseded session.
+        if (session !== _sttSession) return;
         if (ev.error === "not-allowed" || ev.error === "service-not-allowed") {
             stopListening();
             alert("Microphone access is blocked. Allow mic access in your browser to use voice.");
         }
     };
-    _recognition.onend = function () { if (_listening) { try { _recognition.start(); } catch (e) {} } };
+    _recognition.onend = function () {
+        // Ignore end events from a superseded session.
+        if (session !== _sttSession) return;
+        if (_listening) { try { _recognition.start(); } catch (e) {} }
+    };
     try { _recognition.start(); } catch (e) {}
     _listening = true;
     setMicUI(true);
@@ -6361,6 +6400,11 @@ function stopListening() {
     _listening = false;
     if (_sttTimer) { clearTimeout(_sttTimer); _sttTimer = null; }
     if (_recognition) { try { _recognition.onend = null; _recognition.stop(); } catch (e) {} }
+    _recognition = null;
+    // Clear transcript state so the next session starts fresh — no stale text
+    // carries over and no duplicate final transcripts can reappear.
+    _sttFinal = "";
+    _sttLastFinal = "";
     setMicUI(false);
     var input = document.getElementById("chatInput");
     if (input && typeof crewMember === "function") input.placeholder = "Reply to " + crewMember(currentPersona).name + "...";
@@ -8143,10 +8187,11 @@ function rtSpeakTurn(persona, text) {
         // The waveform ring goes live on the speaking persona (mic viz off now).
         rtMicVizStop();
         rtRingShow("speaking", who + " is speaking");
+        var rtProfile = _savedVoiceProfile(persona);
         apiFetch("/api/tts", {
             method: "POST", credentials: "include",
             headers: authHeaders({ "Content-Type": "application/json" }),
-            body: JSON.stringify({ text: text, persona: persona }),
+            body: JSON.stringify({ text: text, persona: persona, profile: rtProfile }),
             timeoutMs: 60000
         }).then(function (res) { return res.json(); }).then(function (data) {
             if (rtInterrupted) { rtRingHide(); if (rtCurrentResolve) rtCurrentResolve(); return; }
