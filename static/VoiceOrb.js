@@ -195,6 +195,7 @@ export class VoiceOrb {
   setState(state) {
     if (state === 'selected' && this.state !== 'selected') this.pulse = 1;
     this.state = state;
+    if (state === 'playing') this._start();          // ensure the animation loop is running
     if (state !== 'playing' && !this._analyser) this.targetLevel = 0;
   }
 

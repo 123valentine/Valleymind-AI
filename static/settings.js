@@ -838,12 +838,12 @@ var VM_PERSONA_VOICES = {
     { key: "companion", label: "Companion", defaultVoice: "christopher" },
   ],
   voices: [
-    { id: "guy", label: "Guy — current Marcus voice (reference)", server: "en-US-GuyNeural", default: true, preset: "deep" },
-    { id: "aria", label: "Aria — current Elena voice (reference)", server: "en-US-AriaNeural", default: true, preset: "warm" },
-    { id: "jenny", label: "Jenny — current Angelina voice (reference)", server: "en-US-JennyNeural", default: true, preset: "bright" },
-    { id: "christopher", label: "Christopher — current Companion voice (reference)", server: "en-US-ChristopherNeural", default: true, preset: "fresh" },
-    { id: "kristin_piper", label: "Kristin (local, opt-in preview)", piper: "en_US-kristin-medium", default: false, preset: "warm" },
-    { id: "ljspeech_piper", label: "LJSpeech (local, opt-in preview)", piper: "en_US-ljspeech-medium", default: false, preset: "fresh" },
+    { id: "guy", label: "Guy", gender: "male", server: "en-US-GuyNeural", default: true, preset: "deep" },
+    { id: "aria", label: "Aria", gender: "female", server: "en-US-AriaNeural", default: true, preset: "warm" },
+    { id: "jenny", label: "Jenny", gender: "female", server: "en-US-JennyNeural", default: true, preset: "bright" },
+    { id: "christopher", label: "Christopher", gender: "male", server: "en-US-ChristopherNeural", default: true, preset: "fresh" },
+    { id: "kristin_piper", label: "Kristin (local, opt-in preview)", gender: "female", piper: "en_US-kristin-medium", default: false, preset: "warm" },
+    { id: "ljspeech_piper", label: "LJSpeech (local, opt-in preview)", gender: "female", piper: "en_US-ljspeech-medium", default: false, preset: "fresh" },
   ],
 };
 
@@ -1054,18 +1054,63 @@ function vmCompanionSetVoiceKey(v) {
 // (Qwen) is untouched. The two local Piper voices are opt-in previews.
 function vmPersonaVoicesCard() {
   var saved = _readPersonaVoices();
+
+  // Voice assignment buttons — clickable chips with gender labels
+  var voiceButtons = VM_PERSONA_VOICES.voices.map(function (v) {
+    var genderIcon = v.gender === "male" ? "♂" : "♀";
+    var isMainSelected = VM_PERSONA_VOICES.personas
+      .filter(function (p) { return p.key !== "companion"; })
+      .some(function (p) { return saved[p.key] === v.id; });
+    var isCompanionSelected = saved.companion === v.id;
+    var selected = isMainSelected || isCompanionSelected;
+    return '<button onclick="vmAssignVoice(\'' + v.id + '\')" ' +
+      'style="display:inline-block;margin:4px 4px 4px 0;padding:8px 12px;' +
+      'border:1px solid ' + (selected ? "rgba(0,212,255,0.4)" : "rgba(255,255,255,0.1)") + ';' +
+      'background:' + (selected ? "rgba(0,212,255,0.15)" : "rgba(15,23,42,0.5)") + ';' +
+      'border-radius:8px;color:#e2e8f0;cursor:pointer;font-size:12px;font-family:\'Inter\',sans-serif;">' +
+      v.label + ' <span style="font-size:10px;opacity:0.7;">' + genderIcon + '</span>' +
+      '</button>';
+  }).join("");
+
+  // Current assignments
+  var mainVoiceId = saved.marcus || saved.elena || saved.angelina || "guy";
+  var companionVoiceId = saved.companion || "christopher";
+  var mainEntry = _personaVoiceById(mainVoiceId);
+  var compEntry = _personaVoiceById(companionVoiceId);
+
+  var assignmentBox = '<div style="background:rgba(0,212,255,0.08);border:1px solid rgba(0,212,255,0.2);border-radius:12px;padding:16px;margin-bottom:16px;">' +
+    '<p style="color:#00d4ff;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;margin:0 0 12px;">Tap to use in chats or speak aloud</p>' +
+    '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;">' + voiceButtons + '</div>' +
+    '<div style="display:flex;gap:8px;margin-bottom:12px;">' +
+    '<button onclick="vmAssignVoiceDestination(\'main\')" style="flex:1;padding:10px;background:rgba(0,212,255,0.1);border:1px solid rgba(0,212,255,0.3);border-radius:8px;color:#00d4ff;cursor:pointer;font-size:12px;font-weight:600;">Use in Main Chat</button>' +
+    '<button onclick="vmAssignVoiceDestination(\'companion\')" style="flex:1;padding:10px;background:rgba(0,212,255,0.1);border:1px solid rgba(0,212,255,0.3);border-radius:8px;color:#00d4ff;cursor:pointer;font-size:12px;font-weight:600;">Use in Companion</button>' +
+    '</div>' +
+    '<div style="display:flex;flex-direction:column;gap:4px;">' +
+    '<div style="display:flex;justify-content:space-between;font-size:12px;color:#94a3b8;">' +
+    '<span>Main Chat voice:</span> <span style="color:#e2e8f0;font-weight:600;">' + (mainEntry ? mainEntry.label : mainVoiceId) + '</span>' +
+    '</div>' +
+    '<div style="display:flex;justify-content:space-between;font-size:12px;color:#94a3b8;">' +
+    '<span>Companion voice:</span> <span style="color:#e2e8f0;font-weight:600;">' + (compEntry ? compEntry.label : companionVoiceId) + '</span>' +
+    '</div>' +
+    '</div>' +
+  '</div>';
+
+  // Per-persona rows (fine-grained control)
   var rows = VM_PERSONA_VOICES.personas.map(function (per) {
     var sel = saved[per.key] || per.defaultVoice;
-    return _SH.row(per.label,
+    var isCompanion = per.key === "companion";
+    return _SH.row(per.label + (isCompanion ? " (Companion)" : " (Main Chat)"),
       '<div style="display:flex;gap:8px;align-items:center;">' +
         _SH.select(_personaVoiceOptions(), "vmPersonaVoice-" + per.key, sel,
           "vmPersonaSetVoice('" + per.key + "', this.value)") +
         _SH.btn("Preview", "vmPersonaPreviewVoice('" + per.key + "')") +
       '</div>',
-      "Each persona keeps its own voice. The current server voice stays the default; the local voices are opt-in previews.");
+      isCompanion ? "Companion keeps its own voice independently." : "Main chat persona keeps its own voice independently.");
   }).join("");
+
   return _SH.card("Persona voices",
-    '<p style="color:#94a3b8;font-size:12px;margin:0 0 12px;line-height:1.5;">Give each speaker its own voice. The current online voice remains the default and the fallback \u2014 nothing changes until you pick one. \u201cPreview\u201d plays a short sample of the selected voice.</p>' +
+    '<p style="color:#94a3b8;font-size:12px;margin:0 0 12px;line-height:1.5;">Give each speaker its own voice. Preview any voice, assign it to Main Chat or Companion. Selections persist independently and never leak between destinations.</p>' +
+    assignmentBox +
     '<div style="display:flex;flex-direction:column;">' + rows + '</div>' +
     '<p style="color:#475569;font-size:11px;margin:10px 0 0;" id="vmPersonaVoiceStatus"></p>');
 }
@@ -1075,12 +1120,16 @@ function vmPersonaSetVoice(personaKey, voiceId) {
   var saved = _readPersonaVoices();
   saved[personaKey] = voiceId;
   _writePersonaVoices(saved);
+  var st = document.getElementById("vmPersonaVoiceStatus");
+  if (st) { st.textContent = "Saving " + personaKey + " \u2026"; }
   // Persist through the EXISTING generic settings route (cloud section) — no
   // second settings controller, no new endpoint. Merge-flagged so this partial
   // save cannot delete unrelated cloud keys (accent/personality_style/...).
-  settingsApiSave("cloud", { persona_voices: saved }, { merge: true }).catch(function () {});
-  var st = document.getElementById("vmPersonaVoiceStatus");
-  if (st) { st.textContent = "Saved " + personaKey + " → " + voiceId; setTimeout(function () { st.textContent = ""; }, 2500); }
+  settingsApiSave("cloud", { persona_voices: saved }, { merge: true }).then(function () {
+    if (st) { st.textContent = "Saved " + personaKey + " → " + voiceId; setTimeout(function () { st.textContent = ""; }, 2500); }
+  }).catch(function () {
+    if (st) { st.textContent = "Save failed for " + personaKey; setTimeout(function () { st.textContent = ""; }, 2500); }
+  });
   try {
     _vmInitVoiceOrb();
     if (_vmVoiceOrb) {
@@ -1089,6 +1138,49 @@ function vmPersonaSetVoice(personaKey, voiceId) {
       setTimeout(function () { try { if (_vmVoiceOrb) _vmVoiceOrb.setState("idle"); } catch (e) {} }, 800);
     }
   } catch (e) {}
+}
+
+// Assign a voice to a destination (main or companion) from the assignment box.
+// vmSelectedVoice tracks the voice last tapped in the assignment box chips.
+var vmSelectedVoice = null;
+
+function vmAssignVoice(voiceId) {
+  if (!_personaVoiceById(voiceId)) return;
+  vmSelectedVoice = voiceId;
+  // Highlight the selected chip visually
+  document.querySelectorAll('button[onclick^="vmAssignVoice"]').forEach(function (b) {
+    b.style.borderColor = "rgba(255,255,255,0.1)";
+    b.style.background = "rgba(15,23,42,0.5)";
+  });
+  var btn = document.querySelector('button[onclick="vmAssignVoice(\'' + voiceId + '\')"]');
+  if (btn) {
+    btn.style.borderColor = "rgba(0,212,255,0.4)";
+    btn.style.background = "rgba(0,212,255,0.15)";
+  }
+}
+
+function vmAssignVoiceDestination(destination) {
+  if (!vmSelectedVoice) return;
+  var saved = _readPersonaVoices();
+  var st = document.getElementById("vmPersonaVoiceStatus");
+  if (destination === "main") {
+    // Apply to all main-chat personas so they stay consistent
+    ["marcus", "elena", "angelina"].forEach(function (key) {
+      saved[key] = vmSelectedVoice;
+    });
+  } else if (destination === "companion") {
+    saved.companion = vmSelectedVoice;
+  }
+  _writePersonaVoices(saved);
+  settingsApiSave("cloud", { persona_voices: saved }, { merge: true }).then(function () {
+    if (st) { st.textContent = "Saved " + vmSelectedVoice + " → " + destination; setTimeout(function () { st.textContent = ""; }, 2500); }
+    // Re-render to reflect updated selections
+    if (typeof renderSettingsContent === "function" && document.getElementById("settingsContent")) {
+      renderSettingsContent("voice");
+    }
+  }).catch(function () {
+    if (st) { st.textContent = "Save failed"; setTimeout(function () { st.textContent = ""; }, 2500); }
+  });
 }
 
 // Preview the selected voice through the EXISTING /api/tts route. The server
@@ -1113,21 +1205,74 @@ function vmPersonaPreviewVoice(personaKey) {
   var entry = _personaVoiceById(voiceId);
   if (!entry) return;
   var st = document.getElementById("vmPersonaVoiceStatus");
+  // _savedVoiceProfile is defined in index.html; guard for environments where it isn't loaded.
+  var profile = typeof _savedVoiceProfile === "function" ? _savedVoiceProfile(personaKey) : "";
 
   if (st) st.textContent = "Preparing preview\u2026";
+
+  // Stop any previous preview so the orb and audio are never left in a mixed state.
+  try { if (_personaPreviewPlayer) { _personaPreviewPlayer.pause(); _personaPreviewPlayer.currentTime = 0; _personaPreviewPlayer.src = ""; } } catch (e) {}
+  try { if (_vmVoiceOrb && typeof _vmVoiceOrb.disconnectAudio === "function") _vmVoiceOrb.disconnectAudio(); } catch (e) {}
+  try { if (_vmVoiceOrb) _vmVoiceOrb.setState("idle"); } catch (e) {}
+
+  // Initialise the orb for this voice and mark it as playing.
+  try {
+    _vmInitVoiceOrb();
+    if (_vmVoiceOrb) {
+      _vmVoiceOrb.setPreset(_vmGetVoicePreset(voiceId));
+      _vmVoiceOrb.setState("playing");
+    }
+  } catch (e) {}
+
   apiFetch("/api/tts", {
     method: "POST", credentials: "include",
     headers: authHeaders({ "Content-Type": "application/json" }),
-    body: JSON.stringify({ text: VM_PERSONA_PREVIEW_TEXT, persona: personaKey }),
+    body: JSON.stringify({ text: VM_PERSONA_PREVIEW_TEXT, persona: personaKey, profile: profile }),
     timeoutMs: 60000
   }).then(function (r) { return r.json(); }).then(function (data) {
-    if (!data || !data.url) { if (st) st.textContent = "(preview unavailable)"; return; }
-    _vmPlayPreviewUrl(data.url, function (err) { if (st) st.textContent = err; });
-    if (st) {
-      st.textContent = "Playing " + entry.label + " \u2014 " + _personaEngineLabel(data.engine);
-      setTimeout(function () { if (st) st.textContent = ""; }, 3000);
+    if (!data || !data.url) {
+      if (st) st.textContent = "(preview unavailable)";
+      try { if (_vmVoiceOrb) _vmVoiceOrb.setState("idle"); } catch (e) {}
+      return;
     }
-  }).catch(function () { if (st) st.textContent = "(preview unavailable)"; });
+    // Ensure player exists
+    if (!_personaPreviewPlayer) {
+      _personaPreviewPlayer = document.createElement("audio");
+      _personaPreviewPlayer.style.display = "none";
+      (document.body || document.documentElement).appendChild(_personaPreviewPlayer);
+    }
+    try { _personaPreviewPlayer.pause(); } catch (e) {}
+    _personaPreviewPlayer.currentTime = 0;
+    _personaPreviewPlayer.src = data.url;
+    // Connect orb to real audio so it animates with playback.
+    try {
+      if (_vmVoiceOrb && typeof _vmVoiceOrb.connectAudio === "function") {
+        _vmVoiceOrb.connectAudio(_personaPreviewPlayer);
+      }
+      if (_vmVoiceOrb) _vmVoiceOrb.setState("playing");
+    } catch (e) {}
+    var pr = _personaPreviewPlayer.play();
+    if (pr && pr.catch) pr.catch(function () { if (st) st.textContent = "(tap to allow audio)"; });
+    // Handle end
+    _personaPreviewPlayer.onended = function () {
+      try { if (_vmVoiceOrb) { if (typeof _vmVoiceOrb.disconnectAudio === "function") _vmVoiceOrb.disconnectAudio(); _vmVoiceOrb.setState("idle"); } } catch (e) {}
+    };
+    _personaPreviewPlayer.onerror = function () {
+      try { if (_vmVoiceOrb) { if (typeof _vmVoiceOrb.disconnectAudio === "function") _vmVoiceOrb.disconnectAudio(); _vmVoiceOrb.setState("idle"); } } catch (e) {}
+    };
+    if (st) {
+      var label = entry.label;
+      if (data.fallback_from === "piper_local" && data.engine !== "piper_local") {
+        st.textContent = entry.label + " unavailable \u2014 played " + _personaEngineLabel(data.engine) + " instead";
+      } else {
+        st.textContent = "Playing " + label + " \u2014 " + _personaEngineLabel(data.engine);
+      }
+      setTimeout(function () { if (st) st.textContent = ""; }, 4000);
+    }
+  }).catch(function () { 
+    if (st) st.textContent = "(preview unavailable)"; 
+    try { if (_vmVoiceOrb) _vmVoiceOrb.setState("idle"); } catch (e) {}
+  });
 }
 
 

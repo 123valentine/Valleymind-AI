@@ -611,6 +611,38 @@
   .rt-rec-wave i { width:3px; height:6px; background:#ef4444; border-radius:2px; animation:rtEq 0.8s ease-in-out infinite; }
   .rt-rec-wave i:nth-child(2){animation-delay:.1s} .rt-rec-wave i:nth-child(3){animation-delay:.2s} .rt-rec-wave i:nth-child(4){animation-delay:.3s} .rt-rec-wave i:nth-child(5){animation-delay:.4s} .rt-rec-wave i:nth-child(6){animation-delay:.5s} .rt-rec-wave i:nth-child(7){animation-delay:.6s}
   .rt-mini-btn { background:rgba(239,68,68,0.15); color:#ef4444; border:1px solid rgba(239,68,68,0.3); border-radius:20px; padding:6px 14px; font-size:12px; font-weight:700; cursor:pointer; }
+
+  /* ─── ChatGPT-style live microphone waveform ─── */
+  .vm-mic-waveform { display:flex; align-items:center; gap:3px; height:34px; padding:4px 8px; background:rgba(239,68,68,0.1); border-radius:20px; border:1px solid rgba(239,68,68,0.25); }
+  .vm-mic-waveform.hidden { display:none; }
+  .vm-mic-waveform .vm-bar { width:4px; background:linear-gradient(180deg,#fca5a5,#ef4444); border-radius:2px; transform:scaleY(0.2); transform-origin:bottom; transition:transform 0.05s linear, height 0.05s linear; }
+  .vm-mic-waveform .vm-label { font-size:11px; font-weight:700; color:#ef4444; margin-right:6px; }
+  /* Microphone waveform CSS fallback â€” used when getUserMedia cannot coexist
+     with SpeechRecognition (e.g. Android WebView). Bars pulse gently to show
+     listening state, and react to speech activity via the .speaking class. */
+  .vm-mic-waveform.css-fallback .vm-bar { animation:vmFallbackWave 1.4s ease-in-out infinite; transition:none; }
+  .vm-mic-waveform.css-fallback.speaking .vm-bar { animation:vmFallbackSpeak 0.45s ease-in-out infinite; }
+  .vm-mic-waveform.css-fallback .vm-bar:nth-child(2){animation-delay:.1s}
+  .vm-mic-waveform.css-fallback .vm-bar:nth-child(3){animation-delay:.2s}
+  .vm-mic-waveform.css-fallback .vm-bar:nth-child(4){animation-delay:.3s}
+  .vm-mic-waveform.css-fallback .vm-bar:nth-child(5){animation-delay:.4s}
+  .vm-mic-waveform.css-fallback .vm-bar:nth-child(6){animation-delay:.5s}
+  .vm-mic-waveform.css-fallback .vm-bar:nth-child(7){animation-delay:.6s}
+  .vm-mic-waveform.css-fallback .vm-bar:nth-child(8){animation-delay:.7s}
+  .vm-mic-waveform.css-fallback .vm-bar:nth-child(9){animation-delay:.8s}
+  .vm-mic-waveform.css-fallback .vm-bar:nth-child(10){animation-delay:.9s}
+  .vm-mic-waveform.css-fallback .vm-bar:nth-child(11){animation-delay:1.0s}
+  .vm-mic-waveform.css-fallback .vm-bar:nth-child(12){animation-delay:1.1s}
+  @keyframes vmFallbackWave { 0%,100%{transform:scaleY(0.2);} 50%{transform:scaleY(0.65);} }
+  @keyframes vmFallbackSpeak { 0%,100%{transform:scaleY(0.3);} 50%{transform:scaleY(1.0);} }
+
+  /* ─── Assistant speech waveform (voice-note style) ─── */
+  .vm-assist-waveform { display:flex; align-items:center; gap:3px; height:34px; padding:4px 8px; background:rgba(0,212,255,0.1); border-radius:20px; border:1px solid rgba(0,212,255,0.25); }
+  .vm-assist-waveform.hidden { display:none; }
+  .vm-assist-waveform .vm-bar { width:4px; background:linear-gradient(180deg,#22d3ee,#00d4ff); border-radius:2px; transform:scaleY(0.2); transform-origin:bottom; transition:transform 0.05s linear, height 0.05s linear; }
+  .vm-assist-waveform .vm-label { font-size:11px; font-weight:700; color:#00d4ff; margin-right:6px; }
+
+  @keyframes vmPulse { 0%,100%{ opacity:1;} 50%{ opacity:0.5;} }
   /* Reply-mode chooser */
   .rt-modes { display:flex; align-items:center; justify-content:center; gap:8px; margin-top:10px; }
   .rt-modes-label { font-size:11px; color:#64748b; text-transform:uppercase; letter-spacing:0.06em; }
@@ -3067,11 +3099,16 @@ body[data-vm-companion="cloud"] #vmVrmCompanion { display: none !important; }
           </div>
 
           <!-- Right cluster -->
-          <div style="display:flex;align-items:flex-end;gap:2px;">
+          <div style="display:flex;align-items:flex-end;gap:6px;">
             <!-- Mic -->
             <button id="micBtn" onclick="toggleVoice()" style="width:36px;height:36px;border-radius:50%;background:transparent;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#94a3b8;transition:all 0.2s;" onmouseover="this.style.color='#00d4ff'" onmouseout="this.style.color='#94a3b8'">
               <i data-lucide="mic" style="width:18px;height:18px;"></i>
             </button>
+            <!-- Live microphone waveform (ChatGPT-style) -->
+            <div id="micWaveform" class="vm-mic-waveform hidden">
+              <span class="vm-label">Listening</span>
+              <div id="micWaveformBars"></div>
+            </div>
             <!-- Send -->
             <button id="sendBtn" onclick="send()" style="width:36px;height:36px;border-radius:50%;background:#00d4ff;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 0 12px rgba(0,212,255,0.35);transition:all 0.2s;" onmouseover="this.style.transform='scale(1.08)'" onmouseout="this.style.transform='scale(1)'" onmousedown="this.style.transform='scale(0.95)'" onmouseup="this.style.transform='scale(1)'">
               <i id="sendIcon" data-lucide="send" style="width:18px;height:18px;color:#003642;"></i>
@@ -3673,6 +3710,11 @@ body[data-vm-companion="cloud"] #vmVrmCompanion { display: none !important; }
        device's own voice â€” the bug that made Marcus sound female on one device
        and male on another. -->
   <audio id="personaPlayer" preload="auto" style="display:none;"></audio>
+  <!-- Assistant speech waveform (voice-note style) for Speak aloud / persona playback -->
+  <div id="assistantWaveform" class="vm-assist-waveform hidden">
+    <span class="vm-label">Speaking</span>
+    <div id="assistantWaveformBars"></div>
+  </div>
   </div>
   </div><!-- /Round Table workspace panel -->
 
@@ -4641,6 +4683,7 @@ function _stopMsgAudio() {
     var el = getPersonaPlayer();
     try { if (el) { el.pause(); el.onended = null; el.onerror = null; } } catch (e) {}
     try { if (window.speechSynthesis) window.speechSynthesis.cancel(); } catch (e) {}
+    vmWaveform.assistantStop();
     if (_msgAudioBtn) _voiceIcon(_msgAudioBtn, 'play');
     _msgAudioBtn = null;
 }
@@ -4672,11 +4715,12 @@ window.toggleVoicePlayback = function (btn) {
         // Accepts both qwen_tts (default) and edge_tts_free (saved voice profile).
         if (j && j.status === 'success' && j.url && (j.engine === 'qwen_tts' || j.engine === 'edge_tts_free')) {
             var pl = getPersonaPlayer();
-            pl.onended = function () { _voiceIcon(btn, 'play'); _msgAudioBtn = null; };
-            pl.onerror = function () { _voiceIcon(btn, 'play'); _msgAudioBtn = null; };
+            pl.onended = function () { _voiceIcon(btn, 'play'); _msgAudioBtn = null; vmWaveform.assistantStop(); };
+            pl.onerror = function () { _voiceIcon(btn, 'play'); _msgAudioBtn = null; vmWaveform.assistantStop(); };
             pl.src = j.url;
             _voiceIcon(btn, 'pause');
-            pl.play().catch(function () { _voiceIcon(btn, 'play'); _msgAudioBtn = null; });
+            pl.play().catch(function () { _voiceIcon(btn, 'play'); _msgAudioBtn = null; vmWaveform.assistantStop(); });
+            vmWaveform.assistantStart(pl);
         } else {
             // No audio from the server â€” stay silent rather than use the
             // device's native voice (which broke persona gender on some devices).
@@ -6088,13 +6132,16 @@ async function speakPersona(text, persona) {
             var el = getPersonaPlayer();
             if (el) {
                 try { el.pause(); } catch (e) {}
-                el.onended = null; el.onerror = null;   // drop any stale play-button handler
+                el.onended = function () { vmWaveform.assistantStop(); };
+                el.onerror = function () { vmWaveform.assistantStop(); };
                 el.src = data.url;
                 var pr = el.play();
+                vmWaveform.assistantStart(el);
                 // Stay silent (never a wrong-gender device voice) if the unlocked
                 // element is somehow still blocked; the reply text is already shown.
                 if (pr && pr.catch) pr.catch(function (err) {
                     console.warn("[TTS] persona audio blocked:", err && err.name);
+                    vmWaveform.assistantStop();
                 });
             }
             return;
@@ -6369,6 +6416,10 @@ function startListening() {
         if (input) { input.value = (_sttFinal + interim).trim(); if (typeof autoGrowInput === "function") autoGrowInput(); }
         if (_sttTimer) clearTimeout(_sttTimer);
         _sttTimer = setTimeout(endOfSpeech, _sttEndMs);   // wait for a real pause
+        // Boost CSS fallback waveform when speech is detected (interim or final)
+        if (interim || (ev.results[i] && ev.results[i].isFinal)) {
+            vmWaveform.micSpeechDetected();
+        }
     };
     _recognition.onerror = function (ev) {
         // Ignore errors from a superseded session.
@@ -6383,6 +6434,10 @@ function startListening() {
         if (session !== _sttSession) return;
         if (_listening) { try { _recognition.start(); } catch (e) {} }
     };
+    // Request mic access for the waveform BEFORE starting SpeechRecognition so
+    // the browser can grant both. getUserMedia is async; if it fails, the CSS
+    // fallback in micStart() handles the visualisation without breaking STT.
+    vmWaveform.micStart();
     try { _recognition.start(); } catch (e) {}
     _listening = true;
     setMicUI(true);
@@ -6406,6 +6461,7 @@ function stopListening() {
     _sttFinal = "";
     _sttLastFinal = "";
     setMicUI(false);
+    vmWaveform.micStop();
     var input = document.getElementById("chatInput");
     if (input && typeof crewMember === "function") input.placeholder = "Reply to " + crewMember(currentPersona).name + "...";
 }
@@ -8207,7 +8263,8 @@ function rtSpeakTurn(persona, text) {
                 rtPlayer.onerror = function () { rtSpeaking = false; rtRingHide(); rtRender(); if (rtCurrentResolve) rtCurrentResolve(); };
                 rtPlayer.src = data.url;
                 var pr = rtPlayer.play();
-                if (pr && pr.catch) pr.catch(function () { rtSpeaking = false; rtRingHide(); rtRender(); if (rtCurrentResolve) rtCurrentResolve(); });
+                if (pr && pr.catch) pr.catch(function () { rtSpeaking = false; rtRingHide(); vmWaveform.assistantStop(); rtRender(); if (rtCurrentResolve) rtCurrentResolve(); });
+                vmWaveform.assistantStart(rtPlayer);
                 rtRender();
             } else {
                 // No audio engine could produce a playable file — stay honest:
@@ -8224,6 +8281,7 @@ function rtStopSpeaking() {
     if (rtPlayer) { try { rtPlayer.pause(); rtPlayer.onended = null; rtPlayer.onerror = null; } catch (e) {} }
     rtSpeaking = false;
     rtRingHide();
+    vmWaveform.assistantStop();
 }
 
 function rtStopVoice() {
@@ -8262,6 +8320,10 @@ function rtStartListening() {
         var inp = document.getElementById("rtInput"); if (inp) inp.value = full;
         if (rtSttTimer) clearTimeout(rtSttTimer);
         rtSttTimer = setTimeout(rtEndOfSpeech, 1500);   // wait for a real pause
+        // Boost CSS fallback waveform when speech is detected (interim or final)
+        if (interim || (ev.results[i] && ev.results[i].isFinal)) {
+            vmWaveform.micSpeechDetected();
+        }
     };
     rtRecognition.onerror = function (ev) {
         if (ev.error === "not-allowed" || ev.error === "service-not-allowed") {
@@ -8270,6 +8332,10 @@ function rtStartListening() {
         }
     };
     rtRecognition.onend = function () { if (rtVoiceOn && rtListening) { try { rtRecognition.start(); } catch (e) {} } };
+    // Request mic access for the waveform BEFORE starting SpeechRecognition so
+    // the browser can grant both. getUserMedia is async; if it fails, the CSS
+    // fallback in micStart() handles the visualisation without breaking STT.
+    vmWaveform.micStart();
     try { rtRecognition.start(); } catch (e) {}
     rtListening = true;
     if (!rtBusy && !rtSpeaking) {
@@ -8344,7 +8410,279 @@ function rtRingHide() {
 function rtMicVizStop() {
     if (rtRingRAF) { cancelAnimationFrame(rtRingRAF); rtRingRAF = null; }
     rtRingBarsReset();
+    vmWaveform.micStop();
 }
+
+// ─── ChatGPT-style live voice waveforms ─────────────────────────────────────
+// Two independent audio-reactive vertical-bar visualisations:
+//   1. Microphone input (user speaking) â€” driven by getUserMedia + AnalyserNode
+//   2. Assistant playback (AI speaking) â€” driven by createMediaElementSource + AnalyserNode
+// Each uses its own audio source and lifecycle; they never conflict.
+// Falls back gracefully when audio analysis is unavailable (cross-origin audio,
+// missing getUserMedia, Android WebView restrictions, etc.).
+var vmWaveform = (function () {
+    "use strict";
+
+    var BAR_COUNT = 12;
+    var MIN_HEIGHT = 3;   // px
+    var MAX_HEIGHT = 44;  // px
+    var SMOOTHING = 0.30; // 0 = instant, 1 = very smooth/sluggish
+    var FALLBACK_BOOST_MS = 600; // how long CSS fallback shows "speaking" boost
+
+    // State
+    var mic = {
+        analyser: null,
+        stream: null,
+        ctx: null,
+        raf: null,
+        active: false,
+        cssFallback: false,   // true when getUserMedia failed; use CSS animation
+        levels: [],           // smoothed per-bar levels (0..1)
+        speechTmr: null       // timeout to clear CSS fallback "speaking" boost
+    };
+    var assistant = {
+        analyser: null,
+        source: null,
+        ctx: null,
+        raf: null,
+        active: false,
+        levels: []
+    };
+
+    // DOM
+    var micContainer = document.getElementById("micWaveform");
+    var micBars = document.getElementById("micWaveformBars");
+    var assistContainer = document.getElementById("assistantWaveform");
+    var assistBars = document.getElementById("assistantWaveformBars");
+
+    // Build bar elements once
+    function buildBars(parent, count) {
+        if (!parent || parent.children.length) return;
+        for (var i = 0; i < count; i++) {
+            var b = document.createElement("i");
+            b.className = "vm-bar";
+            b.style.animationDelay = (i * 0.04).toFixed(2) + "s";
+            parent.appendChild(b);
+        }
+    }
+    buildBars(micBars, BAR_COUNT);
+    buildBars(assistBars, BAR_COUNT);
+
+    function micBarElements() { return micBars ? micBars.querySelectorAll(".vm-bar") : []; }
+    function assistBarElements() { return assistBars ? assistBars.querySelectorAll(".vm-bar") : []; }
+
+    function setLevels(bars, levels) {
+        var els = Array.from(bars);
+        if (!els.length) return;
+        for (var i = 0; i < els.length; i++) {
+            var lvl = levels[i % levels.length] || 0;
+            var h = MIN_HEIGHT + lvl * (MAX_HEIGHT - MIN_HEIGHT);
+            els[i].style.transform = "scaleY(" + (h / MAX_HEIGHT).toFixed(3) + ")";
+        }
+    }
+
+    function silence(bars) {
+        setLevels(bars, new Array(Math.min(BAR_COUNT, bars.children.length || BAR_COUNT)).fill(0));
+    }
+
+    // ─── Visibility handling â€” pause RAF loops when tab is hidden ─────────
+    function _onVisibilityChange() {
+        if (document.hidden) {
+            if (mic.raf) { cancelAnimationFrame(mic.raf); mic.raf = null; }
+            if (assistant.raf) { cancelAnimationFrame(assistant.raf); assistant.raf = null; }
+        } else {
+            if (mic.active && mic.analyser && !mic.raf) _micLoop();
+            if (assistant.active && assistant.analyser && !assistant.raf) _assistLoop(assistant.ctx);
+        }
+    }
+    document.addEventListener("visibilitychange", _onVisibilityChange);
+
+    // ─── Microphone waveform ──────────────────────────────────────────────
+    // Tries getUserMedia + AnalyserNode for real audio-reactive bars. If that
+    // fails (permission denied, conflicts with SpeechRecognition on Android
+    // WebView, AudioContext unavailable), falls back to a CSS animation that
+    // pulses gently while listening and is boosted by speech-recognition
+    // interim results via micSpeechDetected().
+    function micStart() {
+        micStop(); // clean any leftover state first
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            _micCssFallback();
+            return;
+        }
+        navigator.mediaDevices.getUserMedia({ audio: true, video: false }).then(function (stream) {
+            mic.stream = stream;
+            try {
+                var AC = window.AudioContext || window.webkitAudioContext;
+                if (!AC) { mic.stream.getTracks().forEach(function (t) { t.stop(); }); mic.stream = null; _micCssFallback(); return; }
+                var ctx = new AC();
+                mic.ctx = ctx;
+                if (ctx.state === "suspended") ctx.resume();
+                mic.analyser = ctx.createAnalyser();
+                mic.analyser.fftSize = 256;
+                mic.analyser.smoothingTimeConstant = 0.6;
+                var src = ctx.createMediaStreamSource(stream);
+                src.connect(mic.analyser);
+                mic.levels = new Array(BAR_COUNT).fill(0);
+                mic.active = true;
+                mic.cssFallback = false;
+                if (micContainer) micContainer.classList.remove("hidden");
+                _micLoop();
+            } catch (e) {
+                try { stream.getTracks().forEach(function (t) { t.stop(); }); } catch (e2) {}
+                mic.stream = null;
+                _micCssFallback();
+            }
+        }).catch(function () {
+            // getUserMedia denied or not available: CSS fallback.
+            _micCssFallback();
+        });
+    }
+
+    function _micCssFallback() {
+        mic.active = true;
+        mic.cssFallback = true;
+        if (micContainer) micContainer.classList.remove("hidden");
+        if (micContainer) micContainer.classList.add("css-fallback");
+        silence(micBarElements());
+    }
+
+    // Called from speech-recognition onresult handlers when interim/final
+    // results indicate the user is actively speaking. Boosts the CSS fallback
+    // bars so the waveform responds to real speech even without getUserMedia.
+    function micSpeechDetected() {
+        if (!mic.cssFallback || !mic.active) return;
+        if (micContainer) micContainer.classList.add("speaking");
+        if (mic.speechTmr) { clearTimeout(mic.speechTmr); mic.speechTmr = null; }
+        mic.speechTmr = setTimeout(function () {
+            if (micContainer) micContainer.classList.remove("speaking");
+            mic.speechTmr = null;
+        }, FALLBACK_BOOST_MS);
+    }
+
+    function micStop() {
+        mic.active = false;
+        mic.cssFallback = false;
+        if (mic.speechTmr) { clearTimeout(mic.speechTmr); mic.speechTmr = null; }
+        if (mic.raf) { cancelAnimationFrame(mic.raf); mic.raf = null; }
+        if (mic.stream) {
+            try { mic.stream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) {}
+            mic.stream = null;
+        }
+        if (mic.ctx) {
+            try { mic.ctx.close(); } catch (e) {}
+            mic.ctx = null;
+        }
+        if (mic.analyser) { mic.analyser = null; }
+        if (micContainer) {
+            micContainer.classList.add("hidden");
+            micContainer.classList.remove("css-fallback", "speaking");
+        }
+        silence(micBarElements());
+    }
+
+    function _micLoop() {
+        if (!mic.active || mic.cssFallback || !mic.analyser) return;
+        var buf = new Uint8Array(mic.analyser.frequencyBinCount);
+        mic.analyser.getByteFrequencyData(buf);
+        var n = Math.min(buf.length, 48); // voice lives in low bins
+        var sum = 0;
+        for (var i = 0; i < n; i++) sum += buf[i];
+        var raw = Math.min(1, (sum / n / 255) * 2.2);
+        // Smooth per-bar levels with slight variation for natural look
+        var levels = [];
+        for (var i = 0; i < BAR_COUNT; i++) {
+            var j = (i * 7) % n;
+            var v = buf[j] / 255;
+            var prev = mic.levels[i] || 0;
+            mic.levels[i] = prev + (v - prev) * SMOOTHING;
+            levels.push(mic.levels[i]);
+        }
+        setLevels(micBarElements(), levels);
+        mic.raf = requestAnimationFrame(_micLoop);
+    }
+
+    // ─── Assistant speech waveform ────────────────────────────────────────
+    function assistantStart(player) {
+        assistantStop();
+        if (!player) return;
+        try {
+            var AC = window.AudioContext || window.webkitAudioContext;
+            if (!AC) return;
+            var ctx = new AC();
+            assistant.ctx = ctx;
+            if (ctx.state === "suspended") ctx.resume();
+            // createMediaElementSource taints cross-origin media; catch and fall back.
+            assistant.source = ctx.createMediaElementSource(player);
+            assistant.source.connect(ctx.destination); // keep audio audible
+            assistant.analyser = ctx.createAnalyser();
+            assistant.analyser.fftSize = 256;
+            assistant.source.connect(assistant.analyser);
+            assistant.levels = new Array(BAR_COUNT).fill(0);
+            assistant.player = player;
+            assistant.active = true;
+            if (assistContainer) assistContainer.classList.remove("hidden");
+            _assistLoop(ctx);
+        } catch (e) {
+            // Cross-origin audio or AudioContext unavailable: fall back to CSS.
+            assistant.active = false;
+            try { if (assistant.source) assistant.source.disconnect(); } catch (e2) {}
+            try { if (assistant.analyser) assistant.analyser = null; } catch (e2) {}
+        }
+    }
+
+    function assistantStop() {
+        assistant.active = false;
+        if (assistant.raf) { cancelAnimationFrame(assistant.raf); assistant.raf = null; }
+        if (assistant.ctx) {
+            try { assistant.ctx.close(); } catch (e) {}
+            assistant.ctx = null;
+        }
+        if (assistant.source) {
+            try { assistant.source.disconnect(); } catch (e) {}
+            assistant.source = null;
+        }
+        if (assistant.analyser) { assistant.analyser = null; }
+        if (assistContainer) assistContainer.classList.add("hidden");
+        silence(assistBarElements());
+        assistant.player = null;
+    }
+
+    function _assistLoop(ctx) {
+        if (!assistant.active || !assistant.analyser) return;
+        var buf = new Uint8Array(assistant.analyser.frequencyBinCount);
+        assistant.analyser.getByteFrequencyData(buf);
+        var n = Math.min(buf.length, 48);
+        var sum = 0;
+        for (var i = 0; i < n; i++) sum += buf[i];
+        var raw = Math.min(1, (sum / n / 255) * 2.2);
+        var levels = [];
+        for (var i = 0; i < BAR_COUNT; i++) {
+            var j = (i * 7) % n;
+            var v = buf[j] / 255;
+            var prev = assistant.levels[i] || 0;
+            assistant.levels[i] = prev + (v - prev) * SMOOTHING;
+            levels.push(assistant.levels[i]);
+        }
+        setLevels(assistBarElements(), levels);
+        assistant.raf = requestAnimationFrame(function () { _assistLoop(ctx); });
+    }
+
+    // Public cleanup
+    function cleanup() {
+        micStop();
+        assistantStop();
+    }
+
+    return {
+        micStart: micStart,
+        micStop: micStop,
+        micSpeechDetected: micSpeechDetected,
+        assistantStart: assistantStart,
+        assistantStop: assistantStop,
+        cleanup: cleanup
+    };
+})();
+
 
 
 function resetStudio() {
