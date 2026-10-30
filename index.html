@@ -2181,6 +2181,21 @@
     #sendBtn{margin-left:2px}
     #personaBtn{height:32px;padding:0 12px;font-size:13px}
 
+  @media(max-width:480px){
+    /* G1a: compact rounded composer box on phones. Textarea on top; slim
+       bottom row: + button + persona pill on the left, mic + send on the
+       right. Laptop layout untouched. */
+    #composer{ padding:5px 7px; border-radius:16px; max-height: 42dvh; overflow:hidden; display:flex; flex-direction:column; gap:5px; }
+    #composerRow{ display:flex; flex-direction:row; flex-wrap:wrap; align-items:flex-start; gap:6px; width:100%; }
+    #chatInput{ order:1; width:100%; max-height:16dvh; flex:none; }
+    #composerRow > div:first-child{ order:2; width:auto; flex:none; }
+    #personaSwitcher{ order:2; width:auto; flex:none; }
+    #composerRow > div:last-child{ order:2; width:auto; flex:none; margin-left:auto; }
+    #plusBtn,#micBtn,#sendBtn{ width:34px; height:34px; }
+    #personaBtn{ height:auto; min-height:32px; padding:5px 10px; font-size:12px; white-space:nowrap; }
+  }
+
+
     /* Settings: sidebar becomes a horizontal scrollable tab bar on top.
        !important is required throughout â€” the overlay is styled inline. */
     #settingsBody{flex-direction:column!important}
