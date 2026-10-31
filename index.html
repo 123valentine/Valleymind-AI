@@ -104,6 +104,7 @@
 <script src="/static/task_controller.js?v=1"></script>
 <script src="/static/cloud_rig.js?v=2"></script>
 <script src="/static/cloud_anim.js?v=2"></script>
+<script src="/static/vm_wave.js?v=1" defer></script>
 <script id="tailwind-config">
   tailwind.config = {
     darkMode: "class",
@@ -3065,6 +3066,7 @@ body[data-vm-companion="cloud"] #vmVrmCompanion { display: none !important; }
         <input type="file" id="chatFileInput" style="display:none;">
 
         <!-- UNIFIED COMPOSER (chips row on top, input row below) -->
+        <div id="vmWaveContainer" style="display:none"><div id="vmWaveBars"></div></div>
         <div id="composer">
 
           <!-- Attached-image chips (inside the box, above the text line) -->
@@ -4699,6 +4701,7 @@ function _stopMsgAudio() {
     try { if (el) { el.pause(); el.onended = null; el.onerror = null; } } catch (e) {}
     try { if (window.speechSynthesis) window.speechSynthesis.cancel(); } catch (e) {}
     vmWaveform.assistantStop();
+    try{window.vmWave&&vmWave.stop()}catch(e){}
     if (_msgAudioBtn) _voiceIcon(_msgAudioBtn, 'play');
     _msgAudioBtn = null;
 }
@@ -4730,12 +4733,13 @@ window.toggleVoicePlayback = function (btn) {
         // Accepts both qwen_tts (default) and edge_tts_free (saved voice profile).
         if (j && j.status === 'success' && j.url && (j.engine === 'qwen_tts' || j.engine === 'edge_tts_free')) {
             var pl = getPersonaPlayer();
-            pl.onended = function () { _voiceIcon(btn, 'play'); _msgAudioBtn = null; vmWaveform.assistantStop(); };
-            pl.onerror = function () { _voiceIcon(btn, 'play'); _msgAudioBtn = null; vmWaveform.assistantStop(); };
+            pl.onended = function () { _voiceIcon(btn, 'play'); _msgAudioBtn = null; vmWaveform.assistantStop(); try{window.vmWave&&vmWave.stop()}catch(e){} };
+            pl.onerror = function () { _voiceIcon(btn, 'play'); _msgAudioBtn = null; vmWaveform.assistantStop(); try{window.vmWave&&vmWave.stop()}catch(e){} };
             pl.src = j.url;
             _voiceIcon(btn, 'pause');
-            pl.play().catch(function () { _voiceIcon(btn, 'play'); _msgAudioBtn = null; vmWaveform.assistantStop(); });
+            pl.play().catch(function () { _voiceIcon(btn, 'play'); _msgAudioBtn = null; vmWaveform.assistantStop(); try{window.vmWave&&vmWave.stop()}catch(e){} });
             vmWaveform.assistantStart(pl);
+            try{window.vmWave&&vmWave.start("ai", pl)}catch(e){}
         } else {
             // No audio from the server â€” stay silent rather than use the
             // device's native voice (which broke persona gender on some devices).
@@ -6147,16 +6151,18 @@ async function speakPersona(text, persona) {
             var el = getPersonaPlayer();
             if (el) {
                 try { el.pause(); } catch (e) {}
-                el.onended = function () { vmWaveform.assistantStop(); };
-                el.onerror = function () { vmWaveform.assistantStop(); };
+                el.onended = function () { vmWaveform.assistantStop(); try{window.vmWave&&vmWave.stop()}catch(e){} };
+                el.onerror = function () { vmWaveform.assistantStop(); try{window.vmWave&&vmWave.stop()}catch(e){} };
                 el.src = data.url;
                 var pr = el.play();
                 vmWaveform.assistantStart(el);
+                try{window.vmWave&&vmWave.start("ai", el)}catch(e){}
                 // Stay silent (never a wrong-gender device voice) if the unlocked
                 // element is somehow still blocked; the reply text is already shown.
                 if (pr && pr.catch) pr.catch(function (err) {
                     console.warn("[TTS] persona audio blocked:", err && err.name);
                     vmWaveform.assistantStop();
+                    try{window.vmWave&&vmWave.stop()}catch(e){}
                 });
             }
             return;
@@ -6434,6 +6440,7 @@ function startListening() {
         // Boost CSS fallback waveform when speech is detected (interim or final)
         if (interim || (ev.results[i] && ev.results[i].isFinal)) {
             vmWaveform.micSpeechDetected();
+            try{window.vmWave&&vmWave.userPulse()}catch(e){}
         }
     };
     _recognition.onerror = function (ev) {
@@ -6453,6 +6460,7 @@ function startListening() {
     // the browser can grant both. getUserMedia is async; if it fails, the CSS
     // fallback in micStart() handles the visualisation without breaking STT.
     vmWaveform.micStart();
+    try{window.vmWave&&vmWave.start("user")}catch(e){}
     try { _recognition.start(); } catch (e) {}
     _listening = true;
     setMicUI(true);
@@ -6477,6 +6485,7 @@ function stopListening() {
     _sttLastFinal = "";
     setMicUI(false);
     vmWaveform.micStop();
+    try{window.vmWave&&vmWave.stop()}catch(e){}
     var input = document.getElementById("chatInput");
     if (input && typeof crewMember === "function") input.placeholder = "Reply to " + crewMember(currentPersona).name + "...";
 }
@@ -8274,12 +8283,13 @@ function rtSpeakTurn(persona, text) {
                 if (!rtPlayer) rtPlayer = document.getElementById("rtPlayer");
                 rtStopSpeaking();
                 rtSpeaking = true;
-                rtPlayer.onended = function () { rtSpeaking = false; rtRingHide(); rtRender(); if (rtCurrentResolve) rtCurrentResolve(); };
-                rtPlayer.onerror = function () { rtSpeaking = false; rtRingHide(); rtRender(); if (rtCurrentResolve) rtCurrentResolve(); };
+                rtPlayer.onended = function () { rtSpeaking = false; rtRingHide(); rtRender(); try{window.vmWave&&vmWave.stop()}catch(e){} if (rtCurrentResolve) rtCurrentResolve(); };
+                rtPlayer.onerror = function () { rtSpeaking = false; rtRingHide(); rtRender(); try{window.vmWave&&vmWave.stop()}catch(e){} if (rtCurrentResolve) rtCurrentResolve(); };
                 rtPlayer.src = data.url;
                 var pr = rtPlayer.play();
-                if (pr && pr.catch) pr.catch(function () { rtSpeaking = false; rtRingHide(); vmWaveform.assistantStop(); rtRender(); if (rtCurrentResolve) rtCurrentResolve(); });
+                if (pr && pr.catch) pr.catch(function () { rtSpeaking = false; rtRingHide(); vmWaveform.assistantStop(); try{window.vmWave&&vmWave.stop()}catch(e){} rtRender(); if (rtCurrentResolve) rtCurrentResolve(); });
                 vmWaveform.assistantStart(rtPlayer);
+                try{window.vmWave&&vmWave.start("ai", rtPlayer)}catch(e){}
                 rtRender();
             } else {
                 // No audio engine could produce a playable file — stay honest:
@@ -8297,6 +8307,7 @@ function rtStopSpeaking() {
     rtSpeaking = false;
     rtRingHide();
     vmWaveform.assistantStop();
+    try{window.vmWave&&vmWave.stop()}catch(e){}
 }
 
 function rtStopVoice() {
@@ -8338,6 +8349,7 @@ function rtStartListening() {
         // Boost CSS fallback waveform when speech is detected (interim or final)
         if (interim || (ev.results[i] && ev.results[i].isFinal)) {
             vmWaveform.micSpeechDetected();
+            try{window.vmWave&&vmWave.userPulse()}catch(e){}
         }
     };
     rtRecognition.onerror = function (ev) {
@@ -8351,6 +8363,7 @@ function rtStartListening() {
     // the browser can grant both. getUserMedia is async; if it fails, the CSS
     // fallback in micStart() handles the visualisation without breaking STT.
     vmWaveform.micStart();
+    try{window.vmWave&&vmWave.start("user")}catch(e){}
     try { rtRecognition.start(); } catch (e) {}
     rtListening = true;
     if (!rtBusy && !rtSpeaking) {
@@ -8426,6 +8439,7 @@ function rtMicVizStop() {
     if (rtRingRAF) { cancelAnimationFrame(rtRingRAF); rtRingRAF = null; }
     rtRingBarsReset();
     vmWaveform.micStop();
+    try{window.vmWave&&vmWave.stop()}catch(e){}
 }
 
 // ─── ChatGPT-style live voice waveforms ─────────────────────────────────────
