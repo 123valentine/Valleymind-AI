@@ -104,7 +104,7 @@
 <script src="/static/task_controller.js?v=1"></script>
 <script src="/static/cloud_rig.js?v=2"></script>
 <script src="/static/cloud_anim.js?v=2"></script>
-<script src="/static/vm_wave.js?v=2" defer></script>
+<script src="/static/vm_wave.js?v=3" defer></script>
 <script id="tailwind-config">
   tailwind.config = {
     darkMode: "class",
@@ -2199,6 +2199,9 @@
     /* Hide the "Listening" label pill on phone — show listening state via mic button only */
     #micWaveform .vm-label{ display:none !important; }
     #vmWaveContainer{ margin:4px 0 0; }
+    /* Waveform bars: horizontal row inside composer, Claude-style */
+    #vmWaveBars{ display:flex!important; flex-direction:row!important; align-items:center!important; justify-content:center!important; gap:3px!important; width:100%!important; height:32px!important; }
+    .vmWaveBar{ width:3px!important; border-radius:2px!important; flex:0 0 3px!important; background:#00d4ff!important; display:block!important; transform-origin:bottom!important; }
   }
 
 
@@ -3043,7 +3046,7 @@ body[data-vm-companion="cloud"] #vmVrmCompanion { display: none !important; }
   <!-- CHAT PAGE -->
   <div class="page active" id="page-chat" style="display:flex;flex-direction:column;flex:1;overflow:hidden;">
 
-    <div id="messages" style="flex:1;overflow-y:auto;padding:32px 24px;display:flex;flex-direction:column;gap:24px;">
+    <div id="messages" style="flex:1;min-height:0;overflow-y:auto;padding:32px 24px;display:flex;flex-direction:column;gap:24px;">
       <div id="welcome" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:24px;padding:60px 20px;flex:1;">
         <div onclick="toggleSidebar()" style="width:80px;height:80px;border-radius:50%;border:1px solid rgba(0,212,255,0.4);display:flex;align-items:center;justify-content:center;box-shadow:0 0 40px rgba(0,212,255,0.15);cursor:pointer;transition:all 0.2s;" onmouseover="this.style.borderColor='#00d4ff';this.style.boxShadow='0 0 60px rgba(0,212,255,0.3)';" onmouseout="this.style.borderColor='rgba(0,212,255,0.4)';this.style.boxShadow='0 0 40px rgba(0,212,255,0.15)';">
           <span class="material-icons" style="color:#00d4ff;font-size:40px;">smart_toy</span>
@@ -3079,67 +3082,68 @@ body[data-vm-companion="cloud"] #vmVrmCompanion { display: none !important; }
           <!-- Input row -->
           <div id="composerRow">
 
-          <!-- Plus button with floating menu -->
-          <div style="position:relative;">
-            <button id="plusBtn" onclick="togglePlusMenu()" style="width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,0.06);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#94a3b8;transition:all 0.2s;" onmouseover="this.style.color='#00d4ff';this.style.background='rgba(0,212,255,0.12)'" onmouseout="this.style.color='#94a3b8';this.style.background='rgba(255,255,255,0.06)'">
-              <i data-lucide="plus" style="width:20px;height:20px;"></i>
-            </button>
-            <!-- Floating vertical menu -->
-            <div id="plusMenu" style="display:none;position:absolute;bottom:calc(100% + 8px);left:0;background:#0f172a;border:1px solid rgba(0,212,255,0.2);border-radius:12px;padding:6px;min-width:170px;box-shadow:0 12px 40px rgba(0,0,0,0.7);z-index:100;">
-              <div class="plus-menu-item" onclick="document.getElementById('chatImageInput').click();closePlusMenu();" style="display:flex;align-items:center;gap:10px;padding:9px 14px;border-radius:8px;font-size:13px;color:#bbc9cf;cursor:pointer;transition:all 0.12s;" onmouseover="this.style.background='rgba(0,212,255,0.08)';this.style.color='#00d4ff'" onmouseout="this.style.background='transparent';this.style.color='#bbc9cf'">
-                <i data-lucide="camera" style="width:18px;height:18px;"></i> Camera
-              </div>
-              <div class="plus-menu-item" onclick="document.getElementById('chatVideoInput').click();closePlusMenu();" style="display:flex;align-items:center;gap:10px;padding:9px 14px;border-radius:8px;font-size:13px;color:#bbc9cf;cursor:pointer;transition:all 0.12s;" onmouseover="this.style.background='rgba(0,212,255,0.08)';this.style.color='#00d4ff'" onmouseout="this.style.background='transparent';this.style.color='#bbc9cf'">
-                <i data-lucide="video" style="width:18px;height:18px;"></i> Video to analyse
-              </div>
-              <div class="plus-menu-item" onclick="document.getElementById('chatFileInput').click();closePlusMenu();" style="display:flex;align-items:center;gap:10px;padding:9px 14px;border-radius:8px;font-size:13px;color:#bbc9cf;cursor:pointer;transition:all 0.12s;" onmouseover="this.style.background='rgba(0,212,255,0.08)';this.style.color='#00d4ff'" onmouseout="this.style.background='transparent';this.style.color='#bbc9cf'">
-                <i data-lucide="file-text" style="width:18px;height:18px;"></i> Local File
-              </div>
-              <div class="plus-menu-item" onclick="showComingSoon('Google Drive');closePlusMenu();" style="display:flex;align-items:center;gap:10px;padding:9px 14px;border-radius:8px;font-size:13px;color:#bbc9cf;cursor:pointer;transition:all 0.12s;" onmouseover="this.style.background='rgba(0,212,255,0.08)';this.style.color='#00d4ff'" onmouseout="this.style.background='transparent';this.style.color='#bbc9cf'">
-                <i data-lucide="hard-drive" style="width:18px;height:18px;"></i> Google Drive
-              </div>
-              <div class="plus-menu-item" onclick="showComingSoon('Website URL');closePlusMenu();" style="display:flex;align-items:center;gap:10px;padding:9px 14px;border-radius:8px;font-size:13px;color:#bbc9cf;cursor:pointer;transition:all 0.12s;" onmouseover="this.style.background='rgba(0,212,255,0.08)';this.style.color='#00d4ff'" onmouseout="this.style.background='transparent';this.style.color='#bbc9cf'">
-                <i data-lucide="link" style="width:18px;height:18px;"></i> Website URL
-              </div>
-            </div>
-          </div>
-
           <!-- Textarea (autogrows via JS) -->
           <textarea id="chatInput" rows="1" placeholder="Reply to Marcus..."
-            style="flex:1;background:transparent;border:none;outline:none;box-shadow:none;color:white;font-size:15px;line-height:1.5;resize:none;padding:8px 4px;min-height:44px;max-height:180px;font-family:'Inter',sans-serif;overflow-y:hidden;"></textarea>
+            style="flex:1;background:transparent;border:none;outline:none;box-shadow:none;color:white;font-size:15px;line-height:1.5;resize:none;padding:8px 4px;min-height:44px;max-height:140px;font-family:'Inter',sans-serif;overflow-y:auto;"></textarea>
 
-          <!-- Live waveform (inside composer, between textarea and button row) -->
+          <!-- Live waveform (replaces textarea row while listening) -->
           <div id="vmWaveContainer" style="display:none"><div id="vmWaveBars"></div></div>
 
-          <!-- Persona switcher -->
-          <div id="personaSwitcher" style="position:relative;">
-            <button id="personaBtn" onclick="togglePersonaMenu()" title="Who you're talking to"
-              style="height:36px;padding:0 10px;border-radius:18px;background:rgba(0,212,255,0.1);border:1px solid rgba(0,212,255,0.25);cursor:pointer;display:flex;align-items:center;gap:6px;color:#00d4ff;font-size:12px;font-weight:700;font-family:'Space Grotesk',sans-serif;transition:all 0.2s;white-space:nowrap;">
-              <img id="personaBtnAvatar" src="/static/avatars/marcus.png" alt="">
-              <span id="personaBtnLabel">Marcus</span>
-              <i data-lucide="chevron-up" style="width:13px;height:13px;"></i>
-            </button>
-            <div id="personaMenu" style="display:none;position:absolute;bottom:calc(100% + 8px);left:0;background:#0f172a;border:1px solid rgba(0,212,255,0.2);border-radius:12px;padding:6px;min-width:200px;box-shadow:0 12px 40px rgba(0,0,0,0.7);z-index:100;"></div>
-          </div>
+          <!-- Button row: LEFT group = + then persona; RIGHT group = mic then send -->
+          <div id="composerBtnRow" style="display:flex; align-items:center; gap:6px; width:100%;">
 
-          <!-- Right cluster -->
-          <div style="display:flex;align-items:flex-end;gap:6px;">
-            <!-- Mic -->
-            <button id="micBtn" onclick="toggleVoice()" style="width:36px;height:36px;border-radius:50%;background:transparent;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#94a3b8;transition:all 0.2s;" onmouseover="this.style.color='#00d4ff'" onmouseout="this.style.color='#94a3b8'">
-              <i data-lucide="mic" style="width:18px;height:18px;"></i>
-            </button>
-            <!-- Live microphone waveform (ChatGPT-style) -->
-            <div id="micWaveform" class="vm-mic-waveform hidden">
-              <span class="vm-label">Listening</span>
-              <div id="micWaveformBars"></div>
+            <!-- LEFT group: + button then persona pill -->
+            <div id="composerLeftGroup" style="display:flex; align-items:center; gap:6px;">
+              <!-- Plus button with floating menu -->
+              <div style="position:relative;">
+                <button id="plusBtn" onclick="togglePlusMenu()" style="width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,0.06);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#94a3b8;transition:all 0.2s;" onmouseover="this.style.color='#00d4ff';this.style.background='rgba(0,212,255,0.12)'" onmouseout="this.style.color='#94a3b8';this.style.background='rgba(255,255,255,0.06)'">
+                  <i data-lucide="plus" style="width:20px;height:20px;"></i>
+                </button>
+                <!-- Floating vertical menu -->
+                <div id="plusMenu" style="display:none;position:absolute;bottom:calc(100% + 8px);left:0;background:#0f172a;border:1px solid rgba(0,212,255,0.2);border-radius:12px;padding:6px;min-width:170px;box-shadow:0 12px 40px rgba(0,0,0,0.7);z-index:100;">
+                  <div class="plus-menu-item" onclick="document.getElementById('chatImageInput').click();closePlusMenu();" style="display:flex;align-items:center;gap:10px;padding:9px 14px;border-radius:8px;font-size:13px;color:#bbc9cf;cursor:pointer;transition:all 0.12s;" onmouseover="this.style.background='rgba(0,212,255,0.08)';this.style.color='#00d4ff'" onmouseout="this.style.background='transparent';this.style.color='#bbc9cf'">
+                    <i data-lucide="camera" style="width:18px;height:18px;"></i> Camera
+                  </div>
+                  <div class="plus-menu-item" onclick="document.getElementById('chatVideoInput').click();closePlusMenu();" style="display:flex;align-items:center;gap:10px;padding:9px 14px;border-radius:8px;font-size:13px;color:#bbc9cf;cursor:pointer;transition:all 0.12s;" onmouseover="this.style.background='rgba(0,212,255,0.08)';this.style.color='#00d4ff'" onmouseout="this.style.background='transparent';this.style.color='#bbc9cf'">
+                    <i data-lucide="video" style="width:18px;height:18px;"></i> Video to analyse
+                  </div>
+                  <div class="plus-menu-item" onclick="document.getElementById('chatFileInput').click();closePlusMenu();" style="display:flex;align-items:center;gap:10px;padding:9px 14px;border-radius:8px;font-size:13px;color:#bbc9cf;cursor:pointer;transition:all 0.12s;" onmouseover="this.style.background='rgba(0,212,255,0.08)';this.style.color='#00d4ff'" onmouseout="this.style.background='transparent';this.style.color='#bbc9cf'">
+                    <i data-lucide="file-text" style="width:18px;height:18px;"></i> Local File
+                  </div>
+                  <div class="plus-menu-item" onclick="showComingSoon('Google Drive');closePlusMenu();" style="display:flex;align-items:center;gap:10px;padding:9px 14px;border-radius:8px;font-size:13px;color:#bbc9cf;cursor:pointer;transition:all 0.12s;" onmouseover="this.style.background='rgba(0,212,255,0.08)';this.style.color='#00d4ff'" onmouseout="this.style.background='transparent';this.style.color='#bbc9cf'">
+                    <i data-lucide="hard-drive" style="width:18px;height:18px;"></i> Google Drive
+                  </div>
+                  <div class="plus-menu-item" onclick="showComingSoon('Website URL');closePlusMenu();" style="display:flex;align-items:center;gap:10px;padding:9px 14px;border-radius:8px;font-size:13px;color:#bbc9cf;cursor:pointer;transition:all 0.12s;" onmouseover="this.style.background='rgba(0,212,255,0.08)';this.style.color='#00d4ff'" onmouseout="this.style.background='transparent';this.style.color='#bbc9cf'">
+                    <i data-lucide="link" style="width:18px;height:18px;"></i> Website URL
+                  </div>
+                </div>
+              </div>
+
+              <!-- Persona switcher -->
+              <div id="personaSwitcher" style="position:relative;">
+                <button id="personaBtn" onclick="togglePersonaMenu()" title="Who you're talking to"
+                  style="height:36px;padding:0 10px;border-radius:18px;background:rgba(0,212,255,0.1);border:1px solid rgba(0,212,255,0.25);cursor:pointer;display:flex;align-items:center;gap:6px;color:#00d4ff;font-size:12px;font-weight:700;font-family:'Space Grotesk',sans-serif;transition:all 0.2s;white-space:nowrap;">
+                  <img id="personaBtnAvatar" src="/static/avatars/marcus.png" alt="">
+                  <span id="personaBtnLabel">Marcus</span>
+                  <i data-lucide="chevron-up" style="width:13px;height:13px;"></i>
+                </button>
+                <div id="personaMenu" style="display:none;position:absolute;bottom:calc(100% + 8px);left:0;background:#0f172a;border:1px solid rgba(0,212,255,0.2);border-radius:12px;padding:6px;min-width:200px;box-shadow:0 12px 40px rgba(0,0,0,0.7);z-index:100;"></div>
+              </div>
             </div>
-            <!-- Send -->
-            <button id="sendBtn" onclick="send()" style="width:36px;height:36px;border-radius:50%;background:#00d4ff;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 0 12px rgba(0,212,255,0.35);transition:all 0.2s;" onmouseover="this.style.transform='scale(1.08)'" onmouseout="this.style.transform='scale(1)'" onmousedown="this.style.transform='scale(0.95)'" onmouseup="this.style.transform='scale(1)'">
-              <i id="sendIcon" data-lucide="send" style="width:18px;height:18px;color:#003642;"></i>
-            </button>
-          </div>
 
-          </div><!-- /composerRow -->
+            <!-- RIGHT group: mic then send, margin-left:auto pushes it to the right -->
+            <div id="composerRightGroup" style="display:flex; align-items:center; gap:6px; margin-left:auto;">
+              <!-- Mic -->
+              <button id="micBtn" onclick="toggleVoice()" style="width:36px;height:36px;border-radius:50%;background:transparent;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#94a3b8;transition:all 0.2s;" onmouseover="this.style.color='#00d4ff'" onmouseout="this.style.color='#94a3b8'">
+                <i data-lucide="mic" style="width:18px;height:18px;"></i>
+              </button>
+              <!-- Send -->
+              <button id="sendBtn" onclick="send()" style="width:36px;height:36px;border-radius:50%;background:#00d4ff;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 0 12px rgba(0,212,255,0.35);transition:all 0.2s;" onmouseover="this.style.transform='scale(1.08)'" onmouseout="this.style.transform='scale(1)'" onmousedown="this.style.transform='scale(0.95)'" onmouseup="this.style.transform='scale(1)'">
+                <i id="sendIcon" data-lucide="send" style="width:18px;height:18px;color:#003642;"></i>
+              </button>
+            </div>
+
+          </div><!-- /composerBtnRow -->
         </div><!-- /composer -->
         <p style="text-align:center;font-size:10px;color:#334155;margin-top:10px;text-transform:uppercase;letter-spacing:0.15em;font-family:'Space Grotesk',sans-serif;">Valley Mind-AI can make mistakes. Verify critical information.</p>
       </div>
@@ -6431,27 +6435,26 @@ function startListening() {
     _recognition.onresult = function (ev) {
         // Ignore events from a superseded session.
         if (session !== _sttSession) return;
-        var interim = "";
-        var finalText = "";
-        for (var i = ev.resultIndex; i < ev.results.length; i++) {
-            var t = ev.results[i][0].transcript;
-            if (ev.results[i].isFinal) {
-                // Never append the same final transcript twice.
-                if (t && t !== _sttLastFinal) {
-                    _sttLastFinal = t;
-                    _sttFinal += t;
-                }
-            } else {
-                // Interim: use the latest non-final transcript only (never concatenate).
-                interim = t;
+        // Build text from the LAST result only.
+        var lastResult = ev.results[ev.results.length - 1];
+        var lastTranscript = lastResult ? (lastResult[0] ? lastResult[0].transcript : "") : "";
+        var isFinal = lastResult ? lastResult.isFinal : false;
+        // If new transcript startsWith the previous one, replace it, never concatenate.
+        if (isFinal) {
+            // Final: append to baseText once.
+            if (lastTranscript && lastTranscript !== _sttLastFinal) {
+                _sttLastFinal = lastTranscript;
+                _sttBaseText = (_sttBaseText || "") + lastTranscript;
             }
-            finalText = _sttFinal;
+        } else {
+            // Interim: replace if startsWith previous interim.
+            // (baseText already contains committed finals)
         }
-        if (input) { input.value = (_sttBaseText + finalText + interim).trim(); if (typeof autoGrowInput === "function") autoGrowInput(); }
+        if (input) { input.value = (_sttBaseText + lastTranscript).trim(); if (typeof autoGrowInput === "function") autoGrowInput(); }
         if (_sttTimer) clearTimeout(_sttTimer);
         _sttTimer = setTimeout(endOfSpeech, _sttEndMs);   // wait for a real pause
         // Boost CSS fallback waveform when speech is detected (interim or final)
-        if (interim || finalText) {
+        if (lastTranscript) {
             vmWaveform.micSpeechDetected();
             try{window.vmWave&&vmWave.userPulse()}catch(e){}
         }

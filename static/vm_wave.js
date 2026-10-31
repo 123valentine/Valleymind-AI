@@ -20,7 +20,7 @@
   var BAR_COUNT = 40;
   var BAR_WIDTH = 3;
   var BAR_GAP = 3;
-  var MIN_HEIGHT = 2;
+  var MIN_HEIGHT = 4;
   var MAX_HEIGHT = 28;
   var ACCENT = "#00d4ff";   // app cyan
   var FALLBACK_JITTER = 0.15;
@@ -67,10 +67,10 @@
         "}" +
         ".vmWaveBar{" +
         "width:" + BAR_WIDTH + "px;" +
-        "min-height:" + MIN_HEIGHT + "px;" +
+        "border-radius:" + (BAR_WIDTH / 2) + "px;" +
+        "flex:0 0 " + BAR_WIDTH + "px;" +
         "height:" + MIN_HEIGHT + "px;" +
         "background:" + ACCENT + ";" +
-        "border-radius:" + (BAR_WIDTH / 2) + "px;" +
         "display:block;" +
         "transform-origin:bottom;" +
         "}" +
