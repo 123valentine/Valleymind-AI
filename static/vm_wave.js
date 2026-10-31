@@ -1,33 +1,42 @@
 /* ValleyMind live waveform (user mic + AI TTS playback).
+ * Claude-style scrolling waveform: 40 bars, width 3px, gap 3px, rounded,
+ * height up to 28px, solid cyan accent, centered vertically.
+ * Scrolling history: each frame pushes a new level on the right and shifts
+ * old levels left, so the wave flows.
  *
- * Self-contained IIFE. Everything is wrapped in try/catch and feature-checked
- * so a failure here can never stop the app from starting.
+ * Self-contained IIFE. Everything wrapped in try/catch so a failure here
+ * can never stop recognition or playback.
  *
  * Exposes:
  *   window.vmWave.start(kind)   kind = "user" | "ai"
  *   window.vmWave.stop()
+ *   window.vmWave.userPulse()   called on recognition interim/final events
  *
- * The container element (#vmWaveContainer) is created/owned by index.html and
- * is hidden by default. start() shows it; stop() hides it and releases every
- * resource (mic tracks, AudioContext, requestAnimationFrame).
+ * The container element (#vmWaveContainer) is created/owned by index.html.
  */
 (function () {
   "use strict";
 
-  var BAR_COUNT = 8;
-  var MIN_HEIGHT = 4;
-  var MAX_HEIGHT = 40;
+  var BAR_COUNT = 40;
+  var BAR_WIDTH = 3;
+  var BAR_GAP = 3;
+  var MIN_HEIGHT = 2;
+  var MAX_HEIGHT = 28;
+  var ACCENT = "#00d4ff";   // app cyan
+  var FALLBACK_JITTER = 0.15;
 
   var state = {
-    started: false,
     container: null,
     barsParent: null,
+    bars: [],          // bar elements
+    levels: [],        // current per-bar levels (0..1), scrolling history
     activeKind: null,
     ctx: null,
     analyser: null,
     source: null,
     stream: null,
     raf: null,
+    token: 0,          // guards against late getUserMedia results
     fallback: false,
     fallLevel: 0,
     fallDir: 1
@@ -43,25 +52,27 @@
         "#vmWaveContainer{" +
         "display:none;" +
         "position:relative;" +
-        "z-index:60;" +
+        "z-index:50;" +
         "height:34px;" +
         "width:100%;" +
-        "max-width:96vw;" +
-        "margin:7px auto 0;" +
-        "padding:4px 8px;" +
-        "background:rgba(0,0,0,0.5);" +
-        "border-radius:10px;" +
+        "max-width:100%;" +
+        "margin:4px 0 0;" +
+        "padding:2px 8px;" +
+        "background:rgba(0,0,0,0.35);" +
+        "border-radius:8px;" +
+        "display:flex;" +
         "align-items:center;" +
-        "gap:6px;" +
+        "gap:2px;" +
         "box-sizing:border-box;" +
         "}" +
         ".vmWaveBar{" +
-        "width:6px;" +
-        "min-height:4px;" +
-        "height:10px;" +
-        "background:#00d4ff;" +
-        "border-radius:2px;" +
-        "display:inline-block;" +
+        "width:" + BAR_WIDTH + "px;" +
+        "min-height:" + MIN_HEIGHT + "px;" +
+        "height:" + MIN_HEIGHT + "px;" +
+        "background:" + ACCENT + ";" +
+        "border-radius:" + (BAR_WIDTH / 2) + "px;" +
+        "display:block;" +
+        "transform-origin:bottom;" +
         "}" +
         "#vmWaveContainer.vmWaveActive{" +
         "display:flex;" +
@@ -74,39 +85,44 @@
   function buildBars() {
     try {
       if (!state.barsParent) return;
-      if (state.barsParent.children && state.barsParent.children.length) return;
+      if (state.bars.length) return;
+      var frag = document.createDocumentFragment();
       for (var i = 0; i < BAR_COUNT; i++) {
         var b = document.createElement("div");
         b.className = "vmWaveBar";
-        b.style.animationDelay = (i * 0.05).toFixed(2) + "s";
-        state.barsParent.appendChild(b);
+        b.style.width = BAR_WIDTH + "px";
+        b.style.marginRight = BAR_GAP + "px";
+        b.style.height = MIN_HEIGHT + "px";
+        frag.appendChild(b);
+        state.bars.push(b);
       }
+      state.barsParent.appendChild(frag);
+      state.levels = new Array(BAR_COUNT).fill(0);
     } catch (e) {}
   }
 
   function setLevels(levels) {
     try {
-      if (!state.barsParent) return;
-      var els = state.barsParent.querySelectorAll
-        ? state.barsParent.querySelectorAll(".vmWaveBar")
-        : [];
-      if (!els.length) return;
-      for (var i = 0; i < els.length; i++) {
-        var lvl = levels[i % levels.length] || 0;
+      if (!state.bars.length) return;
+      // Scrolling history: shift left, push new level on the right.
+      state.levels = state.levels.slice(1);
+      state.levels.push(levels[levels.length - 1] || 0);
+      for (var i = 0; i < BAR_COUNT; i++) {
+        var lvl = state.levels[i];
         if (lvl < 0) lvl = 0;
         if (lvl > 1) lvl = 1;
         var h = MIN_HEIGHT + lvl * (MAX_HEIGHT - MIN_HEIGHT);
-        els[i].style.transform = "scaleY(" + (h / MAX_HEIGHT).toFixed(3) + ")";
+        state.bars[i].style.height = h + "px";
       }
     } catch (e) {}
   }
 
   function silence() {
     try {
-      var n = state.barsParent && state.barsParent.children
-        ? Math.min(BAR_COUNT, state.barsParent.children.length)
-        : BAR_COUNT;
-      setLevels(new Array(n).fill(0));
+      state.levels = new Array(BAR_COUNT).fill(0);
+      for (var i = 0; i < BAR_COUNT; i++) {
+        state.bars[i].style.height = MIN_HEIGHT + "px";
+      }
     } catch (e) {}
   }
 
@@ -150,32 +166,41 @@
         state.ctx = null;
       }
     } catch (e) {}
+    try {
+      if (state.source) {
+        try { state.source.disconnect(); } catch (e) {}
+        state.source = null;
+      }
+    } catch (e) {}
     state.analyser = null;
-    state.source = null;
     state.activeKind = null;
     state.fallback = false;
+    state.token++;
   }
 
   // --------------------------------------------------------------- render loop
   function render() {
     try {
       if (!state.activeKind) return;
-      var levels = [];
+      var newLevel = 0;
       if (state.analyser) {
         var buf = new Uint8Array(state.analyser.frequencyBinCount);
         state.analyser.getByteFrequencyData(buf);
-        var n = Math.min(BAR_COUNT, buf.length);
-        for (var i = 0; i < BAR_COUNT; i++) {
-          var idx = Math.floor((i / BAR_COUNT) * buf.length);
-          levels.push(Math.min(1, (buf[idx] || 0) / 255));
-        }
+        var n = Math.min(buf.length, 48);
+        var sum = 0;
+        for (var i = 0; i < n; i++) sum += buf[i];
+        var raw = Math.min(1, (sum / n / 255) * 2.2);
+        newLevel = raw;
       } else if (state.fallback) {
-        state.fallLevel += state.fallDir * 0.12;
+        state.fallLevel += state.fallDir * FALLBACK_JITTER;
         if (state.fallLevel >= 1) { state.fallLevel = 1; state.fallDir = -1; }
         if (state.fallLevel <= 0) { state.fallLevel = 0; state.fallDir = 1; }
-        for (var j = 0; j < BAR_COUNT; j++) levels.push(state.fallLevel);
+        // random jitter for organic feel
+        newLevel = state.fallLevel + (Math.random() * 0.1 - 0.05);
+        if (newLevel < 0) newLevel = 0;
+        if (newLevel > 1) newLevel = 1;
       }
-      setLevels(levels);
+      setLevels([newLevel]);
       state.raf = requestAnimationFrame(render);
     } catch (e) {
       state.raf = null;
@@ -191,7 +216,13 @@
         state.raf = requestAnimationFrame(render);
         return;
       }
+      var myToken = ++state.token;
       navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
+        // Guard against late results: if stop() was called meanwhile, ignore.
+        if (myToken !== state.token) {
+          try { stream.getTracks().forEach(function (t) { try { t.stop(); } catch (e) {} }); } catch (e) {}
+          return;
+        }
         try {
           state.stream = stream;
           var ctx = ensureContext();
@@ -220,44 +251,13 @@
   }
 
   // ---------------------------------------------------------------- ai tts
-  function startAi(el) {
+  // NOTE: We intentionally do NOT use createMediaElementSource (it can silence
+  // the audio). Use the fallback animation instead.
+  function startAi() {
     try {
-      if (!el) {
-        state.fallback = true;
-        state.raf = requestAnimationFrame(render);
-        return;
-      }
-      var ctx = ensureContext();
-      if (!ctx || !ctx.createMediaElementSource) {
-        state.fallback = true;
-        state.raf = requestAnimationFrame(render);
-        return;
-      }
-      // Reuse an existing source for this element if present.
-      if (state.source && state.source.mediaElement === el) {
-        state.analyser = ctx.createAnalyser();
-        state.source.connect(state.analyser);
-      } else {
-        releaseSource();
-        state.source = ctx.createMediaElementSource(el);
-        state.analyser = ctx.createAnalyser();
-        state.source.connect(state.analyser);
-      }
-      state.raf = requestAnimationFrame(render);
-    } catch (e) {
       state.fallback = true;
       state.raf = requestAnimationFrame(render);
-    }
-  }
-
-  function releaseSource() {
-    try {
-      if (state.source) {
-        try { state.source.disconnect(); } catch (e) {}
-        state.source = null;
-      }
     } catch (e) {}
-    state.analyser = null;
   }
 
   // ------------------------------------------------------------------ public
@@ -266,12 +266,11 @@
       if (!state.activeKind || state.activeKind !== "user") return;
       if (!state.analyser && state.fallback) {
         state.fallLevel = 1;
-        setLevels([1, 1, 1, 1, 1, 1, 1, 1]);
       }
     } catch (e) {}
   }
 
-  function start(kind, el) {
+  function start(kind) {
     try {
       if (!kind) return;
       injectCss();
@@ -289,7 +288,7 @@
         try { state.container.classList.add("vmWaveActive"); } catch (e) {}
       }
       if (kind === "user") startUser();
-      else if (kind === "ai") startAi(el);
+      else if (kind === "ai") startAi();
     } catch (e) {}
   }
 

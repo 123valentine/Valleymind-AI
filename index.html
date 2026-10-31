@@ -104,7 +104,7 @@
 <script src="/static/task_controller.js?v=1"></script>
 <script src="/static/cloud_rig.js?v=2"></script>
 <script src="/static/cloud_anim.js?v=2"></script>
-<script src="/static/vm_wave.js?v=1" defer></script>
+<script src="/static/vm_wave.js?v=2" defer></script>
 <script id="tailwind-config">
   tailwind.config = {
     darkMode: "class",
@@ -2187,13 +2187,18 @@
        bottom row: + button + persona pill on the left, mic + send on the
        right. Laptop layout untouched. */
     #composer{ padding:5px 7px; border-radius:16px; max-height: 42dvh; overflow:hidden; display:flex; flex-direction:column; gap:5px; }
-    #composerRow{ display:flex; flex-direction:row; flex-wrap:wrap; align-items:flex-start; gap:6px; width:100%; }
-    #chatInput{ order:1; width:100%; max-height:16dvh; flex:none; }
-    #composerRow > div:first-child{ order:2; width:auto; flex:none; }
-    #personaSwitcher{ order:2; width:auto; flex:none; }
-    #composerRow > div:last-child{ order:2; width:auto; flex:none; margin-left:auto; }
+    #composerRow{ display:flex; flex-direction:column; gap:6px; width:100%; }
+    /* Row 1: textarea full width */
+    #chatInput{ order:1; width:100%; flex:none; min-height:44px; }
+    /* Row 2: slim button row — left = + and persona, right = mic + send */
+    #composerRow > div:first-child{ order:2; width:auto; flex:none; display:flex; align-items:center; gap:6px; }
+    #personaSwitcher{ order:2; width:auto; flex:none; display:flex; align-items:center; }
+    #composerRow > div:last-child{ order:2; width:auto; flex:none; margin-left:auto; display:flex; align-items:center; gap:6px; }
     #plusBtn,#micBtn,#sendBtn{ width:34px; height:34px; }
     #personaBtn{ height:auto; min-height:32px; padding:5px 10px; font-size:12px; white-space:nowrap; }
+    /* Hide the "Listening" label pill on phone — show listening state via mic button only */
+    #micWaveform .vm-label{ display:none !important; }
+    #vmWaveContainer{ margin:4px 0 0; }
   }
 
 
@@ -3066,7 +3071,6 @@ body[data-vm-companion="cloud"] #vmVrmCompanion { display: none !important; }
         <input type="file" id="chatFileInput" style="display:none;">
 
         <!-- UNIFIED COMPOSER (chips row on top, input row below) -->
-        <div id="vmWaveContainer" style="display:none"><div id="vmWaveBars"></div></div>
         <div id="composer">
 
           <!-- Attached-image chips (inside the box, above the text line) -->
@@ -3102,7 +3106,10 @@ body[data-vm-companion="cloud"] #vmVrmCompanion { display: none !important; }
 
           <!-- Textarea (autogrows via JS) -->
           <textarea id="chatInput" rows="1" placeholder="Reply to Marcus..."
-            style="flex:1;background:transparent;border:none;outline:none;box-shadow:none;color:white;font-size:15px;line-height:1.5;resize:none;padding:8px 4px;min-height:24px;max-height:180px;font-family:'Inter',sans-serif;overflow-y:hidden;"></textarea>
+            style="flex:1;background:transparent;border:none;outline:none;box-shadow:none;color:white;font-size:15px;line-height:1.5;resize:none;padding:8px 4px;min-height:44px;max-height:180px;font-family:'Inter',sans-serif;overflow-y:hidden;"></textarea>
+
+          <!-- Live waveform (inside composer, between textarea and button row) -->
+          <div id="vmWaveContainer" style="display:none"><div id="vmWaveBars"></div></div>
 
           <!-- Persona switcher -->
           <div id="personaSwitcher" style="position:relative;">
@@ -6415,6 +6422,9 @@ function startListening() {
     _recognition.lang = navigator.language || "en-US";
     _recognition.interimResults = true;
     _recognition.continuous = true;
+    // Save base text so we can REPLACE (never append) on each result.
+    var input0 = document.getElementById("chatInput");
+    _sttBaseText = (input0 && input0.value) || "";
     _sttFinal = "";
     _sttLastFinal = "";
     var input = document.getElementById("chatInput");
@@ -6422,6 +6432,7 @@ function startListening() {
         // Ignore events from a superseded session.
         if (session !== _sttSession) return;
         var interim = "";
+        var finalText = "";
         for (var i = ev.resultIndex; i < ev.results.length; i++) {
             var t = ev.results[i][0].transcript;
             if (ev.results[i].isFinal) {
@@ -6431,14 +6442,16 @@ function startListening() {
                     _sttFinal += t;
                 }
             } else {
-                interim += t;
+                // Interim: use the latest non-final transcript only (never concatenate).
+                interim = t;
             }
+            finalText = _sttFinal;
         }
-        if (input) { input.value = (_sttFinal + interim).trim(); if (typeof autoGrowInput === "function") autoGrowInput(); }
+        if (input) { input.value = (_sttBaseText + finalText + interim).trim(); if (typeof autoGrowInput === "function") autoGrowInput(); }
         if (_sttTimer) clearTimeout(_sttTimer);
         _sttTimer = setTimeout(endOfSpeech, _sttEndMs);   // wait for a real pause
         // Boost CSS fallback waveform when speech is detected (interim or final)
-        if (interim || (ev.results[i] && ev.results[i].isFinal)) {
+        if (interim || finalText) {
             vmWaveform.micSpeechDetected();
             try{window.vmWave&&vmWave.userPulse()}catch(e){}
         }
@@ -6471,7 +6484,8 @@ function endOfSpeech() {
     var input = document.getElementById("chatInput");
     var text = ((input && input.value) || "").trim();
     stopListening();
-    if (text) { _voiceTurn = true; window.send(); }
+    // Only fill the text box. The message sends only when the user presses Send.
+    if (text && input) { input.value = text; if (typeof autoGrowInput === "function") autoGrowInput(); }
 }
 
 function stopListening() {
@@ -6483,6 +6497,9 @@ function stopListening() {
     // carries over and no duplicate final transcripts can reappear.
     _sttFinal = "";
     _sttLastFinal = "";
+    // Set baseText to current value so the next recognition session starts clean.
+    var _inp = document.getElementById("chatInput");
+    _sttBaseText = (_inp && _inp.value) || "";
     setMicUI(false);
     vmWaveform.micStop();
     try{window.vmWave&&vmWave.stop()}catch(e){}

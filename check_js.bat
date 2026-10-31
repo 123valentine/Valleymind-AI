@@ -11,4 +11,8 @@ if errorlevel 1 exit /b 1
 rem 3) runtime test: call silence/micStop/assistantStop with uninitialised bars
 "%NODE%" -e "const fs=require('fs');const h=fs.readFileSync('index.html','utf8');const s=h.indexOf('var vmWaveform');const nl=String.fromCharCode(10);const e=h.indexOf(nl+'})();',s);let c=h.slice(s,e+5);c=c.replace('var vmWaveform','global.vmWaveform');global.window={};global.document={addEventListener:function(){},hidden:false,getElementById:function(){return null;}};global.navigator={};eval(c);try{vmWaveform.micStop();vmWaveform.assistantStop();vmWaveform.cleanup();console.log('UNINIT_OK');}catch(err){console.log('FAIL uninit: '+err.message);process.exit(1);}"
 if errorlevel 1 exit /b 1
+rem 4) STT duplicate test: simulate cumulative interims then a final, verify
+rem    textarea value equals the phrase exactly once (no duplication).
+"%NODE%" test_stt_dup.js
+if errorlevel 1 exit /b 1
 echo ALL_CHECKS_PASS
