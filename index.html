@@ -8511,7 +8511,19 @@ var vmWaveform = (function () {
     }
 
     function silence(bars) {
-        setLevels(bars, new Array(Math.min(BAR_COUNT, bars.children.length || BAR_COUNT)).fill(0));
+        try {
+            if (!bars) return;
+            var count = BAR_COUNT;
+            try {
+                if (bars.children && typeof bars.children.length === 'number') {
+                    count = Math.min(BAR_COUNT, bars.children.length || BAR_COUNT);
+                } else if (typeof bars.length === 'number') {
+                    count = Math.min(BAR_COUNT, bars.length || BAR_COUNT);
+                }
+            } catch (e) {}
+            if (count < 0) count = 0;
+            setLevels(bars, new Array(count || BAR_COUNT).fill(0));
+        } catch (e) {}
     }
 
     // ─── Visibility handling â€” pause RAF loops when tab is hidden ─────────
@@ -8533,12 +8545,13 @@ var vmWaveform = (function () {
     // pulses gently while listening and is boosted by speech-recognition
     // interim results via micSpeechDetected().
     function micStart() {
-        micStop(); // clean any leftover state first
-        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-            _micCssFallback();
-            return;
-        }
-        navigator.mediaDevices.getUserMedia({ audio: true, video: false }).then(function (stream) {
+        try {
+            micStop(); // clean any leftover state first
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                try { _micCssFallback(); } catch (e) {}
+                return;
+            }
+            navigator.mediaDevices.getUserMedia({ audio: true, video: false }).then(function (stream) {
             mic.stream = stream;
             try {
                 var AC = window.AudioContext || window.webkitAudioContext;
@@ -8557,22 +8570,29 @@ var vmWaveform = (function () {
                 if (micContainer) micContainer.classList.remove("hidden");
                 _micLoop();
             } catch (e) {
-                try { stream.getTracks().forEach(function (t) { t.stop(); }); } catch (e2) {}
+                try { if (stream && stream.getTracks) stream.getTracks().forEach(function (t) { try { t.stop(); } catch (e3) {} }); } catch (e2) {}
                 mic.stream = null;
-                _micCssFallback();
+                try { _micCssFallback(); } catch (e4) {}
             }
         }).catch(function () {
             // getUserMedia denied or not available: CSS fallback.
-            _micCssFallback();
+            try { _micCssFallback(); } catch (e) {}
         });
+        } catch (e) {
+            try { _micCssFallback(); } catch (e2) {}
+        }
     }
 
     function _micCssFallback() {
-        mic.active = true;
-        mic.cssFallback = true;
-        if (micContainer) micContainer.classList.remove("hidden");
-        if (micContainer) micContainer.classList.add("css-fallback");
-        silence(micBarElements());
+        try {
+            mic.active = true;
+            mic.cssFallback = true;
+            if (micContainer) {
+                try { micContainer.classList.remove("hidden"); } catch (e) {}
+                try { micContainer.classList.add("css-fallback"); } catch (e) {}
+            }
+            try { silence(typeof micBarElements === 'function' ? micBarElements() : null); } catch (e) {}
+        } catch (e) {}
     }
 
     // Called from speech-recognition onresult handlers when interim/final
@@ -8589,24 +8609,26 @@ var vmWaveform = (function () {
     }
 
     function micStop() {
-        mic.active = false;
-        mic.cssFallback = false;
-        if (mic.speechTmr) { clearTimeout(mic.speechTmr); mic.speechTmr = null; }
-        if (mic.raf) { cancelAnimationFrame(mic.raf); mic.raf = null; }
-        if (mic.stream) {
-            try { mic.stream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) {}
-            mic.stream = null;
-        }
-        if (mic.ctx) {
-            try { mic.ctx.close(); } catch (e) {}
-            mic.ctx = null;
-        }
-        if (mic.analyser) { mic.analyser = null; }
-        if (micContainer) {
-            micContainer.classList.add("hidden");
-            micContainer.classList.remove("css-fallback", "speaking");
-        }
-        silence(micBarElements());
+        try {
+            mic.active = false;
+            mic.cssFallback = false;
+            if (mic.speechTmr) { clearTimeout(mic.speechTmr); mic.speechTmr = null; }
+            if (mic.raf) { cancelAnimationFrame(mic.raf); mic.raf = null; }
+            if (mic.stream) {
+                try { if (mic.stream.getTracks) mic.stream.getTracks().forEach(function (t) { try { t.stop(); } catch (e) {} }); } catch (e) {}
+                mic.stream = null;
+            }
+            if (mic.ctx) {
+                try { mic.ctx.close(); } catch (e) {}
+                mic.ctx = null;
+            }
+            if (mic.analyser) { mic.analyser = null; }
+            if (micContainer) {
+                try { micContainer.classList.add("hidden"); } catch (e) {}
+                try { micContainer.classList.remove("css-fallback", "speaking"); } catch (e) {}
+            }
+            try { silence(typeof micBarElements === 'function' ? micBarElements() : null); } catch (e) {}
+        } catch (e) {}
     }
 
     function _micLoop() {
@@ -8660,20 +8682,24 @@ var vmWaveform = (function () {
     }
 
     function assistantStop() {
-        assistant.active = false;
-        if (assistant.raf) { cancelAnimationFrame(assistant.raf); assistant.raf = null; }
-        if (assistant.ctx) {
-            try { assistant.ctx.close(); } catch (e) {}
-            assistant.ctx = null;
-        }
-        if (assistant.source) {
-            try { assistant.source.disconnect(); } catch (e) {}
-            assistant.source = null;
-        }
-        if (assistant.analyser) { assistant.analyser = null; }
-        if (assistContainer) assistContainer.classList.add("hidden");
-        silence(assistBarElements());
-        assistant.player = null;
+        try {
+            assistant.active = false;
+            if (assistant.raf) { cancelAnimationFrame(assistant.raf); assistant.raf = null; }
+            if (assistant.ctx) {
+                try { assistant.ctx.close(); } catch (e) {}
+                assistant.ctx = null;
+            }
+            if (assistant.source) {
+                try { assistant.source.disconnect(); } catch (e) {}
+                assistant.source = null;
+            }
+            if (assistant.analyser) { assistant.analyser = null; }
+            if (assistContainer) {
+                try { assistContainer.classList.add("hidden"); } catch (e) {}
+            }
+            try { silence(typeof assistBarElements === 'function' ? assistBarElements() : null); } catch (e) {}
+            assistant.player = null;
+        } catch (e) {}
     }
 
     function _assistLoop(ctx) {
