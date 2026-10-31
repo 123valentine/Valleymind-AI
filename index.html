@@ -142,7 +142,7 @@
      The UI is a single file with ~200 hardcoded dark colours, many
      inline (style="color:#..."), which a normal class override cannot
      beat. A whole-document filter flips the palette to light in one
-     move â€” including inline styles â€” and media is re-inverted so photos
+     move €” including inline styles €” and media is re-inverted so photos
      and videos still look right. */
   html.theme-light { filter: invert(0.93) hue-rotate(180deg); background:#ffffff; }
   html.theme-light img,
@@ -150,7 +150,7 @@
   html.theme-light canvas,
   html.theme-light [data-no-invert],
   html.theme-light [style*="background-image"] { filter: invert(1) hue-rotate(180deg); }
-  /* App font-size scale (Settings â€º Appearance) */
+  /* App font-size scale (Settings €º Appearance) */
   html.font-small  { font-size: 14px; }
   html.font-medium { font-size: 16px; }
   html.font-large  { font-size: 18px; }
@@ -551,11 +551,11 @@
   .rt-seat.speaking { opacity:1; transform:translateY(-4px); }
   .rt-portrait { width:72px; height:72px; border-radius:50%; overflow:hidden; background:rgba(0,212,255,0.08); border:2px solid rgba(255,255,255,0.12); }
   .rt-portrait img { width:100%; height:100%; object-fit:cover; object-position:top center; display:block; }
-  /* The speaking persona comes alive â€” glowing halo + a subtle vibrate. */
+  /* The speaking persona comes alive €” glowing halo + a subtle vibrate. */
   .rt-seat.speaking .rt-portrait { border-color:#00d4ff; animation:rtSpeak 1s ease-in-out infinite, rtVibe 0.3s ease-in-out infinite; }
   @keyframes rtSpeak { 0%,100%{ box-shadow:0 0 0 4px rgba(0,212,255,0.14), 0 0 18px rgba(0,212,255,0.3);} 50%{ box-shadow:0 0 0 7px rgba(0,212,255,0.05), 0 0 30px rgba(0,212,255,0.5);} }
   @keyframes rtVibe { 0%,100%{ transform:translateY(0) scale(1);} 25%{ transform:translateY(-1.5px) scale(1.04);} 75%{ transform:translateY(1.5px) scale(1.04);} }
-  /* Voice visual â€” the glowing waveform ring (static/voice-wave.png) with live
+  /* Voice visual €” the glowing waveform ring (static/voice-wave.png) with live
      bars: real amplitude for the user's mic, animated wave for a persona's note. */
   .rt-ring { display:flex; flex-direction:column; align-items:center; gap:8px; padding:6px 0 2px; }
   .rt-ring-core { position:relative; width:188px; height:188px; border-radius:50%; overflow:hidden;
@@ -587,7 +587,7 @@
   #rtMicBtn { background:rgba(255,255,255,0.06); color:#94a3b8; }
   #rtMicBtn.listening { background:rgba(239,68,68,0.15); color:#ef4444 !important; animation:micPulse 1.2s ease-out infinite; }
   #rtSendBtn { background:#00d4ff; color:#003642; }
-  /* Per-persona mic indicator â€” animates only while that persona has the floor */
+  /* Per-persona mic indicator €” animates only while that persona has the floor */
   .rt-seat-mic { display:flex; align-items:center; justify-content:center; gap:4px; height:14px; color:#475569; opacity:0.3; transition:opacity 0.2s, color 0.2s; }
   .rt-seat.speaking .rt-seat-mic { opacity:1; color:#00d4ff; }
   .rt-eq { display:inline-flex; align-items:center; gap:2px; height:12px; }
@@ -618,7 +618,7 @@
   .vm-mic-waveform.hidden { display:none; }
   .vm-mic-waveform .vm-bar { width:4px; background:linear-gradient(180deg,#fca5a5,#ef4444); border-radius:2px; transform:scaleY(0.2); transform-origin:bottom; transition:transform 0.05s linear, height 0.05s linear; }
   .vm-mic-waveform .vm-label { font-size:11px; font-weight:700; color:#ef4444; margin-right:6px; }
-  /* Microphone waveform CSS fallback â€” used when getUserMedia cannot coexist
+  /* Microphone waveform CSS fallback €” used when getUserMedia cannot coexist
      with SpeechRecognition (e.g. Android WebView). Bars pulse gently to show
      listening state, and react to speech activity via the .speaking class. */
   .vm-mic-waveform.css-fallback .vm-bar { animation:vmFallbackWave 1.4s ease-in-out infinite; transition:none; }
@@ -1041,7 +1041,7 @@
 
 .studio-body { flex:1; overflow-y:auto; padding:24px 32px; }
   .studio-inner { max-width:760px; margin:0 auto; }
-  /* Pinned bottom input bar â€” mirrors the main chat composer */
+  /* Pinned bottom input bar €” mirrors the main chat composer */
   .studio-input-bar {
     flex-shrink:0; padding:14px 32px 18px;
     border-top:1px solid rgba(255,255,255,0.06);
@@ -1061,7 +1061,7 @@
   .studio-actions-left { display:flex; align-items:center; gap:10px; min-width:0; }
   .studio-actions-right { display:flex; align-items:center; gap:10px; margin-left:auto; }
   .studio-testmode { display:flex; align-items:center; gap:5px; font-size:11px; color:#94a3b8; cursor:pointer; white-space:nowrap; }
-  /* Length + upload/join dropdown â€” keeps the bottom bar to one row on a phone */
+  /* Length + upload/join dropdown €” keeps the bottom bar to one row on a phone */
   .studio-opts { position:relative; }
   .studio-opts-btn {
     display:flex; align-items:center; gap:5px; white-space:nowrap;
@@ -1414,7 +1414,7 @@
     background:linear-gradient(160deg, rgba(0,212,255,0.1), rgba(14,165,233,0.03)); color:#7dd3fc; font-size:11px; font-weight:700; }
   .sd-asset-name { position:absolute; left:0; right:0; bottom:0; padding:16px 9px 7px; font-size:10.5px; color:#e2e8f0;
     background:linear-gradient(180deg, transparent, rgba(2,6,23,0.88)); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  /* Stickers/GIFs are transparent â€” show the whole cutout on a checker backdrop */
+  /* Stickers/GIFs are transparent €” show the whole cutout on a checker backdrop */
   .sd-asset-sticker img { object-fit:contain !important; padding:10px;
     background:#0f172a repeating-conic-gradient(rgba(255,255,255,0.04) 0% 25%, transparent 0% 50%) 0 0 / 20px 20px; }
   /* Apply-sticker modal */
@@ -2198,7 +2198,7 @@
 
 
     /* Settings: sidebar becomes a horizontal scrollable tab bar on top.
-       !important is required throughout â€” the overlay is styled inline. */
+       !important is required throughout €” the overlay is styled inline. */
     #settingsBody{flex-direction:column!important}
     #settingsSidebar{width:100%!important;flex-shrink:0!important;overflow-x:auto!important;overflow-y:hidden!important;border-right:none!important;border-bottom:1px solid rgba(255,255,255,0.08)!important;padding:8px 10px!important;-webkit-overflow-scrolling:touch}
     #settingsNav{flex-direction:row!important;gap:6px!important;width:max-content;padding-right:12px}
@@ -2213,12 +2213,12 @@
     .gallery-close-btn{padding:8px 10px}
     .gallery-body{padding:16px 14px}
     .gallery-grid{grid-template-columns:repeat(auto-fill,minmax(140px,1fr))}
-    /* Touch devices have no hover â€” card actions (Download) must stay visible */
+    /* Touch devices have no hover €” card actions (Download) must stay visible */
     .gallery-card-actions{opacity:1}
    }
 
 /* Splash logo: rotates in, comes a bit forward, then settles back.
-   No glow â€” the blue drop-shadow halo was removed deliberately. */
+   No glow €” the blue drop-shadow halo was removed deliberately. */
 @keyframes logoIntro {
   0% {
     transform: rotate(-15deg) scale(0.82);
@@ -2925,7 +2925,7 @@ body[data-vm-companion="cloud"] #vmVrmCompanion { display: none !important; }
     <div class="space-y-1" id="historyList"></div>
   </div>
   </div><!-- /sidebarPanel-chats -->
-  <!-- Navigation â€” the sidebar intentionally stays minimal: Chat + Studio.
+  <!-- Navigation €” the sidebar intentionally stays minimal: Chat + Studio.
        Every other workspace (Image/Video Galleries, AI Builder, Sketch,
        3D Studio, Round Table, Massive Editing) now lives inside Studio.
        Settings/Profile/Theme/Account remain untouched in the gear menu. -->
@@ -3045,7 +3045,7 @@ body[data-vm-companion="cloud"] #vmVrmCompanion { display: none !important; }
         </div>
         <div style="text-align:center;">
           <h1 style="color:#00d4ff;font-size:28px;font-weight:900;letter-spacing:0.15em;text-transform:uppercase;font-family:'Space Grotesk',sans-serif;margin-bottom:8px;">Valley Mind-AI</h1>
-          <p style="color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:0.2em;">Quantum v2.4 Â· Neural Interface Active</p>
+          <p style="color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:0.2em;">Quantum v2.4 · Neural Interface Active</p>
         </div>
         <div style="display:flex;flex-wrap:wrap;gap:10px;justify-content:center;max-width:500px;">
           <button onclick="quickSend(this)" style="padding:10px 16px;border-radius:12px;border:1px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.05);color:#cbd5e1;font-size:13px;cursor:pointer;transition:all 0.2s;" onmouseover="this.style.borderColor='rgba(0,212,255,0.4)';this.style.color='#00d4ff';" onmouseout="this.style.borderColor='rgba(255,255,255,0.1)';this.style.color='#cbd5e1';">Who are you?</button>
@@ -3144,7 +3144,7 @@ body[data-vm-companion="cloud"] #vmVrmCompanion { display: none !important; }
     <div style="flex:1;display:flex;flex-direction:column;padding:24px;overflow:hidden;">
       <div style="margin-bottom:16px;">
         <h2 style="color:#00d4ff;font-family:'Space Grotesk',sans-serif;font-size:12px;letter-spacing:0.3em;text-transform:uppercase;margin-bottom:6px;">// Sketch Tool</h2>
-        <p style="color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:0.1em;">Draw Â· Label Â· Biology Â· Chemistry Â· Engineering Â· Architecture</p>
+        <p style="color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:0.1em;">Draw · Label · Biology · Chemistry · Engineering · Architecture</p>
       </div>
       <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
         <button onclick="setTool(this,'pen')" class="sketch-tool" style="padding:7px 14px;border-radius:10px;border:1px solid rgba(0,212,255,0.4);background:rgba(0,212,255,0.1);color:#00d4ff;font-size:11px;cursor:pointer;font-family:'Space Grotesk',sans-serif;letter-spacing:0.05em;">Pen</button>
@@ -3175,7 +3175,7 @@ body[data-vm-companion="cloud"] #vmVrmCompanion { display: none !important; }
         </div>
         <div>
           <span style="color:#f1f5f9;font-size:15px;font-weight:700;font-family:'Inter',sans-serif;letter-spacing:0.02em;">Help &amp; Learning Center</span>
-          <span style="color:#475569;font-size:10px;text-transform:uppercase;letter-spacing:0.15em;font-family:'Space Grotesk',sans-serif;font-weight:500;margin-left:8px;">Tutorials Â· Docs Â· Support</span>
+          <span style="color:#475569;font-size:10px;text-transform:uppercase;letter-spacing:0.15em;font-family:'Space Grotesk',sans-serif;font-weight:500;margin-left:8px;">Tutorials · Docs · Support</span>
         </div>
       </div>
       <button onclick="vmHelpCenter.close()" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.08);color:#94a3b8;font-size:18px;cursor:pointer;width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;transition:all 0.2s;">&times;</button>
@@ -3359,7 +3359,7 @@ body[data-vm-companion="cloud"] #vmVrmCompanion { display: none !important; }
     </div>
   </div>
 
-  <!-- Workspace switcher â€” one unified creative suite.
+  <!-- Workspace switcher €” one unified creative suite.
        Clicking a tab swaps the panels below instantly (no page reload).
        NOTE: Cloud is NOT a workspace in this bar. Cloud is ValleyMind's
        persistent app-shell companion (see #vmCloudCompanion in cloud.js). The
@@ -3376,10 +3376,10 @@ body[data-vm-companion="cloud"] #vmVrmCompanion { display: none !important; }
     <button class="vm-ws-tab" data-ws="analytics" id="vmWsTabAnalytics" onclick="vmWsGo('analytics')" style="display:none"><i data-lucide="bar-chart-3"></i> Analytics</button>
   </nav>
 
-  <!-- â”€â”€ Workspace: ValleyMind Studio â€” the existing Studio, unchanged â”€â”€ -->
+  <!-- â”€â”€ Workspace: ValleyMind Studio €” the existing Studio, unchanged â”€â”€ -->
   <div class="vm-ws-panel active" data-ws-panel="studio">
 
-  <!-- STUDIO DASHBOARD â€” CapCut-style creative-suite home. The classic
+  <!-- STUDIO DASHBOARD €” CapCut-style creative-suite home. The classic
        Studio surface below is untouched; these sections just layer on top. -->
   <div id="studioDash" style="display:none;flex:1;min-height:0;flex-direction:column;">
     <nav class="studio-tabbar" id="studioTabbar" aria-label="Studio sections">
@@ -3402,14 +3402,14 @@ body[data-vm-companion="cloud"] #vmVrmCompanion { display: none !important; }
     </div>
   </div>
 
-  <!-- COMING SOON â€” shown when a feature has no backend yet -->
+  <!-- COMING SOON €” shown when a feature has no backend yet -->
   <div id="studioComingSoon" class="studio-cs" style="display:none;">
     <div class="studio-cs-card">
       <div class="studio-cs-icon" id="csIcon"></div>
       <div class="studio-cs-title" id="csTitle"></div>
       <p class="studio-cs-desc" id="csDesc"></p>
       <span class="studio-cs-badge">Coming Soon</span>
-      <p class="studio-cs-note">We're building this tool. The Studio team is hard at work â€” check back soon.</p>
+      <p class="studio-cs-note">We're building this tool. The Studio team is hard at work €” check back soon.</p>
       <button class="studio-go-btn" onclick="studioShowDashboard()">Back to Dashboard</button>
     </div>
   </div>
@@ -3424,10 +3424,10 @@ body[data-vm-companion="cloud"] #vmVrmCompanion { display: none !important; }
   <div class="studio-input-bar" id="studioInputBar">
     <div class="studio-inner">
       <div class="studio-prompt-wrap">
-        <textarea id="studioPrompt" rows="2" placeholder="Describe your movie idea â€” a logline, a scene, a feeling..."></textarea>
+        <textarea id="studioPrompt" rows="2" placeholder="Describe your movie idea €” a logline, a scene, a feeling..."></textarea>
         <div class="studio-prompt-actions">
           <div class="studio-actions-left">
-            <label class="studio-testmode" title="Run the full pipeline with free placeholder clips â€” no video spend.">
+            <label class="studio-testmode" title="Run the full pipeline with free placeholder clips €” no video spend.">
               <input type="checkbox" id="studioTestModeToggle" onchange="onStudioControlsChange()" style="cursor:pointer;">Test mode
             </label>
             <!-- Length + upload/join live in one dropdown so the bar fits on a phone -->
@@ -3442,7 +3442,7 @@ body[data-vm-companion="cloud"] #vmVrmCompanion { display: none !important; }
               <div class="studio-opts-menu" id="studioOptsMenu" role="menu">
                 <div class="studio-opts-group">
                   <div class="studio-opts-heading">Length</div>
-                  <select id="studioLengthSelect" onchange="onStudioControlsChange()" title="Target runtime â€” scene count follows (about one scene per 5s)">
+                  <select id="studioLengthSelect" onchange="onStudioControlsChange()" title="Target runtime €” scene count follows (about one scene per 5s)">
                     <option value="30">30 seconds (default)</option>
                     <option value="60">60 seconds</option>
                     <option value="90">90 seconds</option>
@@ -3470,7 +3470,7 @@ body[data-vm-companion="cloud"] #vmVrmCompanion { display: none !important; }
   </div>
   </div><!-- /ValleyMind Studio workspace panel -->
 
-  <!-- â”€â”€ Workspace: AI Builder â€” describe â†’ plan â†’ build â†’ preview/download â”€â”€ -->
+  <!-- â”€â”€ Workspace: AI Builder €” describe â†’ plan â†’ build â†’ preview/download â”€â”€ -->
   <div class="vm-ws-panel" data-ws-panel="website">
     <div class="aib">
       <div class="aib-topbar">
@@ -3478,7 +3478,7 @@ body[data-vm-companion="cloud"] #vmVrmCompanion { display: none !important; }
           <img src="/static/valleymind-logo.png" alt="ValleyMind" class="aib-logo-img">
           <div>
             <h3>AI Builder</h3>
-            <p id="aibTopbarSub">Describe an idea â€” get a full, production-ready project.</p>
+            <p id="aibTopbarSub">Describe an idea €” get a full, production-ready project.</p>
           </div>
         </div>
         <div class="aib-topbar-actions">
@@ -3493,7 +3493,7 @@ body[data-vm-companion="cloud"] #vmVrmCompanion { display: none !important; }
         <div class="aib-body">
           <div class="aib-hero">
             <div class="aib-hero-title">Describe it. <span class="aib-hero-accent">We build it.</span></div>
-            <p class="aib-hero-sub">ValleyMind AI Builder turns a plain-language idea into a complete project â€” an editable specification, then the full codebase with a live preview and one-click download. Powered by the OpenCode API, running entirely on our server.</p>
+            <p class="aib-hero-sub">ValleyMind AI Builder turns a plain-language idea into a complete project €” an editable specification, then the full codebase with a live preview and one-click download. Powered by the OpenCode API, running entirely on our server.</p>
             <div class="aib-type-row" id="aibTypeRow">
               <button type="button" class="aib-type active" data-type="website" onclick="aibSelectType(this)"><i data-lucide="globe" style="width:14px;height:14px;"></i> Website</button>
               <button type="button" class="aib-type" data-type="mobile" onclick="aibSelectType(this)"><i data-lucide="smartphone" style="width:14px;height:14px;"></i> Mobile app</button>
@@ -3503,7 +3503,7 @@ body[data-vm-companion="cloud"] #vmVrmCompanion { display: none !important; }
               <button type="button" class="aib-type" data-type="ai" onclick="aibSelectType(this)"><i data-lucide="bot" style="width:14px;height:14px;"></i> AI app</button>
               <button type="button" class="aib-type" data-type="saas" onclick="aibSelectType(this)"><i data-lucide="rocket" style="width:14px;height:14px;"></i> SaaS</button>
             </div>
-            <textarea id="aibDesc" class="aib-textarea" rows="5" spellcheck="false" placeholder="Example: A subscription SaaS that lets content creators publish a paid newsletter â€” landing page, member portal, Stripe checkout, admin dashboard and a REST API."></textarea>
+            <textarea id="aibDesc" class="aib-textarea" rows="5" spellcheck="false" placeholder="Example: A subscription SaaS that lets content creators publish a paid newsletter €” landing page, member portal, Stripe checkout, admin dashboard and a REST API."></textarea>
             <div class="aib-attach-row" id="aibAttachRow">
               <button type="button" class="aib-btn aib-btn-ghost aib-btn-sm" onclick="aibOpenAttach()" title="Attach files (images or .txt/.md)"><i data-lucide="paperclip" style="width:14px;height:14px;"></i> Attach</button>
               <input type="file" id="aibAttachInput" accept=".png,.jpg,.jpeg,.gif,.webp,.txt,.md" multiple style="display:none;" onchange="aibHandleAttachFiles(this)">
@@ -3518,7 +3518,7 @@ body[data-vm-companion="cloud"] #vmVrmCompanion { display: none !important; }
 
           <div class="aib-steps">
             <div class="aib-step"><div class="aib-step-num">1</div><h5>Describe &amp; answer</h5><p>Tell the builder what you want. It asks a few smart questions to shape the scope.</p></div>
-            <div class="aib-step"><div class="aib-step-num">2</div><h5>Review the plan</h5><p>You get a full project specification â€” features, stack, pages, database and roadmap. Edit anything.</p></div>
+            <div class="aib-step"><div class="aib-step-num">2</div><h5>Review the plan</h5><p>You get a full project specification €” features, stack, pages, database and roadmap. Edit anything.</p></div>
             <div class="aib-step"><div class="aib-step-num">3</div><h5>Build &amp; ship</h5><p>Watch the code generate live, browse the file tree, preview it and download the whole project.</p></div>
           </div>
 
@@ -3591,9 +3591,9 @@ body[data-vm-companion="cloud"] #vmVrmCompanion { display: none !important; }
               <span class="aib-badge aib-badge-live" id="aibBuildStatus">Running</span>
             </div>
             <div class="aib-progress-track"><div class="aib-progress-bar" id="aibProgressBar" style="width:0%;"></div></div>
-            <div class="aib-progress-meta"><span id="aibProgressText">Designing the architectureâ€¦</span><span id="aibProgressCount">0/0</span></div>
+            <div class="aib-progress-meta"><span id="aibProgressText">Designing the architecture€¦</span><span id="aibProgressCount">0/0</span></div>
             <div class="aib-build-log" id="aibBuildLog"></div>
-            <div class="aib-build-live" id="aibBuildLive"><pre id="aibBuildLivePre"><span class="aib-tok-com">// waiting for the first fileâ€¦</span></pre></div>
+            <div class="aib-build-live" id="aibBuildLive"><pre id="aibBuildLivePre"><span class="aib-tok-com">// waiting for the first file€¦</span></pre></div>
           </div>
           <div class="aib-card" id="aibBuildResult" style="display:none;">
             <div class="aib-card-head">
@@ -3629,7 +3629,7 @@ body[data-vm-companion="cloud"] #vmVrmCompanion { display: none !important; }
     </div>
   </div>
 
-  <!-- â”€â”€ Workspace: Sketch â€” Coming Soon â”€â”€ -->
+  <!-- â”€â”€ Workspace: Sketch €” Coming Soon â”€â”€ -->
   <div class="vm-ws-panel" data-ws-panel="sketch">
     <div class="vm-cs">
       <span class="vm-cs-orb a"></span>
@@ -3641,12 +3641,12 @@ body[data-vm-companion="cloud"] #vmVrmCompanion { display: none !important; }
         <h2 class="vm-cs-title">Sketch</h2>
         <p class="vm-cs-desc">This feature is currently under development and will be available in a future update.</p>
         <div class="vm-cs-dots"><i></i><i></i><i></i></div>
-        <span class="vm-cs-brand"><span class="vm-cs-brand-mark">V</span>Valley Mind-AI Â· Creative Suite</span>
+        <span class="vm-cs-brand"><span class="vm-cs-brand-mark">V</span>Valley Mind-AI · Creative Suite</span>
       </div>
     </div>
   </div>
 
-  <!-- â”€â”€ Workspace: 3D Studio â€” Coming Soon â”€â”€ -->
+  <!-- â”€â”€ Workspace: 3D Studio €” Coming Soon â”€â”€ -->
   <div class="vm-ws-panel" data-ws-panel="threed">
     <div class="vm-cs">
       <span class="vm-cs-orb a"></span>
@@ -3658,12 +3658,12 @@ body[data-vm-companion="cloud"] #vmVrmCompanion { display: none !important; }
         <h2 class="vm-cs-title">3D Studio</h2>
         <p class="vm-cs-desc">This feature is currently under development and will be available in a future update.</p>
         <div class="vm-cs-dots"><i></i><i></i><i></i></div>
-        <span class="vm-cs-brand"><span class="vm-cs-brand-mark">V</span>Valley Mind-AI Â· Creative Suite</span>
+        <span class="vm-cs-brand"><span class="vm-cs-brand-mark">V</span>Valley Mind-AI · Creative Suite</span>
       </div>
     </div>
   </div>
 
-  <!-- â”€â”€ Workspace: Round Table â€” the existing Council Hall interface â”€â”€ -->
+  <!-- â”€â”€ Workspace: Round Table €” the existing Council Hall interface â”€â”€ -->
   <div class="vm-ws-panel" data-ws-panel="roundtable">
     <div id="roundTableOverlay">
       <div class="rt-header">
@@ -3704,27 +3704,27 @@ body[data-vm-companion="cloud"] #vmVrmCompanion { display: none !important; }
     <div class="rt-entry-q" id="rtEntryQ">What do you want to talk about?</div>
     <div class="rt-recording" id="rtRecording" style="display:none;">
       <span class="rt-rec-dot"></span>
-      <span class="rt-rec-label">Listeningâ€¦</span>
+      <span class="rt-rec-label">Listening€¦</span>
       <span class="rt-rec-wave"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
       <button class="rt-mini-btn" onclick="rtStopVoice(); rtRender();">Stop</button>
     </div>
     <div class="rt-inputbar" id="rtInputbar">
       <button class="rt-btn rt-mic" id="rtMicBtn" onclick="rtMicTap()" title="Speak"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2M12 19v4"/></svg></button>
-      <textarea id="rtInput" rows="1" placeholder="Speak or typeâ€¦" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();rtSendFromInput();}"></textarea>
+      <textarea id="rtInput" rows="1" placeholder="Speak or type€¦" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();rtSendFromInput();}"></textarea>
       <button class="rt-btn rt-send" id="rtSendBtn" onclick="rtSendFromInput()" title="Send"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg></button>
     </div>
     <div class="rt-modes" id="rtModes">
       <span class="rt-modes-label">This session</span>
-      <button class="rt-mode-btn" id="rtModeVoice" onclick="rtSetMode('voice')" title="Everyone replies out loud as voice notes only â€” nothing written">Voice</button>
-      <button class="rt-mode-btn" id="rtModeText" onclick="rtSetMode('text')" title="Everything in text only â€” no voice">Text</button>
-      <button class="rt-mode-btn active" id="rtModeBoth" onclick="rtSetMode('both')" title="Both â€” a voice note and the text together">Both</button>
+      <button class="rt-mode-btn" id="rtModeVoice" onclick="rtSetMode('voice')" title="Everyone replies out loud as voice notes only €” nothing written">Voice</button>
+      <button class="rt-mode-btn" id="rtModeText" onclick="rtSetMode('text')" title="Everything in text only €” no voice">Text</button>
+      <button class="rt-mode-btn active" id="rtModeBoth" onclick="rtSetMode('both')" title="Both €” a voice note and the text together">Both</button>
     </div>
   </div>
   <audio id="rtPlayer" preload="auto" style="display:none;"></audio>
   <!-- One persistent, gesture-unlocked player for chat persona playback (see
        unlockPersonaAudio). A fresh new Audio() per reply is never unlocked, so
        mobile/strict browsers blocked .play() and the code fell back to the
-       device's own voice â€” the bug that made Marcus sound female on one device
+       device's own voice €” the bug that made Marcus sound female on one device
        and male on another. -->
   <audio id="personaPlayer" preload="auto" style="display:none;"></audio>
   <!-- Assistant speech waveform (voice-note style) for Speak aloud / persona playback -->
@@ -3735,17 +3735,17 @@ body[data-vm-companion="cloud"] #vmVrmCompanion { display: none !important; }
   </div>
   </div><!-- /Round Table workspace panel -->
 
-  <!-- â”€â”€ Workspace: Music Studio â€” sing/hum/record â†’ DIY or AI-produced track â”€â”€ -->
+  <!-- â”€â”€ Workspace: Music Studio €” sing/hum/record â†’ DIY or AI-produced track â”€â”€ -->
   <div class="vm-ws-panel" data-ws-panel="music" id="vmWsPanelMusic"></div>
 
-  <!-- â”€â”€ Workspace: Cloud â€” companion body around the existing ValleyMind brain â”€â”€ -->
+  <!-- â”€â”€ Workspace: Cloud €” companion body around the existing ValleyMind brain â”€â”€ -->
   <div class="vm-ws-panel" data-ws-panel="cloud" id="vmWsPanelCloud"></div>
 
   <div class="vm-ws-panel" data-ws-panel="analytics" id="vmWsPanelAnalytics">
     <div id="studioAnalyticsView"></div>
   </div>
 
-  <!-- â”€â”€ Workspace: Massive Editing â€” instruction-driven AI edit tool. The UI is
+  <!-- â”€â”€ Workspace: Massive Editing €” instruction-driven AI edit tool. The UI is
        rendered by static/massive_editing.js into this panel the first time the
        user opens the workspace (Studio â†’ Massive Editing, right after Music
        Studio). Text + voice instructions, media uploads and a selected sticker
@@ -3779,8 +3779,8 @@ body[data-vm-companion="cloud"] #vmVrmCompanion { display: none !important; }
     </div>
     <div id="sdStickerProgress" style="display:none;text-align:center;padding:34px 6px;">
       <div class="edit-spinner"></div>
-      <div class="edit-phase" id="sdStickerPhase" style="margin-top:16px;">Applying the stickerâ€¦</div>
-      <div class="edit-sub">Overlaying and re-encoding â€” usually under a minute for a short clip; keep this open.</div>
+      <div class="edit-phase" id="sdStickerPhase" style="margin-top:16px;">Applying the sticker€¦</div>
+      <div class="edit-sub">Overlaying and re-encoding €” usually under a minute for a short clip; keep this open.</div>
     </div>
     <div id="sdStickerResult" style="display:none;text-align:center;">
       <div class="edit-sheet-label" style="margin-top:6px;">Your video</div>
@@ -4085,7 +4085,7 @@ function renderSessionListError(message) {
         '</div>';
 }
 
-/** Single fetch attempt â€” primary endpoint only. */
+/** Single fetch attempt €” primary endpoint only. */
 async function fetchSessionsOnce() {
     var res = await apiFetch("/chat/sessions", {
         credentials: "include",
@@ -4121,7 +4121,7 @@ function apiUrl(path) {
 function networkErrorMessage(err, url) {
     const reason = err && err.message ? err.message : String(err || "unknown error");
     if ((err && err.name === "AbortError") || /aborted/i.test(reason)) {
-        return "That answer is taking longer than usual. Please try a shorter version, or send it again and Iâ€™ll continue from there.";
+        return "That answer is taking longer than usual. Please try a shorter version, or send it again and I€™ll continue from there.";
     }
     return `Network error reaching backend at ${url}: ${reason}`;
 }
@@ -4323,7 +4323,7 @@ async function sendVideoForAnalysis(question) {
                         d.video_url ? { url: d.video_url, type: "video" } : null);
     } catch (err) {
         if (thinking && removeThinkingIndicator) removeThinkingIndicator(thinking);
-        addMessage("I couldn't watch that video â€” the upload failed.", "ai");
+        addMessage("I couldn't watch that video €” the upload failed.", "ai");
     }
 }
 
@@ -4425,7 +4425,7 @@ function setThinkingState(thinking) {
     const input = document.getElementById("chatInput");
     const sendBtn = document.getElementById("sendBtn");
     const sendIcon = document.getElementById("sendIcon");
-    // Input stays USABLE throughout â€” placeholder is the status indicator.
+    // Input stays USABLE throughout €” placeholder is the status indicator.
     if (input) input.disabled = false;
     if (sendBtn) sendBtn.disabled = thinking;
     if (sendIcon) {
@@ -4530,12 +4530,12 @@ function handleMessageContextAction(action) {
 // Open the user's mail client with the response prefilled as a draft.
 function draftResponseEmail(text) {
     if (!text) return;
-    var body = text.slice(0, 1500) + (text.length > 1500 ? "\n\nâ€¦(truncated)" : "") + "\n\nâ€” via ValleyMind AI";
-    window.location.href = "mailto:?subject=" + encodeURIComponent("ValleyMind AI â€” response") +
+    var body = text.slice(0, 1500) + (text.length > 1500 ? "\n\n€¦(truncated)" : "") + "\n\n€” via ValleyMind AI";
+    window.location.href = "mailto:?subject=" + encodeURIComponent("ValleyMind AI €” response") +
         "&body=" + encodeURIComponent(body);
 }
 
-// Report a bad response â€” routed to the same /suggestions feedback channel.
+// Report a bad response €” routed to the same /suggestions feedback channel.
 function reportResponseIssue(text) {
     var note = window.prompt("What's wrong with this response? A short note helps us fix it.");
     if (note === null) return;                       // cancelled
@@ -4547,7 +4547,7 @@ function reportResponseIssue(text) {
         headers: authHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify({ text: payload })
     }).then(function (r) { return r.json(); }).then(function (j) {
-        if (j && j.status === "success") _vmToast("Thanks â€” your report was sent.");
+        if (j && j.status === "success") _vmToast("Thanks €” your report was sent.");
         else _vmToast((j && j.message) || "Could not send the report.");
     }).catch(function () { _vmToast("Could not send the report."); });
 }
@@ -4556,7 +4556,7 @@ function showResponseDetails(wrap) {
     var persona = (typeof currentPersona !== "undefined" && currentPersona) ? currentPersona : "assistant";
     var chars = 0;
     if (wrap) { var b = wrap.querySelector(".bubble"); chars = b ? b.textContent.trim().length : 0; }
-    _vmToast("Assistant: " + persona + " Â· " + chars + " chars Â· Engine: ValleyMind AI");
+    _vmToast("Assistant: " + persona + " · " + chars + " chars · Engine: ValleyMind AI");
 }
 
 // Re-run the most recent prompt and stream a fresh response.
@@ -4571,7 +4571,7 @@ function regenerateResponse(btn) {
     window.send();
 }
 
-// Share a single response â€” native share sheet where available, else clipboard.
+// Share a single response €” native share sheet where available, else clipboard.
 function shareMessageText(btn) {
     var wrapper = btn.closest(".assistant-message");
     var bubble = wrapper ? wrapper.querySelector(".bubble") : null;
@@ -4741,7 +4741,7 @@ window.toggleVoicePlayback = function (btn) {
             vmWaveform.assistantStart(pl);
             try{window.vmWave&&vmWave.start("ai", pl)}catch(e){}
         } else {
-            // No audio from the server â€” stay silent rather than use the
+            // No audio from the server €” stay silent rather than use the
             // device's native voice (which broke persona gender on some devices).
             _voiceIcon(btn, 'play'); _msgAudioBtn = null;
         }
@@ -4758,7 +4758,7 @@ document.addEventListener("click", function (e) {
     }
 });
 
-// Appearance â€” apply the saved theme + font size across the whole app.
+// Appearance €” apply the saved theme + font size across the whole app.
 // Called on load and live from Settings when the user changes either one.
 window.applyAppearance = function (theme, fontSize) {
     try {
@@ -4783,7 +4783,7 @@ window.vmNotify = function (title, body, target) {
     try {
         if (localStorage.getItem("vm_push") !== "1") return;
         if (!("Notification" in window) || Notification.permission !== "granted") return;
-        // Don't nag while the tab is focused â€” the user already sees the result
+        // Don't nag while the tab is focused €” the user already sees the result
         if (document.visibilityState === "visible") return;
         var n = new Notification(title, {
             body: body || "",
@@ -4833,7 +4833,7 @@ function closeVideoViewer() {
 // â”€â”€ Permission onboarding â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Asking on page load gets a reflexive "Block", which is PERMANENT and cannot
 // be re-requested. So we show our own prompt at the moment it's obviously
-// useful â€” the first time a generation starts â€” and only touch the native API
+// useful €” the first time a generation starts €” and only touch the native API
 // if they say yes. Declined twice, we never ask again.
 var VM_PUSH_MAX_ASKS = 2;
 var _vmPushResolve = null;
@@ -4850,7 +4850,7 @@ function vmShouldAskPush() {
 }
 
 /* Show OUR prompt. Resolves true if the browser ended up granting. Never
-   blocks the generation â€” callers may ignore the result. */
+   blocks the generation €” callers may ignore the result. */
 function vmMaybeAskPush(message) {
     return new Promise(function (resolve) {
         if (!vmShouldAskPush()) { resolve(false); return; }
@@ -4870,7 +4870,7 @@ function vmPushPromptAnswer(yes) {
     if (ov) ov.style.display = "none";
     var done = _vmPushResolve; _vmPushResolve = null;
     if (!yes) {
-        localStorage.setItem("vm_push", "0");   // declined ours â€” no native prompt at all
+        localStorage.setItem("vm_push", "0");   // declined ours €” no native prompt at all
         if (done) done(false);
         return;
     }
@@ -4887,7 +4887,7 @@ function vmPushPromptAnswer(yes) {
 }
 
 function applyVideoGenAvailability() {
-    // Video generation is chat-triggered â€” there is no dedicated button to grey
+    // Video generation is chat-triggered €” there is no dedicated button to grey
     // out. When the global kill switch is off the backend returns an instant
     // "unavailable" message (no provider is ever called), which renders inline
     // like any assistant reply. This hook reflects the flag on any element
@@ -5112,7 +5112,7 @@ function renderInlineCitations(bubbleEl, sourceMetadata) {
                 };
                 frag.appendChild(sup);
             } else {
-                // Unrecognized citation â€” keep original text
+                // Unrecognized citation €” keep original text
                 frag.appendChild(document.createTextNode(match[0]));
             }
             lastIdx = match.index + match[0].length;
@@ -5422,7 +5422,7 @@ function addMessage(text, type = "ai", imageData, mediaUrl, videoUrl) {
     if (videoUrl) msgObj.video_url = videoUrl;
     messageStore.push(msgObj);
 
-    // Every assistant reply notifies when you're not looking at the app â€” so a
+    // Every assistant reply notifies when you're not looking at the app €” so a
     // question asked before switching to WhatsApp still reaches you. vmNotify
     // itself no-ops while the tab is visible and when push is off.
     if (type !== "user" && displayText) {
@@ -5791,7 +5791,7 @@ function renderSessionList() {
 
     if (!Array.isArray(sessionList) || sessionList.length === 0) {
         if (sessionFetchFailed) {
-            list.innerHTML = '<div style="padding:12px 8px;color:#475569;font-size:11px;text-align:center;">Couldn\'t load sessions â€” <a href="#" onclick="loadSessions({force:true});return false" style="color:#00d4ff;text-decoration:underline;">tap to retry</a></div>';
+            list.innerHTML = '<div style="padding:12px 8px;color:#475569;font-size:11px;text-align:center;">Couldn\'t load sessions €” <a href="#" onclick="loadSessions({force:true});return false" style="color:#00d4ff;text-decoration:underline;">tap to retry</a></div>';
         } else {
             list.innerHTML = '<div style="padding:12px 8px;color:#475569;font-size:11px;text-align:center;">No previous sessions</div>';
         }
@@ -5842,7 +5842,7 @@ function renderSessionList() {
         var warn = document.createElement("div");
         warn.className = "session-load-status error";
         warn.style.marginBottom = "6px";
-        warn.textContent = "Showing cached sessions â€” " + sessionsLoadError;
+        warn.textContent = "Showing cached sessions €” " + sessionsLoadError;
         list.appendChild(warn);
     }
 
@@ -6084,7 +6084,7 @@ async function playMarcusVoice(text, voice) {
 // HTMLMediaElement.play() that isn't tied to a recent user gesture. A voice reply
 // plays seconds after the mic tap (after speech-to-text, the SSE stream, and a
 // second /api/tts fetch), so a fresh `new Audio()` was always rejected on mobile
-// and the code fell back to the device's own speechSynthesis voice â€” which is why
+// and the code fell back to the device's own speechSynthesis voice €” which is why
 // Marcus sounded female on one device and male on another. We unlock this single
 // element on the first user gesture (any tap/key) and reuse it, exactly like the
 // Round Table does, so the assigned Qwen voice actually plays everywhere.
@@ -6117,7 +6117,7 @@ function unlockPersonaAudio() {
 // Play a persona's reply in their fixed, server-generated Qwen voice (identical
 // on every device). Only when the SERVER genuinely can't synthesise (Qwen
 // unconfigured, over the budget cap, or offline) do we fall back to the device
-// voice â€” never on a mere play() rejection, which is what used to hijack the
+// voice €” never on a mere play() rejection, which is what used to hijack the
 // voice with the browser default.
 // Map a saved catalogue voice id (guy/aria/jenny/christopher/...) to the
 // FREE_VOICE_MAP profile key the /api/tts free edge-tts path understands.
@@ -6167,7 +6167,7 @@ async function speakPersona(text, persona) {
             }
             return;
         }
-        // Server has no Qwen audio to give â€” stay silent rather than fall back to
+        // Server has no Qwen audio to give €” stay silent rather than fall back to
         // the device's native voice, which is what made Marcus sound female on
         // some devices (the assigned Qwen voice is gender-correct everywhere).
     } catch (e) {
@@ -6392,7 +6392,7 @@ function setMicUI(active) {
     if (!btn) return;
     // The .mic-listening class (see CSS) carries both the red colour and the pulse.
     btn.classList.toggle("mic-listening", active);
-    btn.title = active ? "Listeningâ€¦ tap to stop" : "Speak your message";
+    btn.title = active ? "Listening€¦ tap to stop" : "Speak your message";
 }
 
 function toggleVoice() {
@@ -6464,7 +6464,7 @@ function startListening() {
     try { _recognition.start(); } catch (e) {}
     _listening = true;
     setMicUI(true);
-    if (input) input.placeholder = "Listeningâ€¦  (tap mic to stop)";
+    if (input) input.placeholder = "Listening€¦  (tap mic to stop)";
 }
 
 function endOfSpeech() {
@@ -6808,9 +6808,9 @@ function renderVideoGalleryItems(videos) {
 
 // â”€â”€ Persona switching â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 var CREW = [
-    { key: "marcus",   name: "Marcus",   role: "Director â€” scenes, camera, framing" },
-    { key: "angelina", name: "Angelina", role: "Writer â€” story, dialogue, screenplay" },
-    { key: "elena",    name: "Elena",    role: "Editor â€” assembly, transitions, pacing" }
+    { key: "marcus",   name: "Marcus",   role: "Director €” scenes, camera, framing" },
+    { key: "angelina", name: "Angelina", role: "Writer €” story, dialogue, screenplay" },
+    { key: "elena",    name: "Elena",    role: "Editor €” assembly, transitions, pacing" }
 ];
 var currentPersona = "marcus";
 
@@ -6864,9 +6864,9 @@ document.addEventListener("click", function (e) {
 
 // â”€â”€ ValleyMind Studio â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 var STUDIO_STAGES = [
-    { key: "writing",    persona: "Angelina", initial: "A", role: "Writer â€” story, dialogue, screenplay" },
-    { key: "directing",  persona: "Marcus",   initial: "M", role: "Director â€” scene breakdown, camera, framing" },
-    { key: "storyboard", persona: "Elena",    initial: "E", role: "Editor â€” storyboard assembly, pacing" }
+    { key: "writing",    persona: "Angelina", initial: "A", role: "Writer €” story, dialogue, screenplay" },
+    { key: "directing",  persona: "Marcus",   initial: "M", role: "Director €” scene breakdown, camera, framing" },
+    { key: "storyboard", persona: "Elena",    initial: "E", role: "Editor €” storyboard assembly, pacing" }
 ];
 
 var studioState = [];        // "waiting" | "working" | "done" per stage
@@ -6903,7 +6903,7 @@ var studioCanRetryAssembly = false; // clips finished but never joined
 // Per-run controls. Runtime drives scene count (~1 scene per 5s).
 var studioTargetDuration = 30;  // seconds
 var studioTestMode = false;
-// Phase 0 â€” conversational intake before anything generates
+// Phase 0 €” conversational intake before anything generates
 var studioPhase = "intake";  // "intake" | "producing"
 var studioIntake = [];        // {who, text, quick_replies?}
 var studioBrief = "";
@@ -7032,7 +7032,7 @@ function formatSdDate(d) {
 }
 
 function sdLoadingHTML() {
-    return '<div class="sd-empty"><p>Loadingâ€¦</p></div>';
+    return '<div class="sd-empty"><p>Loading€¦</p></div>';
 }
 
 function sdEmptyHTML(title, sub) {
@@ -7151,7 +7151,7 @@ var SD_HOME_FEATURES = [
     { id: "ai-avatar", icon: "user", title: "AI Avatar", desc: "Your own talking AI avatar for videos.", ready: false },
     { id: "marketing-tools", icon: "megaphone", title: "Marketing Tools", desc: "Posters, captions and creatives for social campaigns.", ready: false },
     { id: "desktop-editor", icon: "monitor", title: "Desktop Editor", desc: "A full multi-track timeline for desktop browsers.", ready: false },
-    { id: "space", icon: "cloud", title: "Space", desc: "Your cloud workspace â€” every asset, project and draft.", ready: false },
+    { id: "space", icon: "cloud", title: "Space", desc: "Your cloud workspace €” every asset, project and draft.", ready: false },
     { id: "record", icon: "circle-record", title: "Record", desc: "Record voice, webcam or screen in a click.", ready: false },
     { id: "screen-recorder", icon: "monitor-play", title: "Screen Recorder", desc: "Capture your screen with crisp audio.", ready: false },
     { id: "voice-recorder", icon: "audio-lines", title: "Voice Recorder", desc: "Record and trim clean voiceovers.", ready: false }
@@ -7159,7 +7159,7 @@ var SD_HOME_FEATURES = [
 
 var SD_VIDEO_ITEMS = [
     { id: "new-project", icon: "plus-circle", title: "Create New Project", desc: "Start a fresh production with the AI crew.", ready: true, action: function () { studioShowClassic(); } },
-    { id: "timeline-editor", icon: "layout-grid", title: "Timeline Editor", desc: "The classic Studio timeline â€” scenes, storyboards and clips.", ready: true, action: function () { studioShowClassic(); } },
+    { id: "timeline-editor", icon: "layout-grid", title: "Timeline Editor", desc: "The classic Studio timeline €” scenes, storyboards and clips.", ready: true, action: function () { studioShowClassic(); } },
     { id: "auto-editing", icon: "zap", title: "Auto Editing", desc: "Turn a raw clip into a captioned short automatically.", ready: true, action: function () { openEditing(); } },
     { id: "video-generator", icon: "clapperboard", title: "Video Generator", desc: "Text-to-video through the Studio pipeline.", ready: true, action: function () { studioShowClassic(); } },
     { id: "video-templates", icon: "layout-template", title: "Video Templates", desc: "Jump straight to the template gallery.", ready: true, action: function () { studioTab("templates"); } },
@@ -7349,7 +7349,7 @@ function sdRenderHome() {
         '<div class="sd-hero">' +
             '<div class="sd-hero-badge">' + studioIcon("sparkles", 13) + ' Creative Suite</div>' +
             '<h1 class="sd-hero-title">Make something <span class="sd-hero-accent">incredible</span></h1>' +
-            '<p class="sd-hero-sub">Your AI creative suite â€” cut, edit, generate and publish from one place.</p>' +
+            '<p class="sd-hero-sub">Your AI creative suite €” cut, edit, generate and publish from one place.</p>' +
             '<div class="sd-hero-actions">' +
                 '<button class="sd-go" onclick="studioShowClassic()">' + studioIcon("clapperboard", 16) + ' New Project</button>' +
                 '<button class="sd-go ghost" onclick="studioTab(\'templates\')">' + studioIcon("layout-template", 16) + ' Browse Templates</button>' +
@@ -7401,7 +7401,7 @@ function sdRenderTemplates() {
     if (!el || el.dataset.rendered) return;
     el.dataset.rendered = "1";
     el.innerHTML =
-        '<div class="sd-section"><h3>Template gallery</h3><div class="sd-section-line"></div><span class="sd-section-count" id="sdTplCount">Loadingâ€¦</span></div>' +
+        '<div class="sd-section"><h3>Template gallery</h3><div class="sd-section-line"></div><span class="sd-section-count" id="sdTplCount">Loading€¦</span></div>' +
         '<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:2px;">' +
             '<div class="sd-search">' +
                 '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>' +
@@ -7628,9 +7628,9 @@ function renderTemplateDetail(t) {
                 '<div class="tmpl-stats">' + stats + '</div>' +
                 '<div class="tmpl-actions">' +
                     '<button class="tmpl-btn primary" onclick="useTemplate(\'' + esc(String(t.id)) + '\')">' + studioIcon("sparkles", 14) + ' Use Template</button>' +
-                    '<button class="tmpl-btn ghost' + (t.liked ? " active" : "") + '" id="tmplLikeBtn" onclick="tmplToggleLike(\'' + esc(String(t.id)) + '\')">' + studioIcon("heart", 14) + ' <span id="tmplLikeLbl">' + (t.liked ? "Liked" : "Like") + ' Â· ' + (t.likes || 0) + '</span></button>' +
+                    '<button class="tmpl-btn ghost' + (t.liked ? " active" : "") + '" id="tmplLikeBtn" onclick="tmplToggleLike(\'' + esc(String(t.id)) + '\')">' + studioIcon("heart", 14) + ' <span id="tmplLikeLbl">' + (t.liked ? "Liked" : "Like") + ' · ' + (t.likes || 0) + '</span></button>' +
                 '</div>' +
-                '<p class="tmpl-hint" style="margin-top:12px;">Every template is a reusable project â€” add your text and photos, then render your own video.</p>' +
+                '<p class="tmpl-hint" style="margin-top:12px;">Every template is a reusable project €” add your text and photos, then render your own video.</p>' +
             '</div>' +
         '</div>' + preview;
     studioRefreshIcons();
@@ -7645,7 +7645,7 @@ async function tmplToggleLike(tid) {
         var btn = document.getElementById("tmplLikeBtn");
         var lbl = document.getElementById("tmplLikeLbl");
         if (btn) btn.classList.toggle("active", !!data.liked);
-        if (lbl) lbl.textContent = (data.liked ? "Liked" : "Like") + " Â· " + data.count;
+        if (lbl) lbl.textContent = (data.liked ? "Liked" : "Like") + " · " + data.count;
     } catch (e) {}
 }
 
@@ -7693,7 +7693,7 @@ function renderTemplateForm(d) {
                 '<input type="text" id="tmplF_' + key + '" placeholder="' + esc(f.label || f.key) + '"' + max + value + '>' + hint + '</div>';
         }
         var accept = f.type === "video" ? "video/*" : f.type === "audio" ? "audio/*" : "image/*";
-        var optional = f.required ? "" : " Â· optional, falls back to the template background";
+        var optional = f.required ? "" : " · optional, falls back to the template background";
         return '<div class="tmpl-field">' + label +
             '<div class="tmpl-file">' +
                 '<label class="tmpl-file-btn" for="tmplFile_' + key + '">' + studioIcon("upload", 13) + ' Choose ' + esc(f.type) + '</label>' +
@@ -7775,7 +7775,7 @@ function startTmplPolling(pid) {
     area.innerHTML =
         '<div class="tmpl-step-title">' + studioIcon("loader", 15) + ' Rendering your video</div>' +
         '<div class="tmpl-progress"><div class="tmpl-progress-fill" id="tmplProgFill"></div></div>' +
-        '<div class="tmpl-render-status"><span id="tmplProgPct">0%</span><span id="tmplProgLog">Preparingâ€¦</span></div>';
+        '<div class="tmpl-render-status"><span id="tmplProgPct">0%</span><span id="tmplProgLog">Preparing€¦</span></div>';
     var tick = async function () {
         var res = null, data = null;
         try {
@@ -7893,7 +7893,7 @@ function sdAssetHTML(m) {
         inner + '<div class="sd-asset-name">' + esc(m.name) + '</div></div>';
 }
 
-// Clicking a sticker/asset selects it â€” used by the "apply to a video" flow.
+// Clicking a sticker/asset selects it €” used by the "apply to a video" flow.
 var sdPickedAsset = null;
 var sdStickerPos = "br";
 var sdStickerJob = "";
@@ -7956,13 +7956,13 @@ function sdStickerApply(file) {
         .then(function (r) { return r.json(); })
         .then(function (d) {
             if (!d || d.status !== "success" || !d.job) {
-                document.getElementById("sdStickerPhase").textContent = (d && d.message) || "Couldnâ€™t start â€” try again.";
+                document.getElementById("sdStickerPhase").textContent = (d && d.message) || "Couldn€™t start €” try again.";
                 return;
             }
             sdStickerJob = d.job.job_id;
             sdStickerPoll();
         })
-        .catch(function () { document.getElementById("sdStickerPhase").textContent = "Upload failed â€” check your connection."; });
+        .catch(function () { document.getElementById("sdStickerPhase").textContent = "Upload failed €” check your connection."; });
 }
 function sdStickerPoll() {
     if (!sdStickerJob) return;
@@ -7977,7 +7977,7 @@ function sdStickerPoll() {
                 _sdStickerShow("sdStickerResult", true);
                 document.getElementById("sdStickerVideo").src = job.final_video;
             } else {
-                document.getElementById("sdStickerPhase").textContent = job.error || "Couldnâ€™t apply the sticker.";
+                document.getElementById("sdStickerPhase").textContent = job.error || "Couldn€™t apply the sticker.";
             }
         })
         .catch(function () { sdStickerTimer = setTimeout(sdStickerPoll, 5000); });
@@ -7989,13 +7989,13 @@ async function loadStudioAssets() {
     grid.innerHTML = sdLoadingHTML();
     var stuck = ["Overlays", "Transitions", "Fonts"].indexOf(sdAssetCat) !== -1;
     if (stuck) {
-        grid.innerHTML = sdEmptyHTML(sdAssetCat + " are coming soon", "This asset type isn't available yet â€” your images, videos, sound and stickers are ready to use.");
+        grid.innerHTML = sdEmptyHTML(sdAssetCat + " are coming soon", "This asset type isn't available yet €” your images, videos, sound and stickers are ready to use.");
         return;
     }
     var wantImages = sdAssetCat === "All" || sdAssetCat === "Images";
     var wantVideos = sdAssetCat === "All" || sdAssetCat === "Videos";
     var wantAudio = sdAssetCat === "All" || sdAssetCat === "Audio" || sdAssetCat === "Sound Effects";
-    var wantStickers = sdAssetCat === "Stickers";   // heavy set â€” only on its own tab
+    var wantStickers = sdAssetCat === "Stickers";   // heavy set €” only on its own tab
     var wantGifs = sdAssetCat === "GIFs";
     var items = [];
     try {
@@ -8052,16 +8052,16 @@ async function loadStudioAssets() {
 
 // â”€â”€ The Round Table: three-way voice-first discussion room â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // One "director" call (/api/roundtable) reads the room and returns who speaks
-// (0-3, by relevance â€” not a fixed rotation). Each turn's Qwen voice plays
+// (0-3, by relevance €” not a fixed rotation). Each turn's Qwen voice plays
 // through ONE persistent, gesture-unlocked <audio> element, sequentially (never
 // overlapping). In voice mode the mic stays live for barge-in; end-of-speech
 // uses a silence debounce so a mid-sentence pause never submits early.
 var rtHistory = [];
 var rtState = "entry";        // "entry" (topic prompt) | "live"
 // One session-wide choice picked at the start:
-//   voice â€” all three reply as voice notes only, nothing written
-//   text  â€” text only, no voice
-//   both  â€” voice note AND text together
+//   voice €” all three reply as voice notes only, nothing written
+//   text  €” text only, no voice
+//   both  €” voice note AND text together
 var rtMode = "both";
 function rtShowText() { return rtMode !== "voice"; }   // render text bubbles?
 function rtPlayVoice() { return rtMode !== "text"; }   // synth + play audio?
@@ -8121,7 +8121,7 @@ function initEditingUpload() {}
 
 // Unlock audio: browsers block Audio.play() outside a user gesture, so we play a
 // silent clip through the persistent element on the first tap. After that,
-// programmatic turn playback is allowed â€” this is what makes the assigned Qwen
+// programmatic turn playback is allowed €” this is what makes the assigned Qwen
 // voices actually play instead of silently failing (the old bug).
 function rtUnlockAudio() {
     if (!rtPlayer) rtPlayer = document.getElementById("rtPlayer");
@@ -8146,7 +8146,7 @@ function rtRender() {
     set("rtEntryQ", isEntry);
     set("rtRecording", recording);
     set("rtInputbar", !recording);
-    // The reply mode is a ONE-TIME session choice â€” only offered at the start,
+    // The reply mode is a ONE-TIME session choice €” only offered at the start,
     // then locked for the whole session.
     set("rtModes", isEntry);
     var mv = document.getElementById("rtModeVoice"); if (mv) mv.classList.toggle("active", rtMode === "voice");
@@ -8211,7 +8211,7 @@ async function rtSubmit(text) {
     if (rtState === "entry") rtState = "live";
     if (rtShowText()) rtAddMsg("user", text);   // voice mode writes nothing
     rtHistory.push({ persona: "user", text: text });
-    rtSetStatus("The room is reading itâ€¦");
+    rtSetStatus("The room is reading it€¦");
     rtRender();
     var turns = [];
     try {
@@ -8220,7 +8220,7 @@ async function rtSubmit(text) {
             headers: authHeaders({ "Content-Type": "application/json" }),
             body: JSON.stringify({ message: text, history: rtHistory.slice(-14) }),
             // Each persona speaks with its own model (some slower, e.g. NVIDIA 70b)
-            // and later speakers wait for earlier ones so they can react â€” so a
+            // and later speakers wait for earlier ones so they can react €” so a
             // 2-3 voice turn can take ~40s. Allow headroom before aborting.
             timeoutMs: 90000
         });
@@ -8233,19 +8233,19 @@ async function rtSubmit(text) {
         rtRender();
         return;
     }
-    if (!turns.length) rtSetStatus("(no one jumps in â€” try steering it)");
+    if (!turns.length) rtSetStatus("(no one jumps in €” try steering it)");
     for (var k = 0; k < turns.length; k++) {
         if (rtInterrupted) break;
         if (rtShowText()) rtAddMsg(turns[k].persona, turns[k].text);   // voice mode: no bubbles
         rtHistory.push({ persona: turns[k].persona, text: turns[k].text });
-        await rtSpeakTurn(turns[k].persona, turns[k].text);   // sequential â€” never overlap
+        await rtSpeakTurn(turns[k].persona, turns[k].text);   // sequential €” never overlap
     }
     rtSetSpeaking(null);
     rtBusy = false;
     rtSttFinal = "";                                          // discard echo heard during playback
     if (rtSttTimer) { clearTimeout(rtSttTimer); rtSttTimer = null; }
     var inpEnd = document.getElementById("rtInput"); if (inpEnd) inpEnd.value = "";
-    if (rtMode === "voice" && rtVoiceOn) { if (!rtListening) rtStartListening(); rtSetStatus("Listeningâ€¦"); }
+    if (rtMode === "voice" && rtVoiceOn) { if (!rtListening) rtStartListening(); rtSetStatus("Listening€¦"); }
     else rtSetStatus("");
     rtRender();
 }
@@ -8263,7 +8263,7 @@ function rtSpeakTurn(persona, text) {
             return;
         }
         var who = persona.charAt(0).toUpperCase() + persona.slice(1);
-        rtSetStatus(who + " has the floorâ€¦");
+        rtSetStatus(who + " has the floor€¦");
         // The waveform ring goes live on the speaking persona (mic viz off now).
         rtMicVizStop();
         rtRingShow("speaking", who + " is speaking");
@@ -8367,12 +8367,12 @@ function rtStartListening() {
     try { rtRecognition.start(); } catch (e) {}
     rtListening = true;
     if (!rtBusy && !rtSpeaking) {
-        rtSetStatus("Listeningâ€¦");
+        rtSetStatus("Listening€¦");
         // Ring animates via CSS while listening. IMPORTANT: do NOT open a second
-        // getUserMedia stream here â€” SpeechRecognition already owns the mic, and a
+        // getUserMedia stream here €” SpeechRecognition already owns the mic, and a
         // competing capture starves it (esp. on mobile), which stopped voice input
         // from working at all. The CSS wave is enough.
-        rtRingShow("listening", "Listeningâ€¦");
+        rtRingShow("listening", "Listening€¦");
     }
     rtRender();
 }
@@ -8432,7 +8432,7 @@ function rtRingHide() {
 }
 
 // NOTE: the listening ring animates purely via CSS. We deliberately do NOT tap
-// the mic with getUserMedia for a live waveform â€” SpeechRecognition owns the mic
+// the mic with getUserMedia for a live waveform €” SpeechRecognition owns the mic
 // and a second capture broke voice input (especially on mobile). Kept as a safe
 // no-op cleanup so callers (rtStopListening) stay simple.
 function rtMicVizStop() {
@@ -8444,8 +8444,8 @@ function rtMicVizStop() {
 
 // ─── ChatGPT-style live voice waveforms ─────────────────────────────────────
 // Two independent audio-reactive vertical-bar visualisations:
-//   1. Microphone input (user speaking) â€” driven by getUserMedia + AnalyserNode
-//   2. Assistant playback (AI speaking) â€” driven by createMediaElementSource + AnalyserNode
+//   1. Microphone input (user speaking) €” driven by getUserMedia + AnalyserNode
+//   2. Assistant playback (AI speaking) €” driven by createMediaElementSource + AnalyserNode
 // Each uses its own audio source and lifecycle; they never conflict.
 // Falls back gracefully when audio analysis is unavailable (cross-origin audio,
 // missing getUserMedia, Android WebView restrictions, etc.).
@@ -8526,7 +8526,7 @@ var vmWaveform = (function () {
         } catch (e) {}
     }
 
-    // ─── Visibility handling â€” pause RAF loops when tab is hidden ─────────
+    // ─── Visibility handling €” pause RAF loops when tab is hidden ─────────
     function _onVisibilityChange() {
         if (document.hidden) {
             if (mic.raf) { cancelAnimationFrame(mic.raf); mic.raf = null; }
@@ -8809,7 +8809,7 @@ async function restoreLastStudioRun() {
         if (label && studioFrames.length) label.textContent = "Last production restored";
         renderStudioStages();
         // If a video job was still running when we left, reconnect and keep
-        // filling the filmstrip â€” the server never stopped rendering.
+        // filling the filmstrip €” the server never stopped rendering.
         var jstatus = run.job_status || "";
         if (run.job_id && jstatus && jstatus !== "done" && jstatus !== "failed" &&
             jstatus !== "budget_capped" && jstatus !== "aborted") {
@@ -8875,7 +8875,7 @@ async function studioIntakeSend(forcedText) {
         console.warn("[Studio] intake failed:", err);
         studioIntakeBusy = false;
         if (btn) { btn.disabled = false; btn.textContent = "Send"; }
-        studioIntake.push({ who: "Marcus", text: "Sorry â€” say that again?" });
+        studioIntake.push({ who: "Marcus", text: "Sorry €” say that again?" });
         renderStudioStages();
     }
 }
@@ -8923,14 +8923,14 @@ function initStudioVideoUpload() {
             renderStudioIntake();
         } catch (e) {
             studioIntake.pop();
-            studioIntake.push({ who: "Marcus", text: "That upload failed â€” try a smaller file?" });
+            studioIntake.push({ who: "Marcus", text: "That upload failed €” try a smaller file?" });
             renderStudioIntake();
         }
     });
 }
 
 /* Studio's SECOND assembly capability: the user uploads their OWN clips and the
-   crew joins them into one finished video â€” same engine and reliability as a
+   crew joins them into one finished video €” same engine and reliability as a
    generated trailer (stored in R2, shown in the Studio and the Video Gallery).
    Wired straight from the button so it works the moment the Studio is open. */
 function initStudioJoinUpload() {
@@ -8943,7 +8943,7 @@ function initStudioJoinUpload() {
         if (files.length < 2) { alert("Pick at least two clips to join into one video."); return; }
         var tooBig = files.filter(function (f) { return f.size > 100 * 1024 * 1024; });
         if (tooBig.length) { alert(tooBig[0].name + " is over the 100MB limit."); return; }
-        if (studioRunning) { alert("A production is already running â€” let it finish first."); return; }
+        if (studioRunning) { alert("A production is already running €” let it finish first."); return; }
         joinUploadedClips(files);
     });
 }
@@ -8959,7 +8959,7 @@ function joinUploadedClips(files) {
     studioExpectedClips = files.length;
     var names = files.map(function (f) { return f.name; }).join(", ");
     studioIntake.push({ who: "You", text: "ðŸŽžï¸ Uploaded " + files.length + " clips to join: " + names });
-    studioIntake.push({ who: "Elena", text: "On it â€” joining your clips into one cut..." });
+    studioIntake.push({ who: "Elena", text: "On it €” joining your clips into one cut..." });
     renderStudioIntake();
     var label = document.getElementById("studioStatusLabel");
     if (label) label.textContent = "Uploading " + files.length + " clips...";
@@ -8975,14 +8975,14 @@ function joinUploadedClips(files) {
             if (btn) btn.disabled = false;
             if (!d || d.status !== "success" || !d.job) {
                 studioIntake.pop();  // drop the "on it" placeholder
-                studioIntake.push({ who: "Elena", text: (d && d.message) || "I couldn't start that join â€” try again?" });
+                studioIntake.push({ who: "Elena", text: (d && d.message) || "I couldn't start that join €” try again?" });
                 renderStudioIntake();
                 studioRunning = false;
                 if (label) label.textContent = (d && d.message) || "Upload failed";
                 return;
             }
             studioIntake.pop();
-            studioIntake.push({ who: "Elena", text: "Got them. Joining now â€” the finished cut will land here and in your Video Gallery." });
+            studioIntake.push({ who: "Elena", text: "Got them. Joining now €” the finished cut will land here and in your Video Gallery." });
             renderStudioIntake();
             var job = d.job;
             studioJobId = job.job_id;
@@ -8996,7 +8996,7 @@ function joinUploadedClips(files) {
         .catch(function () {
             if (btn) btn.disabled = false;
             studioIntake.pop();
-            studioIntake.push({ who: "Elena", text: "That upload failed â€” try smaller files, or fewer at once?" });
+            studioIntake.push({ who: "Elena", text: "That upload failed €” try smaller files, or fewer at once?" });
             renderStudioIntake();
             studioRunning = false;
         });
@@ -9017,15 +9017,15 @@ function onStudioControlsChange() {
     var hint = document.getElementById("studioCostHint");
     if (!hint) return;
     if (studioTestMode) { hint.textContent = "free"; hint.style.color = "#34d399"; return; }
-    hint.textContent = "â€¦";
+    hint.textContent = "€¦";
     fetch(apiUrl("/api/studio/estimate?duration_seconds=" + studioTargetDuration), { credentials: "include", headers: authHeaders() })
         .then(function (r) { return r.json(); })
         .then(function (d) {
             if (!d || d.status !== "success") { hint.textContent = ""; return; }
             if (!d.video_enabled) { hint.textContent = "video off"; hint.style.color = "#64748b"; return; }
             if (!d.video_access) { hint.textContent = d.access_reason || "not on your plan"; hint.style.color = "#fbbf24"; return; }
-            hint.textContent = d.clips + " scenes Â· ~$" + (d.est_cost_usd || 0).toFixed(2) +
-                " Â· $" + (d.remaining_budget_usd || 0).toFixed(2) + " left";
+            hint.textContent = d.clips + " scenes · ~$" + (d.est_cost_usd || 0).toFixed(2) +
+                " · $" + (d.remaining_budget_usd || 0).toFixed(2) + " left";
             hint.style.color = (d.est_cost_usd > d.remaining_budget_usd) ? "#f87171" : "#64748b";
         })
         .catch(function () { hint.textContent = ""; });
@@ -9065,12 +9065,12 @@ async function startStudioProduction(brief) {
             var r = await fetch(apiUrl("/api/studio/estimate?duration_seconds=" + studioTargetDuration), { credentials: "include", headers: authHeaders() });
             var d = await r.json();
             if (d && d.status === "success" && d.video_enabled && d.video_access && d.est_cost_usd > 0) {
-                var ok = confirm("About " + studioTargetDuration + "s â€” " + d.clips + " scenes (~$" +
+                var ok = confirm("About " + studioTargetDuration + "s €” " + d.clips + " scenes (~$" +
                     d.est_cost_usd.toFixed(2) + "). Budget left: $" + d.remaining_budget_usd.toFixed(2) +
                     ".\n\nStart the render?");
                 if (!ok) return;
             }
-        } catch (e) { /* fall through â€” server still enforces the cap */ }
+        } catch (e) { /* fall through €” server still enforces the cap */ }
     }
     // Right moment to ask: a production takes minutes, so a notification is
     // obviously useful here. Our own prompt first; native only on yes.
@@ -9109,7 +9109,7 @@ function renderStudioIntake(host) {
         var hint = document.createElement("div");
         hint.className = "studio-stage";
         hint.innerHTML = '<div class="studio-scene-body">The crew is ready when you are. ' +
-            'Say hi, or tell them the film you want to make â€” they\'ll ask a few questions before rolling.</div>';
+            'Say hi, or tell them the film you want to make €” they\'ll ask a few questions before rolling.</div>';
         host.appendChild(hint);
         return;
     }
@@ -9208,7 +9208,7 @@ function renderStudioStages() {
                 sheetWrap.className = "studio-sheet";
                 var sheetLbl = document.createElement("div");
                 sheetLbl.className = "studio-sheet-label";
-                sheetLbl.textContent = "Character sheet â€” kept consistent across scenes";
+                sheetLbl.textContent = "Character sheet €” kept consistent across scenes";
                 var sheetBody = document.createElement("div");
                 sheetBody.textContent = studioSheetText;
                 sheetWrap.appendChild(sheetLbl);
@@ -9222,7 +9222,7 @@ function renderStudioStages() {
                 s.className = "studio-scene";
                 var t = document.createElement("div");
                 t.className = "studio-scene-title";
-                t.textContent = "Scene " + sc.number + " â€” " + sc.title;
+                t.textContent = "Scene " + sc.number + " €” " + sc.title;
                 var b = document.createElement("div");
                 b.className = "studio-scene-body";
                 b.textContent = sc.description;
@@ -9231,14 +9231,14 @@ function renderStudioStages() {
                 if (sc.camera || sc.framing) {
                     var c = document.createElement("div");
                     c.className = "studio-scene-cam";
-                    c.textContent = [sc.framing, sc.camera].filter(Boolean).join("  â€¢  ");
+                    c.textContent = [sc.framing, sc.camera].filter(Boolean).join("  €¢  ");
                     s.appendChild(c);
                 }
                 card.appendChild(s);
             });
             if (status === "working" && !studioScenes.length) card.appendChild(studioSkeleton());
         } else if (stage.key === "storyboard") {
-            // Show the producing card whenever there's ANY render activity â€” not
+            // Show the producing card whenever there's ANY render activity €” not
             // only when storyboard frames exist. Text-to-video and the single
             // Alibaba video have NO frames, so gating on frames alone hid the
             // finished video, cost meter and messages entirely.
@@ -9254,7 +9254,7 @@ function renderStudioStages() {
                     fr.className = "studio-frame";
                     var clip = studioClips[f.number];
                     if (clip) {
-                        // Clip is ready â€” it replaces the still for this scene
+                        // Clip is ready €” it replaces the still for this scene
                         var vd = document.createElement("video");
                         vd.src = clip.video_url;
                         vd.controls = true;
@@ -9272,7 +9272,7 @@ function renderStudioStages() {
                     }
                     var lb = document.createElement("div");
                     lb.className = "frame-label";
-                    lb.textContent = (clip ? "â–¶ Sc " : "Sc ") + f.number + " â€” " + f.title;
+                    lb.textContent = (clip ? "â–¶ Sc " : "Sc ") + f.number + " €” " + f.title;
                     fr.appendChild(lb);
                     strip.appendChild(fr);
                 });
@@ -9286,7 +9286,7 @@ function renderStudioStages() {
                 }
                 var clipCount = Object.keys(studioClips).length;
                 if (studioSingleVideo) {
-                    // One Alibaba video for the whole piece â€” no clips, no stapling.
+                    // One Alibaba video for the whole piece €” no clips, no stapling.
                     if (!studioFinalVideo && !studioClipsMessage && !studioClipsDisabled) {
                         var sv = document.createElement("div");
                         sv.className = "studio-scene-cam";
@@ -9297,7 +9297,7 @@ function renderStudioStages() {
                     var cn = document.createElement("div");
                     cn.className = "studio-scene-cam";
                     cn.textContent = "Clips " + clipCount + " / " + (studioExpectedClips || clipCount) +
-                        (clipCount < studioExpectedClips ? " â€” animating stills..." : " â€” ready");
+                        (clipCount < studioExpectedClips ? " €” animating stills..." : " €” ready");
                     card.appendChild(cn);
                 }
                 if (studioClipsDisabled) {
@@ -9315,7 +9315,7 @@ function renderStudioStages() {
                     cm.textContent = studioClipsMessage;
                     card.appendChild(cm);
                 }
-                // Clips finished but never joined â€” offer the free re-join.
+                // Clips finished but never joined €” offer the free re-join.
                 if (studioCanRetryAssembly && !studioFinalVideo) {
                     var rbtn = document.createElement("button");
                     rbtn.textContent = "Join the clips into a trailer";
@@ -9323,7 +9323,7 @@ function renderStudioStages() {
                     rbtn.onclick = function () { retryStudioAssembly(rbtn); };
                     card.appendChild(rbtn);
                 }
-                // Cost meter â€” spend so far, estimate, remaining budget
+                // Cost meter €” spend so far, estimate, remaining budget
                 if (studioJobCost) {
                     var meter = document.createElement("div");
                     meter.className = "studio-scene-cam";
@@ -9332,8 +9332,8 @@ function renderStudioStages() {
                     var est = (studioJobCost.est_cost_usd || 0).toFixed(2);
                     var rem = (studioJobCost.remaining_budget_usd || 0).toFixed(2);
                     meter.textContent = studioTestMode
-                        ? "Test mode â€” no spend Â· budget left $" + rem
-                        : "Spent $" + spend + " of ~$" + est + " est Â· budget left $" + rem;
+                        ? "Test mode €” no spend · budget left $" + rem
+                        : "Spent $" + spend + " of ~$" + est + " est · budget left $" + rem;
                     card.appendChild(meter);
                 }
                 // Which scenes didn't make it
@@ -9350,7 +9350,7 @@ function renderStudioStages() {
                     asm.textContent = "Joining clips into the trailer...";
                     card.appendChild(asm);
                 }
-                // Marcus's per-clip reviews â€” the crew watching its own work
+                // Marcus's per-clip reviews €” the crew watching its own work
                 var reviewNums = Object.keys(studioClipReviews);
                 if (reviewNums.length) {
                     var rl = document.createElement("div");
@@ -9366,7 +9366,7 @@ function renderStudioStages() {
                             "background:rgba(15,23,42,0.55);border-left:3px solid " + (bad ? "#f87171" : "#34d399") + ";";
                         var head = document.createElement("div");
                         head.style.cssText = "color:#94a3b8;font-size:10.5px;margin-bottom:3px;";
-                        head.textContent = "Scene " + n + (bad ? " â€” doesn't match" : " â€” matches");
+                        head.textContent = "Scene " + n + (bad ? " €” doesn't match" : " €” matches");
                         row.appendChild(head);
                         var body = document.createElement("div");
                         body.style.color = "#cbd5e1";
@@ -9476,20 +9476,20 @@ function studioFinish(msg) {
     var filmName = (studioLogline || studioBrief || "").trim();
     if (filmName.length > 110) filmName = filmName.slice(0, 107) + "...";
     if (studioFinalVideo) {
-        window.vmNotify("Your video is ready", filmName || "Your trailer is finished â€” tap to watch.",
+        window.vmNotify("Your video is ready", filmName || "Your trailer is finished €” tap to watch.",
                         { url: studioFinalVideo, type: "video" });
     } else {
         window.vmNotify("Your storyboard is ready", filmName || "Open the Studio to see it.",
                         { type: "studio" });
     }
-    if (promptEl) promptEl.placeholder = "Start a new production â€” say hi or pitch another idea...";
+    if (promptEl) promptEl.placeholder = "Start a new production €” say hi or pitch another idea...";
     renderStudioStages();
 }
 
 // Poll a background video job until it finishes. This is what makes a run
 // survive the browser closing: on return, reconnecting to the job id resumes
 // exactly here, and the server keeps rendering regardless.
-// Re-join clips that finished but never got assembled. Free â€” no regeneration.
+// Re-join clips that finished but never got assembled. Free €” no regeneration.
 function retryStudioAssembly(btn) {
     var jid = studioJobIdForRetry;
     if (!jid) return;
@@ -9569,9 +9569,9 @@ function startStudioJobPolling(jobId) {
                 var doneN = job.done || 0, total = job.total || studioExpectedClips;
                 if (label && job.status === "running") {
                     label.textContent = studioSingleVideo
-                        ? (job.stalled ? "Render paused â€” reconnecting..." : "Rendering your video...")
+                        ? (job.stalled ? "Render paused €” reconnecting..." : "Rendering your video...")
                         : (job.stalled
-                            ? "Render paused â€” reconnecting (" + doneN + "/" + total + ")..."
+                            ? "Render paused €” reconnecting (" + doneN + "/" + total + ")..."
                             : "Rendering clips (" + doneN + "/" + total + ")...");
                 }
                 renderStudioStages();
@@ -9580,15 +9580,15 @@ function startStudioJobPolling(jobId) {
                 if (terminal) {
                     studioFinalVideo = job.final_video || studioFinalVideo || "";
                     studioJobId = "";
-                    // An assembly that produced no trailer is a failure â€” say so
+                    // An assembly that produced no trailer is a failure €” say so
                     // rather than leaving loose clips looking like success.
                     studioClipsMessage = job.error || "";
                     var msg = studioSingleVideo ? "Your video is ready" : "Production complete";
-                    if (job.status === "budget_capped") msg = "Budget cap reached â€” assembled what was ready";
+                    if (job.status === "budget_capped") msg = "Budget cap reached €” assembled what was ready";
                     else if (job.status === "failed") msg = "Render failed" + (job.error ? ": " + job.error : "");
                     else if (job.status === "aborted") msg = "Run stopped";
                     else if (!job.final_video) msg = studioSingleVideo ? "The video didn't finish rendering" : "Clips ready, but they were not joined";
-                    if (studioMissingScenes.length) msg += " Â· missing scenes: " + studioMissingScenes.join(", ");
+                    if (studioMissingScenes.length) msg += " · missing scenes: " + studioMissingScenes.join(", ");
                     studioFinish(msg);
                 } else {
                     studioJobTimer = setTimeout(poll, 6000);
@@ -9680,7 +9680,7 @@ async function runStudioPipeline(ideaArg) {
 
                 if (evt.error) { finish(evt.error); return; }
                 if (evt.done) {
-                    // A background video job owns completion â€” don't finish yet.
+                    // A background video job owns completion €” don't finish yet.
                     if (studioJobPolling) { return; }
                     finish();
                     return;
@@ -9723,7 +9723,7 @@ async function runStudioPipeline(ideaArg) {
                 if (evt.stage === "clips") {
                     var eIdx = studioStageIndex("storyboard");
                     if (evt.status === "queued") {
-                        // Async job accepted â€” hand off to the poller.
+                        // Async job accepted €” hand off to the poller.
                         studioJobId = evt.job_id || "";
                         studioExpectedClips = evt.total || 0;
                         studioSingleVideo = !!evt.single_video;
@@ -9918,7 +9918,7 @@ function renderImageResultCard(imageUrl, prompt, revisedPrompt) {
         imgWrap.appendChild(img);
         card.appendChild(imgWrap);
 
-        // Body â€” only actions, no prompt
+        // Body €” only actions, no prompt
         var body = document.createElement("div");
         body.className = "card-body";
         body.style.padding = "12px 16px";
@@ -10029,12 +10029,12 @@ async function checkSession() {
                 return false;
             }
 
-            // Auth is fully resolved â€” safe to fetch protected session endpoints.
+            // Auth is fully resolved €” safe to fetch protected session endpoints.
             isAuthenticated = true;
             authCheckComplete = true;
 
             // Global video-generation kill switch (fails closed). Playback and
-            // the Video Gallery are unaffected â€” this gates generation only.
+            // the Video Gallery are unaffected €” this gates generation only.
             window.VIDEO_GEN_ENABLED = data.video_generation_enabled === true;
             applyVideoGenAvailability();
 
@@ -10050,7 +10050,7 @@ async function checkSession() {
 
             // Always open the app on a fresh, empty chat.  Previous conversations
             // stay listed in the sidebar (loadSessions below) for the user to pick
-            // manually â€” never auto-restore the last-active thread.
+            // manually €” never auto-restore the last-active thread.
             currentChatId = "";
             clearVisibleMessages();
             messageStore.length = 0;
@@ -10210,7 +10210,7 @@ function closeRecovery() {
 
 // Step 1 of the email-based reset: request a reset link. The server always
 // returns the same generic confirmation, so this can never reveal whether an
-// account exists â€” we show that message verbatim and move on.
+// account exists €” we show that message verbatim and move on.
 async function verifyEmail() {
     var email = document.getElementById("recoveryEmail").value.trim();
     var errorEl = document.getElementById("recoveryError");
@@ -10234,7 +10234,7 @@ async function verifyEmail() {
 }
 
 // Step 2 of the email-based reset: swap the emailed single-use token for a new
-// password. The backend accepts ONLY { token, new_password } â€” no security
+// password. The backend accepts ONLY { token, new_password } €” no security
 // question path exists anymore.
 async function resetPassword() {
     var token = window._vmResetToken || "";
@@ -10290,7 +10290,7 @@ var _vmShowOtpSentMsg = false;
 // 50-second resend cooldown timer (cosmetic frontend countdown).
 var _verifyResendTimer = null;
 var _verifyResendRemaining = 0;
-var _VERIFY_RESEND_COOLDOWN = 50; // seconds â€” matches EMAIL_RESEND_COOLDOWN in app.py
+var _VERIFY_RESEND_COOLDOWN = 50; // seconds €” matches EMAIL_RESEND_COOLDOWN in app.py
 
 function _startVerifyResendCooldown(seconds) {
     _clearVerifyResendCooldown();
@@ -10614,7 +10614,7 @@ async function handleGoogleLogin(response) {
         }
         setAuthToken(data.session_token || "");
         // Server-side setup-status (GET /api/settings/setup-status) now
-        // determines whether to show the preferences wizard â€” no client-side
+        // determines whether to show the preferences wizard €” no client-side
         // flag needed.
         // Show "Verification code sent to your email." when the verify modal opens
         // for a new Google user (backend sends the OTP synchronously).
@@ -10778,7 +10778,7 @@ async function signup(event) {
         // First-run flag: show the Chat guide the moment the dashboard loads.
         try { sessionStorage.setItem("vm_first_run", "1"); } catch (_) {}
         // Server-side setup-status (GET /api/settings/setup-status) now
-        // determines whether to show the preferences wizard â€” no client-side
+        // determines whether to show the preferences wizard €” no client-side
         // flag needed.
         var authenticated = await checkSession();
         if (!authenticated) throw new Error("Session validation failed");
@@ -10907,7 +10907,7 @@ window.send = async function () {
     clearImageUpload();          // clear chips now that they've been sent
     resetComposerHeight();       // shrink box back to single line
     updateSendButtonDim();
-    if (currentChatId) clearChatDraft(currentChatId);   // sent â€” no longer a draft
+    if (currentChatId) clearChatDraft(currentChatId);   // sent €” no longer a draft
     setInputPlaceholder("sending");
     const thinking = addThinkingIndicator();
 
@@ -10996,14 +10996,14 @@ window.send = async function () {
                                 statusBubble.textContent = (evt.status_message || "Generating video...");
                             } else if (evt.intent === "searching_web") {
                                 var domainLabels = {
-                                    "tech": "Checking documentation & technical sourcesâ€¦",
-                                    "news": "Scanning latest news sourcesâ€¦",
-                                    "sports": "Looking up scores & sports dataâ€¦",
-                                    "science": "Checking research & scientific sourcesâ€¦",
-                                    "media": "Looking up reviews & media infoâ€¦",
-                                    "general": "Researchingâ€¦"
+                                    "tech": "Checking documentation & technical sources€¦",
+                                    "news": "Scanning latest news sources€¦",
+                                    "sports": "Looking up scores & sports data€¦",
+                                    "science": "Checking research & scientific sources€¦",
+                                    "media": "Looking up reviews & media info€¦",
+                                    "general": "Researching€¦"
                                 };
-                                statusBubble.textContent = domainLabels[evt.domain] || "Researchingâ€¦";
+                                statusBubble.textContent = domainLabels[evt.domain] || "Researching€¦";
                             } else {
                                 statusBubble.textContent = "Searching the web...";
                             }
@@ -11023,7 +11023,7 @@ window.send = async function () {
                     continue;
                 }
 
-                /* ---- THINKING PROCESS â€” collapsible reasoning steps ---- */
+                /* ---- THINKING PROCESS €” collapsible reasoning steps ---- */
                 if (evt.thinking_process) {
                     var tp = evt.thinking_process;
                     if (!thinkingBlock) {
@@ -11039,13 +11039,13 @@ window.send = async function () {
                     continue;
                 }
 
-                /* ---- REPLY MODE â€” user asked for a copy-ready message ---- */
+                /* ---- REPLY MODE €” user asked for a copy-ready message ---- */
                 if (evt.reply_mode) {
                     streamReplyMode = true;
                     continue;
                 }
 
-                /* ---- RECOVERY STATUS â€” context-recovery indicator ---- */
+                /* ---- RECOVERY STATUS €” context-recovery indicator ---- */
                 if (evt.recovery_status) {
                     var _recoveryLabels = {
                         "searching": "Finding where we left off\u2026",
@@ -11088,7 +11088,7 @@ window.send = async function () {
                     continue;
                 }
 
-                /* ---- VIDEO URL â€” RENDER PLAYER ---- */
+                /* ---- VIDEO URL €” RENDER PLAYER ---- */
                 if (evt.video_url) {
                     console.log("[TRACE FE] SSE video_url received:", evt.video_url);
                     removeThinkingIndicator(thinking);
@@ -11225,7 +11225,7 @@ window.send = async function () {
             }
         }
 
-        /* Only render sources when real search evidence was collected â€”
+        /* Only render sources when real search evidence was collected €”
            never show empty or fake source lists. */
         if (bubbleEl && streamSourceMetadata.length && streamSourceMetadata.some(function (s) { return s && s.url && s.domain; })) {
             renderSourcesPanel(bubbleEl, streamSourceMetadata, streamConfidence);
@@ -11238,7 +11238,7 @@ window.send = async function () {
             thinkingBlock = null;
         }
 
-        /* MODE B â€” reply/copy request: render a prominent copy bar under the message */
+        /* MODE B €” reply/copy request: render a prominent copy bar under the message */
         if (bubbleEl && streamReplyMode) {
             renderReplyCopyBar(bubbleEl);
         }
@@ -11250,9 +11250,9 @@ window.send = async function () {
             renderSessionList();
         }
 
-        /* Messages already persisted by backend during stream â€” no duplicate save needed */
+        /* Messages already persisted by backend during stream €” no duplicate save needed */
         if (currentChatId) saveLastChatId(currentChatId);
-        /* refresh sessions once â€” dedup guard prevents double fetch */
+        /* refresh sessions once €” dedup guard prevents double fetch */
         if (!window._sessionsRefreshPending) {
             window._sessionsRefreshPending = true;
             loadSessions({ showLoading: false }).finally(function () {
@@ -11299,7 +11299,7 @@ window.send = async function () {
             }
             addMessage(reply, "ai");
 
-            /* Backend already persisted messages in /chat â€” no duplicate save needed */
+            /* Backend already persisted messages in /chat €” no duplicate save needed */
             if (currentChatId) saveLastChatId(currentChatId);
             if (!window._sessionsRefreshPending) {
                 window._sessionsRefreshPending = true;
@@ -11336,9 +11336,9 @@ function aibGo(view) {
     if (btn) btn.style.display = view === "home" ? "none" : "";
     var sub = document.getElementById("aibTopbarSub");
     if (sub) {
-        if (view === "plan") sub.textContent = "Plan your project before building â€” edit anything you like.";
+        if (view === "plan") sub.textContent = "Plan your project before building €” edit anything you like.";
         else if (view === "build") sub.textContent = "Live build progress, files, preview and download.";
-        else sub.textContent = "Describe an idea â€” get a full, production-ready project.";
+        else sub.textContent = "Describe an idea €” get a full, production-ready project.";
     }
 }
 
@@ -11471,7 +11471,7 @@ function vmSetVideoQuota(limit) {
 }
 
 function vmDashRender(d) {
-    function val(x) { return x == null ? "â€”" : String(x); }
+    function val(x) { return x == null ? "€”" : String(x); }
     function card(title, rows) {
         var h = '<div style="background:rgba(15,23,42,0.7);border:1px solid rgba(148,163,184,0.15);border-radius:12px;padding:14px 16px;">' +
             '<h3 style="margin:0 0 10px;color:#94a3b8;font-size:12px;text-transform:uppercase;letter-spacing:.06em;">' + esc(title) + '</h3>';
@@ -11493,8 +11493,8 @@ function vmDashRender(d) {
         var r = health[k];
         return '<tr><td style="padding:4px 8px;color:#e2e8f0;">' + esc(r.label) + '</td>' +
             '<td style="padding:4px 8px;color:' + (r.available ? "#4ade80" : "#f87171") + ';">' + (r.available ? "available" : "cooldown " + r.cooldown_s + "s") + '</td>' +
-            '<td style="padding:4px 8px;">' + (r.success_rate == null ? "â€”" : Math.round(r.success_rate * 100) + "%") + '</td>' +
-            '<td style="padding:4px 8px;">' + (r.avg_ms == null ? "â€”" : r.avg_ms + "ms") + '</td>' +
+            '<td style="padding:4px 8px;">' + (r.success_rate == null ? "€”" : Math.round(r.success_rate * 100) + "%") + '</td>' +
+            '<td style="padding:4px 8px;">' + (r.avg_ms == null ? "€”" : r.avg_ms + "ms") + '</td>' +
             '<td style="padding:4px 8px;">' + (r.builds_completed || 0) + '</td>' +
             '<td style="padding:4px 8px;">' + (r.timeouts || 0) + '</td></tr>';
     }).join("");
@@ -11526,7 +11526,7 @@ function vmDashQuota() {
             block.innerHTML =
                 '<div style="background:rgba(15,23,42,0.7);border:1px solid rgba(148,163,184,0.15);border-radius:12px;padding:14px 16px;margin-top:20px;">' +
                 '<h3 style="margin:0 0 10px;color:#94a3b8;font-size:12px;text-transform:uppercase;letter-spacing:.06em;">Video generation quota</h3>' +
-                '<div style="font-size:13px;color:#e2e8f0;margin-bottom:10px;">Active limit: <b>' + j.active_limit + '</b> videos &nbsp;Â·&nbsp; Max (env): ' + j.env_max + '</div>' +
+                '<div style="font-size:13px;color:#e2e8f0;margin-bottom:10px;">Active limit: <b>' + j.active_limit + '</b> videos &nbsp;·&nbsp; Max (env): ' + j.env_max + '</div>' +
                 '<div style="font-size:12px;color:#64748b;margin-bottom:10px;">Paid users may generate up to this many videos. Your own account always keeps the full env max.</div>' +
                 opts + '</div>';
         }).catch(function () {});
@@ -11548,7 +11548,7 @@ function aibLoadStatus() {
             aibPopulateBuilders(j.default_builder || "");
             aibRenderDevToggle(!!j.is_creator);
             var note = document.getElementById("aibModelNote");
-            if (note) note.textContent = "Powered by ValleyMind AI Â· Free to use";
+            if (note) note.textContent = "Powered by ValleyMind AI · Free to use";
         }).catch(function () {});
 }
 
@@ -11560,7 +11560,7 @@ function aibPopulateBuilders(defaultId) {
         var opt = document.createElement("option");
         opt.value = b.id;   // opaque branded id (e.g. "vmb5")
         // Short display label ("VMB 4.0"); the full label stays on the server.
-        opt.textContent = aibShortLabel(b.label) + (b.model ? "  Â·  " + b.model : "");
+        opt.textContent = aibShortLabel(b.label) + (b.model ? "  ·  " + b.model : "");
         if (b["default"] || b.id === defaultId) opt.selected = true;
         sel.appendChild(opt);
     });
@@ -11581,7 +11581,7 @@ function aibUpdateModelHint() {
     hint.textContent = b ? (b.note || "") : "";
 }
 
-// Developer Mode toggle â€” only rendered for the creator account; flips the
+// Developer Mode toggle €” only rendered for the creator account; flips the
 // localStorage flag and reloads the list so provider ids show/hide.
 function aibRenderDevToggle(isCreator) {
     var existing = document.getElementById("aibDevToggle");
@@ -11603,7 +11603,7 @@ function aibRenderDevToggle(isCreator) {
 
 function aibLoaderHtml() {
     return '<div class="aib-empty" style="display:flex;align-items:center;justify-content:center;gap:8px;color:#00d4ff;">' +
-        '<i data-lucide="loader-circle" style="width:15px;height:15px;" class="aib-spin"></i> Loadingâ€¦</div>';
+        '<i data-lucide="loader-circle" style="width:15px;height:15px;" class="aib-spin"></i> Loading€¦</div>';
 }
 
 function aibSelectType(el) {
@@ -11687,7 +11687,7 @@ function aibMicTap() {
     _aibSR = new SR();
     _aibSR.lang = "en-US";
     _aibSR.interimResults = false;
-    _aibSR.onstart = function () { _aibMicOn = true; if (btn) { btn.classList.add("active"); btn.textContent = "Listeningâ€¦"; } };
+    _aibSR.onstart = function () { _aibMicOn = true; if (btn) { btn.classList.add("active"); btn.textContent = "Listening€¦"; } };
     _aibSR.onend = function () { _aibMicOn = false; if (btn) { btn.classList.remove("active"); btn.textContent = "Mic"; } };
     _aibSR.onerror = function () { _aibMicOn = false; if (btn) { btn.classList.remove("active"); btn.textContent = "Mic"; } };
     _aibSR.onresult = function (evt) {
@@ -11760,7 +11760,7 @@ function aibStream(url, body, onEvent) {
 
 function aibClarify() {
     var statusEl = document.getElementById("aibClarifyStatus");
-    statusEl.innerHTML = '<span class="aib-thinking">Analyzing your requestâ€¦</span>';
+    statusEl.innerHTML = '<span class="aib-thinking">Analyzing your request€¦</span>';
     document.getElementById("aibQuestions").innerHTML = "";
     document.getElementById("aibPlanActions").style.display = "none";
     aibStream("/api/ai-builder/clarify", { message: aibState.desc, project_type: aibState.type, attachments: aibAttachFiles }, function (evt) {
@@ -11798,7 +11798,7 @@ function aibRenderQuestions(qs) {
         });
         html += '</div></div>';
     });
-    wrap.innerHTML = html || '<p class="aib-clarify-status">No questions needed â€” generating the plan.</p>';
+    wrap.innerHTML = html || '<p class="aib-clarify-status">No questions needed €” generating the plan.</p>';
 }
 
 function aibPickOpt(btn) {
@@ -11871,13 +11871,13 @@ function aibRenderSpecPreview(text) {
     if (s.tagline) blocks.push(["Tagline", "<p>" + esc(s.tagline) + "</p>"]);
     if (s.project_overview) blocks.push(["Overview", "<p>" + esc(s.project_overview) + "</p>"]);
     if (s.features) blocks.push(["Features", arr(s.features)]);
-    if (s.stack) blocks.push(["Tech stack", arr(s.stack.map(function (x) { return x.category + " â€” " + (x.choice || x.name || "") + (x.reason ? " â€” " + x.reason : ""); }))]);
-    if (s.ui_pages) blocks.push(["UI pages", arr(s.ui_pages.map(function (p) { return (p.path || "") + " Â· " + (p.name || "") + (p.description ? " â€” " + p.description : ""); }))]);
-    if (s.database_design) blocks.push(["Database", arr(s.database_design.map(function (e) { return (e.entity || "") + (e.fields ? " â€” " + e.fields.map(function (f) { return (f.name || "") + ":" + (f.type || ""); }).join(", ") : ""); }))]);
-    if (s.api_design) blocks.push(["API design", arr(s.api_design.map(function (a) { return (a.method || "") + " " + (a.path || "") + (a.purpose ? " â€” " + a.purpose : ""); }))]);
+    if (s.stack) blocks.push(["Tech stack", arr(s.stack.map(function (x) { return x.category + " €” " + (x.choice || x.name || "") + (x.reason ? " €” " + x.reason : ""); }))]);
+    if (s.ui_pages) blocks.push(["UI pages", arr(s.ui_pages.map(function (p) { return (p.path || "") + " · " + (p.name || "") + (p.description ? " €” " + p.description : ""); }))]);
+    if (s.database_design) blocks.push(["Database", arr(s.database_design.map(function (e) { return (e.entity || "") + (e.fields ? " €” " + e.fields.map(function (f) { return (f.name || "") + ":" + (f.type || ""); }).join(", ") : ""); }))]);
+    if (s.api_design) blocks.push(["API design", arr(s.api_design.map(function (a) { return (a.method || "") + " " + (a.path || "") + (a.purpose ? " €” " + a.purpose : ""); }))]);
     if (s.folder_structure) blocks.push(["Folder structure", arr(s.folder_structure)]);
-    if (s.development_roadmap) blocks.push(["Roadmap", arr(s.development_roadmap.map(function (p) { return "Phase " + (p.phase || "") + ": " + (p.title || "") + (p.tasks ? " â€” " + p.tasks.join("; ") : ""); }))]);
-    if (s.estimated_complexity) blocks.push(["Complexity", "<p>" + esc((s.estimated_complexity.level || "") + " Â· " + (s.estimated_complexity.build_time || "") + (s.estimated_complexity.effort ? " Â· " + s.estimated_complexity.effort : "")) + "</p>"]);
+    if (s.development_roadmap) blocks.push(["Roadmap", arr(s.development_roadmap.map(function (p) { return "Phase " + (p.phase || "") + ": " + (p.title || "") + (p.tasks ? " €” " + p.tasks.join("; ") : ""); }))]);
+    if (s.estimated_complexity) blocks.push(["Complexity", "<p>" + esc((s.estimated_complexity.level || "") + " · " + (s.estimated_complexity.build_time || "") + (s.estimated_complexity.effort ? " · " + s.estimated_complexity.effort : "")) + "</p>"]);
     var html = "";
     blocks.forEach(function (b) { html += '<div class="aib-spec-sec"><h5>' + esc(b[0]) + '</h5>' + b[1] + '</div>'; });
     el.innerHTML = html || '<pre>' + esc(text) + '</pre>';
@@ -11887,7 +11887,7 @@ function aibBuild() {
     var text = document.getElementById("aibSpecEdit").value.trim();
     var spec;
     try { spec = JSON.parse(text); }
-    catch (e) { alert("The spec is not valid JSON â€” check for missing commas or quotes."); return; }
+    catch (e) { alert("The spec is not valid JSON €” check for missing commas or quotes."); return; }
     if (!spec || typeof spec !== "object") { alert("The spec must be a JSON object."); return; }
     aibState.pid = null;
     document.getElementById("aibBtnBuild").disabled = true;
@@ -11919,7 +11919,7 @@ function aibRegenerate() {
     var spec = null;
     try { spec = JSON.parse(specText); } catch (e) { spec = null; }
     if (!spec || typeof spec !== "object") {
-        alert("There's no project to regenerate yet â€” please start a new project.");
+        alert("There's no project to regenerate yet €” please start a new project.");
         return;
     }
     aibState.pid = null;                       // a fresh build, not a resume
@@ -11951,10 +11951,10 @@ function aibRunStream(url, body) {
     }
     aibStream(url, body, function (evt) {
         if (evt.type === "status" || evt.type === "heartbeat") {
-            statusEl.textContent = evt.message || "Workingâ€¦";
+            statusEl.textContent = evt.message || "Working€¦";
         } else if (evt.type === "failover") {
-            // Automatic model failover â€” surface it, don't stop the build.
-            statusEl.textContent = evt.message || "Switching builderâ€¦";
+            // Automatic model failover €” surface it, don't stop the build.
+            statusEl.textContent = evt.message || "Switching builder€¦";
             addLog('<span class="aib-log-skip">' + studioIcon("refresh-cw", 13) + ' ' + esc(evt.message || "Switched builder automatically") + '</span>');
             if (typeof studioRefreshIcons === "function") studioRefreshIcons();
         } else if (evt.type === "manifest") {
@@ -11979,17 +11979,17 @@ function aibRunStream(url, body) {
             addLog('<span class="aib-log-ok">' + studioIcon("check", 13) + ' ' + esc(evt.path) + (evt.resumed ? ' (already built)' : '') + '</span>');
             if (typeof studioRefreshIcons === "function") studioRefreshIcons();
         } else if (evt.type === "file_error") {
-            addLog('<span class="aib-log-err">' + studioIcon("x-circle", 13) + ' ' + esc(evt.path) + ' â€” ' + esc(evt.message) + '</span>');
+            addLog('<span class="aib-log-err">' + studioIcon("x-circle", 13) + ' ' + esc(evt.path) + ' €” ' + esc(evt.message) + '</span>');
             if (typeof studioRefreshIcons === "function") studioRefreshIcons();
         } else if (evt.type === "file_skipped") {
-            addLog('<span class="aib-log-skip">' + studioIcon("minus-circle", 13) + ' ' + esc(evt.path) + ' â€” ' + esc(evt.message || "skipped") + '</span>');
+            addLog('<span class="aib-log-skip">' + studioIcon("minus-circle", 13) + ' ' + esc(evt.path) + ' €” ' + esc(evt.message || "skipped") + '</span>');
             if (typeof studioRefreshIcons === "function") studioRefreshIcons();
         } else if (evt.type === "paused") {
-            // Rate-limited across all models â€” progress saved, offer Resume.
+            // Rate-limited across all models €” progress saved, offer Resume.
             aibState.pid = evt.project_id || aibState.pid;
             document.getElementById("aibBuildStatus").textContent = "Paused";
             document.getElementById("aibBuildStatus").className = "aib-badge";
-            statusEl.textContent = evt.message || "Build paused â€” rate limited";
+            statusEl.textContent = evt.message || "Build paused €” rate limited";
             addLog('<span class="aib-log-skip">' + studioIcon("pause-circle", 13) + ' ' + esc(evt.message || "Paused (rate limited)") + '</span>');
             addLog('<button onclick="aibResume()" class="aib-btn aib-btn-primary aib-btn-sm" style="margin-top:8px;">Resume build</button>');
             if (typeof studioRefreshIcons === "function") studioRefreshIcons();
@@ -11999,7 +11999,7 @@ function aibRunStream(url, body) {
         } else if (evt.type === "done") {
             document.getElementById("aibBuildStatus").textContent = "Complete";
             document.getElementById("aibBuildStatus").className = "aib-badge aib-badge-live";
-            statusEl.textContent = "Build complete â€” " + fileCount + " files generated";
+            statusEl.textContent = "Build complete €” " + fileCount + " files generated";
         } else if (evt.type === "error") {
             addLog('<span class="aib-log-err">' + esc(evt.message || "Error") + '</span>');
             addLog('<button onclick="aibRegenerate()" class="aib-btn aib-btn-primary aib-btn-sm" style="margin-top:8px;">Try again</button>');
@@ -12020,19 +12020,19 @@ function aibResetBuildUI() {
     document.getElementById("aibBuildResult").style.display = "none";
     document.getElementById("aibProgressBar").style.width = "0%";
     document.getElementById("aibProgressCount").textContent = "0/0";
-    document.getElementById("aibProgressText").textContent = "Designing the architectureâ€¦";
+    document.getElementById("aibProgressText").textContent = "Designing the architecture€¦";
     document.getElementById("aibBuildStatus").textContent = "Running";
     document.getElementById("aibBuildStatus").className = "aib-badge aib-badge-live";
     document.getElementById("aibBuildLog").innerHTML = "";
     var live = document.getElementById("aibBuildLive");
-    if (live) live.innerHTML = '<pre id="aibBuildLivePre"><span class="aib-tok-com">// waiting for the first fileâ€¦</span></pre>';
+    if (live) live.innerHTML = '<pre id="aibBuildLivePre"><span class="aib-tok-com">// waiting for the first file€¦</span></pre>';
 }
 
 function aibShowLivePane(path) {
     var head = document.getElementById("aibBuildLive");
     if (!head) return;
     head.innerHTML = '<div class="aib-code-head"><span>' + esc(path) + '</span></div>' +
-        '<pre id="aibBuildLivePre"><span class="aib-tok-com">// generatingâ€¦</span></pre>';
+        '<pre id="aibBuildLivePre"><span class="aib-tok-com">// generating€¦</span></pre>';
 }
 
 function aibShowResult(project) {
@@ -12107,7 +12107,7 @@ function aibShowFile(path, el) {
     var codeEl = document.getElementById("aibCode");
     codeEl.innerHTML = '<div class="aib-code-head"><span>' + esc(path) + '</span>' +
         '<button class="aib-btn aib-btn-ghost aib-btn-sm" onclick="aibCopyCode()">' + studioIcon("copy", 13) + ' Copy</button></div>' +
-        '<pre id="aibCodePre"><span class="aib-tok-com">loadingâ€¦</span></pre>';
+        '<pre id="aibCodePre"><span class="aib-tok-com">loading€¦</span></pre>';
     if (typeof studioRefreshIcons === "function") studioRefreshIcons();
     apiFetch("/api/ai-builder/projects/" + encodeURIComponent(aibState.pid) + "/file?path=" + encodeURIComponent(path), { timeoutMs: 20000 })
         .then(function (r) { return r.json(); })
@@ -12166,7 +12166,7 @@ function aibLoadProjects() {
             var cnt = document.getElementById("aibProjectCount");
             if (cnt) cnt.textContent = projects.length + (projects.length === 1 ? " project" : " projects");
             if (!projects.length) {
-                list.innerHTML = '<div class="aib-empty">No projects yet â€” describe your first idea above and hit "Start building".</div>';
+                list.innerHTML = '<div class="aib-empty">No projects yet €” describe your first idea above and hit "Start building".</div>';
                 return;
             }
             var html = "";
@@ -12277,7 +12277,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const form = document.getElementById("loginForm");
     if (form) form.addEventListener("submit", login);
 
-    // Remember Me â€” purely client-side convenience; auth logic is untouched.
+    // Remember Me €” purely client-side convenience; auth logic is untouched.
     (function () {
         var emailInput = document.getElementById("loginEmail");
         var remember = document.getElementById("loginRemember");
