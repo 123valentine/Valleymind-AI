@@ -42,6 +42,19 @@
     fallDir: 1
   };
 
+  function recomputeBarCount() {
+    try {
+      if (!state.barsParent) return state.bars.length || BAR_COUNT;
+      var rect = state.barsParent.getBoundingClientRect();
+      var width = rect.width || state.barsParent.clientWidth || 0;
+      var computed = Math.floor(width / (BAR_WIDTH + BAR_GAP));
+      if (computed < BAR_COUNT) computed = BAR_COUNT;
+      return computed;
+    } catch (e) {
+      return BAR_COUNT;
+    }
+  }
+
   // ------------------------------------------------------------------ DOM/CSS
   function injectCss() {
     try {
@@ -104,8 +117,9 @@
     try {
       if (!state.barsParent) return;
       if (state.bars.length) return;
+      var count = recomputeBarCount();
       var frag = document.createDocumentFragment();
-      for (var i = 0; i < BAR_COUNT; i++) {
+      for (var i = 0; i < count; i++) {
         var b = document.createElement("div");
         b.className = "vmWaveBar";
         b.style.width = BAR_WIDTH + "px";
@@ -115,7 +129,7 @@
         state.bars.push(b);
       }
       state.barsParent.appendChild(frag);
-      state.levels = new Array(BAR_COUNT).fill(0);
+      state.levels = new Array(count).fill(0);
     } catch (e) {}
   }
 
@@ -125,7 +139,7 @@
       // Scrolling history: shift left, push new level on the right.
       state.levels = state.levels.slice(1);
       state.levels.push(levels[levels.length - 1] || 0);
-      for (var i = 0; i < BAR_COUNT; i++) {
+      for (var i = 0; i < state.bars.length; i++) {
         var lvl = state.levels[i];
         if (lvl < 0) lvl = 0;
         if (lvl > 1) lvl = 1;
@@ -137,8 +151,8 @@
 
   function silence() {
     try {
-      state.levels = new Array(BAR_COUNT).fill(0);
-      for (var i = 0; i < BAR_COUNT; i++) {
+      state.levels = new Array(state.bars.length).fill(0);
+      for (var i = 0; i < state.bars.length; i++) {
         state.bars[i].style.height = MIN_HEIGHT + "px";
       }
     } catch (e) {}
@@ -326,6 +340,26 @@
   try {
     if (typeof window !== "undefined") {
       window.vmWave = api;
+      // Recompute bar count on resize so the wave spans the full composer width.
+      try {
+        window.addEventListener("resize", function () {
+          try {
+            var nc = recomputeBarCount();
+            if (state.barsParent && state.bars.length !== nc && state.activeKind) {
+              // Rebuild bars with new count.
+              var oldBars = state.bars;
+              state.bars = [];
+              state.barsParent.innerHTML = "";
+              buildBars();
+              // Transfer recent levels.
+              var k = Math.min(oldBars.length, state.bars.length);
+              for (var i = 0; i < k; i++) {
+                state.bars[i].style.height = oldBars[i].style.height;
+              }
+            }
+          } catch (e) {}
+        });
+      } catch (e) {}
     }
   } catch (e) {}
   try {

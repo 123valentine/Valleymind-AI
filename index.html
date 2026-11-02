@@ -3129,7 +3129,7 @@ body[data-vm-companion="cloud"] #vmVrmCompanion { display: none !important; }
                   <span id="personaBtnLabel">Marcus</span>
                   <i data-lucide="chevron-up" style="width:13px;height:13px;"></i>
                 </button>
-                <div id="personaMenu" style="display:none;position:absolute;bottom:calc(100% + 8px);left:0;background:#0f172a;border:1px solid rgba(0,212,255,0.2);border-radius:12px;padding:6px;min-width:200px;box-shadow:0 12px 40px rgba(0,0,0,0.7);z-index:100;"></div>
+                <div id="personaMenu" style="display:none;position:fixed;background:#0f172a;border:1px solid rgba(0,212,255,0.2);border-radius:12px;padding:6px;min-width:220px;box-shadow:0 12px 40px rgba(0,0,0,0.7);z-index:1000;"></div>
               </div>
             </div>
 
@@ -3140,7 +3140,7 @@ body[data-vm-companion="cloud"] #vmVrmCompanion { display: none !important; }
                 <i data-lucide="mic" style="width:18px;height:18px;"></i>
               </button>
               <!-- Send -->
-              <button id="sendBtn" onclick="if(_sendAborted||_sendAbortController){cancelSend();}else{send();}" style="width:36px;height:36px;border-radius:50%;background:#00d4ff;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 0 12px rgba(0,212,255,0.35);transition:all 0.2s;" onmouseover="this.style.transform='scale(1.08)'" onmouseout="this.style.transform='scale(1)'" onmousedown="this.style.transform='scale(0.95)'" onmouseup="this.style.transform='scale(1)'">
+              <button id="sendBtn" onclick="handleSendClick()" style="width:36px;height:36px;border-radius:50%;background:#00d4ff;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 0 12px rgba(0,212,255,0.35);transition:all 0.2s;" onmouseover="this.style.transform='scale(1.08)'" onmouseout="this.style.transform='scale(1)'" onmousedown="this.style.transform='scale(0.95)'" onmouseup="this.style.transform='scale(1)'">
                 <i id="sendIcon" data-lucide="send" style="width:18px;height:18px;color:#003642;"></i>
               </button>
             </div>
@@ -6946,7 +6946,18 @@ function togglePersonaMenu() {
         item.onclick = function () { setPersona(m.key); menu.style.display = "none"; };
         menu.appendChild(item);
     });
-    menu.style.display = "block";
+    // Position the menu ABOVE the persona button (fixed position escapes composer overflow:hidden).
+    var btn = document.getElementById("personaBtn");
+    if (btn) {
+        var rect = btn.getBoundingClientRect();
+        // Temporarily show to measure height.
+        menu.style.display = "block";
+        var mh = menu.offsetHeight || 200;
+        menu.style.left = rect.left + "px";
+        menu.style.top = Math.max(8, rect.top - mh - 8) + "px";
+    } else {
+        menu.style.display = "block";
+    }
 }
 
 function setPersona(key) {
@@ -10958,6 +10969,17 @@ async function logout() {
     logSidebarState("logout");
 }
 
+window.handleSendClick = function () {
+    if (_sendAborted || _sendAbortController) {
+        cancelSend();
+        return;
+    }
+    // Save text BEFORE send() clears the textarea (at click time).
+    var input = document.getElementById("chatInput");
+    _sendOriginalText = input ? input.value.trim() : "";
+    send();
+};
+
 window.send = async function () {
     if (!authCheckComplete || isThinking) return;
     const input = document.getElementById("chatInput");
@@ -11498,12 +11520,21 @@ window.cancelSend = function () {
             removeThinkingIndicator(null);
         }
 
-        // Restore original text and focus.
+        // Restore original text and focus (after UI update finishes).
         var input = document.getElementById("chatInput");
         if (input) {
-            input.value = _sendOriginalText;
-            if (typeof autoGrowInput === "function") autoGrowInput();
-            input.focus();
+            setTimeout(function () {
+                input.value = _sendOriginalText;
+                if (typeof autoGrowInput === "function") autoGrowInput();
+                input.focus();
+                // Set cursor to end of text.
+                var len = input.value.length;
+                try {
+                    if (input.setSelectionRange) {
+                        input.setSelectionRange(len, len);
+                    }
+                } catch (e) {}
+            }, 0);
         }
 
         // Unlock thinking state.
