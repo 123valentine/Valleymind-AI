@@ -2127,7 +2127,7 @@
     transition:border-color 0.18s ease, box-shadow 0.18s ease;
   }
   #composer.focused{ border-color:rgba(0,212,255,0.45); box-shadow:0 0 0 1px rgba(0,212,255,0.15); }
-  #composerRow{ display:flex; align-items:flex-end; gap:4px; }
+  #composerRow{ display:flex; flex-direction:column; gap:6px; width:100%; }
   #chatInput:focus{ outline:none !important; box-shadow:none !important; }
   /* Mobile: stack the composer vertically — text input on top, persona
      selector directly underneath, then the mic/send row. The textarea keeps
@@ -2186,7 +2186,7 @@
     /* G1a: compact rounded composer box on phones. Textarea on top; slim
        bottom row: + button + persona pill on the left, mic + send on the
        right. Laptop layout untouched. */
-    #composer{ padding:5px 7px; border-radius:16px; max-height: 42dvh; overflow:hidden; display:flex; flex-direction:column; gap:5px; }
+    #composer{ padding:8px; border-radius:16px; max-height: 42dvh; overflow:hidden; display:flex; flex-direction:column; gap:5px; }
     #composerRow{ display:flex; flex-direction:column; gap:6px; width:100%; }
     /* Row 1: textarea full width */
     #chatInput{ order:1; width:100%; flex:none; min-height:44px; }
@@ -3092,7 +3092,7 @@ body[data-vm-companion="cloud"] #vmVrmCompanion { display: none !important; }
           <div id="vmWaveContainer" style="display:none"><div id="vmWaveBars"></div></div>
 
           <!-- Button row: LEFT group = + then persona; RIGHT group = mic then send -->
-          <div id="composerBtnRow" style="display:flex; align-items:center; gap:6px; width:100%;">
+          <div id="composerBtnRow" style="display:flex; align-items:center; gap:6px; width:100%; padding:8px;">
 
             <!-- LEFT group: + button then persona pill -->
             <div id="composerLeftGroup" style="display:flex; align-items:center; gap:6px;">
@@ -3140,7 +3140,7 @@ body[data-vm-companion="cloud"] #vmVrmCompanion { display: none !important; }
                 <i data-lucide="mic" style="width:18px;height:18px;"></i>
               </button>
               <!-- Send -->
-              <button id="sendBtn" onclick="send()" style="width:36px;height:36px;border-radius:50%;background:#00d4ff;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 0 12px rgba(0,212,255,0.35);transition:all 0.2s;" onmouseover="this.style.transform='scale(1.08)'" onmouseout="this.style.transform='scale(1)'" onmousedown="this.style.transform='scale(0.95)'" onmouseup="this.style.transform='scale(1)'">
+              <button id="sendBtn" onclick="if(_sendAborted||_sendAbortController){cancelSend();}else{send();}" style="width:36px;height:36px;border-radius:50%;background:#00d4ff;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 0 12px rgba(0,212,255,0.35);transition:all 0.2s;" onmouseover="this.style.transform='scale(1.08)'" onmouseout="this.style.transform='scale(1)'" onmousedown="this.style.transform='scale(0.95)'" onmouseup="this.style.transform='scale(1)'">
                 <i id="sendIcon" data-lucide="send" style="width:18px;height:18px;color:#003642;"></i>
               </button>
             </div>
@@ -6395,6 +6395,12 @@ var _voiceTurn = false;
 var _sttEndMs = 1500;   // trailing silence that counts as "done speaking"
 var _sttSession = 0;    // session counter — stale events from old sessions are ignored
 var _sttLastFinal = ""; // last final transcript added, to avoid duplicate appends
+var _userWantsMic = false;   // true while user wants mic to keep listening
+var _sttRestartGuard = 0;    // timestamp of last restart, to limit restart rate
+var _sttRestartTimer = null; // pending restart timeout
+var _sendAbortController = null; // AbortController for in-flight chat request
+var _sendAborted = false; // set when user cancels
+var _sendOriginalText = ""; // text to restore on cancel
 var _sttDebug = (function () {
     try {
         var db = (/[?&]debug=1/).test(window.location.search || "");
@@ -6454,7 +6460,14 @@ function toggleVoice() {
     // Unlock playback on this tap so the reply plays its assigned Qwen voice
     // rather than being blocked (and falling back to the device's own voice).
     unlockPersonaAudio();
-    if (_listening) { stopListening(); return; }
+    if (_listening) {
+        // User tapped mic while listening: stop and clear the keep-listening flag.
+        _userWantsMic = false;
+        if (_sttRestartTimer) { clearTimeout(_sttRestartTimer); _sttRestartTimer = null; }
+        stopListening();
+        return;
+    }
+    _userWantsMic = true;
     startListening();
 }
 
@@ -6463,6 +6476,7 @@ function startListening() {
     var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     try { _recognition = new SR(); } catch (e) { return; }
     var session = ++_sttSession;   // tag this session so stale events are ignored
+    if (_sttRestartTimer) { clearTimeout(_sttRestartTimer); _sttRestartTimer = null; }
     _recognition.lang = navigator.language || "en-US";
     _recognition.interimResults = true;
     _recognition.continuous = true;
@@ -6475,34 +6489,35 @@ function startListening() {
     _recognition.onresult = function (ev) {
         // Ignore events from a superseded session.
         if (session !== _sttSession) return;
-        // Build text from the LAST result only.
-        var lastResult = ev.results[ev.results.length - 1];
-        var lastTranscript = lastResult ? (lastResult[0] ? lastResult[0].transcript : "") : "";
-        var isFinal = lastResult ? lastResult.isFinal : false;
-        _sttDebugLog(ev.resultIndex, ev.results.length, isFinal, lastTranscript);
-        // If new transcript startsWith the previous one, replace it, never concatenate.
-        if (isFinal) {
-            // Final: append to baseText once (with space separator).
-            if (lastTranscript && lastTranscript !== _sttLastFinal) {
-                _sttLastFinal = lastTranscript;
-                _sttBaseText = (_sttBaseText ? _sttBaseText + " " : "") + lastTranscript;
+        _sttDebugLog(ev.resultIndex, ev.results.length, false, "");
+        // Build pieces from all results, replacing any piece whose text startsWith the previous piece.
+        var pieces = [];
+        for (var i = ev.resultIndex; i < ev.results.length; i++) {
+            var t = ev.results[i][0] ? ev.results[i][0].transcript : "";
+            var isFinal = !!ev.results[i].isFinal;
+            _sttDebugLog(i, ev.results.length, isFinal, t);
+            var trimmed = t.trim();
+            var lower = trimmed.toLowerCase();
+            if (pieces.length > 0) {
+                var prev = pieces[pieces.length - 1];
+                var prevLower = prev.trimmed.toLowerCase();
+                if (lower.startsWith(prevLower) && lower.length > prev.trimmed.length) {
+                    // New piece startsWith previous and is longer: replace previous.
+                    pieces[pieces.length - 1] = { trimmed: trimmed, text: t };
+                    continue;
+                }
             }
-            // Final: value is baseText (which now includes the final transcript).
-            if (input) { input.value = (_sttBaseText || "").trim(); if (typeof autoGrowInput === "function") autoGrowInput(); }
-        } else {
-            // Interim: value = baseText + " " + lastTranscript (replace, never concatenate).
-            if (input) {
-                var parts = [];
-                if (_sttBaseText && _sttBaseText.trim()) parts.push(_sttBaseText.trim());
-                if (lastTranscript && lastTranscript.trim()) parts.push(lastTranscript.trim());
-                input.value = parts.join(" ");
-                if (typeof autoGrowInput === "function") autoGrowInput();
-            }
+            pieces.push({ trimmed: trimmed, text: t });
         }
+        // Assemble text from baseText + pieces (never commits pieces into baseText mid-event).
+        var allParts = [];
+        if (_sttBaseText && _sttBaseText.trim()) allParts.push(_sttBaseText.trim());
+        pieces.forEach(function (p) { if (p.trimmed) allParts.push(p.trimmed); });
+        if (input) { input.value = allParts.join(" "); if (typeof autoGrowInput === "function") autoGrowInput(); }
         if (_sttTimer) clearTimeout(_sttTimer);
         _sttTimer = setTimeout(endOfSpeech, _sttEndMs);   // wait for a real pause
-        // Boost CSS fallback waveform when speech is detected (interim or final)
-        if (lastTranscript) {
+        // Boost CSS fallback waveform when speech is detected.
+        if (pieces.some(function (p) { return p.trimmed; })) {
             vmWaveform.micSpeechDetected();
             try{window.vmWave&&vmWave.userPulse()}catch(e){}
         }
@@ -6518,7 +6533,28 @@ function startListening() {
     _recognition.onend = function () {
         // Ignore end events from a superseded session.
         if (session !== _sttSession) return;
-        if (_listening) { try { _recognition.start(); } catch (e) {} }
+        // Commit the current accumulated text into baseText when the session ends.
+        var input = document.getElementById("chatInput");
+        var curText = ((input && input.value) || "").trim();
+        if (curText) {
+            _sttBaseText = curText;
+            _sttLastFinal = curText;
+        }
+        // Keep listening if the user wants the mic to stay open.
+        if (_userWantsMic && session === _sttSession) {
+            var now = Date.now();
+            if (_sttRestartTimer) { clearTimeout(_sttRestartTimer); _sttRestartTimer = null; }
+            if (now - _sttRestartGuard < 300) return;   // max 1 restart per 300ms
+            _sttRestartGuard = now;
+            _sttRestartTimer = setTimeout(function () {
+                _sttRestartTimer = null;
+                if (_userWantsMic && !_listening && session === _sttSession) {
+                    try { startListening(); } catch (e) {}
+                }
+            }, 200);
+            return;
+        }
+        // Not keeping listening: session ends, do not auto-restart.
     };
     // Request mic access for the waveform BEFORE starting SpeechRecognition so
     // the browser can grant both. getUserMedia is async; if it fails, the CSS
@@ -6533,6 +6569,8 @@ function startListening() {
 }
 
 function endOfSpeech() {
+    _userWantsMic = false;
+    if (_sttRestartTimer) { clearTimeout(_sttRestartTimer); _sttRestartTimer = null; }
     var input = document.getElementById("chatInput");
     var text = ((input && input.value) || "").trim();
     stopListening();
@@ -6542,7 +6580,9 @@ function endOfSpeech() {
 
 function stopListening() {
     _listening = false;
+    _userWantsMic = false;
     if (_sttTimer) { clearTimeout(_sttTimer); _sttTimer = null; }
+    if (_sttRestartTimer) { clearTimeout(_sttRestartTimer); _sttRestartTimer = null; }
     if (_recognition) { try { _recognition.onend = null; _recognition.stop(); } catch (e) {} }
     _recognition = null;
     // Clear transcript state so the next session starts fresh — no stale text
@@ -10925,6 +10965,21 @@ window.send = async function () {
     // Read this reply aloud only when the turn came from voice (opt-in, never default).
     window._speakThisReply = _voiceTurn; _voiceTurn = false;
 
+    // Abort any previous in-flight request (should not normally happen).
+    if (_sendAbortController) { try { _sendAbortController.abort(); } catch (e) {} }
+    _sendAbortController = new AbortController();
+    _sendAborted = false;
+    _sendOriginalText = text;
+
+    // Show stop icon on send button while a request is pending.
+    var sendBtn = document.getElementById("sendBtn");
+    var sendIcon = document.getElementById("sendIcon");
+    if (sendBtn && sendIcon) {
+        sendBtn.style.background = "#ef4444";
+        sendIcon.setAttribute("data-lucide", "x");
+        try { lucide.createIcons(); } catch (e) {}
+    }
+
     // An attached video goes to the vision model, not the chat router.
     if (pendingVideoFile) {
         input.value = "";
@@ -10934,6 +10989,13 @@ window.send = async function () {
             await sendVideoForAnalysis(text);
         } finally {
             setThinkingState(false);
+            _sendAbortController = null;
+            _sendAborted = false;
+            if (sendBtn && sendIcon) {
+                sendBtn.style.background = "#00d4ff";
+                sendIcon.setAttribute("data-lucide", "send");
+                try { lucide.createIcons(); } catch (e) {}
+            }
         }
         return;
     }
@@ -10993,6 +11055,7 @@ window.send = async function () {
             credentials: "include",
             headers: authHeaders({ "Content-Type": "application/json" }),
             body: JSON.stringify(body),
+            signal: _sendAbortController.signal,
         });
 
         if (!streamRes.ok) throw new Error("Stream endpoint returned " + streamRes.status);
@@ -11013,6 +11076,7 @@ window.send = async function () {
         var streamReplyMode = false;
 
         while (true) {
+            if (_sendAborted) break;
             var chunk = await reader.read();
             if (chunk.done) break;
 
@@ -11386,10 +11450,68 @@ window.send = async function () {
         }
     }
 
+    // Cleanup abort state and restore send button icon.
+    _sendAbortController = null;
+    _sendAborted = false;
+    var sendBtn2 = document.getElementById("sendBtn");
+    var sendIcon2 = document.getElementById("sendIcon");
+    if (sendBtn2 && sendIcon2) {
+        sendBtn2.style.background = "#00d4ff";
+        sendIcon2.setAttribute("data-lucide", "send");
+        try { lucide.createIcons(); } catch (e) {}
+    }
+
     // Unlock thinking state
     setThinkingState(false);
     clearImageUpload();
     focusChatInput();
+};
+
+// Cancel an in-flight chat request: abort the fetch, remove the pending user
+// message and thinking bubble, restore the original text to the textarea.
+window.cancelSend = function () {
+    try {
+        _sendAborted = true;
+        if (_sendAbortController) { try { _sendAbortController.abort(); } catch (e) {} }
+        _sendAbortController = null;
+
+        // Restore send button icon.
+        var sendBtn = document.getElementById("sendBtn");
+        var sendIcon = document.getElementById("sendIcon");
+        if (sendBtn && sendIcon) {
+            sendBtn.style.background = "#00d4ff";
+            sendIcon.setAttribute("data-lucide", "send");
+            try { lucide.createIcons(); } catch (e) {}
+        }
+
+        // Remove the pending user message (last user bubble) and thinking indicator.
+        var msgs = document.getElementById("messages");
+        if (msgs) {
+            var children = msgs.children;
+            for (var i = children.length - 1; i >= 0; i--) {
+                var c = children[i];
+                if (c && c.classList && c.classList.contains("user-message")) {
+                    try { c.remove(); } catch (e) {}
+                    break;
+                }
+            }
+            removeThinkingIndicator(null);
+        }
+
+        // Restore original text and focus.
+        var input = document.getElementById("chatInput");
+        if (input) {
+            input.value = _sendOriginalText;
+            if (typeof autoGrowInput === "function") autoGrowInput();
+            input.focus();
+        }
+
+        // Unlock thinking state.
+        setThinkingState(false);
+        _sendOriginalText = "";
+    } catch (e) {
+        console.warn("cancelSend error:", e);
+    }
 };
 
 /* === AI BUILDER (OpenCode-powered project generation) === */

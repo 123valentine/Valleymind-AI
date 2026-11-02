@@ -78,21 +78,22 @@
         "display:flex;" +
         "}" +
         "#vmWaveBars{" +
-        "display:flex;" +
-        "flex-direction:row;" +
-        "align-items:center;" +
-        "justify-content:center;" +
-        "gap:3px;" +
-        "width:100%;" +
-        "height:32px;" +
+        "display:flex !important;" +
+        "flex-direction:row !important;" +
+        "flex-wrap:nowrap !important;" +
+        "align-items:center !important;" +
+        "justify-content:center !important;" +
+        "gap:3px !important;" +
+        "width:100% !important;" +
+        "height:32px !important;" +
         "}" +
         ".vmWaveBar{" +
-        "width:3px;" +
-        "border-radius:2px;" +
-        "flex:0 0 3px;" +
-        "background:#00d4ff;" +
-        "display:block;" +
-        "transform-origin:bottom;" +
+        "display:block !important;" +
+        "flex:0 0 3px !important;" +
+        "width:3px !important;" +
+        "border-radius:2px !important;" +
+        "background:#00d4ff !important;" +
+        "transform-origin:bottom !important;" +
         "}";
       var head = document.head || document.getElementsByTagName("head")[0];
       if (head) head.appendChild(style);
