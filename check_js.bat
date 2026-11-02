@@ -15,4 +15,8 @@ rem 4) STT duplicate test: simulate cumulative interims then a final, verify
 rem    textarea value equals the phrase exactly once (no duplication).
 "%NODE%" test_stt_dup.js
 if errorlevel 1 exit /b 1
+rem 5) Waveform test: silence = flat, sound moves bars, levels rise then decay,
+rem    start/stop/restart cycles do not throw.
+"%NODE%" test_wave.js
+if errorlevel 1 exit /b 1
 echo ALL_CHECKS_PASS

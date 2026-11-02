@@ -104,7 +104,7 @@
 <script src="/static/task_controller.js?v=1"></script>
 <script src="/static/cloud_rig.js?v=2"></script>
 <script src="/static/cloud_anim.js?v=2"></script>
-<script src="/static/vm_wave.js?v=4" defer></script>
+<script src="/static/vm_wave.js?v=5" defer></script>
 <script id="tailwind-config">
   tailwind.config = {
     darkMode: "class",
@@ -4451,13 +4451,47 @@ function setThinkingState(thinking) {
     if (typeof window.applyIconFallback === 'function') window.applyIconFallback();
 }
 
+// Shared helper: position a menu ABOVE its button using position:fixed
+// (escapes any overflow:hidden/composed ancestors). Recomputed on open,
+// window resize, and visualViewport resize (keyboard).
+var _menuPositionTimer = null;
+function positionMenuAbove(menuId, btnId) {
+    var menu = document.getElementById(menuId);
+    var btn = document.getElementById(btnId);
+    if (!menu || !btn) return;
+    var rect = btn.getBoundingClientRect();
+    // Temporarily show to measure true height.
+    menu.style.display = "block";
+    menu.style.position = "fixed";
+    menu.style.zIndex = "1000";
+    var mh = menu.offsetHeight || 240;
+    // bottom = distance from bottom of viewport to button top, +8px gap
+    var bottom = window.innerHeight - rect.top + 8;
+    if (bottom < 8) bottom = 8;
+    menu.style.bottom = bottom + "px";
+    // Left clamped inside viewport with 8px margin.
+    var left = rect.left;
+    var mw = menu.offsetWidth || 220;
+    if (left < 8) left = 8;
+    if (left + mw > window.innerWidth - 8) left = window.innerWidth - mw - 8;
+    if (left < 8) left = 8;
+    menu.style.left = left + "px";
+    menu.style.maxHeight = Math.max(120, rect.top - 16) + "px";
+    menu.style.overflowY = "auto";
+}
+function repositionMenus() {
+    var pm = document.getElementById("personaMenu");
+    var xm = document.getElementById("plusMenu");
+    if (pm && pm.style.display === "block") positionMenuAbove("personaMenu", "personaBtn");
+    if (xm && xm.style.display === "block") positionMenuAbove("plusMenu", "plusBtn");
+}
 function togglePlusMenu() {
     const menu = document.getElementById("plusMenu");
     if (!menu) return;
     const isOpen = menu.style.display === "block";
-    menu.style.display = isOpen ? "none" : "block";
+    if (isOpen) { menu.style.display = "none"; return; }
+    positionMenuAbove("plusMenu", "plusBtn");
 }
-
 function closePlusMenu() {
     const menu = document.getElementById("plusMenu");
     if (menu) menu.style.display = "none";
@@ -4469,6 +4503,22 @@ document.addEventListener("click", function (e) {
     if (!menu || !btn) return;
     if (!btn.contains(e.target) && !menu.contains(e.target)) {
         menu.style.display = "none";
+    }
+});
+// Reposition open menus on window resize and visualViewport resize (keyboard).
+try {
+    window.addEventListener("resize", repositionMenus);
+} catch (e) {}
+try {
+    if (window.visualViewport) window.visualViewport.addEventListener("resize", repositionMenus);
+} catch (e) {}
+// Close menus on Escape.
+document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") {
+        var pm = document.getElementById("personaMenu");
+        var xm = document.getElementById("plusMenu");
+        if (pm) pm.style.display = "none";
+        if (xm) xm.style.display = "none";
     }
 });
 
@@ -6514,8 +6564,6 @@ function startListening() {
         if (_sttBaseText && _sttBaseText.trim()) allParts.push(_sttBaseText.trim());
         pieces.forEach(function (p) { if (p.trimmed) allParts.push(p.trimmed); });
         if (input) { input.value = allParts.join(" "); if (typeof autoGrowInput === "function") autoGrowInput(); }
-        if (_sttTimer) clearTimeout(_sttTimer);
-        _sttTimer = setTimeout(endOfSpeech, _sttEndMs);   // wait for a real pause
         // Boost CSS fallback waveform when speech is detected.
         if (pieces.some(function (p) { return p.trimmed; })) {
             vmWaveform.micSpeechDetected();
@@ -6546,15 +6594,18 @@ function startListening() {
             if (_sttRestartTimer) { clearTimeout(_sttRestartTimer); _sttRestartTimer = null; }
             if (now - _sttRestartGuard < 300) return;   // max 1 restart per 300ms
             _sttRestartGuard = now;
+            _listening = false;  // allow startListening to proceed on restart
             _sttRestartTimer = setTimeout(function () {
                 _sttRestartTimer = null;
-                if (_userWantsMic && !_listening && session === _sttSession) {
+                if (_userWantsMic && session === _sttSession) {
                     try { startListening(); } catch (e) {}
                 }
             }, 200);
             return;
         }
-        // Not keeping listening: session ends, do not auto-restart.
+        // Not keeping listening: full stop.
+        _listening = false;
+        stopListening();
     };
     // Request mic access for the waveform BEFORE starting SpeechRecognition so
     // the browser can grant both. getUserMedia is async; if it fails, the CSS
@@ -6568,20 +6619,13 @@ function startListening() {
     if (input) input.placeholder = "Listening€¦  (tap mic to stop)";
 }
 
-function endOfSpeech() {
-    _userWantsMic = false;
-    if (_sttRestartTimer) { clearTimeout(_sttRestartTimer); _sttRestartTimer = null; }
-    var input = document.getElementById("chatInput");
-    var text = ((input && input.value) || "").trim();
-    stopListening();
-    // Only fill the text box. The message sends only when the user presses Send.
-    if (text && input) { input.value = text; if (typeof autoGrowInput === "function") autoGrowInput(); }
-}
+// No silence timer / end-of-speech path: recognition ends only when the user
+// taps the mic again or presses Send. The wave stays visible during restarts
+// and during silence.
 
 function stopListening() {
     _listening = false;
     _userWantsMic = false;
-    if (_sttTimer) { clearTimeout(_sttTimer); _sttTimer = null; }
     if (_sttRestartTimer) { clearTimeout(_sttRestartTimer); _sttRestartTimer = null; }
     if (_recognition) { try { _recognition.onend = null; _recognition.stop(); } catch (e) {} }
     _recognition = null;
@@ -6946,18 +6990,7 @@ function togglePersonaMenu() {
         item.onclick = function () { setPersona(m.key); menu.style.display = "none"; };
         menu.appendChild(item);
     });
-    // Position the menu ABOVE the persona button (fixed position escapes composer overflow:hidden).
-    var btn = document.getElementById("personaBtn");
-    if (btn) {
-        var rect = btn.getBoundingClientRect();
-        // Temporarily show to measure height.
-        menu.style.display = "block";
-        var mh = menu.offsetHeight || 200;
-        menu.style.left = rect.left + "px";
-        menu.style.top = Math.max(8, rect.top - mh - 8) + "px";
-    } else {
-        menu.style.display = "block";
-    }
+    positionMenuAbove("personaMenu", "personaBtn");
 }
 
 function setPersona(key) {
@@ -10984,6 +11017,8 @@ window.send = async function () {
     if (!authCheckComplete || isThinking) return;
     const input = document.getElementById("chatInput");
     const text = input.value.trim();
+    // Pressing Send ends recognition (mic only stops on tap or Send).
+    stopListening();
     // Read this reply aloud only when the turn came from voice (opt-in, never default).
     window._speakThisReply = _voiceTurn; _voiceTurn = false;
 
