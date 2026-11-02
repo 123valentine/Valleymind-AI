@@ -1,30 +1,29 @@
 /* ValleyMind live waveform (user mic + AI TTS playback).
- * Claude-style scrolling waveform: bars width 3px, gap 3px, rounded,
+ * Claude-style scrolling waveform: 40 bars, width 3px, gap 3px, rounded,
  * height up to 28px, solid cyan accent, centered vertically.
  * Scrolling history: each frame pushes a new level on the right and shifts
  * old levels left, so the wave flows.
- * The wave follows voice: silence = flat line; sound moves the bars.
+ *
  * Self-contained IIFE. Everything wrapped in try/catch so a failure here
  * can never stop recognition or playback.
  *
  * Exposes:
  *   window.vmWave.start(kind)   kind = "user" | "ai"
  *   window.vmWave.stop()
- *   window.vmWave.userPulse()   called on recognition events (onspeechstart,
- *                               onresult, interim updates) to raise the level
+ *   window.vmWave.userPulse()   called on recognition interim/final events
  *
  * The container element (#vmWaveContainer) is created/owned by index.html.
  */
 (function () {
   "use strict";
 
+  var BAR_COUNT = 40;
   var BAR_WIDTH = 3;
   var BAR_GAP = 3;
-  var MIN_BARS = 20;      // minimum bar count
   var MIN_HEIGHT = 4;
   var MAX_HEIGHT = 28;
-  var ACCENT = "#00d4ff"; // app cyan
-  var DECAY_MS = 400;     // ms for level to decay from 1 to 0 when silent
+  var ACCENT = "#00d4ff";   // app cyan
+  var FALLBACK_JITTER = 0.15;
 
   var state = {
     container: null,
@@ -39,26 +38,9 @@
     raf: null,
     token: 0,          // guards against late getUserMedia results
     fallback: false,
-    voiceLevel: 0,     // current fallback level (0..1), driven by recognition events
-    lastPulse: 0,      // timestamp of last userPulse(), for decay calculation
-    resizeObserver: null
+    fallLevel: 0,
+    fallDir: 1
   };
-
-  // Measure how many 3px bars (with 3px gap) fit across the bars parent.
-  // Must be called after the container is visible (display:flex applied),
-  // because width is 0 while display:none.
-  function recomputeBarCount() {
-    try {
-      if (!state.barsParent) return state.bars.length || MIN_BARS;
-      var rect = state.barsParent.getBoundingClientRect();
-      var width = rect.width || state.barsParent.clientWidth || 0;
-      var computed = Math.floor(width / (BAR_WIDTH + BAR_GAP));
-      if (computed < MIN_BARS) computed = MIN_BARS;
-      return computed;
-    } catch (e) {
-      return MIN_BARS;
-    }
-  }
 
   // ------------------------------------------------------------------ DOM/CSS
   function injectCss() {
@@ -73,8 +55,7 @@
         "z-index:50;" +
         "height:34px;" +
         "width:100%;" +
-        "flex:1;" +            // fill composer width
-        "min-width:0;" +       // allow shrinking below content size
+        "max-width:100%;" +
         "margin:4px 0 0;" +
         "padding:2px 8px;" +
         "background:rgba(0,0,0,0.35);" +
@@ -119,21 +100,22 @@
     } catch (e) {}
   }
 
-  function buildBars(count) {
+  function buildBars() {
     try {
       if (!state.barsParent) return;
       if (state.bars.length) return;
       var frag = document.createDocumentFragment();
-      for (var i = 0; i < count; i++) {
+      for (var i = 0; i < BAR_COUNT; i++) {
         var b = document.createElement("div");
         b.className = "vmWaveBar";
         b.style.width = BAR_WIDTH + "px";
+        b.style.marginRight = BAR_GAP + "px";
         b.style.height = MIN_HEIGHT + "px";
         frag.appendChild(b);
         state.bars.push(b);
       }
       state.barsParent.appendChild(frag);
-      state.levels = new Array(count).fill(0);
+      state.levels = new Array(BAR_COUNT).fill(0);
     } catch (e) {}
   }
 
@@ -143,7 +125,7 @@
       // Scrolling history: shift left, push new level on the right.
       state.levels = state.levels.slice(1);
       state.levels.push(levels[levels.length - 1] || 0);
-      for (var i = 0; i < state.bars.length; i++) {
+      for (var i = 0; i < BAR_COUNT; i++) {
         var lvl = state.levels[i];
         if (lvl < 0) lvl = 0;
         if (lvl > 1) lvl = 1;
@@ -155,8 +137,8 @@
 
   function silence() {
     try {
-      state.levels = new Array(state.bars.length).fill(0);
-      for (var i = 0; i < state.bars.length; i++) {
+      state.levels = new Array(BAR_COUNT).fill(0);
+      for (var i = 0; i < BAR_COUNT; i++) {
         state.bars[i].style.height = MIN_HEIGHT + "px";
       }
     } catch (e) {}
@@ -227,14 +209,14 @@
         for (var i = 0; i < n; i++) sum += buf[i];
         var raw = Math.min(1, (sum / n / 255) * 2.2);
         newLevel = raw;
-      } else {
-        // Fallback (no analyser): decay voice level toward 0 when silent.
-        // Each recognition event raises the level via userPulse(); it then
-        // decays to the minimum over ~400ms. Silence = flat line.
-        var now = Date.now();
-        var elapsed = now - state.lastPulse;
-        var decay = Math.max(0, 1 - elapsed / DECAY_MS);
-        newLevel = Math.max(0, state.voiceLevel * decay);
+      } else if (state.fallback) {
+        state.fallLevel += state.fallDir * FALLBACK_JITTER;
+        if (state.fallLevel >= 1) { state.fallLevel = 1; state.fallDir = -1; }
+        if (state.fallLevel <= 0) { state.fallLevel = 0; state.fallDir = 1; }
+        // random jitter for organic feel
+        newLevel = state.fallLevel + (Math.random() * 0.1 - 0.05);
+        if (newLevel < 0) newLevel = 0;
+        if (newLevel > 1) newLevel = 1;
       }
       setLevels([newLevel]);
       state.raf = requestAnimationFrame(render);
@@ -249,8 +231,6 @@
       navigator.mediaDevices = navigator.mediaDevices || {};
       if (!navigator.mediaDevices.getUserMedia) {
         state.fallback = true;
-        state.voiceLevel = 0;
-        state.lastPulse = Date.now() - 999999; // ensure initial decay to 0
         state.raf = requestAnimationFrame(render);
         return;
       }
@@ -266,8 +246,6 @@
           var ctx = ensureContext();
           if (!ctx || !ctx.createMediaStreamSource) {
             state.fallback = true;
-            state.voiceLevel = 0;
-            state.lastPulse = Date.now() - 999999;
             state.raf = requestAnimationFrame(render);
             return;
           }
@@ -278,20 +256,14 @@
           state.raf = requestAnimationFrame(render);
         } catch (e) {
           state.fallback = true;
-          state.voiceLevel = 0;
-          state.lastPulse = Date.now() - 999999;
           state.raf = requestAnimationFrame(render);
         }
       }).catch(function () {
         state.fallback = true;
-        state.voiceLevel = 0;
-        state.lastPulse = Date.now() - 999999;
         state.raf = requestAnimationFrame(render);
       });
     } catch (e) {
       state.fallback = true;
-      state.voiceLevel = 0;
-      state.lastPulse = Date.now() - 999999;
       state.raf = requestAnimationFrame(render);
     }
   }
@@ -302,8 +274,6 @@
   function startAi() {
     try {
       state.fallback = true;
-      state.voiceLevel = 0;
-      state.lastPulse = Date.now() - 999999;
       state.raf = requestAnimationFrame(render);
     } catch (e) {}
   }
@@ -312,8 +282,9 @@
   function userPulse() {
     try {
       if (!state.activeKind || state.activeKind !== "user") return;
-      state.voiceLevel = 1;
-      state.lastPulse = Date.now();
+      if (!state.analyser && state.fallback) {
+        state.fallLevel = 1;
+      }
     } catch (e) {}
   }
 
@@ -326,6 +297,7 @@
         state.container = container;
         var bp = document.getElementById("vmWaveBars");
         if (bp) state.barsParent = bp;
+        buildBars();
       }
       releaseAll();
       state.activeKind = kind;
@@ -333,66 +305,14 @@
         try { state.container.style.display = "flex"; } catch (e) {}
         try { state.container.classList.add("vmWaveActive"); } catch (e) {}
       }
-      // Measure width AFTER container is displayed (width is 0 while
-      // display:none), then build bars and start the render loop.
-      if (state.barsParent) {
-        requestAnimationFrame(function () {
-          try {
-            var nc = recomputeBarCount();
-            if (state.bars.length !== nc) {
-              var oldBars = state.bars;
-              state.bars = [];
-              state.barsParent.innerHTML = "";
-              buildBars(nc);
-              // Transfer recent levels.
-              var k = Math.min(oldBars.length, state.bars.length);
-              for (var i = 0; i < k; i++) {
-                state.bars[i].style.height = oldBars[i].style.height;
-              }
-            }
-            if (kind === "user") startUser();
-            else if (kind === "ai") startAi();
-          } catch (e) {
-            if (kind === "user") startUser();
-            else if (kind === "ai") startAi();
-          }
-        });
-      } else {
-        if (kind === "user") startUser();
-        else if (kind === "ai") startAi();
-      }
-      // Observe resize so bar count stays correct when the composer width changes.
-      try {
-        if (state.barsParent && !state.resizeObserver) {
-          state.resizeObserver = new ResizeObserver(function () {
-            try {
-              if (!state.activeKind) return;
-              var nc = recomputeBarCount();
-              if (state.bars.length !== nc) {
-                var oldBars = state.bars;
-                state.bars = [];
-                state.barsParent.innerHTML = "";
-                buildBars(nc);
-                var k = Math.min(oldBars.length, state.bars.length);
-                for (var i = 0; i < k; i++) {
-                  state.bars[i].style.height = oldBars[i].style.height;
-                }
-              }
-            } catch (e) {}
-          });
-          state.resizeObserver.observe(state.barsParent);
-        }
-      } catch (e) {}
+      if (kind === "user") startUser();
+      else if (kind === "ai") startAi();
     } catch (e) {}
   }
 
   function stop() {
     try {
       releaseAll();
-      if (state.resizeObserver) {
-        try { state.resizeObserver.disconnect(); } catch (e) {}
-        state.resizeObserver = null;
-      }
       if (state.container) {
         try { state.container.style.display = "none"; } catch (e) {}
         try { state.container.classList.remove("vmWaveActive"); } catch (e) {}
