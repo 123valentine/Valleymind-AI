@@ -2291,6 +2291,8 @@
 </style>
 </head>
 <body class="text-on-background font-body-md overflow-hidden">
+<!-- Debug overlay: only visible when URL has ?debug=1 -->
+<div id="sttDebugPanel" style="position:fixed;top:0;left:0;right:0;z-index:9999;background:#0f172a;border:1px solid #00d4ff;color:#fff;padding:8px;font-size:11px;font-family:monospace;display:none;pointer-events:none;"></div>
 
 <!-- Minimal authenticated Cloud character (visual isolation test).
      A faithful layered vector rig (static/cloud_rig.js) is mounted into the
@@ -6393,6 +6395,44 @@ var _voiceTurn = false;
 var _sttEndMs = 1500;   // trailing silence that counts as "done speaking"
 var _sttSession = 0;    // session counter — stale events from old sessions are ignored
 var _sttLastFinal = ""; // last final transcript added, to avoid duplicate appends
+var _sttDebug = (function () {
+    try {
+        var db = (/[?&]debug=1/).test(window.location.search || "");
+        var p = document.getElementById("sttDebugPanel");
+        if (p) p.style.display = db ? "block" : "none";
+        return db;
+    } catch (e) { return false; }
+})();
+var _sttDebugEvents = [];   // last 8 onresult events
+var _sttDebugStartCount = 0; // number of times startListening was called
+function _sttDebugLog(resultIndex, resultsLength, isFinal, transcript) {
+    if (!_sttDebug) return;
+    _sttDebugEvents.push({ resultIndex: resultIndex, resultsLength: resultsLength, isFinal: !!isFinal, transcript: transcript || "" });
+    if (_sttDebugEvents.length > 8) _sttDebugEvents.shift();
+    _sttDebugRender();
+}
+function _sttDebugRender() {
+    if (!_sttDebug) return;
+    var panel = document.getElementById("sttDebugPanel");
+    if (!panel) return;
+    var input = document.getElementById("chatInput");
+    var bars = document.getElementById("vmWaveBars");
+    var bar = bars && bars.children ? bars.children[0] : null;
+    var rows = _sttDebugEvents.map(function (e) {
+        return "<div style='font-size:11px;font-family:monospace;color:#00d4ff;'>" +
+            "ri=" + e.resultIndex + " len=" + e.resultsLength + " fin=" + e.isFinal + " txt=" + JSON.stringify(e.transcript) +
+            "</div>";
+    }).join("");
+    var vbStyle = bars ? window.getComputedStyle(bars) : null;
+    var bStyle = bar ? window.getComputedStyle(bar) : null;
+    panel.innerHTML =
+        "<div style='font-size:12px;font-weight:bold;color:#fff;margin-bottom:4px;'>STT DEBUG</div>" +
+        "<div style='font-size:11px;color:#bbc9cf;'>startCount=" + _sttDebugStartCount + "</div>" +
+        "<div style='font-size:11px;color:#bbc9cf;'>textarea=" + JSON.stringify((input && input.value) || "") + "</div>" +
+        "<div style='font-size:11px;color:#bbc9cf;'>vmWaveBars flex=" + (vbStyle ? vbStyle.flexDirection : "n/a") + " width=" + (vbStyle ? vbStyle.width : "n/a") + "</div>" +
+        "<div style='font-size:11px;color:#bbc9cf;'>vmWaveBar flex=" + (bStyle ? bStyle.flex : "n/a") + " width=" + (bStyle ? bStyle.width : "n/a") + "</div>" +
+        "<div style='margin-top:6px;'>" + rows + "</div>";
+}
 
 function speechRecognitionSupported() {
     return !!(window.SpeechRecognition || window.webkitSpeechRecognition);
@@ -6439,18 +6479,26 @@ function startListening() {
         var lastResult = ev.results[ev.results.length - 1];
         var lastTranscript = lastResult ? (lastResult[0] ? lastResult[0].transcript : "") : "";
         var isFinal = lastResult ? lastResult.isFinal : false;
+        _sttDebugLog(ev.resultIndex, ev.results.length, isFinal, lastTranscript);
         // If new transcript startsWith the previous one, replace it, never concatenate.
         if (isFinal) {
-            // Final: append to baseText once.
+            // Final: append to baseText once (with space separator).
             if (lastTranscript && lastTranscript !== _sttLastFinal) {
                 _sttLastFinal = lastTranscript;
-                _sttBaseText = (_sttBaseText || "") + lastTranscript;
+                _sttBaseText = (_sttBaseText ? _sttBaseText + " " : "") + lastTranscript;
             }
+            // Final: value is baseText (which now includes the final transcript).
+            if (input) { input.value = (_sttBaseText || "").trim(); if (typeof autoGrowInput === "function") autoGrowInput(); }
         } else {
-            // Interim: replace if startsWith previous interim.
-            // (baseText already contains committed finals)
+            // Interim: value = baseText + " " + lastTranscript (replace, never concatenate).
+            if (input) {
+                var parts = [];
+                if (_sttBaseText && _sttBaseText.trim()) parts.push(_sttBaseText.trim());
+                if (lastTranscript && lastTranscript.trim()) parts.push(lastTranscript.trim());
+                input.value = parts.join(" ");
+                if (typeof autoGrowInput === "function") autoGrowInput();
+            }
         }
-        if (input) { input.value = (_sttBaseText + lastTranscript).trim(); if (typeof autoGrowInput === "function") autoGrowInput(); }
         if (_sttTimer) clearTimeout(_sttTimer);
         _sttTimer = setTimeout(endOfSpeech, _sttEndMs);   // wait for a real pause
         // Boost CSS fallback waveform when speech is detected (interim or final)
@@ -6479,6 +6527,7 @@ function startListening() {
     try{window.vmWave&&vmWave.start("user")}catch(e){}
     try { _recognition.start(); } catch (e) {}
     _listening = true;
+    _sttDebugStartCount++;
     setMicUI(true);
     if (input) input.placeholder = "Listening€¦  (tap mic to stop)";
 }

@@ -76,6 +76,23 @@
         "}" +
         "#vmWaveContainer.vmWaveActive{" +
         "display:flex;" +
+        "}" +
+        "#vmWaveBars{" +
+        "display:flex;" +
+        "flex-direction:row;" +
+        "align-items:center;" +
+        "justify-content:center;" +
+        "gap:3px;" +
+        "width:100%;" +
+        "height:32px;" +
+        "}" +
+        ".vmWaveBar{" +
+        "width:3px;" +
+        "border-radius:2px;" +
+        "flex:0 0 3px;" +
+        "background:#00d4ff;" +
+        "display:block;" +
+        "transform-origin:bottom;" +
         "}";
       var head = document.head || document.getElementsByTagName("head")[0];
       if (head) head.appendChild(style);
