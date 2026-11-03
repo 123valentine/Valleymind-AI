@@ -1267,6 +1267,7 @@ function vmPersonaPreviewVoice(personaKey) {
       } else {
         st.textContent = "Playing " + label + " \u2014 " + _personaEngineLabel(data.engine);
       }
+      st.innerHTML += ' <button onclick="vmPersonaSetVoice(\'' + personaKey + '\', \'' + voiceId + '\')" style="margin-left:8px;padding:4px 8px;background:#00d4ff;border:none;border-radius:4px;color:#fff;cursor:pointer;font-size:12px;">Save</button>';
       setTimeout(function () { if (st) st.textContent = ""; }, 4000);
     }
   }).catch(function () { 
