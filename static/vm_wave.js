@@ -113,6 +113,7 @@
         "border-radius:2px !important;" +
         "background:#00d4ff !important;" +
         "transform-origin:bottom !important;" +
+        "margin:0 1.5px !important;" +
         "}";
       var head = document.head || document.getElementsByTagName("head")[0];
       if (head) head.appendChild(style);
