@@ -89,6 +89,7 @@
         "background:" + ACCENT + ";" +
         "display:block;" +
         "transform-origin:bottom;" +
+        "margin:0 1.5px;" +
         "}" +
         "#vmWaveContainer.vmWaveActive{" +
         "display:flex;" +
