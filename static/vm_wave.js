@@ -44,14 +44,15 @@
 
   function recomputeBarCount() {
     try {
-      if (!state.barsParent) return state.bars.length || BAR_COUNT;
+      if (!state.barsParent) return state.bars.length || 20;
       var rect = state.barsParent.getBoundingClientRect();
       var width = rect.width || state.barsParent.clientWidth || 0;
-      var computed = Math.floor(width / (BAR_WIDTH + BAR_GAP));
-      if (computed < BAR_COUNT) computed = BAR_COUNT;
+      var computed = Math.floor((width - 26) / 6);
+      if (computed < 20) computed = 20;
+      if (computed > 200) computed = 200;
       return computed;
     } catch (e) {
-      return BAR_COUNT;
+      return 20;
     }
   }
 
@@ -69,14 +70,16 @@
         "height:34px;" +
         "width:100%;" +
         "max-width:100%;" +
-        "margin:4px 0 0;" +
-        "padding:2px 8px;" +
+        "min-width:0;" +
+        "margin:0;" +
+        "padding:0 12px;" +
         "background:rgba(0,0,0,0.35);" +
         "border-radius:8px;" +
         "display:flex;" +
         "align-items:center;" +
         "gap:2px;" +
         "box-sizing:border-box;" +
+        "overflow:hidden;" +
         "}" +
         ".vmWaveBar{" +
         "width:" + BAR_WIDTH + "px;" +
@@ -98,6 +101,8 @@
         "justify-content:center !important;" +
         "gap:3px !important;" +
         "width:100% !important;" +
+        "max-width:100% !important;" +
+        "overflow:hidden !important;" +
         "height:32px !important;" +
         "}" +
         ".vmWaveBar{" +
@@ -376,6 +381,27 @@
             }
           } catch (e) {}
         });
+      } catch (e) {}
+      // Recompute bar count when the container size changes (e.g. composer width changes on phone vs laptop).
+      try {
+        if (state.barsParent && typeof ResizeObserver !== "undefined") {
+          state.resizeObserver = new ResizeObserver(function () {
+            try {
+              var nc = recomputeBarCount();
+              if (state.bars.length !== nc && state.activeKind) {
+                var oldBars = state.bars;
+                state.bars = [];
+                state.barsParent.innerHTML = "";
+                buildBars();
+                var k = Math.min(oldBars.length, state.bars.length);
+                for (var i = 0; i < k; i++) {
+                  state.bars[i].style.height = oldBars[i].style.height;
+                }
+              }
+            } catch (e) {}
+          });
+          state.resizeObserver.observe(state.barsParent);
+        }
       } catch (e) {}
     }
   } catch (e) {}

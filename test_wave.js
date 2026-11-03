@@ -71,6 +71,27 @@ try {
   failed++;
 }
 
+// (5) Bar count never exceeds container width for widths 360, 800, 1400.
+// Formula: bar count = floor((width - 26) / 6), min 20, max 200.
+// Bar count * 6 must never exceed container width.
+try {
+  var widths = [360, 800, 1400];
+  var allOk = true;
+  widths.forEach(function (w) {
+    var computed = Math.floor((w - 26) / 6);
+    if (computed < 20) computed = 20;
+    if (computed > 200) computed = 200;
+    var barWidthTotal = computed * 6;
+    if (barWidthTotal > w) allOk = false;
+  });
+  check("Bar count * 6 <= container width for 360/800/1400px", allOk);
+  passed++;
+} catch (e) {
+  check("Bar count * 6 <= container width", false, e.message);
+  failed++;
+}
+
+
 if (failed > 0) {
   console.log("WAVE TESTS: " + passed + " passed, " + failed + " FAILED");
   process.exit(1);

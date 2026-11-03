@@ -104,7 +104,7 @@
 <script src="/static/task_controller.js?v=1"></script>
 <script src="/static/cloud_rig.js?v=2"></script>
 <script src="/static/cloud_anim.js?v=2"></script>
-<script src="/static/vm_wave.js?v=6" defer></script>
+<script src="/static/vm_wave.js?v=7" defer></script>
 <script id="tailwind-config">
   tailwind.config = {
     darkMode: "class",
@@ -3933,6 +3933,53 @@ const CHAT_DRAFTS_KEY = "valleymind_chat_drafts";
 const SESSION_FETCH_MAX_RETRIES = 3;
 const SESSION_FETCH_RETRY_DELAY_MS = 900;
 const VALLEY_DEBUG = false;
+
+// ─── Startup safety net ────────────────────────────────────────────────
+// Guarantees the splash screen is removed after at most 8 seconds even if
+// checkSession() never resolves (e.g. Android WebView fetch hang). Never
+// hides errors — they are logged to console. Shows a small "Reload"
+// message so the user can recover without force-closing the app.
+(function () {
+    var splash = document.getElementById("brandSplashScreen");
+    if (!splash) return;
+    var splashShown = true;
+
+    function hideSplashAndShowReload() {
+        if (!splashShown) return;
+        splashShown = false;
+        try {
+            splash.style.opacity = "0";
+            setTimeout(function () { splash.style.display = "none"; }, 500);
+        } catch (e) {}
+        try {
+            var msg = document.createElement("div");
+            msg.textContent = "App didn't finish loading. Tap to reload.";
+            msg.style.cssText =
+                "position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);" +
+                "background:#020617;color:#fff;padding:16px 24px;" +
+                "border-radius:12px;border:1px solid #00d4ff;" +
+                "z-index:100000;cursor:pointer;font-family:sans-serif;";
+            msg.onclick = function () { location.reload(); };
+            document.body.appendChild(msg);
+        } catch (e) {}
+    }
+
+    // Hard timeout: splash is removed after at most 8 seconds.
+    setTimeout(hideSplashAndShowReload, 8000);
+
+    // Catch any unhandled JS error and still clear the splash.
+    window.onerror = function (msg, url, line, col, error) {
+        try { console.error("[VM startup error]", msg, url, line, col); } catch (e) {}
+        hideSplashAndShowReload();
+        return true;
+    };
+
+    // Catch any unhandled promise rejection and still clear the splash.
+    window.addEventListener("unhandledrejection", function (event) {
+        try { console.error("[VM unhandled rejection]", event.reason); } catch (e) {}
+        hideSplashAndShowReload();
+    });
+})();
 
 let authCheckComplete = false;
 let isAuthenticated = false;
