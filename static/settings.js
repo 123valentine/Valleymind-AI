@@ -1201,7 +1201,8 @@ function _personaEngineLabel(engine) {
 
 function vmPersonaPreviewVoice(personaKey) {
   var saved = _readPersonaVoices();
-  var voiceId = saved[personaKey] || (VM_PERSONA_VOICES.personas.filter(function (p) { return p.key === personaKey; })[0] || {}).defaultVoice;
+  // Preview the voice selected via chips (vmSelectedVoice) if set, otherwise the saved voice for this persona.
+  var voiceId = vmSelectedVoice || saved[personaKey] || (VM_PERSONA_VOICES.personas.filter(function (p) { return p.key === personaKey; })[0] || {}).defaultVoice;
   var entry = _personaVoiceById(voiceId);
   if (!entry) return;
   var st = document.getElementById("vmPersonaVoiceStatus");
@@ -1267,6 +1268,7 @@ function vmPersonaPreviewVoice(personaKey) {
       } else {
         st.textContent = "Playing " + label + " \u2014 " + _personaEngineLabel(data.engine);
       }
+      st.innerHTML += ' <button onclick="vmPersonaSetVoice(\'' + personaKey + '\', \'' + voiceId + '\')" style="margin-left:8px;padding:4px 8px;background:#00d4ff;border:none;border-radius:4px;color:#fff;cursor:pointer;font-size:12px;">Save</button>';
       setTimeout(function () { if (st) st.textContent = ""; }, 4000);
     }
   }).catch(function () { 
@@ -1427,6 +1429,7 @@ function vmVoicePreview(voiceId) {
       } else {
         st.textContent = "Playing " + label + " \u2014 " + _personaEngineLabel(data.engine);
       }
+      st.innerHTML += ' <button onclick="vmPersonaSetVoice(\'' + personaKey + '\', \'' + voiceId + '\')" style="margin-left:8px;padding:4px 8px;background:#00d4ff;border:none;border-radius:4px;color:#fff;cursor:pointer;font-size:12px;">Save</button>';
       setTimeout(function () { if (st) st.textContent = ""; }, 4000);
     }
   }).catch(function () { 
