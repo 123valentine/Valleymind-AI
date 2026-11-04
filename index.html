@@ -104,7 +104,7 @@
 <script src="/static/task_controller.js?v=1"></script>
 <script src="/static/cloud_rig.js?v=2"></script>
 <script src="/static/cloud_anim.js?v=2"></script>
-<script src="/static/vm_wave.js?v=8" defer></script>
+<script src="/static/vm_wave.js?v=9" defer></script>
 <script id="tailwind-config">
   tailwind.config = {
     darkMode: "class",
@@ -1127,7 +1127,7 @@
      transparent PNG renders cleanly on both themes with no opaque box behind it. */
   .studio-avatar-img { width:100%; height:100%; object-fit:cover; object-position:top center; display:block; }
   #personaBtnAvatar { width:24px; height:24px; border-radius:50%; object-fit:cover; object-position:top center; margin-left:-3px; flex-shrink:0; display:block; }
-  @keyframes micPulse { 0%,100%{ box-shadow:0 0 0 0 rgba(239,68,68,0.45); } 50%{ box-shadow:0 0 0 7px rgba(239,68,68,0); } }
+  @keyframes micPulse { 0%,100%{ box-shadow:0 0 0 0 rgba(0,212,255,0.45); } 50%{ box-shadow:0 0 0 7px rgba(0,212,255,0); } }
   #micBtn.mic-listening { animation: micPulse 1.2s ease-out infinite; color:#00d4ff !important; box-shadow:0 0 12px rgba(0,212,255,0.45); }
   .studio-stage-meta { flex:1; min-width:0; }
   .studio-persona { color:#f1f5f9; font-size:14px; font-weight:700; font-family:'Inter',sans-serif; }
@@ -3096,6 +3096,8 @@ body[data-vm-companion="cloud"] #vmVrmCompanion { display: none !important; }
 
           <!-- Live waveform (replaces textarea row while listening) -->
           <div id="vmWaveContainer" style="display:none"><div id="vmWaveBars"></div></div>
+          <!-- Words-captured counter shown while recording (blue, number only) -->
+          <span id="micWordsCounter" style="color:#00d4ff;font-size:11px;font-weight:700;margin-left:8px;display:none;">words captured: 0</span>
 
           <!-- Button row: LEFT group = + then persona; RIGHT group = mic then send -->
           <div id="composerBtnRow" style="display:flex; align-items:center; gap:6px; width:100%; padding:8px;">
@@ -6490,6 +6492,13 @@ var _sttLastFinal = ""; // last final transcript added, to avoid duplicate appen
 var _userWantsMic = false;   // true while user wants mic to keep listening
 var _sttRestartGuard = 0;    // timestamp of last restart, to limit restart rate
 var _sttRestartTimer = null; // pending restart timeout
+var _sttRestartCount = 0;    // fresh-instance restart count (max 5)
+var _sttLastError = "";      // last STT error (for debug panel)
+var _sttLastEventTime = 0;   // timestamp of last recognition event (watchdog)
+var _sttWatchdogTimer = null; // watchdog: restart if no event for 4s
+var _sttStopWaitTimer = null; // wait up to 1200ms for last final on stop
+var _sttBuffer = "";         // accumulated buffer during recording (nothing written to textarea while recording)
+var _sttPieces = [];         // dedup pieces for cumulative interims (replace previous if startsWith)
 var _sendAbortController = null; // AbortController for in-flight chat request
 var _sendAborted = false; // set when user cancels
 var _sendOriginalText = ""; // text to restore on cancel
@@ -6523,11 +6532,22 @@ function _sttDebugRender() {
     }).join("");
     var vbStyle = bars ? window.getComputedStyle(bars) : null;
     var bStyle = bar ? window.getComputedStyle(bar) : null;
+    var secsSinceEvent = _sttLastEventTime ? Math.max(0, Math.round((Date.now() - _sttLastEventTime) / 1000)) : 0;
+    var waveInfo = "";
+    try {
+        if (window.vmWave && typeof window.vmWave.debugInfo === "function") {
+            var wi = window.vmWave.debugInfo();
+            waveInfo = " waveSrc=" + (wi && wi.source ? wi.source : "none") + " waveLvl=" + ((wi && wi.level != null) ? wi.level.toFixed(3) : "0.000");
+        }
+    } catch (e) {}
     panel.innerHTML =
         "<div style='font-size:12px;font-weight:bold;color:#fff;margin-bottom:4px;'>STT DEBUG</div>" +
+        "<div style='font-size:11px;color:#bbc9cf;'>recording=" + _userWantsMic + " listening=" + _listening + "</div>" +
+        "<div style='font-size:11px;color:#bbc9cf;'>restarts=" + _sttRestartCount + " lastError=" + (_sttLastError || "none") + " secsSinceEvent=" + secsSinceEvent + "</div>" +
+        "<div style='font-size:11px;color:#bbc9cf;'>bufferLen=" + ((_sttBuffer || "").trim().split(/\s+/).length) + " buffer=" + JSON.stringify((_sttBuffer || "").trim()) + "</div>" +
         "<div style='font-size:11px;color:#bbc9cf;'>startCount=" + _sttDebugStartCount + "</div>" +
         "<div style='font-size:11px;color:#bbc9cf;'>textarea=" + JSON.stringify((input && input.value) || "") + "</div>" +
-        "<div style='font-size:11px;color:#bbc9cf;'>vmWaveBars flex=" + (vbStyle ? vbStyle.flexDirection : "n/a") + " width=" + (vbStyle ? vbStyle.width : "n/a") + "</div>" +
+        "<div style='font-size:11px;color:#bbc9cf;'>vmWaveBars flex=" + (vbStyle ? vbStyle.flexDirection : "n/a") + " width=" + (vbStyle ? vbStyle.width : "n/a") + waveInfo + "</div>" +
         "<div style='font-size:11px;color:#bbc9cf;'>vmWaveBar flex=" + (bStyle ? bStyle.flex : "n/a") + " width=" + (bStyle ? bStyle.width : "n/a") + "</div>" +
         "<div style='margin-top:6px;'>" + rows + "</div>";
 }
@@ -6553,12 +6573,14 @@ function toggleVoice() {
     // rather than being blocked (and falling back to the device's own voice).
     unlockPersonaAudio();
     if (_listening) {
-        // User tapped mic while listening: stop and clear the keep-listening flag.
+        // Second tap while recording: stop and convert buffer -> append to textarea.
         _userWantsMic = false;
         if (_sttRestartTimer) { clearTimeout(_sttRestartTimer); _sttRestartTimer = null; }
-        stopListening();
+        if (_sttWatchdogTimer) { clearTimeout(_sttWatchdogTimer); _sttWatchdogTimer = null; }
+        stopAndConvert();
         return;
     }
+    // First tap: start recording, userWantsMic = true.
     _userWantsMic = true;
     startListening();
 }
@@ -6566,104 +6588,217 @@ function toggleVoice() {
 function startListening() {
     if (_listening || !speechRecognitionSupported()) return;
     var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    try { _recognition = new SR(); } catch (e) { return; }
+    try { _recognition = new SR(); } catch (e) {
+        _sttLastError = e.message;
+        scheduleRestart();
+        return;
+    }
     var session = ++_sttSession;   // tag this session so stale events are ignored
     if (_sttRestartTimer) { clearTimeout(_sttRestartTimer); _sttRestartTimer = null; }
     _recognition.lang = navigator.language || "en-US";
     _recognition.interimResults = true;
     _recognition.continuous = true;
-    // Save base text so we can REPLACE (never append) on each result.
-    var input0 = document.getElementById("chatInput");
-    _sttBaseText = (input0 && input0.value) || "";
+    // Fresh buffer: nothing is written to the textarea while recording.
+    _sttBuffer = "";
+    _sttPieces = [];
     _sttFinal = "";
     _sttLastFinal = "";
     var input = document.getElementById("chatInput");
+    var baseText = (input && input.value) || "";
     _recognition.onresult = function (ev) {
         // Ignore events from a superseded session.
         if (session !== _sttSession) return;
-        _sttDebugLog(ev.resultIndex, ev.results.length, false, "");
-        // Build pieces from all results, replacing any piece whose text startsWith the previous piece.
+        _sttLastEventTime = Date.now();   // watchdog heartbeat
+        // Build dedup pieces: cumulative interim replaces previous piece; finals committed once.
         var pieces = [];
         for (var i = ev.resultIndex; i < ev.results.length; i++) {
             var t = ev.results[i][0] ? ev.results[i][0].transcript : "";
             var isFinal = !!ev.results[i].isFinal;
-            _sttDebugLog(i, ev.results.length, isFinal, t);
             var trimmed = t.trim();
             var lower = trimmed.toLowerCase();
             if (pieces.length > 0) {
                 var prev = pieces[pieces.length - 1];
                 var prevLower = prev.trimmed.toLowerCase();
                 if (lower.startsWith(prevLower) && lower.length > prev.trimmed.length) {
-                    // New piece startsWith previous and is longer: replace previous.
                     pieces[pieces.length - 1] = { trimmed: trimmed, text: t };
                     continue;
                 }
             }
-            pieces.push({ trimmed: trimmed, text: t });
+            pieces.push({ trimmed: trimmed, text: t, isFinal: isFinal });
         }
-        // Assemble text from baseText + pieces (never commits pieces into baseText mid-event).
-        var allParts = [];
-        if (_sttBaseText && _sttBaseText.trim()) allParts.push(_sttBaseText.trim());
-        pieces.forEach(function (p) { if (p.trimmed) allParts.push(p.trimmed); });
-        if (input) { input.value = allParts.join(" "); if (typeof autoGrowInput === "function") autoGrowInput(); }
+        // Commit finals once into the buffer; interims replace the trailing piece cumulatively.
+        pieces.forEach(function (p) {
+            if (!p.trimmed) return;
+            if (p.isFinal) {
+                // Final: commit once (dedup against last final piece).
+                if (_sttBuffer && _sttBuffer.trim()) {
+                    var lastWord = _sttBuffer.trim().split(/\s+/).pop();
+                    if (p.trimmed.toLowerCase() === lastWord.toLowerCase()) return;
+                }
+                _sttBuffer = (_sttBuffer ? _sttBuffer + " " : "") + p.trimmed;
+            } else {
+                // Interim: cumulative replace the previous interim piece if it startsWith it.
+                if (_sttPieces.length > 0) {
+                    var prev = _sttPieces[_sttPieces.length - 1];
+                    var prevLower = prev.trimmed.toLowerCase();
+                    var lower = p.trimmed.toLowerCase();
+                    if (lower.startsWith(prevLower) && lower.length > prev.trimmed.length) {
+                        _sttPieces[_sttPieces.length - 1] = p;
+                    } else {
+                        _sttPieces.push(p);
+                    }
+                } else {
+                    _sttPieces.push(p);
+                }
+            }
+        });
+        // NO textarea write while recording. Just keep buffer + pieced interim visible via counter.
+        var buf = _sttBuffer;
+        _sttPieces.forEach(function (p) { if (p.trimmed) buf = (buf ? buf + " " : "") + p.trimmed; });
+        try { updateMicCounter(buf); } catch (e) {}
         // Boost CSS fallback waveform when speech is detected.
-        if (pieces.some(function (p) { return p.trimmed; })) {
-            vmWaveform.micSpeechDetected();
+        if (_sttPieces.some(function (p) { return p.trimmed; })) {
             try{window.vmWave&&vmWave.userPulse()}catch(e){}
         }
     };
     _recognition.onerror = function (ev) {
-        // Ignore errors from a superseded session.
+        // Ignore events from a superseded session.
         if (session !== _sttSession) return;
+        _sttLastError = ev.error || "error";
         if (ev.error === "not-allowed" || ev.error === "service-not-allowed") {
             stopListening();
             alert("Microphone access is blocked. Allow mic access in your browser to use voice.");
+        } else {
+            // no-speech / aborted / audio-capture etc: treat as normal, restart.
+            scheduleRestart();
         }
     };
     _recognition.onend = function () {
         // Ignore end events from a superseded session.
         if (session !== _sttSession) return;
-        // Commit the current accumulated text into baseText when the session ends.
-        var input = document.getElementById("chatInput");
-        var curText = ((input && input.value) || "").trim();
-        if (curText) {
-            _sttBaseText = curText;
-            _sttLastFinal = curText;
-        }
-        // Keep listening if the user wants the mic to stay open.
         if (_userWantsMic && session === _sttSession) {
-            var now = Date.now();
-            if (_sttRestartTimer) { clearTimeout(_sttRestartTimer); _sttRestartTimer = null; }
-            if (now - _sttRestartGuard < 300) return;   // max 1 restart per 300ms
-            _sttRestartGuard = now;
-            _listening = false;  // allow startListening to proceed on restart
-            _sttRestartTimer = setTimeout(function () {
-                _sttRestartTimer = null;
-                if (_userWantsMic && session === _sttSession) {
-                    try { startListening(); } catch (e) {}
-                }
-            }, 200);
+            // Never stop by itself: fresh-instance restart with backoff (max 5).
+            scheduleRestart();
             return;
         }
         // Not keeping listening: full stop.
         _listening = false;
         stopListening();
     };
-    // Request mic access for the waveform BEFORE starting SpeechRecognition so
-    // the browser can grant both. getUserMedia is async; if it fails, the CSS
-    // fallback in micStart() handles the visualisation without breaking STT.
+    // Start waveform mic access BEFORE SpeechRecognition; failure does not break STT.
     vmWaveform.micStart();
     try{window.vmWave&&vmWave.start("user")}catch(e){}
-    try { _recognition.start(); } catch (e) {}
+    try { _recognition.start(); } catch (e) {
+        _sttLastError = e.message;
+        scheduleRestart();
+    }
     _listening = true;
+    _sttLastEventTime = Date.now();
     _sttDebugStartCount++;
     setMicUI(true);
-    if (input) input.placeholder = "Listening€¦  (tap mic to stop)";
+    if (input) input.placeholder = "Listening (tap mic to stop)";
+    startWatchdog();
+}
+// --- Helpers for record-first / convert-on-stop mic flow ---
+
+function scheduleRestart() {
+    if (!_userWantsMic) return;
+    _sttRestartCount++;
+    if (_sttRestartCount > 5) {
+        // Backoff exhausted: stop recording, keep buffer, surface text on stop.
+        _userWantsMic = false;
+        if (_sttWatchdogTimer) { clearTimeout(_sttWatchdogTimer); _sttWatchdogTimer = null; }
+        stopAndConvert();
+        return;
+    }
+    if (_sttRestartTimer) { clearTimeout(_sttRestartTimer); _sttRestartTimer = null; }
+    _listening = false;  // allow startListening to proceed
+    var backoff = Math.min(200 * Math.pow(2, _sttRestartCount - 1), 2000);
+    _sttRestartTimer = setTimeout(function () {
+        _sttRestartTimer = null;
+        if (_userWantsMic) { try { startListening(); } catch (e) {} }
+    }, backoff);
 }
 
-// No silence timer / end-of-speech path: recognition ends only when the user
-// taps the mic again or presses Send. The wave stays visible during restarts
-// and during silence.
+function startWatchdog() {
+    if (_sttWatchdogTimer) { clearTimeout(_sttWatchdogTimer); _sttWatchdogTimer = null; }
+    _sttWatchdogTimer = setTimeout(function () {
+        _sttWatchdogTimer = null;
+        if (_userWantsMic && !_listening) {
+            // No recognition event for 4s: restart with fresh instance.
+            _sttLastError = "watchdog: no event for 4s";
+            scheduleRestart();
+        }
+    }, 4000);
+}
+
+function stopAndConvert() {
+    // Stop recording, wait up to 1200ms for the last final result, then append buffer
+    // after the existing textarea text with a space. Do not send.
+    _userWantsMic = false;
+    if (_sttRestartTimer) { clearTimeout(_sttRestartTimer); _sttRestartTimer = null; }
+    if (_sttWatchdogTimer) { clearTimeout(_sttWatchdogTimer); _sttWatchdogTimer = null; }
+    _listening = false;
+    if (_recognition) { try { _recognition.onend = null; _recognition.stop(); } catch (e) {} }
+    _recognition = null;
+    setMicUI(false);
+    vmWaveform.micStop();
+    try{window.vmWave&&vmWave.stop()}catch(e){}
+    // Wait up to 1200ms for a last final result already in flight.
+    var waitMs = 0;
+    var waitTimer = setInterval(function () {
+        waitMs += 50;
+        if (waitMs >= 1200) { clearInterval(waitTimer); flushBufferToTextarea(); }
+    }, 50);
+    setTimeout(function () { clearInterval(waitTimer); flushBufferToTextarea(); }, 1200);
+}
+
+function flushBufferToTextarea() {
+    var input = document.getElementById("chatInput");
+    if (!input) return;
+    var existing = input.value;
+    var buf = (_sttBuffer || "").trim();
+    if (!buf) {
+        resetMicState();
+        return;
+    }
+    // Append buffer after existing text with a single space.
+    var sep = (existing && existing.trim()) ? " " : "";
+    input.value = (existing ? existing : "") + sep + buf;
+    if (typeof autoGrowInput === "function") autoGrowInput();
+    input.scrollTop = input.scrollHeight;
+    try {
+        input.setSelectionRange(input.value.length, input.value.length);
+    } catch (e) {}
+    _sttBuffer = "";
+    _sttPieces = [];
+    resetMicState();
+    try { updateMicCounter(""); } catch (e) {}
+}
+
+function resetMicState() {
+    var input = document.getElementById("chatInput");
+    _sttFinal = "";
+    _sttLastFinal = "";
+    var _inp = document.getElementById("chatInput");
+    _sttBaseText = (_inp && _inp.value) || "";
+    var input = document.getElementById("chatInput");
+    if (input && typeof crewMember === "function") input.placeholder = "Reply to " + crewMember(currentPersona).name + "...";
+}
+
+function updateMicCounter(text) {
+    var el = document.getElementById("micWordsCounter");
+    if (!el) return;
+    var n = 0;
+    if (text && text.trim()) n = text.trim().split(/\s+/).length;
+    if (_userWantsMic) {
+        el.textContent = "words captured: " + n;
+        el.style.display = "inline";
+        el.style.color = "#00d4ff";
+    } else {
+        el.style.display = "none";
+    }
+}
 
 function stopListening() {
     _listening = false;
@@ -11058,9 +11193,23 @@ window.handleSendClick = function () {
 window.send = async function () {
     if (!authCheckComplete || isThinking) return;
     const input = document.getElementById("chatInput");
+    // If recording, stop the mic and flush the captured buffer into the textarea
+    // so everything is sent as one combined message. Do this before reading text.
+    if (_userWantsMic) {
+        _userWantsMic = false;
+        if (_sttRestartTimer) { clearTimeout(_sttRestartTimer); _sttRestartTimer = null; }
+        if (_sttWatchdogTimer) { clearTimeout(_sttWatchdogTimer); _sttWatchdogTimer = null; }
+        _listening = false;
+        if (_recognition) { try { _recognition.onend = null; _recognition.stop(); } catch (e) {} }
+        _recognition = null;
+        setMicUI(false);
+        vmWaveform.micStop();
+        try{window.vmWave&&vmWave.stop()}catch(e){}
+        flushBufferToTextarea();   // append buffer to textarea immediately
+    } else {
+        stopListening();
+    }
     const text = input.value.trim();
-    // Pressing Send ends recognition (mic only stops on tap or Send).
-    stopListening();
     // Read this reply aloud only when the turn came from voice (opt-in, never default).
     window._speakThisReply = _voiceTurn; _voiceTurn = false;
 

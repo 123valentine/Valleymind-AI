@@ -1,15 +1,14 @@
-/* ValleyMind live waveform (user mic + AI TTS playback).
- * Claude-style scrolling waveform: bold cyan rounded bars, 3px wide,
- * scrolling right to left inside the composer box.
- *
- * Self-contained IIFE. Everything wrapped in try/catch so a failure here
- * can never stop recognition or playback.
+/* ValleyMind live waveform (recording) - right-to-left always while recording.
+ * Claude-style scrolling waveform: bold cyan rounded bars, scrolling right to left
+ * inside the composer box. Self-contained IIFE, wrapped in try/catch so a failure
+ * here can never stop recognition or playback.
  *
  * Exposes:
  *   window.vmWave.start(kind)   kind = "user" | "ai"
  *   window.vmWave.stop()
  *   window.vmWave.userPulse()   called on recognition events (onaudiostart,
- *                              onspeechstart, onresult) to raise the level.
+ *                               onspeechstart, onresult) to raise the level.
+ *   window.vmWave.debugInfo()   { level, source, display } for ?debug=1 panel.
  */
 (function () {
   "use strict";
@@ -19,26 +18,26 @@
   var MIN_HEIGHT = 4;
   var MAX_HEIGHT = 28;
   var ACCENT = "#00d4ff";   // app cyan
-  var DECAY_MS = 400;
 
   var state = {
     container: null,
     barsParent: null,
-    bars: [],          // bar elements
-    levels: [],        // current per-bar levels (0..1), scrolling history
+    bars: [],
+    levels: [],          // scrolling history (right-to-left: shift left, push right)
     activeKind: null,
     ctx: null,
     analyser: null,
     source: null,
     stream: null,
     raf: null,
-    token: 0,          // guards against late getUserMedia results
-    fallback: false,
-    voiceLevel: 0,
-    lastPulse: 0,
-    levelSource: "none",
-    currentLevel: 0,
-    smoothedLevel: 0
+    token: 0,            // guards against late getUserMedia results
+    fallback: false,     // true when getUserMedia failed; use event-driven level
+    voiceLevel: 0,       // event-driven level (0..1)
+    lastPulse: 0,        // timestamp of last userPulse
+    levelSource: "none", // "analyser" | "events" | "none"
+    currentLevel: 0,     // latest raw level (0..1)
+    smoothedLevel: 0,    // RMS-smoothed level (0..1)
+    lastPushTime: 0      // timestamp of last history push
   };
 
   function recomputeBarCount() {
@@ -55,16 +54,24 @@
     }
   }
 
+  function debugInfo() {
+    return {
+      level: state.currentLevel || 0,
+      source: state.levelSource,
+      display: state.container ? (state.container.style.display || "") : ""
+    };
+  }
+
   function updateDebug() {
     try {
       if (!(/[?&]debug=1/).test(window.location.search || "")) return;
       var p = document.getElementById("sttDebugPanel");
       if (!p) return;
       var c = state.container;
-      var disp = c ? (c.style.display || window.getComputedStyle ? getComputedStyle(c).display : "") : "";
-      var w = c ? (c.getBoundingClientRect ? Math.round(c.getBoundingClientRect().width) : (c.clientWidth||0)) : 0;
-      var h = c ? (c.getBoundingClientRect ? Math.round(c.getBoundingClientRect().height) : (c.clientHeight||0)) : 0;
-      var line = "vmWave: display=" + disp + " size=" + w + "x" + h + " source=" + state.levelSource + " level=" + (state.currentLevel||0).toFixed(3);
+      var disp = c ? (c.style.display || "") : "";
+      var w = c && c.getBoundingClientRect ? Math.round(c.getBoundingClientRect().width) : (c ? (c.clientWidth || 0) : 0);
+      var h = c && c.getBoundingClientRect ? Math.round(c.getBoundingClientRect().height) : (c ? (c.clientHeight || 0) : 0);
+      var line = "vmWave: display=" + disp + " size=" + w + "x" + h + " source=" + state.levelSource + " level=" + (state.currentLevel || 0).toFixed(3);
       p.textContent = line + (p.textContent ? " | " + p.textContent.split(" | ").slice(1).join(" | ") : "");
     } catch (e) {}
   }
@@ -75,45 +82,9 @@
       var style = document.createElement("style");
       style.id = "vmWaveCss";
       style.textContent =
-        "#vmWaveContainer{" +
-        "display:none;" +
-        "position:relative;" +
-        "z-index:50;" +
-        "height:34px;" +
-        "width:100%;" +
-        "max-width:100%;" +
-        "min-width:0;" +
-        "margin:0;" +
-        "padding:0 12px;" +
-        "background:rgba(0,0,0,0.35);" +
-        "border-radius:8px;" +
-        "display:flex;" +
-        "align-items:center;" +
-        "gap:2px;" +
-        "box-sizing:border-box;" +
-        "overflow:hidden;" +
-        "}" +
-        "#vmWaveBars{" +
-        "display:flex !important;" +
-        "flex-direction:row !important;" +
-        "flex-wrap:nowrap !important;" +
-        "align-items:center !important;" +
-        "justify-content:center !important;" +
-        "width:100% !important;" +
-        "max-width:100% !important;" +
-        "overflow:hidden !important;" +
-        "height:32px !important;" +
-        "}" +
-        ".vmWaveBar{" +
-        "width:3px;" +
-        "border-radius:2px;" +
-        "flex:0 0 3px;" +
-        "height:4px;" +
-        "background:" + ACCENT + ";" +
-        "display:block;" +
-        "transform-origin:bottom;" +
-        "margin:0 1.5px;" +
-        "}";
+        "#vmWaveContainer{display:none;position:relative;z-index:50;height:34px;width:100%;max-width:100%;min-width:0;margin:0;padding:0 12px;background:rgba(0,0,0,0.35);border-radius:8px;align-items:center;gap:2px;box-sizing:border-box;overflow:hidden;}" +
+        "#vmWaveBars{display:flex !important;flex-direction:row !important;flex-wrap:nowrap !important;align-items:center !important;justify-content:flex-start !important;width:100% !important;max-width:100% !important;overflow:hidden !important;height:32px !important;}" +
+        ".vmWaveBar{width:3px;border-radius:2px;flex:0 0 3px;height:4px;background:" + ACCENT + ";display:block;transform-origin:bottom;margin:0 1.5px;transition:height 60ms ease;}";
       var head = document.head || document.getElementsByTagName("head")[0];
       if (head) head.appendChild(style);
     } catch (e) {}
@@ -139,16 +110,19 @@
     } catch (e) {}
   }
 
-  function setLevels(levels) {
+  // Push a new level onto the right side of the history (flows right-to-left).
+  function pushLevel(lvl) {
     try {
       if (!state.bars.length) return;
-      state.levels = state.levels.slice(1);
-      state.levels.push(levels[levels.length - 1] || 0);
+      if (lvl < 0) lvl = 0;
+      if (lvl > 1) lvl = 1;
+      state.levels.shift();
+      state.levels.push(lvl);
       for (var i = 0; i < state.bars.length; i++) {
-        var lvl = state.levels[i];
-        if (lvl < 0) lvl = 0;
-        if (lvl > 1) lvl = 1;
-        var h = MIN_HEIGHT + lvl * (MAX_HEIGHT - MIN_HEIGHT);
+        var v = state.levels[i];
+        if (v < 0) v = 0;
+        if (v > 1) v = 1;
+        var h = MIN_HEIGHT + v * (MAX_HEIGHT - MIN_HEIGHT);
         state.bars[i].style.height = h + "px";
       }
     } catch (e) {}
@@ -156,6 +130,7 @@
 
   function silence() {
     try {
+      if (!state.bars.length) return;
       state.levels = new Array(state.bars.length).fill(0);
       for (var i = 0; i < state.bars.length; i++) {
         state.bars[i].style.height = MIN_HEIGHT + "px";
@@ -189,8 +164,8 @@
     cancelRaf();
     try {
       if (state.stream) {
-        var tracks = state.stream.getTracks || function () { return []; };
-        tracks().forEach(function (t) {
+        var tracks = state.stream.getTracks ? state.stream.getTracks() : [];
+        tracks.forEach(function (t) {
           try { t.stop(); } catch (e) {}
         });
         state.stream = null;
@@ -220,39 +195,67 @@
   function render() {
     try {
       if (!state.activeKind) return;
+      var now = Date.now();
       var newLevel = 0;
       if (state.analyser) {
         state.levelSource = "analyser";
-        var buf = new Uint8Array(state.analyser.fftSize || 2048);
-        state.analyser.getByteTimeDomainData(buf);
-        var sum = 0;
-        for (var i = 0; i < buf.length; i++) {
-          var v = (buf[i] - 128) / 128;
-          sum += v * v;
+        try {
+          var buf = new Uint8Array(state.analyser.fftSize || 2048);
+          state.analyser.getByteTimeDomainData(buf);
+          var sum = 0;
+          for (var i = 0; i < buf.length; i++) {
+            var v = (buf[i] - 128) / 128;
+            sum += v * v;
+          }
+          var rms = Math.sqrt(sum / buf.length);
+          // Noise gate + auto gain: soft speech still visible, shouting reaches full height.
+          if (rms < 0.01) rms = 0;
+          else rms = Math.min(1, rms * 4.0);
+          // Smooth RMS: attack ~0.5, release ~0.12.
+          if (rms > state.smoothedLevel) {
+            state.smoothedLevel = state.smoothedLevel * 0.5 + rms * 0.5;
+          } else {
+            state.smoothedLevel = state.smoothedLevel * 0.88 + rms * 0.12;
+          }
+          if (state.smoothedLevel < 0.01) state.smoothedLevel = 0.01;
+          newLevel = state.smoothedLevel;
+          state.currentLevel = newLevel;
+        } catch (e) {
+          newLevel = state.smoothedLevel || 0.01;
         }
-        var rms = Math.sqrt(sum / buf.length);
-        // Noise gate and gain tuning
-        if (rms < 0.01) rms = 0;
-        else rms = Math.min(1, rms * 3.5); // boost for normal speech
-        // Smooth with attack/release
-        if (rms > state.smoothedLevel) {
-          state.smoothedLevel = state.smoothedLevel * 0.3 + rms * 0.7; // fast attack
-        } else {
-          state.smoothedLevel = state.smoothedLevel * 0.85 + rms * 0.15; // slower release
-        }
-        if (state.smoothedLevel < 0.01) state.smoothedLevel = 0.01; // keep low bars visible
-        newLevel = state.smoothedLevel;
-        state.currentLevel = newLevel;
       } else if (state.fallback) {
         state.levelSource = "events";
-        var now = Date.now();
-        var elapsed = now - state.lastPulse;
-        var decay = Math.max(0, 1 - elapsed / DECAY_MS);
-        newLevel = Math.max(0.01, state.voiceLevel * decay); // keep minimum visible
+        var elapsed = now - (state.lastPulse || 0);
+        var decay = Math.max(0, 1 - elapsed / 400); // decay within ~400ms
+        newLevel = Math.max(0.01, (state.voiceLevel || 0) * decay);
         if (newLevel < 0.01) newLevel = 0.01;
+        if (newLevel > state.smoothedLevel) {
+          state.smoothedLevel = state.smoothedLevel * 0.5 + newLevel * 0.5;
+        } else {
+          state.smoothedLevel = state.smoothedLevel * 0.88 + newLevel * 0.12;
+        }
+        state.currentLevel = state.smoothedLevel;
+        newLevel = state.smoothedLevel;
+      } else {
+        newLevel = state.smoothedLevel || 0.01;
         state.currentLevel = newLevel;
       }
-      setLevels([newLevel]);
+
+      // Blend push speed smoothly by smoothed level:
+      //   quiet -> slow (~140ms), speaking -> fast (~45ms), no sudden switch.
+      var level = state.smoothedLevel || newLevel || 0;
+      if (level < 0) level = 0;
+      if (level > 1) level = 1;
+      var slowMs = 140;
+      var fastMs = 45;
+      var interval = slowMs + (fastMs - slowMs) * level;
+      if (interval < fastMs) interval = fastMs;
+      if (interval > slowMs) interval = slowMs;
+      if (!state.lastPushTime || now - state.lastPushTime >= interval) {
+        pushLevel(level < 0.01 ? 0.01 : level);
+        state.lastPushTime = now;
+      }
+
       updateDebug();
       state.raf = requestAnimationFrame(render);
     } catch (e) {
@@ -268,11 +271,13 @@
         state.levelSource = "events";
         state.lastPulse = Date.now() - 999999;
         state.voiceLevel = 0.01;
-        state.raf = requestAnimationFrame(render);
+        state.smoothedLevel = 0.01;
+        if (!state.raf) state.raf = requestAnimationFrame(render);
         return;
       }
       var myToken = ++state.token;
-      navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
+      var constraints = { audio: { echoCancellation: true, noiseSuppression: true } };
+      navigator.mediaDevices.getUserMedia(constraints).then(function (stream) {
         if (myToken !== state.token) {
           try { stream.getTracks().forEach(function (t) { try { t.stop(); } catch (e) {} }); } catch (e) {}
           return;
@@ -285,35 +290,41 @@
             state.levelSource = "events";
             state.lastPulse = Date.now() - 999999;
             state.voiceLevel = 0.01;
-            state.raf = requestAnimationFrame(render);
+            state.smoothedLevel = 0.01;
+            if (!state.raf) state.raf = requestAnimationFrame(render);
             return;
           }
+          try { if (ctx.state === "suspended") ctx.resume(); } catch (e) {}
           state.source = ctx.createMediaStreamSource(stream);
           state.analyser = ctx.createAnalyser();
           state.analyser.fftSize = 2048;
           state.source.connect(state.analyser);
           state.levelSource = "analyser";
-          state.raf = requestAnimationFrame(render);
+          state.fallback = false;
+          if (!state.raf) state.raf = requestAnimationFrame(render);
         } catch (e) {
           state.fallback = true;
           state.levelSource = "events";
           state.lastPulse = Date.now() - 999999;
           state.voiceLevel = 0.01;
-          state.raf = requestAnimationFrame(render);
+          state.smoothedLevel = 0.01;
+          if (!state.raf) state.raf = requestAnimationFrame(render);
         }
       }).catch(function () {
         state.fallback = true;
         state.levelSource = "events";
         state.lastPulse = Date.now() - 999999;
         state.voiceLevel = 0.01;
-        state.raf = requestAnimationFrame(render);
+        state.smoothedLevel = 0.01;
+        if (!state.raf) state.raf = requestAnimationFrame(render);
       });
     } catch (e) {
       state.fallback = true;
       state.levelSource = "events";
       state.lastPulse = Date.now() - 999999;
       state.voiceLevel = 0.01;
-      state.raf = requestAnimationFrame(render);
+      state.smoothedLevel = 0.01;
+      if (!state.raf) state.raf = requestAnimationFrame(render);
     }
   }
 
@@ -323,14 +334,17 @@
       state.levelSource = "events";
       state.lastPulse = Date.now() - 999999;
       state.voiceLevel = 0.01;
-      state.raf = requestAnimationFrame(render);
+      state.smoothedLevel = 0.01;
+      if (!state.raf) state.raf = requestAnimationFrame(render);
     } catch (e) {}
   }
 
+  // Event-driven level boost (source B fallback): called on onaudiostart,
+  // onspeechstart and every onresult. Decays within ~400ms.
   function userPulse() {
     try {
-      if (!state.activeKind || state.activeKind !== "user") return;
-      state.voiceLevel = 1;
+      if (!state.activeKind) return;
+      state.voiceLevel = 1.0;
       state.lastPulse = Date.now();
       state.fallback = true;
       if (!state.analyser) {
@@ -351,6 +365,8 @@
       }
       releaseAll();
       state.activeKind = kind;
+      state.lastPushTime = 0;
+      state.smoothedLevel = 0.01;
       if (state.container) {
         try { state.container.style.display = "flex"; } catch (e) {}
         try { state.container.classList.add("vmWaveActive"); } catch (e) {}
@@ -364,7 +380,7 @@
               buildBars();
               var k = Math.min(oldBars.length, state.bars.length);
               for (var i = 0; i < k; i++) {
-                if (state.bars[i]) state.bars[i].style.height = oldBars[i].style.height;
+                if (state.bars[i]) state.bars[i].style.height = (oldBars[i] && oldBars[i].style && oldBars[i].style.height) || (MIN_HEIGHT + "px");
               }
             }
             updateDebug();
@@ -389,7 +405,7 @@
     } catch (e) {}
   }
 
-  var api = { start: start, stop: stop, userPulse: userPulse };
+  var api = { start: start, stop: stop, userPulse: userPulse, debugInfo: debugInfo };
   try {
     if (typeof window !== "undefined") {
       window.vmWave = api;
@@ -404,8 +420,10 @@
               buildBars();
               var k = Math.min(oldBars.length, state.bars.length);
               for (var i = 0; i < k; i++) {
-                if (state.bars[i]) state.bars[i].style.height = oldBars[i].style.height;
+                if (state.bars[i]) state.bars[i].style.height = (oldBars[i] && oldBars[i].style && oldBars[i].style.height) || (MIN_HEIGHT + "px");
               }
+              updateDebug();
+            } else {
               updateDebug();
             }
           } catch (e) {}
@@ -423,7 +441,7 @@
                 buildBars();
                 var k = Math.min(oldBars.length, state.bars.length);
                 for (var i = 0; i < k; i++) {
-                  if (state.bars[i]) state.bars[i].style.height = oldBars[i].style.height;
+                  if (state.bars[i]) state.bars[i].style.height = (oldBars[i] && oldBars[i].style && oldBars[i].style.height) || (MIN_HEIGHT + "px");
                 }
                 updateDebug();
               } else {
