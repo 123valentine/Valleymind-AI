@@ -1,8 +1,6 @@
 /* ValleyMind live waveform (user mic + AI TTS playback).
- * Claude-style scrolling waveform: 40 bars, width 3px, gap 3px, rounded,
- * height up to 28px, solid cyan accent, centered vertically.
- * Scrolling history: each frame pushes a new level on the right and shifts
- * old levels left, so the wave flows.
+ * Claude-style scrolling waveform: bold cyan rounded bars, 3px wide,
+ * scrolling right to left inside the composer box.
  *
  * Self-contained IIFE. Everything wrapped in try/catch so a failure here
  * can never stop recognition or playback.
@@ -10,21 +8,18 @@
  * Exposes:
  *   window.vmWave.start(kind)   kind = "user" | "ai"
  *   window.vmWave.stop()
- *   window.vmWave.userPulse()   called on recognition events
- *                               (onspeechstart, onresult) to raise the level.
- *
- * The container element (#vmWaveContainer) is created/owned by index.html.
+ *   window.vmWave.userPulse()   called on recognition events (onaudiostart,
+ *                              onspeechstart, onresult) to raise the level.
  */
 (function () {
   "use strict";
 
-  var BAR_COUNT = 40;
   var BAR_WIDTH = 3;
   var BAR_GAP = 3;
   var MIN_HEIGHT = 4;
   var MAX_HEIGHT = 28;
   var ACCENT = "#00d4ff";   // app cyan
-  var DECAY_MS = 400;       // ms for level to decay from 1 to 0 when silent
+  var DECAY_MS = 400;
 
   var state = {
     container: null,
@@ -39,16 +34,16 @@
     raf: null,
     token: 0,          // guards against late getUserMedia results
     fallback: false,
-    voiceLevel: 0,     // current fallback level (0..1), driven by recognition events
-    lastPulse: 0       // timestamp of last userPulse() call
+    voiceLevel: 0,
+    lastPulse: 0,
+    levelSource: "none",
+    currentLevel: 0,
+    smoothedLevel: 0
   };
 
-  // Measure how many 3px bars (with 3px gap) fit across the bars parent.
-  // Must be called after the container is displayed (width is 0 while
-  // display:none), so bars span the full composer width.
   function recomputeBarCount() {
     try {
-      if (!state.barsParent) return state.bars.length || BAR_COUNT;
+      if (!state.barsParent) return state.bars.length || 40;
       var rect = state.barsParent.getBoundingClientRect();
       var width = rect.width || state.barsParent.clientWidth || 0;
       var computed = Math.floor((width - 26) / 6);
@@ -56,55 +51,24 @@
       if (computed > 200) computed = 200;
       return computed;
     } catch (e) {
-      return 20;
+      return 40;
     }
   }
 
-  function buildBars(count) {
+  function updateDebug() {
     try {
-      if (!state.barsParent) return;
-      if (state.bars.length) return;
-      var frag = document.createDocumentFragment();
-      for (var i = 0; i < count; i++) {
-        var b = document.createElement("div");
-        b.className = "vmWaveBar";
-        b.style.width = BAR_WIDTH + "px";
-        b.style.height = MIN_HEIGHT + "px";
-        b.style.marginRight = BAR_GAP + "px";
-        frag.appendChild(b);
-        state.bars.push(b);
-      }
-      state.barsParent.appendChild(frag);
-      state.levels = new Array(count).fill(0);
+      if (!(/[?&]debug=1/).test(window.location.search || "")) return;
+      var p = document.getElementById("sttDebugPanel");
+      if (!p) return;
+      var c = state.container;
+      var disp = c ? (c.style.display || window.getComputedStyle ? getComputedStyle(c).display : "") : "";
+      var w = c ? (c.getBoundingClientRect ? Math.round(c.getBoundingClientRect().width) : (c.clientWidth||0)) : 0;
+      var h = c ? (c.getBoundingClientRect ? Math.round(c.getBoundingClientRect().height) : (c.clientHeight||0)) : 0;
+      var line = "vmWave: display=" + disp + " size=" + w + "x" + h + " source=" + state.levelSource + " level=" + (state.currentLevel||0).toFixed(3);
+      p.textContent = line + (p.textContent ? " | " + p.textContent.split(" | ").slice(1).join(" | ") : "");
     } catch (e) {}
   }
 
-  function setLevels(levels) {
-    try {
-      if (!state.bars.length) return;
-      // Scrolling history: shift left, push new level on the right.
-      state.levels = state.levels.slice(1);
-      state.levels.push(levels[levels.length - 1] || 0);
-      for (var i = 0; i < state.bars.length; i++) {
-        var lvl = state.levels[i];
-        if (lvl < 0) lvl = 0;
-        if (lvl > 1) lvl = 1;
-        var h = MIN_HEIGHT + lvl * (MAX_HEIGHT - MIN_HEIGHT);
-        state.bars[i].style.height = h + "px";
-      }
-    } catch (e) {}
-  }
-
-  function silence() {
-    try {
-      state.levels = new Array(state.bars.length).fill(0);
-      for (var i = 0; i < state.bars.length; i++) {
-        state.bars[i].style.height = MIN_HEIGHT + "px";
-      }
-    } catch (e) {}
-  }
-
-  // ------------------------------------------------------------------ DOM/CSS
   function injectCss() {
     try {
       if (document.getElementById("vmWaveCss")) return;
@@ -129,19 +93,6 @@
         "box-sizing:border-box;" +
         "overflow:hidden;" +
         "}" +
-        ".vmWaveBar{" +
-        "width:" + BAR_WIDTH + "px;" +
-        "border-radius:" + (BAR_WIDTH / 2) + "px;" +
-        "flex:0 0 " + BAR_WIDTH + "px;" +
-        "height:" + MIN_HEIGHT + "px;" +
-        "background:" + ACCENT + ";" +
-        "display:block;" +
-        "transform-origin:bottom;" +
-        "margin:0 1.5px;" +
-        "}" +
-        "#vmWaveContainer.vmWaveActive{" +
-        "display:flex;" +
-        "}" +
         "#vmWaveBars{" +
         "display:flex !important;" +
         "flex-direction:row !important;" +
@@ -152,10 +103,77 @@
         "max-width:100% !important;" +
         "overflow:hidden !important;" +
         "height:32px !important;" +
+        "}" +
+        ".vmWaveBar{" +
+        "width:3px;" +
+        "border-radius:2px;" +
+        "flex:0 0 3px;" +
+        "height:4px;" +
+        "background:" + ACCENT + ";" +
+        "display:block;" +
+        "transform-origin:bottom;" +
+        "margin:0 1.5px;" +
         "}";
       var head = document.head || document.getElementsByTagName("head")[0];
       if (head) head.appendChild(style);
     } catch (e) {}
+  }
+
+  function buildBars() {
+    try {
+      if (!state.barsParent) return;
+      if (state.bars.length) return;
+      var count = recomputeBarCount();
+      var frag = document.createDocumentFragment();
+      for (var i = 0; i < count; i++) {
+        var b = document.createElement("div");
+        b.className = "vmWaveBar";
+        b.style.width = BAR_WIDTH + "px";
+        b.style.marginRight = BAR_GAP + "px";
+        b.style.height = MIN_HEIGHT + "px";
+        frag.appendChild(b);
+        state.bars.push(b);
+      }
+      state.barsParent.appendChild(frag);
+      state.levels = new Array(count).fill(0);
+    } catch (e) {}
+  }
+
+  function setLevels(levels) {
+    try {
+      if (!state.bars.length) return;
+      state.levels = state.levels.slice(1);
+      state.levels.push(levels[levels.length - 1] || 0);
+      for (var i = 0; i < state.bars.length; i++) {
+        var lvl = state.levels[i];
+        if (lvl < 0) lvl = 0;
+        if (lvl > 1) lvl = 1;
+        var h = MIN_HEIGHT + lvl * (MAX_HEIGHT - MIN_HEIGHT);
+        state.bars[i].style.height = h + "px";
+      }
+    } catch (e) {}
+  }
+
+  function silence() {
+    try {
+      state.levels = new Array(state.bars.length).fill(0);
+      for (var i = 0; i < state.bars.length; i++) {
+        state.bars[i].style.height = MIN_HEIGHT + "px";
+      }
+    } catch (e) {}
+  }
+
+  function ensureContext() {
+    try {
+      if (state.ctx) return state.ctx;
+      var AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return null;
+      state.ctx = new AC();
+      return state.ctx;
+    } catch (e) {
+      state.ctx = null;
+      return null;
+    }
   }
 
   function cancelRaf() {
@@ -193,47 +211,68 @@
     state.analyser = null;
     state.activeKind = null;
     state.fallback = false;
+    state.levelSource = "none";
+    state.currentLevel = 0;
+    state.smoothedLevel = 0;
     state.token++;
   }
 
-  // --------------------------------------------------------------- render loop
   function render() {
     try {
       if (!state.activeKind) return;
       var newLevel = 0;
       if (state.analyser) {
-        var buf = new Uint8Array(state.analyser.frequencyBinCount);
+        state.levelSource = "analyser";
+        var buf = new Uint8Array(state.analyser.fftSize || 2048);
         state.analyser.getByteTimeDomainData(buf);
         var sum = 0;
-        for (var i = 0; i < buf.length; i++) sum += Math.abs(buf[i] - 128);
-        var raw = Math.min(1, sum / buf.length / 128);
-        newLevel = raw;
+        for (var i = 0; i < buf.length; i++) {
+          var v = (buf[i] - 128) / 128;
+          sum += v * v;
+        }
+        var rms = Math.sqrt(sum / buf.length);
+        // Noise gate and gain tuning
+        if (rms < 0.01) rms = 0;
+        else rms = Math.min(1, rms * 3.5); // boost for normal speech
+        // Smooth with attack/release
+        if (rms > state.smoothedLevel) {
+          state.smoothedLevel = state.smoothedLevel * 0.3 + rms * 0.7; // fast attack
+        } else {
+          state.smoothedLevel = state.smoothedLevel * 0.85 + rms * 0.15; // slower release
+        }
+        if (state.smoothedLevel < 0.01) state.smoothedLevel = 0.01; // keep low bars visible
+        newLevel = state.smoothedLevel;
+        state.currentLevel = newLevel;
       } else if (state.fallback) {
+        state.levelSource = "events";
         var now = Date.now();
         var elapsed = now - state.lastPulse;
         var decay = Math.max(0, 1 - elapsed / DECAY_MS);
-        newLevel = Math.max(0, state.voiceLevel * decay);
+        newLevel = Math.max(0.01, state.voiceLevel * decay); // keep minimum visible
+        if (newLevel < 0.01) newLevel = 0.01;
+        state.currentLevel = newLevel;
       }
       setLevels([newLevel]);
+      updateDebug();
       state.raf = requestAnimationFrame(render);
     } catch (e) {
       state.raf = null;
     }
   }
 
-  // ---------------------------------------------------------------- user mic
   function startUser() {
     try {
       navigator.mediaDevices = navigator.mediaDevices || {};
       if (!navigator.mediaDevices.getUserMedia) {
         state.fallback = true;
+        state.levelSource = "events";
         state.lastPulse = Date.now() - 999999;
+        state.voiceLevel = 0.01;
         state.raf = requestAnimationFrame(render);
         return;
       }
       var myToken = ++state.token;
       navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
-        // Guard against late results: if stop() was called meanwhile, ignore.
         if (myToken !== state.token) {
           try { stream.getTracks().forEach(function (t) { try { t.stop(); } catch (e) {} }); } catch (e) {}
           return;
@@ -243,7 +282,9 @@
           var ctx = ensureContext();
           if (!ctx || !ctx.createMediaStreamSource) {
             state.fallback = true;
+            state.levelSource = "events";
             state.lastPulse = Date.now() - 999999;
+            state.voiceLevel = 0.01;
             state.raf = requestAnimationFrame(render);
             return;
           }
@@ -251,41 +292,50 @@
           state.analyser = ctx.createAnalyser();
           state.analyser.fftSize = 2048;
           state.source.connect(state.analyser);
+          state.levelSource = "analyser";
           state.raf = requestAnimationFrame(render);
         } catch (e) {
           state.fallback = true;
+          state.levelSource = "events";
           state.lastPulse = Date.now() - 999999;
+          state.voiceLevel = 0.01;
           state.raf = requestAnimationFrame(render);
         }
       }).catch(function () {
         state.fallback = true;
+        state.levelSource = "events";
         state.lastPulse = Date.now() - 999999;
+        state.voiceLevel = 0.01;
         state.raf = requestAnimationFrame(render);
       });
     } catch (e) {
       state.fallback = true;
+      state.levelSource = "events";
       state.lastPulse = Date.now() - 999999;
+      state.voiceLevel = 0.01;
       state.raf = requestAnimationFrame(render);
     }
   }
 
-  // ---------------------------------------------------------------- ai tts
-  // NOTE: We intentionally do NOT use createMediaElementSource (it can silence
-  // the audio). Use the fallback animation instead.
   function startAi() {
     try {
       state.fallback = true;
+      state.levelSource = "events";
       state.lastPulse = Date.now() - 999999;
+      state.voiceLevel = 0.01;
       state.raf = requestAnimationFrame(render);
     } catch (e) {}
   }
 
-  // ------------------------------------------------------------------ public
   function userPulse() {
     try {
       if (!state.activeKind || state.activeKind !== "user") return;
       state.voiceLevel = 1;
       state.lastPulse = Date.now();
+      state.fallback = true;
+      if (!state.analyser) {
+        state.levelSource = "events";
+      }
     } catch (e) {}
   }
 
@@ -304,22 +354,20 @@
       if (state.container) {
         try { state.container.style.display = "flex"; } catch (e) {}
         try { state.container.classList.add("vmWaveActive"); } catch (e) {}
-        // Measure bar count AFTER container is displayed (width is 0 while
-        // display:none), so bars span the full composer width.
         requestAnimationFrame(function () {
           try {
             var nc = recomputeBarCount();
             if (state.bars.length !== nc) {
               var oldBars = state.bars;
               state.bars = [];
-              state.barsParent.innerHTML = "";
-              buildBars(nc);
-              // Transfer recent levels.
+              if (state.barsParent) state.barsParent.innerHTML = "";
+              buildBars();
               var k = Math.min(oldBars.length, state.bars.length);
               for (var i = 0; i < k; i++) {
-                state.bars[i].style.height = oldBars[i].style.height;
+                if (state.bars[i]) state.bars[i].style.height = oldBars[i].style.height;
               }
             }
+            updateDebug();
           } catch (e) {}
         });
       }
@@ -337,6 +385,7 @@
       }
       silence();
       state.activeKind = null;
+      updateDebug();
     } catch (e) {}
   }
 
@@ -344,7 +393,6 @@
   try {
     if (typeof window !== "undefined") {
       window.vmWave = api;
-      // Recompute bar count on resize so the wave spans the full composer width.
       try {
         window.addEventListener("resize", function () {
           try {
@@ -352,36 +400,43 @@
             if (state.barsParent && state.bars.length !== nc && state.activeKind) {
               var oldBars = state.bars;
               state.bars = [];
-              state.barsParent.innerHTML = "";
-              buildBars(nc);
+              if (state.barsParent) state.barsParent.innerHTML = "";
+              buildBars();
               var k = Math.min(oldBars.length, state.bars.length);
               for (var i = 0; i < k; i++) {
-                state.bars[i].style.height = oldBars[i].style.height;
+                if (state.bars[i]) state.bars[i].style.height = oldBars[i].style.height;
               }
+              updateDebug();
             }
           } catch (e) {}
         });
       } catch (e) {}
-      // Recompute bar count when the container size changes (e.g. composer
-      // width changes on phone vs laptop).
       try {
-        if (state.barsParent && typeof ResizeObserver !== "undefined") {
-          state.resizeObserver = new ResizeObserver(function () {
+        if (typeof ResizeObserver !== "undefined") {
+          var ro = new ResizeObserver(function () {
             try {
               var nc = recomputeBarCount();
-              if (state.bars.length !== nc && state.activeKind) {
+              if (state.barsParent && state.bars.length !== nc && state.activeKind) {
                 var oldBars = state.bars;
                 state.bars = [];
-                state.barsParent.innerHTML = "";
-                buildBars(nc);
+                if (state.barsParent) state.barsParent.innerHTML = "";
+                buildBars();
                 var k = Math.min(oldBars.length, state.bars.length);
                 for (var i = 0; i < k; i++) {
-                  state.bars[i].style.height = oldBars[i].style.height;
+                  if (state.bars[i]) state.bars[i].style.height = oldBars[i].style.height;
                 }
+                updateDebug();
+              } else {
+                updateDebug();
               }
             } catch (e) {}
           });
-          state.resizeObserver.observe(state.barsParent);
+          setTimeout(function () {
+            try {
+              var bp = document.getElementById("vmWaveBars") || state.barsParent;
+              if (bp) ro.observe(bp);
+            } catch (e) {}
+          }, 0);
         }
       } catch (e) {}
     }
