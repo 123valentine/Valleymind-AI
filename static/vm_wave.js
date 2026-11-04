@@ -1,2422 +1,394 @@
-﻿// ── Settings System ──────────────────────────────────────────
+/* ValleyMind live waveform (user mic + AI TTS playback).
+ * Claude-style scrolling waveform: 40 bars, width 3px, gap 3px, rounded,
+ * height up to 28px, solid cyan accent, centered vertically.
+ * Scrolling history: each frame pushes a new level on the right and shifts
+ * old levels left, so the wave flows.
+ *
+ * Self-contained IIFE. Everything wrapped in try/catch so a failure here
+ * can never stop recognition or playback.
+ *
+ * Exposes:
+ *   window.vmWave.start(kind)   kind = "user" | "ai"
+ *   window.vmWave.stop()
+ *   window.vmWave.userPulse()   called on recognition events
+ *                               (onspeechstart, onresult) to raise the level.
+ *
+ * The container element (#vmWaveContainer) is created/owned by index.html.
+ */
+(function () {
+  "use strict";
 
-var SETTINGS_SECTIONS = [
-  { id: "account",       label: "Account" },
-  { id: "interests",     label: "Interests & Goals" },
-  { id: "preferences",   label: "AI Preferences" },
-  { id: "memory",        label: "Memory" },
-  { id: "accessibility", label: "Accessibility" },
-  { id: "appearance",    label: "Appearance" },
-  { id: "companion",     label: "Companion" },
-  { id: "voice",         label: "Voice" },
-  { id: "language",      label: "Language & Region" },
-  { id: "culture",       label: "Culture" },
-  { id: "notifications", label: "Notifications" },
-  { id: "privacy",       label: "Privacy & Data" },
-  { id: "security",      label: "Security" },
-  { id: "connected",     label: "Connected Accounts" },
-  { id: "creator",       label: "Creator Profile" },
-  { id: "projects",      label: "Projects" },
-  { id: "knowledge",     label: "Knowledge Base" },
-  { id: "media",         label: "Media Library" },
-  { id: "storage",       label: "Data & Storage" },
-  { id: "billing",       label: "Subscription" },
-  { id: "integrations",  label: "Integrations" },
-  { id: "extensions",    label: "Extensions" },
-  { id: "tutorials",     label: "Tutorials & Help" },
-  { id: "usage",         label: "Usage" },
-];
+  var BAR_COUNT = 40;
+  var BAR_WIDTH = 3;
+  var BAR_GAP = 3;
+  var MIN_HEIGHT = 4;
+  var MAX_HEIGHT = 28;
+  var ACCENT = "#00d4ff";   // app cyan
+  var DECAY_MS = 400;       // ms for level to decay from 1 to 0 when silent
 
-function buildSettingsNav() {
-  var nav = document.getElementById("settingsNav");
-  nav.innerHTML = SETTINGS_SECTIONS.map(function (s) {
-    return '<div class="settings-nav-item" data-section="' + s.id + '" onclick="switchSettingsSection(\'' + s.id + '\')" style="display:flex;align-items:center;gap:10px;padding:10px 14px;cursor:pointer;color:#64748b;font-size:13px;font-family:\'Inter\',sans-serif;transition:all 0.15s;border-left:3px solid transparent;" onmouseover="if(!this.classList.contains(\'active\')){this.style.background=\'rgba(255,255,255,0.03)\';this.style.color=\'#e2e8f0\'}" onmouseout="if(!this.classList.contains(\'active\')){this.style.background=\'transparent\';this.style.color=\'#64748b\'}">' +
-      '<span>' + s.label + '</span>' +
-      '</div>';
-  }).join("");
-  nav.innerHTML += '<div onclick="openDeveloperMode();closeSettings()" style="display:flex;align-items:center;gap:10px;padding:10px 14px;cursor:pointer;color:rgba(100,116,139,0.4);font-size:11px;font-family:\'Inter\',sans-serif;margin-top:12px;transition:color 0.2s;border-left:3px solid transparent;" onmouseover="this.style.color=\'rgba(100,116,139,0.7)\'" onmouseout="this.style.color=\'rgba(100,116,139,0.4)\'"><span>Advanced</span></div>';
-}
-
-var _settingsCurrentSection = "account";
-
-function switchSettingsSection(id) {
-  _settingsCurrentSection = id;
-  document.querySelectorAll(".settings-nav-item").forEach(function (el) {
-    el.classList.remove("active");
-    el.style.background = "transparent";
-    el.style.color = "#64748b";
-    el.style.borderLeftColor = "transparent";
-  });
-  var active = document.querySelector('.settings-nav-item[data-section="' + id + '"]');
-  if (active) {
-    active.classList.add("active");
-    active.style.background = "rgba(0,212,255,0.08)";
-    active.style.color = "#00d4ff";
-    active.style.borderLeftColor = "#00d4ff";
-  }
-  renderSettingsContent(id);
-}
-
-function renderSettingsContent(id) {
-  var container = document.getElementById("settingsContent");
-  container.innerHTML = "";
-  switch (id) {
-    case "account":       renderAccountSection(container);       break;
-    case "interests":     renderInterestsSection(container);     break;
-    case "memory":        renderMemorySection(container);        break;
-    case "projects":      renderProjectsSection(container);      break;
-    case "creator":       renderCreatorSection(container);       break;
-    case "preferences":   renderPreferencesSection(container);   break;
-    case "appearance":    renderAppearanceSection(container);    break;
-    case "companion":     renderCompanionSection(container);     break;
-    case "voice":         renderVoiceSection(container);         break;
-    case "notifications": renderNotificationsSection(container); break;
-    case "knowledge":     renderKnowledgeSection(container);     break;
-    case "media":         renderMediaSection(container);         break;
-    case "storage":       renderStorageSection(container);       break;
-    case "billing":       renderBillingSection(container);       break;
-    case "privacy":       renderPrivacySection(container);       break;
-    case "security":      renderSecuritySection(container);      break;
-    case "connected":     renderConnectedSection(container);     break;
-    case "accessibility": renderAccessibilitySection(container); break;
-    case "language":      renderLanguageSection(container);      break;
-    case "culture":       renderCultureSection(container);       break;
-    case "integrations":  renderIntegrationsSection(container);  break;
-    case "extensions":    renderExtensionsSection(container);    break;
-    case "tutorials":     renderTutorialsSection(container);     break;
-    case "usage":         renderUsageSection(container);         break;
-  }
-}
-
-function _showSaved() {
-  var el = document.getElementById("settingsSaveIndicator");
-  if (el) { el.style.opacity = "1"; setTimeout(function () { el.style.opacity = "0"; }, 2000); }
-}
-
-function settingsApiSave(section, data, opts) {
-  // opts.merge: send a PARTIAL section save that the server merges into the
-  // existing section instead of replacing it. Used by saves that only touch one
-  // key (e.g. persona_voices) and must not wipe unrelated keys such as accent,
-  // personality_style, and voice_preference. Default is unchanged: existing
-  // callers keep exact-replacement semantics.
-  var url = "/api/settings/" + section + (opts && opts.merge ? "?merge=1" : "");
-  return apiFetch(url, {
-    method: "PUT",
-    credentials: "include",
-    headers: authHeaders({ "Content-Type": "application/json" }),
-    body: JSON.stringify(data)
-  }).then(function (r) { return r.json(); });
-}
-
-function settingsApiGet(section) {
-  return apiFetch("/api/settings/" + section, {
-    credentials: "include",
-    headers: authHeaders()
-  }).then(function (r) { return r.json(); });
-}
-
-var _SH = {
-  sectionHeader: function (title, subtitle) {
-    return '<div style="margin-bottom:24px;"><h2 style="color:#f1f5f9;font-size:18px;font-weight:700;font-family:\'Inter\',sans-serif;margin:0 0 4px;">' + title + '</h2>' +
-      (subtitle ? '<p style="color:#64748b;font-size:12px;margin:0;font-family:\'Inter\',sans-serif;">' + subtitle + '</p>' : '') + '</div>';
-  },
-  card: function (title, html) {
-    return '<div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:12px;padding:20px;margin-bottom:16px;transition:border-color 0.2s;" onmouseover="this.style.borderColor=\'rgba(255,255,255,0.1)\'" onmouseout="this.style.borderColor=\'rgba(255,255,255,0.06)\'">' +
-      (title ? '<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;"><span style="color:#94a3b8;font-size:10px;text-transform:uppercase;letter-spacing:0.15em;font-family:\'Space Grotesk\',sans-serif;font-weight:600;">' + title + '</span></div>' : '') +
-      html +
-      '</div>';
-  },
-  input: function (placeholder, id, type, value, opts) {
-    opts = opts || {};
-    var extraStyle = opts.style || "";
-    return '<input id="' + id + '" type="' + (type || "text") + '" placeholder="' + placeholder + '" value="' + (value || "") + '" autocomplete="off" style="width:100%;background:rgba(15,23,42,0.85);border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:10px 12px;color:#e2e8f0;font-size:13px;outline:none;font-family:\'Inter\',sans-serif;box-sizing:border-box;transition:border-color 0.2s;' + extraStyle + '" onfocus="this.style.borderColor=\'rgba(0,212,255,0.4)\'" onblur="this.style.borderColor=\'rgba(255,255,255,0.08)\'">';
-  },
-  textarea: function (placeholder, id, value) {
-    return '<textarea id="' + id + '" placeholder="' + placeholder + '" style="width:100%;background:rgba(15,23,42,0.85);border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:10px 12px;color:#e2e8f0;font-size:13px;outline:none;font-family:\'Inter\',sans-serif;box-sizing:border-box;min-height:72px;resize:vertical;transition:border-color 0.2s;" onfocus="this.style.borderColor=\'rgba(0,212,255,0.4)\'" onblur="this.style.borderColor=\'rgba(255,255,255,0.08)\'">' + (value || "") + '</textarea>';
-  },
-  btn: function (text, onclick, color, opts) {
-    opts = opts || {};
-    var extra = opts.style || "";
-    var bg = color || "rgba(0,212,255,0.12)";
-    var txtColor = color ? "#fff" : "#00d4ff";
-    return '<button onclick="' + onclick + '" style="border:none;border-radius:8px;background:' + bg + ';color:' + txtColor + ';font-weight:600;padding:9px 16px;cursor:pointer;font-size:12px;font-family:\'Inter\',sans-serif;transition:all 0.2s;' + extra + '" onmouseover="this.style.opacity=\'0.85\'" onmouseout="this.style.opacity=\'1\'">' + text + '</button>';
-  },
-  select: function (options, id, selected, onchange) {
-    var opts = options.map(function (o) {
-      var val = typeof o === "object" ? o.value : o;
-      var label = typeof o === "object" ? o.label : o;
-      var sel = val === selected ? " selected" : "";
-      return '<option value="' + val + '"' + sel + '>' + label + '</option>';
-    }).join("");
-    var oc = onchange ? ' onchange="' + onchange.replace(/"/g, "&quot;") + '"' : "";
-    return '<select id="' + id + '"' + oc + ' style="width:100%;background:rgba(15,23,42,0.85);border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:10px 12px;color:#e2e8f0;font-size:13px;outline:none;font-family:\'Inter\',sans-serif;cursor:pointer;">' + opts + '</select>';
-  },
-  toggle: function (id, checked, onChange) {
-    // The switch's appearance is driven by CSS from the checkbox's :checked
-    // state (see the .vm-switch rules). Nothing here paints the on/off look, so
-    // the switch can never drift out of sync with the checkbox: setting
-    // el.checked (from a click or from JS) is enough to update the visuals.
-    var cb = onChange ? ' onchange="' + onChange + '"' : '';
-    return '<label class="vm-switch">' +
-      '<input id="' + id + '" type="checkbox" ' + (checked ? "checked" : "") + cb + '>' +
-      '<span class="vm-switch-track"></span>' +
-      '<span class="vm-switch-knob"></span>' +
-      '</label>';
-  },
-  row: function (label, control, desc) {
-    return '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.04);"><div style="flex:1;"><span style="color:#e2e8f0;font-size:13px;font-family:\'Inter\',sans-serif;">' + label + '</span>' + (desc ? '<p style="color:#64748b;font-size:11px;margin:2px 0 0;font-family:\'Inter\',sans-serif;">' + desc + '</p>' : '') + '</div>' + control + '</div>';
-  },
-  badge: function (label, color) {
-    var c = color || "#00d4ff";
-    return '<span style="display:inline-block;background:rgba(' + (c === "#00d4ff" ? "0,212,255" : "100,116,139") + ',0.1);color:' + c + ';border:1px solid rgba(' + (c === "#00d4ff" ? "0,212,255" : "100,116,139") + ',0.2);border-radius:6px;padding:3px 8px;font-size:10px;font-family:\'Inter\',sans-serif;">' + label + '</span>';
-  },
-  statusSpan: function (id) {
-    return '<span style="margin-left:8px;font-size:11px;color:#94a3b8;font-family:\'Inter\',sans-serif;" id="' + id + '"></span>';
-  },
-  colorPicker: function (id, value) {
-    return '<input id="' + id + '" type="color" value="' + (value || "#00d4ff") + '" style="width:36px;height:36px;border:none;border-radius:6px;cursor:pointer;background:transparent;padding:0;">';
-  },
-};
-
-function _getVal(id) { var el = document.getElementById(id); return el ? el.value : ""; }
-function _getChecked(id) { var el = document.getElementById(id); return el ? el.checked : false; }
-function _pluralize(n, s) { return n + " " + s + (n !== 1 ? "s" : ""); }
-
-function _saveSettingsAndShow(section, data, statusId) {
-  settingsApiSave(section, data).then(function (res) {
-    _showSaved();
-    var el = statusId ? document.getElementById(statusId) : null;
-    if (el) { el.textContent = res.status === "success" ? "Saved!" : "Error saving"; setTimeout(function () { el.textContent = ""; }, 2500); }
-  }).catch(function () {
-    var el = statusId ? document.getElementById(statusId) : null;
-    if (el) { el.textContent = "Connection error"; setTimeout(function () { el.textContent = ""; }, 2500); }
-  });
-}
-
-// ══════════════════════════════════════════════════════════════
-// ACCOUNT
-// ══════════════════════════════════════════════════════════════
-
-function renderAccountSection(container) {
-  container.innerHTML = _SH.sectionHeader("Account", "Manage your ValleyMind identity and security") + '<p style="color:#64748b;font-size:12px;">Loading profile...</p>';
-  apiFetch("/api/settings/profile", { credentials: "include", headers: authHeaders() }).then(function (r) { return r.json(); }).then(function (d) {
-    if (d.status !== "success") return;
-    var p = d.profile || {};
-    var email = p.email || "user@valleymind.ai";
-    var name = p.username || p.name || email.split("@")[0] || "User";
-    var fullName = p.full_name || "";
-    var avatar = p.avatar || "";
-    var avatarHtml = avatar
-      ? '<div style="width:64px;height:64px;border-radius:50%;overflow:hidden;border:2px solid rgba(0,212,255,0.4);flex-shrink:0;background:#0f172a;"><img src="' + avatar + '" alt="" style="width:100%;height:100%;object-fit:cover;display:block;" onerror="this.parentNode.innerHTML=\'<div style=&quot;width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:#00d4ff;font-weight:700;font-size:26px;font-family:Space Grotesk,sans-serif;&quot;>' + (email[0] || "U").toUpperCase() + '</div>\'"></div>'
-      : '<div style="width:64px;height:64px;border-radius:50%;background:linear-gradient(135deg,#22d3ee,#0ea5e9);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:26px;font-family:\'Space Grotesk\',sans-serif;flex-shrink:0;">' + (email[0] || "U").toUpperCase() + '</div>';
-    container.innerHTML =
-      _SH.sectionHeader("Account", "Manage your ValleyMind identity and security") +
-      _SH.card("Profile Photo", '<div style="display:flex;align-items:center;gap:18px;">' +
-        '<div style="position:relative;" onclick="document.getElementById(\'settingsAvatarInput\').click()" title="Change photo" style="cursor:pointer;">' +
-          avatarHtml +
-          '<div style="position:absolute;right:-2px;bottom:-2px;width:24px;height:24px;border-radius:50%;background:#00d4ff;color:#003642;display:flex;align-items:center;justify-content:center;font-size:13px;border:2px solid #0f172a;">&#9998;</div>' +
-        '</div>' +
-        '<input type="file" id="settingsAvatarInput" accept="image/*" style="display:none;" onchange="settingsAvatarUpload(this)">' +
-        '<div style="flex:1;"><p style="color:#e2e8f0;font-size:13px;font-weight:600;margin:0 0 2px;font-family:\'Inter\',sans-serif;">' + name + '</p>' +
-        '<p style="color:#64748b;font-size:12px;margin:0 0 8px;font-family:\'Inter\',sans-serif;">' + email + '</p>' +
-        '<span style="font-size:11px;color:#64748b;">Click the photo to change it.</span><span id="settingsAvatarStatus" style="margin-left:8px;font-size:11px;color:#22c55e;"></span></div></div>') +
-      _SH.card("Name & Username", '<p style="color:#94a3b8;font-size:10px;margin:0 0 4px;">Full Name</p>' + _SH.input("Your full name", "settingsFullName", "text", fullName) +
-        '<div style="height:8px;"></div><p style="color:#94a3b8;font-size:10px;margin:0 0 4px;">Username</p>' + _SH.input("Choose a display name", "settingsUsername", "text", name) +
-        '<div style="margin-top:10px;">' + _SH.btn("Update Profile", "updateProfile()", "rgba(14,165,233,0.8)") + _SH.statusSpan("settingsProfileStatus") + '</div>') +
-      _SH.card("Email", '<p style="color:#64748b;font-size:12px;margin:0 0 8px;font-family:\'Inter\',sans-serif;">' + email + '</p><p style="color:#475569;font-size:11px;margin:0;font-family:\'Inter\',sans-serif;">Email cannot be changed at this time.</p>') +
-      _SH.card("Password", _SH.input("Current password", "settingsOldPass", "password") + '<div style="height:8px;"></div>' + _SH.input("New password", "settingsNewPass", "password") + '<div style="height:10px;"></div>' + _SH.btn("Update Password", "settingsChangePassword()", "rgba(14,165,233,0.8)") + _SH.statusSpan("settingsPassStatus")) +
-      _SH.card("Two-Factor Authentication", '<div style="display:flex;align-items:center;justify-content:space-between;"><div><span style="color:#e2e8f0;font-size:13px;font-family:\'Inter\',sans-serif;">Two-Factor Authentication</span><p style="color:#64748b;font-size:11px;margin:2px 0 0;font-family:\'Inter\',sans-serif;">Add an extra layer of security</p></div>' + _SH.toggle("settings2FA", false) + '</div>') +
-      _SH.card("Connected Accounts", '<div style="display:flex;align-items:center;gap:12px;padding:8px 12px;background:rgba(15,23,42,0.5);border-radius:8px;"><div style="width:32px;height:32px;border-radius:50%;background:#4285F4;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:14px;flex-shrink:0;">G</div><div style="flex:1;"><span style="color:#e2e8f0;font-size:13px;font-family:\'Inter\',sans-serif;">Google</span><p style="color:#64748b;font-size:10px;margin:1px 0 0;font-family:\'Inter\',sans-serif;">Connected</p></div><span style="color:#22c55e;font-size:10px;font-family:\'Inter\',sans-serif;">✓ Linked</span></div>') +
-      _SH.card("Active Sessions", '<p style="color:#64748b;font-size:12px;margin:0;font-family:\'Inter\',sans-serif;">1 active session (current device)</p>') +
-      _SH.card("Login History", '<div style="color:#64748b;font-size:12px;font-family:\'Inter\',sans-serif;"><div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.04);"><span>Current session</span><span style="color:#475569;">Just now</span></div><p style="margin-top:8px;color:#475569;font-size:11px;">Full login history will appear here as you use ValleyMind.</p></div>') +
-      _SH.card("Devices", '<div style="display:flex;align-items:center;gap:12px;padding:8px 12px;background:rgba(15,23,42,0.5);border-radius:8px;"><div style="flex:1;"><span style="color:#e2e8f0;font-size:13px;font-family:\'Inter\',sans-serif;">Current Device</span><p style="color:#64748b;font-size:10px;margin:1px 0 0;font-family:\'Inter\',sans-serif;">Active now</p></div><span style="color:#22c55e;font-size:10px;font-family:\'Inter\',sans-serif;">Current</span></div>');
-  }).catch(function () {
-    container.innerHTML = _SH.sectionHeader("Account") + '<p style="color:#64748b;">Could not load profile.</p>';
-  });
-}
-
-function settingsAvatarUpload(input) {
-  var file = input.files && input.files[0];
-  input.value = "";
-  if (!file) return;
-  var status = document.getElementById("settingsAvatarStatus");
-  if (status) status.textContent = "Reading…";
-  var reader = new FileReader();
-  reader.onload = function (e) {
-    var img = new Image();
-    img.onload = function () {
-      var MAX = 256;
-      var scale = Math.min(1, MAX / Math.max(img.width, img.height));
-      var w = Math.max(1, Math.round(img.width * scale));
-      var h = Math.max(1, Math.round(img.height * scale));
-      var canvas = document.createElement("canvas");
-      canvas.width = w; canvas.height = h;
-      canvas.getContext("2d").drawImage(img, 0, 0, w, h);
-      var dataUrl = canvas.toDataURL("image/jpeg", 0.85);
-      if (status) status.textContent = "Uploading…";
-      apiFetch("/api/settings/profile", {
-        method: "PUT", credentials: "include",
-        headers: authHeaders({ "Content-Type": "application/json" }),
-        body: JSON.stringify({ picture: dataUrl })
-      }).then(function (r) { return r.json(); }).then(function (d) {
-        _showSaved();
-        if (status) status.textContent = d.status === "success" ? "Photo updated!" : "Failed";
-        setTimeout(function () { if (status) status.textContent = ""; }, 2500);
-        var sidebarAvatar = document.getElementById("sidebarAvatarLetter");
-        if (sidebarAvatar && dataUrl) sidebarAvatar.style.backgroundImage = "url('" + dataUrl + "')";
-      }).catch(function () { if (status) status.textContent = "Connection error"; });
-    };
-    img.src = e.target.result;
+  var state = {
+    container: null,
+    barsParent: null,
+    bars: [],          // bar elements
+    levels: [],        // current per-bar levels (0..1), scrolling history
+    activeKind: null,
+    ctx: null,
+    analyser: null,
+    source: null,
+    stream: null,
+    raf: null,
+    token: 0,          // guards against late getUserMedia results
+    fallback: false,
+    voiceLevel: 0,     // current fallback level (0..1), driven by recognition events
+    lastPulse: 0       // timestamp of last userPulse() call
   };
-  reader.readAsDataURL(file);
-}
 
-function settingsChangePassword() {
-  var oldPass = _getVal("settingsOldPass");
-  var newPass = _getVal("settingsNewPass");
-  var status = document.getElementById("settingsPassStatus");
-  if (!oldPass || !newPass) { if (status) status.textContent = "Fill in both fields."; return; }
-  if (newPass.length < 4) { if (status) status.textContent = "Password must be 4+ characters."; return; }
-  apiFetch("/auth/change-password", {
-    method: "POST", credentials: "include",
-    headers: authHeaders({ "Content-Type": "application/json" }),
-    body: JSON.stringify({ current_password: oldPass, new_password: newPass })
-  }).then(function (r) { return r.json(); }).then(function (d) {
-    if (status) status.textContent = d.status === "success" ? "Password updated!" : d.message || "Failed.";
-    if (d.status === "success") { document.getElementById("settingsOldPass").value = ""; document.getElementById("settingsNewPass").value = ""; }
-  }).catch(function () { if (status) status.textContent = "Connection error."; });
-}
-
-function updateProfile() {
-  var username = _getVal("settingsUsername");
-  var fullName = _getVal("settingsFullName");
-  var payload = {};
-  if (username) payload.username = username;
-  if (fullName) payload.full_name = fullName;
-  apiFetch("/api/settings/profile", {
-    method: "PUT", credentials: "include",
-    headers: authHeaders({ "Content-Type": "application/json" }),
-    body: JSON.stringify(payload)
-  }).then(function (r) { return r.json(); }).then(function (d) {
-    var el = document.getElementById("settingsProfileStatus");
-    if (el) el.textContent = d.status === "success" ? "Profile updated!" : (d.message || "Error");
-    if (d.status === "success") {
-      _showSaved();
-      var sidebarName = document.getElementById("sidebarUserName");
-      if (sidebarName) sidebarName.textContent = fullName || username || sidebarName.textContent;
-    }
-    setTimeout(function () { if (el) el.textContent = ""; }, 2500);
-  }).catch(function () { var el = document.getElementById("settingsProfileStatus"); if (el) el.textContent = "Connection error"; });
-}
-
-// ══════════════════════════════════════════════════════════════
-// INTERESTS & GOALS
-// ══════════════════════════════════════════════════════════════
-
-var INTEREST_OPTIONS = [
-  "Technology", "AI & Machine Learning", "Programming", "Design", "Video Editing", "Photography",
-  "Music & Audio", "Gaming", "Business & Startups", "Marketing", "Education", "Science",
-  "Health & Fitness", "Travel", "Finance", "News & Politics", "Fashion", "Sports", "Art & Creativity",
-  "Movies & TV", "Books & Reading", "Podcasts", "Space", "Psychology",
-];
-
-function renderInterestsSection(container) {
-  container.innerHTML = _SH.sectionHeader("Interests & Goals", "Tell ValleyMind what you care about — it personalizes recommendations, suggestions and answers") + '<p style="color:#64748b;">Loading...</p>';
-  settingsApiGet("interests").then(function (d) {
-    var data = d.data || {};
-    _interestTags = data.tags || [];
-    _interestGoals = data.goals || [];
-    var tags = data.tags || [];
-    var goals = data.goals || [];
-    var chips = INTEREST_OPTIONS.map(function (opt) {
-      var active = tags.indexOf(opt) !== -1;
-      return '<span onclick="toggleInterest(\'' + opt.replace(/'/g, "\\'") + '\')" id="int_' + opt.replace(/[^a-zA-Z0-9]/g, "_") + '" style="display:inline-block;background:' + (active ? "rgba(0,212,255,0.15)" : "rgba(255,255,255,0.04)") + ';color:' + (active ? "#00d4ff" : "#64748b") + ';border:1px solid ' + (active ? "rgba(0,212,255,0.3)" : "rgba(255,255,255,0.08)") + ';border-radius:999px;padding:6px 14px;font-size:12px;cursor:pointer;transition:all 0.15s;font-family:\'Inter\',sans-serif;">' + opt + '</span>';
-    }).join("");
-    container.innerHTML = _SH.sectionHeader("Interests & Goals", "Tell ValleyMind what you care about — it personalizes recommendations, suggestions and answers") +
-      _SH.card("Interests", '<div style="display:flex;flex-wrap:wrap;gap:8px;">' + chips + '</div>' +
-        '<div style="height:10px;"></div>' + _SH.input("Add another interest…", "newInterestInput") +
-        '<div style="margin-top:8px;">' + _SH.btn("Add Interest", "addInterest()") + '</div>') +
-      _SH.card("Goals", '<p style="color:#94a3b8;font-size:10px;margin:0 0 6px;">Your goals</p>' +
-        (goals.length ? goals.map(function (g, i) {
-          return '<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:rgba(15,23,42,0.5);border-radius:8px;margin-bottom:6px;"><span style="color:#00d4ff;">&#9830;</span><span style="color:#e2e8f0;font-size:13px;flex:1;">' + g + '</span><button onclick="removeGoal(' + i + ')" style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:13px;">&times;</button></div>';
-        }).join("") : '<p style="color:#475569;font-size:12px;">No goals yet. Add a goal below.</p>') +
-        '<div style="height:8px;"></div>' + _SH.input("Add a goal…", "newGoalInput") +
-        '<div style="margin-top:8px;">' + _SH.btn("Add Goal", "addGoal()") + '</div>') +
-      '<div style="margin-top:4px;">' + _SH.btn("Save Interests & Goals", "saveInterests()", "rgba(0,212,255,0.8)") + _SH.statusSpan("interestsStatus") + '</div>';
-  }).catch(function () { container.innerHTML = _SH.sectionHeader("Interests & Goals") + '<p style="color:#64748b;">Could not load interests.</p>'; });
-}
-
-var _interestTags = [];
-var _interestGoals = [];
-
-function toggleInterest(opt) {
-  var id = "int_" + opt.replace(/[^a-zA-Z0-9]/g, "_");
-  var el = document.getElementById(id);
-  if (!el) return;
-  var idx = _interestTags.indexOf(opt);
-  if (idx === -1) {
-    _interestTags.push(opt);
-    el.style.background = "rgba(0,212,255,0.15)"; el.style.color = "#00d4ff"; el.style.borderColor = "rgba(0,212,255,0.3)";
-  } else {
-    _interestTags.splice(idx, 1);
-    el.style.background = "rgba(255,255,255,0.04)"; el.style.color = "#64748b"; el.style.borderColor = "rgba(255,255,255,0.08)";
-  }
-}
-
-function addInterest() {
-  var val = _getVal("newInterestInput").trim();
-  if (!val || _interestTags.indexOf(val) !== -1) return;
-  _interestTags.push(val);
-  renderSettingsContent("interests");
-}
-
-function addGoal() {
-  var val = _getVal("newGoalInput").trim();
-  if (!val) return;
-  _interestGoals.push(val);
-  renderSettingsContent("interests");
-}
-
-function removeGoal(i) {
-  _interestGoals.splice(i, 1);
-  renderSettingsContent("interests");
-}
-
-function saveInterests() {
-  _saveSettingsAndShow("interests", { tags: _interestTags, goals: _interestGoals }, "interestsStatus");
-}
-
-// ══════════════════════════════════════════════════════════════
-// ACCESSIBILITY
-// ══════════════════════════════════════════════════════════════
-
-function renderAccessibilitySection(container) {
-  container.innerHTML = _SH.sectionHeader("Accessibility", "Make ValleyMind work the way you need it to");
-  settingsApiGet("accessibility").then(function (d) {
-    var data = d.data || {};
-    container.innerHTML = _SH.sectionHeader("Accessibility", "Make ValleyMind work the way you need it to") +
-      _SH.card("Display & Motion", '<div style="display:flex;flex-direction:column;">' +
-        _SH.row("Reduce Animations", _SH.toggle("accReducedMotion", data.reduced_motion === true), "Minimize motion for focus and comfort") +
-        _SH.row("High Contrast", _SH.toggle("accHighContrast", data.high_contrast === true), "Stronger contrast for easier reading") +
-        _SH.row("Larger Fonts", _SH.toggle("accLargeFonts", data.large_fonts === true), "Default to a larger font size") +
-        _SH.row("Screen Reader Optimized", _SH.toggle("accScreenReader", data.screen_reader === true), "Announce important state changes") + '</div>') +
-      _SH.card("Interaction", '<div style="display:flex;flex-direction:column;">' +
-        _SH.row("Keyboard Shortcuts", _SH.toggle("accKeyboard", data.keyboard_shortcuts !== false), "Enable all keyboard shortcuts") +
-        _SH.row("Sticky Buttons", _SH.toggle("accSticky", data.sticky_buttons === true), "Keep action buttons always visible") + '</div>') +
-      _SH.card("Text & Reading", '<div style="display:flex;gap:10px;"><div style="flex:1;"><p style="color:#94a3b8;font-size:10px;margin:0 0 4px;">Line Spacing</p>' + _SH.select(["Tight", "Normal", "Relaxed", "Wide"], "accLineSpacing", data.line_spacing) + '</div><div style="flex:1;"><p style="color:#94a3b8;font-size:10px;margin:0 0 4px;">Contrast Theme</p>' + _SH.select(["Standard", "High", "Amoled", "Sepia"], "accContrastTheme", data.contrast_theme) + '</div></div>') +
-      '<div style="margin-top:4px;">' + _SH.btn("Save Accessibility Settings", "saveAccessibility()", "rgba(0,212,255,0.8)") + _SH.statusSpan("accStatus") + '</div>';
-  }).catch(function () { container.innerHTML = _SH.sectionHeader("Accessibility") + '<p style="color:#64748b;">Could not load accessibility settings.</p>'; });
-}
-
-function saveAccessibility() {
-  _saveSettingsAndShow("accessibility", {
-    reduced_motion: _getChecked("accReducedMotion"), high_contrast: _getChecked("accHighContrast"),
-    large_fonts: _getChecked("accLargeFonts"), screen_reader: _getChecked("accScreenReader"),
-    keyboard_shortcuts: _getChecked("accKeyboard"), sticky_buttons: _getChecked("accSticky"),
-    line_spacing: _getVal("accLineSpacing"), contrast_theme: _getVal("accContrastTheme"),
-  }, "accStatus");
-}
-
-// ══════════════════════════════════════════════════════════════
-// SECURITY
-// ══════════════════════════════════════════════════════════════
-
-function renderSecuritySection(container) {
-  container.innerHTML = _SH.sectionHeader("Security", "Manage your account security") +
-    _SH.card("Change Password", _SH.input("Current password", "secOldPass", "password") + '<div style="height:8px;"></div>' + _SH.input("New password", "secNewPass", "password") + '<div style="height:8px;"></div>' + _SH.input("Confirm new password", "secNewPass2", "password") + '<div style="height:10px;"></div>' + _SH.btn("Update Password", "securityChangePassword()", "rgba(0,212,255,0.8)") + _SH.statusSpan("secPassStatus")) +
-    _SH.card("Two-Factor Authentication", '<div style="display:flex;flex-direction:column;">' +
-      _SH.row("Two-Factor Authentication", _SH.toggle("sec2FA", false), "Add an extra layer of security to your account") +
-      _SH.row("Require Re-login After Inactivity", _SH.toggle("secRelogin", true), "Ask for your password after 30 minutes of inactivity") + '</div>') +
-    _SH.card("Sessions", '<div style="display:flex;align-items:center;gap:12px;padding:8px 12px;background:rgba(15,23,42,0.5);border-radius:8px;"><div style="flex:1;"><span style="color:#e2e8f0;font-size:13px;">Current Device</span><p style="color:#64748b;font-size:10px;margin:1px 0 0;">Active now</p></div><span style="color:#22c55e;font-size:10px;">Current</span></div>' +
-      '<div style="margin-top:10px;">' + _SH.btn("Sign Out of Other Sessions", "secSignOutOthers()") + _SH.statusSpan("secSessionStatus") + '</div>') +
-    _SH.card("Danger Zone", '<p style="color:#ef4444;font-size:11px;margin:0 0 10px;">Permanently delete your account and all data. This cannot be undone.</p>' + _SH.btn("Delete Account", "confirmDeleteAccount()", "rgba(239,68,68,0.9)"));
-}
-
-function securityChangePassword() {
-  var oldPass = _getVal("secOldPass");
-  var newPass = _getVal("secNewPass");
-  var confirmPass = _getVal("secNewPass2");
-  var status = document.getElementById("secPassStatus");
-  if (!oldPass || !newPass) { if (status) status.textContent = "Fill in both fields."; return; }
-  if (newPass.length < 4) { if (status) status.textContent = "Password must be 4+ characters."; return; }
-  if (newPass !== confirmPass) { if (status) status.textContent = "New passwords do not match."; return; }
-  apiFetch("/auth/change-password", {
-    method: "POST", credentials: "include",
-    headers: authHeaders({ "Content-Type": "application/json" }),
-    body: JSON.stringify({ current_password: oldPass, new_password: newPass })
-  }).then(function (r) { return r.json(); }).then(function (d) {
-    if (status) status.textContent = d.status === "success" ? "Password updated!" : d.message || "Failed.";
-    if (d.status === "success") {
-      _showSaved();
-      ["secOldPass", "secNewPass", "secNewPass2"].forEach(function (id) { var el = document.getElementById(id); if (el) el.value = ""; });
-    }
-  }).catch(function () { if (status) status.textContent = "Connection error."; });
-}
-
-function secSignOutOthers() {
-  var status = document.getElementById("secSessionStatus");
-  if (status) status.textContent = "Signing out other sessions…";
-  apiFetch("/auth/signout-others", { method: "POST", credentials: "include", headers: authHeaders() })
-    .then(function (r) { return r.json(); }).then(function (d) {
-      if (status) status.textContent = d.status === "success" ? "Other sessions signed out." : (d.message || "Failed.");
-    }).catch(function () { if (status) status.textContent = "Connection error."; });
-}
-
-// ══════════════════════════════════════════════════════════════
-// CONNECTED ACCOUNTS
-// ══════════════════════════════════════════════════════════════
-
-function renderConnectedSection(container) {
-  container.innerHTML = _SH.sectionHeader("Connected Accounts", "Link accounts to sign in faster and sync content");
-  apiFetch("/api/settings/profile", { credentials: "include", headers: authHeaders() }).then(function (r) { return r.json(); }).then(function (d) {
-    var p = d.profile || {};
-    var authMethod = p.auth_method || "";
-    var googleConnected = authMethod === "google";
-    var accountRow = function (name, connected, initials, color) {
-      return '<div style="display:flex;align-items:center;gap:12px;padding:12px 14px;background:rgba(15,23,42,0.5);border-radius:8px;margin-bottom:6px;">' +
-        '<div style="width:34px;height:34px;border-radius:50%;background:' + color + ';display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:13px;flex-shrink:0;">' + initials + '</div>' +
-        '<div style="flex:1;"><span style="color:#e2e8f0;font-size:13px;font-family:\'Inter\',sans-serif;">' + name + '</span>' +
-        '<p style="color:#64748b;font-size:10px;margin:1px 0 0;font-family:\'Inter\',sans-serif;">' + (connected ? "Connected" : "Not connected") + '</p></div>' +
-        (connected
-          ? '<span style="color:#22c55e;font-size:10px;font-family:\'Inter\',sans-serif;">✓ Linked</span>'
-          : _SH.btn("Connect", "showComingSoon('Connect " + name + "')")) + '</div>';
-    };
-    container.innerHTML = _SH.sectionHeader("Connected Accounts", "Link accounts to sign in faster and sync content") +
-      _SH.card("Sign-in Methods", accountRow("Google", googleConnected, "G", "#4285F4") + accountRow("GitHub", false, "GH", "#24292E") + accountRow("Apple", false, "", "#333")) +
-      _SH.card("Synced Services", '<p style="color:#64748b;font-size:12px;margin:0;">Google Drive, Dropbox, OneDrive, and more integrations are available under Integrations. Cross-account sync is coming soon.</p>');
-  }).catch(function () {
-    container.innerHTML = _SH.sectionHeader("Connected Accounts") + '<p style="color:#64748b;">Could not load connected accounts.</p>';
-  });
-}
-
-// ══════════════════════════════════════════════════════════════
-// TUTORIALS & HELP
-// ══════════════════════════════════════════════════════════════
-
-function renderTutorialsSection(container) {
-  var guideList = (window.VM_GUIDES || []).map(function (g) {
-    var seen = window.vmGuideSeen ? vmGuideSeen(g.key) : false;
-    return '<div style="display:flex;align-items:center;gap:12px;padding:12px 14px;background:rgba(15,23,42,0.5);border:1px solid rgba(255,255,255,0.06);border-radius:10px;margin-bottom:6px;">' +
-      '<div style="width:34px;height:34px;border-radius:10px;background:rgba(0,212,255,0.1);display:flex;align-items:center;justify-content:center;color:#00d4ff;flex-shrink:0;"><span class="material-icons" style="font-size:17px;">' + (g.icon || "info") + '</span></div>' +
-      '<div style="flex:1;min-width:0;"><span style="color:#e2e8f0;font-size:13px;font-weight:600;display:block;font-family:\'Inter\',sans-serif;">' + g.title + '</span>' +
-      '<span style="color:' + (seen ? "#22c55e" : "#64748b") + ';font-size:11px;">' + (seen ? "Completed" : "Not watched yet") + '</span></div>' +
-      '<button onclick="vmGuideForce(\'' + g.key + '\');vmHelpCenter.close()" style="border:1px solid rgba(0,212,255,0.35);background:rgba(0,212,255,0.1);color:#00d4ff;border-radius:8px;padding:6px 12px;cursor:pointer;font-size:11px;font-weight:700;font-family:\'Inter\',sans-serif;">Replay</button>' +
-      '</div>';
-  }).join("");
-  container.innerHTML = _SH.sectionHeader("Tutorials & Help", "Replay walkthroughs or open the Help & Learning Center") +
-    _SH.card("Feature Walkthroughs", guideList) +
-    _SH.card("Actions", '<div style="display:flex;flex-wrap:wrap;gap:8px;">' +
-      _SH.btn("Open Help & Learning Center", "vmHelpCenter.open();closeSettings()", "rgba(0,212,255,0.8)") +
-      _SH.btn("Replay Chat Guide", "vmGuideForce('chat')", "rgba(0,212,255,0.8)") +
-      _SH.btn("Replay Studio Guide", "vmGuideForce('studio')") +
-      _SH.btn("Reset All Tutorials", "resetTutorials()", "rgba(239,68,68,0.15)") + _SH.statusSpan("tutorialStatus") + '</div>') +
-    _SH.card("How It Works", '<p style="color:#94a3b8;font-size:12px;line-height:1.6;margin:0;font-family:\'Inter\',sans-serif;">Each feature shows a short introduction the first time you open it. Once you\'ve seen a walkthrough it won\'t repeat — you can replay any of them here at any time.</p>');
-}
-
-function resetTutorials() {
-  var status = document.getElementById("tutorialStatus");
-  if (!confirm("Reset all tutorials? Every feature walkthrough will show again the next time you open it.")) return;
-  if (window.vmGuideReset) vmGuideReset();
-  if (status) { status.textContent = "Tutorials reset — they'll show again as you explore."; setTimeout(function () { status.textContent = ""; }, 3500); }
-  renderSettingsContent("tutorials");
-}
-
-// ══════════════════════════════════════════════════════════════
-// MEMORY
-// ══════════════════════════════════════════════════════════════
-
-var MEMORY_FIELDS = [
-  { key: "about_me", label: "About Me" },
-  { key: "my_goals", label: "My Goals" },
-  { key: "current_projects", label: "Current Projects" },
-  { key: "long_term_vision", label: "Long-Term Vision" },
-  { key: "skills", label: "Skills" },
-  { key: "interests", label: "Interests" },
-  { key: "preferred_communication_style", label: "Preferred Communication Style" },
-  { key: "always_remember", label: "Always Remember" },
-  { key: "never_remember", label: "Never Remember" },
-];
-
-function renderMemorySection(container) {
-  container.innerHTML = _SH.sectionHeader("Memory", "Tell ValleyMind about yourself") + '<p style="color:#64748b;">Loading...</p>';
-  apiFetch("/api/settings/memory-fields", { credentials: "include", headers: authHeaders() })
-    .then(function (r) { return r.json(); })
-    .then(function (d) {
-      var data = d.fields || {};
-      var fieldsHtml = MEMORY_FIELDS.map(function (f) {
-        var val = data[f.key] || "";
-        return '<div style="margin-bottom:14px;"><p style="color:#94a3b8;font-size:11px;margin:0 0 6px;font-family:\'Inter\',sans-serif;">' + f.label + '</p>' +
-          _SH.textarea("Tell ValleyMind about " + f.label.toLowerCase() + "...", "mem_" + f.key, val) + '</div>';
-      }).join("");
-      container.innerHTML = _SH.sectionHeader("Memory", "Tell ValleyMind about yourself — every update is saved to long-term memory") +
-        _SH.card("Your Personal Context", fieldsHtml + '<div style="margin-top:8px;">' + _SH.btn("Save All Memory Fields", "saveAllMemoryFields()", "rgba(0,212,255,0.8)") + _SH.statusSpan("memSaveStatus") + '</div>') +
-        _SH.card("Memory Tools", '<div style="display:flex;flex-wrap:wrap;gap:8px;">' +
-          _SH.btn("Memory Timeline", "showMemoryTimeline()") +
-          _SH.btn("Memory Review", "showMemoryReview()") +
-          _SH.btn("Import Memory", "showComingSoon('Memory Import')") +
-          _SH.btn("Export Memory", "exportMemory()") +
-          '</div><div id="memoryTimelineContainer" style="margin-top:12px;"></div>');
-    })
-    .catch(function () { container.innerHTML = _SH.sectionHeader("Memory") + '<p style="color:#64748b;">Could not load memory fields.</p>'; });
-}
-
-function saveAllMemoryFields() {
-  var data = {};
-  MEMORY_FIELDS.forEach(function (f) { var val = _getVal("mem_" + f.key); if (val) data[f.key] = val; });
-  apiFetch("/api/settings/memory-fields", { method: "PUT", credentials: "include", headers: authHeaders({ "Content-Type": "application/json" }), body: JSON.stringify(data) })
-    .then(function (r) { return r.json(); }).then(function (d) {
-      _showSaved();
-      var el = document.getElementById("memSaveStatus");
-      if (el) { el.textContent = d.status === "success" ? "Memory updated!" : "Error"; setTimeout(function () { el.textContent = ""; }, 3000); }
-    }).catch(function () { var el = document.getElementById("memSaveStatus"); if (el) { el.textContent = "Connection error"; setTimeout(function () { el.textContent = ""; }, 2500); } });
-}
-
-function showMemoryTimeline() {
-  var container = document.getElementById("memoryTimelineContainer");
-  if (!container) return;
-  container.innerHTML = '<div style="padding:12px;background:rgba(15,23,42,0.5);border-radius:8px;margin-top:8px;"><p style="color:#94a3b8;font-size:11px;">Loading timeline...</p></div>';
-  apiFetch("/api/settings/memory-timeline", { credentials: "include", headers: authHeaders() })
-    .then(function (r) { return r.json(); }).then(function (d) {
-      var entries = d.entries || [];
-      if (entries.length === 0) { container.innerHTML = '<div style="padding:12px;background:rgba(15,23,42,0.5);border-radius:8px;margin-top:8px;"><p style="color:#64748b;font-size:11px;">No memory entries yet.</p></div>'; return; }
-      var html = '<div style="padding:12px;background:rgba(15,23,42,0.5);border-radius:8px;margin-top:8px;max-height:200px;overflow-y:auto;">';
-      entries.forEach(function (e) { html += '<div style="display:flex;gap:8px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.04);"><span style="color:#00d4ff;font-size:10px;min-width:60px;">' + e.type + '</span><span style="color:#e2e8f0;font-size:11px;"><strong>' + e.key + '</strong>: ' + e.value + '</span></div>'; });
-      html += '</div>';
-      container.innerHTML = html;
-    }).catch(function () { container.innerHTML = '<div style="padding:12px;background:rgba(15,23,42,0.5);border-radius:8px;margin-top:8px;"><p style="color:#ef4444;font-size:11px;">Failed to load.</p></div>'; });
-}
-
-function showMemoryReview() {
-  var container = document.getElementById("memoryTimelineContainer");
-  if (!container) return;
-  apiFetch("/api/settings/memory-fields", { credentials: "include", headers: authHeaders() })
-    .then(function (r) { return r.json(); }).then(function (d) {
-      var data = d.fields || {};
-      var count = Object.keys(data).filter(function (k) { return data[k]; }).length;
-      container.innerHTML = '<div style="padding:12px;background:rgba(15,23,42,0.5);border-radius:8px;margin-top:8px;"><p style="color:#94a3b8;font-size:11px;">Memory Review</p><p style="color:#e2e8f0;font-size:13px;">You have ' + _pluralize(count, "memory field") + ' saved.</p><p style="color:#64748b;font-size:11px;">Open the Memory section to review each field.</p></div>';
-    }).catch(function () { container.innerHTML = '<div style="padding:12px;background:rgba(15,23,42,0.5);border-radius:8px;margin-top:8px;"><p style="color:#ef4444;font-size:11px;">Failed to load.</p></div>'; });
-}
-
-function exportMemory() {
-  apiFetch("/api/settings/memory-fields", { credentials: "include", headers: authHeaders() })
-    .then(function (r) { return r.json(); }).then(function (d) {
-      var blob = new Blob([JSON.stringify(d.fields || {}, null, 2)], { type: "application/json" });
-      var url = URL.createObjectURL(blob);
-      var a = document.createElement("a"); a.href = url; a.download = "valleymind-memory.json"; a.click();
-      URL.revokeObjectURL(url);
-    }).catch(function () { alert("Could not export memory."); });
-}
-
-// ══════════════════════════════════════════════════════════════
-// PROJECTS
-// ══════════════════════════════════════════════════════════════
-
-function renderProjectsSection(container) {
-  container.innerHTML = _SH.sectionHeader("Projects", "Save projects so ValleyMind has context about your work");
-  apiFetch("/api/settings/projects", { credentials: "include", headers: authHeaders() })
-    .then(function (r) { return r.json(); }).then(function (d) { renderProjectList(container, d.projects || []); })
-    .catch(function () { renderProjectList(container, []); });
-}
-
-function renderProjectList(container, projects) {
-  var listHtml = projects.length > 0 ? projects.map(function (p) {
-    var sc = { active: "#22c55e", archived: "#64748b", completed: "#00d4ff" }[p.status] || "#64748b";
-    return '<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px;background:rgba(15,23,42,0.5);border-radius:8px;margin-bottom:6px;"><div style="flex:1;"><span style="color:#e2e8f0;font-size:13px;font-weight:600;font-family:\'Inter\',sans-serif;">' + (p.name || "Untitled") + '</span>' + (p.description ? '<p style="color:#64748b;font-size:11px;margin:2px 0 0;">' + p.description.slice(0, 80) + '</p>' : '') + '</div><div style="display:flex;align-items:center;gap:8px;"><span style="color:' + sc + ';font-size:10px;text-transform:uppercase;">' + p.status + '</span><button onclick="deleteProject(\'' + p.id + '\')" style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:14px;padding:4px;">&times;</button></div></div>';
-  }).join("") : '<p style="color:#475569;font-size:12px;">No projects yet.</p>';
-
-  container.innerHTML = _SH.sectionHeader("Projects", "Save projects so ValleyMind has context about your work") +
-    _SH.card("New Project", _SH.input("Project name", "projName") + '<div style="height:8px;"></div>' + _SH.textarea("Description (optional)", "projDesc") + '<div style="height:8px;"></div>' +
-      '<div style="display:flex;gap:8px;"><div style="flex:1;">' + _SH.input("Goal", "projGoal") + '</div><div style="flex:1;">' + _SH.input("Deadline (optional)", "projDeadline") + '</div></div>' +
-      '<div style="margin-top:10px;display:flex;gap:8px;">' + _SH.btn("Save Project", "saveProject()", "rgba(0,212,255,0.8)") + '<span style="margin:auto 0;font-size:11px;color:#94a3b8;" id="projStatus"></span></div>') +
-    _SH.card("Project Library", listHtml);
-}
-
-function saveProject() {
-  var name = _getVal("projName");
-  var status = document.getElementById("projStatus");
-  if (!name) { if (status) status.textContent = "Project name required."; return; }
-  apiFetch("/api/settings/projects", {
-    method: "POST", credentials: "include",
-    headers: authHeaders({ "Content-Type": "application/json" }),
-    body: JSON.stringify({ name: name, description: _getVal("projDesc"), goal: _getVal("projGoal"), deadline: _getVal("projDeadline"), status: "active" })
-  }).then(function (r) { return r.json(); }).then(function (d) {
-    _showSaved();
-    if (status) status.textContent = "Saved!";
-    document.getElementById("projName").value = ""; document.getElementById("projDesc").value = "";
-    document.getElementById("projGoal").value = ""; document.getElementById("projDeadline").value = "";
-    renderSettingsContent("projects");
-    setTimeout(function () { if (status) status.textContent = ""; }, 2500);
-  }).catch(function () { if (status) status.textContent = "Connection error"; });
-}
-
-function deleteProject(pid) {
-  if (!confirm("Delete this project?")) return;
-  apiFetch("/api/settings/projects/" + pid, { method: "DELETE", credentials: "include", headers: authHeaders() })
-    .then(function (r) { return r.json(); }).then(function () { _showSaved(); renderSettingsContent("projects"); })
-    .catch(function () { alert("Failed to delete."); });
-}
-
-// ══════════════════════════════════════════════════════════════
-// CREATOR PROFILE
-// ══════════════════════════════════════════════════════════════
-
-function renderCreatorSection(container) {
-  container.innerHTML = _SH.sectionHeader("Creator Profile", "Configure your creative identity — used automatically for content generation");
-  settingsApiGet("creator").then(function (d) {
-    var data = d.data || {};
-    container.innerHTML = _SH.sectionHeader("Creator Profile", "Configure your creative identity") +
-      _SH.card("Primary Goal & Niche", '<div style="display:flex;gap:10px;"><div style="flex:1;"><p style="color:#94a3b8;font-size:10px;margin:0 0 4px;">Primary Goal</p>' + _SH.select(["Grow YouTube", "Build a Business", "Learn Programming", "Graphic Design", "Marketing", "Student", "Personal Productivity", "Other"], "creatorGoal", data.goal) + '</div><div style="flex:1;"><p style="color:#94a3b8;font-size:10px;margin:0 0 4px;">Niche</p>' + _SH.input("Your niche", "creatorNiche", "text", data.niche) + '</div></div>') +
-      _SH.card("Platforms", '<div style="display:flex;flex-wrap:wrap;gap:6px;" id="creatorPlatformsContainer">' + ["YouTube", "TikTok", "Instagram", "Facebook", "LinkedIn", "X (Twitter)", "Snapchat", "Pinterest"].map(function (p) {
-        var active = (data.platforms || []).indexOf(p) !== -1;
-        return '<span onclick="toggleCreatorPlatform(\'' + p + '\')" id="cplat_' + p.replace(/[^a-zA-Z0-9]/g, "_") + '" style="display:inline-block;background:' + (active ? "rgba(0,212,255,0.15)" : "rgba(255,255,255,0.04)") + ';color:' + (active ? "#00d4ff" : "#64748b") + ';border:1px solid ' + (active ? "rgba(0,212,255,0.3)" : "rgba(255,255,255,0.08)") + ';border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer;transition:all 0.15s;">' + p + '</span>';
-      }).join("") + '</div>') +
-      _SH.card("Content & Editing", '<div style="display:flex;gap:10px;"><div style="flex:1;"><p style="color:#94a3b8;font-size:10px;margin:0 0 4px;">Content Style</p>' + _SH.select(["Educational", "Funny", "Storytelling", "Documentary", "Cinematic", "Gaming", "Tech", "Business", "Lifestyle", "Motivation"], "creatorContentStyle", data.content_style) + '</div><div style="flex:1;"><p style="color:#94a3b8;font-size:10px;margin:0 0 4px;">Editing Style</p>' + _SH.select(["Fast-paced", "Minimal", "Cinematic", "Documentary", "Shorts/Reels", "Podcast", "Vlog"], "creatorEditStyle", data.editing_style) + '</div></div>') +
-      _SH.card("Brand Identity", '<div style="display:flex;gap:10px;"><div style="flex:1;">' + _SH.input("Brand Name", "brandName", "text", data.brand_name) + '</div><div style="width:40px;"><p style="color:#94a3b8;font-size:10px;margin:0 0 4px;">Color</p>' + _SH.colorPicker("brandColor", data.brand_color || "#00d4ff") + '</div></div>' +
-        '<div style="height:8px;"></div><div style="display:flex;gap:10px;"><div style="flex:1;">' + _SH.input("Intro (optional)", "brandIntro", "text", data.intro) + '</div><div style="flex:1;">' + _SH.input("Outro (optional)", "brandOutro", "text", data.outro) + '</div></div>' +
-        '<div style="height:8px;"></div><div style="display:flex;gap:10px;"><div style="flex:1;">' + _SH.input("Watermark text", "brandWatermark", "text", data.watermark) + '</div><div style="flex:1;"><p style="color:#94a3b8;font-size:10px;margin:0 0 4px;">Font</p>' + _SH.select(["Inter", "Space Grotesk", "Roboto", "Poppins", "Playfair Display", "Monospace"], "brandFont", data.font) + '</div></div>') +
-      _SH.card("Preferred AI Personality", _SH.select(["Professional", "Friendly", "Creative", "Technical", "Funny"], "creatorPersonality", data.personality)) +
-      '<div style="margin-top:4px;">' + _SH.btn("Save Creator Profile", "saveCreatorProfile()", "rgba(0,212,255,0.8)") + _SH.statusSpan("creatorStatus") + '</div>';
-  }).catch(function () { container.innerHTML = _SH.sectionHeader("Creator Profile") + '<p style="color:#64748b;">Could not load creator settings.</p>'; });
-}
-
-var _creatorPlatforms = [];
-function toggleCreatorPlatform(platform) {
-  var id = "cplat_" + platform.replace(/[^a-zA-Z0-9]/g, "_");
-  var el = document.getElementById(id);
-  if (!el) return;
-  var idx = _creatorPlatforms.indexOf(platform);
-  if (idx === -1) {
-    _creatorPlatforms.push(platform);
-    el.style.background = "rgba(0,212,255,0.15)"; el.style.color = "#00d4ff"; el.style.borderColor = "rgba(0,212,255,0.3)";
-  } else {
-    _creatorPlatforms.splice(idx, 1);
-    el.style.background = "rgba(255,255,255,0.04)"; el.style.color = "#64748b"; el.style.borderColor = "rgba(255,255,255,0.08)";
-  }
-}
-
-function saveCreatorProfile() {
-  _saveSettingsAndShow("creator", {
-    goal: _getVal("creatorGoal"), niche: _getVal("creatorNiche"), platforms: _creatorPlatforms,
-    content_style: _getVal("creatorContentStyle"), editing_style: _getVal("creatorEditStyle"),
-    brand_name: _getVal("brandName"), brand_color: _getVal("brandColor"),
-    intro: _getVal("brandIntro"), outro: _getVal("brandOutro"), watermark: _getVal("brandWatermark"),
-    font: _getVal("brandFont"), personality: _getVal("creatorPersonality"),
-  }, "creatorStatus");
-}
-
-// ══════════════════════════════════════════════════════════════
-// AI PREFERENCES
-// ══════════════════════════════════════════════════════════════
-
-// "Complete your ValleyMind preferences" entry card for existing users. It opens
-// the SAME wizard component /static/onboarding.js uses for first-run signups, so
-// everything reads and writes the one shared Preferences + Language & Region +
-// Culture storage. Purely advisory: hidden once a setup field is filled or the
-// user taps "Not now" (session-scoped).
-function _prefSetupBanner(data) {
-  try {
-    if (sessionStorage.getItem("vm_pref_setup_dismissed")) return "";
-  } catch (_) {}
-  var has = data.communication_style || data.communication_note || data.use_cases ||
-    data.use_cases_other || data.custom_preference || data.voice_style;
-  if (has) return "";
-  return '<div style="display:flex;align-items:center;gap:14px;justify-content:space-between;flex-wrap:wrap;background:linear-gradient(135deg,rgba(0,212,255,0.08),rgba(14,165,233,0.04));border:1px solid rgba(0,212,255,0.22);border-radius:12px;padding:16px 18px;margin-bottom:16px;">' +
-    '<div style="flex:1;min-width:220px;">' +
-      '<div style="color:#f1f5f9;font-size:13.5px;font-weight:700;font-family:\'Inter\',sans-serif;">Complete your ValleyMind preferences</div>' +
-      '<p style="color:#94a3b8;font-size:12px;margin:4px 0 0;font-family:\'Inter\',sans-serif;">A short guided setup — language, communication style, and how you like to work. Quick and skippable; change anything later.</p>' +
-    '</div>' +
-    '<div style="display:flex;gap:8px;flex-wrap:wrap;">' +
-      '<button onclick="openPreferencesSetup({source:\'settings\'})" style="border:none;border-radius:8px;background:#00d4ff;color:#003642;font-weight:700;padding:9px 16px;cursor:pointer;font-size:12px;font-family:\'Inter\',sans-serif;">Set preferences</button>' +
-      '<button onclick="dismissPreferenceSetupBanner()" style="border:1px solid rgba(255,255,255,0.12);border-radius:8px;background:transparent;color:#94a3b8;font-weight:600;padding:9px 14px;cursor:pointer;font-size:12px;font-family:\'Inter\',sans-serif;">Not now</button>' +
-    '</div>' +
-  '</div>';
-}
-
-function dismissPreferenceSetupBanner() {
-  try { sessionStorage.setItem("vm_pref_setup_dismissed", "1"); } catch (_) {}
-  renderSettingsContent("preferences");
-}
-
-function renderPreferencesSection(container) {
-  container.innerHTML = _SH.sectionHeader("AI Preferences", "Customize how ValleyMind generates responses");
-  settingsApiGet("preferences").then(function (d) {
-    var data = d.data || {};
-    container.innerHTML = _SH.sectionHeader("AI Preferences", "Customize how ValleyMind generates responses") +
-      _prefSetupBanner(data) +
-      _SH.card("Response Style", '<div style="display:flex;gap:10px;"><div style="flex:1;"><p style="color:#94a3b8;font-size:10px;margin:0 0 4px;">Response Length</p>' + _SH.select(["Short", "Balanced", "Detailed"], "prefResponseLength", data.response_length) + '</div><div style="flex:1;"><p style="color:#94a3b8;font-size:10px;margin:0 0 4px;">Creativity</p>' + _SH.select(["Conservative", "Moderate", "Creative", "Very Creative"], "prefCreativity", data.creativity) + '</div></div><div style="height:10px;"></div><div style="display:flex;gap:10px;"><div style="flex:1;"><p style="color:#94a3b8;font-size:10px;margin:0 0 4px;">Thinking Style</p>' + _SH.select(["Analytical", "Creative", "Balanced"], "prefThinkingStyle", data.thinking_style) + '</div><div style="flex:1;"><p style="color:#94a3b8;font-size:10px;margin:0 0 4px;">Default Language</p>' + _SH.select(CULTURAL_LANGUAGES, "prefLanguage", _effectiveResponseLang(data)) + '</div></div>') +
-      _SH.card("Writing & Coding", '<div style="display:flex;gap:10px;"><div style="flex:1;"><p style="color:#94a3b8;font-size:10px;margin:0 0 4px;">Writing Style</p>' + _SH.select(["Professional", "Conversational", "Academic", "Creative", "Technical"], "prefWritingStyle", data.writing_style) + '</div><div style="flex:1;"><p style="color:#94a3b8;font-size:10px;margin:0 0 4px;">Coding Style</p>' + _SH.select(["Minimal", "Explanatory", "Production-ready"], "prefCodingStyle", data.coding_style) + '</div></div>') +
-      _SH.card("Media Preferences", '<div style="display:flex;gap:10px;"><div style="flex:1;"><p style="color:#94a3b8;font-size:10px;margin:0 0 4px;">Image Style</p>' + _SH.select(["Standard", "Cinematic", "Artistic", "Realistic", "Anime", "3D Render"], "prefImageStyle", data.image_style) + '</div><div style="flex:1;"><p style="color:#94a3b8;font-size:10px;margin:0 0 4px;">Video Style</p>' + _SH.select(["Standard", "Cinematic", "Animation", "Documentary"], "prefVideoStyle", data.video_style) + '</div></div><div style="height:10px;"></div><div style="display:flex;gap:10px;"><div style="flex:1;"><p style="color:#94a3b8;font-size:10px;margin:0 0 4px;">Voice Style</p>' + _SH.select(["Natural", "Professional", "Friendly", "Energetic"], "prefVoiceStyle", data.voice_style) + '</div><div style="flex:1;display:flex;align-items:flex-end;gap:8px;padding-bottom:4px;"><span style="color:#94a3b8;font-size:11px;">Auto Suggestions</span>' + _SH.toggle("prefAutoSuggest", data.auto_suggestions !== false) + '</div></div>') +
-      '<div style="margin-top:4px;">' + _SH.btn("Save AI Preferences", "saveAIPreferences()", "rgba(0,212,255,0.8)") + _SH.statusSpan("prefStatus") + '</div>';
-  }).catch(function () { container.innerHTML = _SH.sectionHeader("AI Preferences") + '<p style="color:#64748b;">Could not load preferences.</p>'; });
-}
-
-function saveAIPreferences() {
-  _saveSettingsAndShow("preferences", {
-    response_length: _getVal("prefResponseLength"), creativity: _getVal("prefCreativity"),
-    thinking_style: _getVal("prefThinkingStyle"), language: _getVal("prefLanguage"),
-    writing_style: _getVal("prefWritingStyle"), coding_style: _getVal("prefCodingStyle"),
-    image_style: _getVal("prefImageStyle"), video_style: _getVal("prefVideoStyle"),
-    voice_style: _getVal("prefVoiceStyle"), auto_suggestions: _getChecked("prefAutoSuggest"),
-  }, "prefStatus");
-}
-
-// ══════════════════════════════════════════════════════════════
-// APPEARANCE
-// ══════════════════════════════════════════════════════════════
-
-function renderAppearanceSection(container) {
-  container.innerHTML = _SH.sectionHeader("Appearance", "Customize the look and feel of ValleyMind");
-  settingsApiGet("appearance").then(function (d) {
-    var data = d.data || {};
-    // Sync the saved appearance into the live app on open.
-    if (window.applyAppearance) window.applyAppearance(data.theme, data.font_size);
-    container.innerHTML = _SH.sectionHeader("Appearance", "Customize the look and feel of ValleyMind") +
-      _SH.card("Theme & Colors", '<div style="display:flex;gap:10px;"><div style="flex:1;"><p style="color:#94a3b8;font-size:10px;margin:0 0 4px;">Theme</p>' + _SH.select(["Dark", "Light"], "appTheme", data.theme, "if(window.applyAppearance)window.applyAppearance(this.value)") + '</div><div style="flex:1;"><p style="color:#94a3b8;font-size:10px;margin:0 0 4px;">Font Size</p>' + _SH.select(["Small", "Medium", "Large"], "appFontSize", data.font_size, "if(window.applyAppearance)window.applyAppearance(undefined,this.value)") + '</div></div>' +
-        '<div style="margin-top:12px;"><p style="color:#94a3b8;font-size:10px;margin:0 0 8px;">Accent Color</p><div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">' +
-        ["#00d4ff", "#22c55e", "#eab308", "#ef4444", "#a855f7", "#ec4899"].map(function (c) {
-          var sel = (data.accent_color || "#00d4ff") === c;
-          return '<div onclick="setSettingsAccent(\'' + c + '\')" style="width:32px;height:32px;border-radius:50%;background:' + c + ';cursor:pointer;border:2px solid ' + (sel ? "rgba(255,255,255,0.5)" : "transparent") + ';transition:all 0.15s;" onmouseover="this.style.transform=\'scale(1.15)\'" onmouseout="this.style.transform=\'scale(1)\'" id="saccent-' + c.replace("#", "") + '"></div>';
-        }).join("") + _SH.colorPicker("appAccentCustom", data.accent_color || "#00d4ff") + '</div></div>') +
-      _SH.card("Layout", '<div style="display:flex;gap:10px;"><div style="flex:1;"><p style="color:#94a3b8;font-size:10px;margin:0 0 4px;">Sidebar Style</p>' + _SH.select(["Full", "Icons Only", "Collapsed"], "appSidebar", data.sidebar_style) + '</div><div style="flex:1;"><p style="color:#94a3b8;font-size:10px;margin:0 0 4px;">Chat Bubble Style</p>' + _SH.select(["Modern", "Minimal", "Classic"], "appChatStyle", data.chat_style) + '</div></div>') +
-      _SH.card("Accessibility", '<div style="display:flex;flex-direction:column;gap:10px;">' +
-        _SH.row("Enable Animations", _SH.toggle("appAnimations", data.animations !== false), "Smooth transitions and effects") +
-        _SH.row("Reduced Motion", _SH.toggle("appReducedMotion", data.reduced_motion === true), "Minimize animations for accessibility") +
-        _SH.row("High Contrast", _SH.toggle("appHighContrast", data.high_contrast === true), "Increase contrast for readability") + '</div>') +
-      '<div style="margin-top:4px;">' + _SH.btn("Save Appearance", "saveAppearance()", "rgba(0,212,255,0.8)") + _SH.statusSpan("appearStatus") + '</div>';
-  }).catch(function () { container.innerHTML = _SH.sectionHeader("Appearance") + '<p style="color:#64748b;">Could not load appearance settings.</p>'; });
-}
-
-function saveAppearance() {
-  var data = {
-    theme: _getVal("appTheme"), font_size: _getVal("appFontSize"), accent_color: _getVal("appAccentCustom") || "#00d4ff",
-    sidebar_style: _getVal("appSidebar"), chat_style: _getVal("appChatStyle"),
-    animations: _getChecked("appAnimations"), reduced_motion: _getChecked("appReducedMotion"), high_contrast: _getChecked("appHighContrast"),
-  };
-  if (window.applyAppearance) window.applyAppearance(data.theme, data.font_size);
-  _saveSettingsAndShow("appearance", data, "appearStatus");
-}
-
-function setSettingsAccent(color) {
-  document.querySelectorAll("[id^='saccent-']").forEach(function (el) { el.style.borderColor = "transparent"; });
-  var el = document.getElementById("saccent-" + color.replace("#", ""));
-  if (el) el.style.borderColor = "rgba(255,255,255,0.5)";
-  document.getElementById("appAccentCustom").value = color;
-  document.documentElement.style.setProperty("--accent-color", color);
-}
-
-// ══════════════════════════════════════════════════════════════
-// COMPANION
-// ══════════════════════════════════════════════════════════════
-// The standalone VRM character has no attached controls any more; every knob
-// lives here. All state is owned by static/vrm_companion.js and reached through
-// the window.vmVrmCompanion surface, so this section is a pure view + wire-up.
-
-var VM_COMPANION_PERMS = [
-  { id: "vision", label: "See the screen" },
-  { id: "scroll", label: "Scroll pages" },
-  { id: "navigate", label: "Open workspaces" },
-  { id: "click", label: "Click buttons" },
-  { id: "type", label: "Type into fields" },
-];
-
-// ── Persona voice catalogue ──────────────────────────────────────────────
-// The four speaking personas of the Round Table / companion. Each keeps its own
-// independently selectable voice. The EXISTING server voice stays the default
-// and the fallback: nothing here changes the Qwen default playback path (see
-// /api/tts and rtSpeakTurn in index.html). The two female local Piper voices
-// are offered as OPT-IN, non-default previews so the user can compare them
-// against the current voice before any default is ever switched.
-//
-// `id` is what gets stored; `label` is what the user reads; `server` is the
-// existing online reference voice id (used only for the reference preview);
-// `piper` is the local model id (only present on the two new opt-in voices).
-var VM_PERSONA_VOICES = {
-  personas: [
-    { key: "marcus", label: "Marcus", defaultVoice: "guy" },
-    { key: "elena", label: "Elena", defaultVoice: "aria" },
-    { key: "angelina", label: "Angelina", defaultVoice: "jenny" },
-    { key: "companion", label: "Companion", defaultVoice: "christopher" },
-  ],
-  voices: [
-    { id: "guy", label: "Guy", gender: "male", server: "en-US-GuyNeural", default: true, preset: "deep" },
-    { id: "aria", label: "Aria", gender: "female", server: "en-US-AriaNeural", default: true, preset: "warm" },
-    { id: "jenny", label: "Jenny", gender: "female", server: "en-US-JennyNeural", default: true, preset: "bright" },
-    { id: "christopher", label: "Christopher", gender: "male", server: "en-US-ChristopherNeural", default: true, preset: "fresh" },
-    { id: "kristin_piper", label: "Kristin (local, opt-in preview)", gender: "female", piper: "en_US-kristin-medium", default: false, preset: "warm" },
-    { id: "ljspeech_piper", label: "LJSpeech (local, opt-in preview)", gender: "female", piper: "en_US-ljspeech-medium", default: false, preset: "fresh" },
-  ],
-};
-
-var _vmVoiceOrb = null;
-var _vmVoiceOrbContainer = null;
-var _vmVoiceOrbCurrentVoiceId = null;
-
-function _vmGetVoicePreset(voiceId) {
-  var v = _personaVoiceById(voiceId);
-  if (v && v.preset) return v.preset;
-  if (voiceId === "guy") return "deep";
-  if (voiceId === "aria") return "warm";
-  if (voiceId === "jenny") return "bright";
-  if (voiceId === "christopher") return "fresh";
-  if (voiceId === "kristin_piper") return "warm";
-  if (voiceId === "ljspeech_piper") return "fresh";
-  return "deep";
-}
-
-function _personaVoiceOptions() {
-  return VM_PERSONA_VOICES.voices.map(function (v) {
-    return { value: v.id, label: v.label };
-  });
-}
-
-function _personaVoiceById(id) {
-  var list = VM_PERSONA_VOICES.voices;
-  for (var i = 0; i < list.length; i++) { if (list[i].id === id) return list[i]; }
-  return null;
-}
-
-function _readPersonaVoices() {
-  var out = {};
-  try { out = JSON.parse(localStorage.getItem("vmPersonaVoices") || "{}") || {}; } catch (e) { out = {}; }
-  return out;
-}
-
-function _writePersonaVoices(map) {
-  try { localStorage.setItem("vmPersonaVoices", JSON.stringify(map)); } catch (e) { /* storage blocked */ }
-}
-
-function renderCompanionSection(container) {
-  renderCompanionInto(container);
-}
-
-function refreshCompanionSettings() {
-  var container = document.getElementById("settingsContent");
-  if (container && _settingsCurrentSection === "companion") renderCompanionInto(container);
-}
-
-function renderCompanionInto(container) {
-  var vm = window.vmVrmCompanion;
-  if (!vm || !vm.getProps) {
-    container.innerHTML = _SH.sectionHeader("Companion", "Your standalone VRM companion") +
-      '<p style="color:#64748b;font-size:13px;">The companion isn\'t available in this view.</p>';
-    return;
-  }
-  var p = vm.getProps();
-  var isVrm = p.mode === "vrm";
-
-  // Access / microphone line + action.
-  var accessLabel = "Not asked yet";
-  var accessBtn = _SH.btn("Allow microphone", "vmCompanionAllowAccess()", "rgba(0,212,255,0.8)") +
-    " " + _SH.btn("Not now", "vmCompanionDeclineAccess()");
-  if (p.access === "allowed") {
-    accessLabel = "Microphone allowed — hands-free voice is on";
-    accessBtn = _SH.btn("Turn off mic access", "vmCompanionDeclineAccess()");
-  } else if (p.access === "declined") {
-    accessLabel = "Microphone off";
-    accessBtn = _SH.btn("Allow microphone", "vmCompanionAllowAccess()", "rgba(0,212,255,0.8)");
-  }
-
-  // Skin swatches (Original + presets).
-  var swatches = '<button type="button" class="vmvrm-swatch' + (p.skin === "" ? " on" : "") + '" data-skin="" title="Original" style="background:#a5937f;" onclick="vmCompanionSetSkin(\'\')" aria-label="Original skin"></button>';
-  (vm.SKIN_PRESETS || []).forEach(function (sp) {
-    swatches += '<button type="button" class="vmvrm-swatch' + (sp.name === p.skin ? " on" : "") + '" data-skin="' + sp.name + '" title="' + sp.name + '" style="background:' + sp.hex + ';" onclick="vmCompanionSetSkin(\'' + sp.name + '\')" aria-label="' + sp.name + ' skin"></button>';
-  });
-
-  // Task permission checkboxes.
-  var perms = p.taskPermissions || [];
-  var permRows = VM_COMPANION_PERMS.map(function (pm) {
-    var on = perms.indexOf(pm.id) !== -1;
-    return '<label style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid rgba(255,255,255,0.04);cursor:pointer;">' +
-      '<input type="checkbox" data-task-perm="' + pm.id + '"' + (on ? " checked" : "") +
-      ' onchange="vmCompanionTogglePerm(this,\'' + pm.id + '\')" style="cursor:pointer;">' +
-      '<span style="color:#e2e8f0;font-size:13px;font-family:\'Inter\',sans-serif;">' + pm.label + '</span></label>';
-  }).join("");
-
-  var nameInput = '<input id="vmSetName" type="text" maxlength="40" placeholder="Companion name" value="' + escapeCompanionAttr(p.charName) + '" autocomplete="off" onchange="vmCompanionSetName(this.value)" style="width:100%;background:rgba(15,23,42,0.85);border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:10px 12px;color:#e2e8f0;font-size:13px;outline:none;font-family:\'Inter\',sans-serif;box-sizing:border-box;">';
-
-  // Optional desktop bridge: shows/hides the standalone floating character that
-  // lives over your other windows. State is fetched from the desktop app; the
-  // toggle here only tells it to show or hide (it never starts a second copy).
-  var desktopCard = _SH.card("Desktop app",
-    '<p style="color:#94a3b8;font-size:12px;margin:0 0 12px;line-height:1.5;">Show the floating character over your other windows, outside the browser. Turning this on starts it automatically \u2014 no shortcut needed \u2014 and it reuses the same character and account.</p>' +
-    _SH.row("Show companion outside ValleyMind", _SH.toggle("vmSetDesktopVisible", false, "vmCompanionSetDesktopVisible(this.checked)"), "When on, the standalone character appears on top of your other windows. When off, it stays only in this app.") +
-    '<p style="color:#475569;font-size:11px;margin:8px 0 0;">Desktop companion: <span id="vmCompanionDesktopStatus">Checking\u2026</span></p>');
-
-  // The task plan / controls / input used to be an on-screen dashboard. It now
-  // lives here, inline, with the same element ids so the module's existing
-  // renderTask()/wireTaskControls() keep working unchanged.
-  var taskPanel =
-    '<div id="vmVrmCompanionTask">' +
-      '<div class="vmvrm-task-status" id="vmVrmCompanionTaskStatus">No active task</div>' +
-      '<div class="vmvrm-task-plan" id="vmVrmCompanionTaskList"></div>' +
-      '<div class="vmvrm-task-msg" id="vmVrmCompanionTaskMsg"></div>' +
-      '<div class="vmvrm-task-controls">' +
-        '<button type="button" class="vmvrm-mini-btn primary" id="vmVrmCompanionTaskApprove" title="Approve the proposed step">Approve</button>' +
-        '<button type="button" class="vmvrm-mini-btn" id="vmVrmCompanionTaskDeny" title="Deny the proposed step">Deny</button>' +
-        '<button type="button" class="vmvrm-mini-btn" id="vmVrmCompanionTaskPause" title="Pause the task">Pause</button>' +
-        '<button type="button" class="vmvrm-mini-btn" id="vmVrmCompanionTaskResume" title="Resume the paused task">Resume</button>' +
-        '<button type="button" class="vmvrm-mini-btn" id="vmVrmCompanionTaskStop" title="Stop / cancel the task">Stop</button>' +
-      '</div>' +
-      '<div class="vmvrm-task-row">' +
-        '<input type="text" id="vmVrmCompanionTaskInput" placeholder="Describe a task…" maxlength="2000" autocomplete="off" aria-label="Describe a task">' +
-        '<button type="button" class="vmvrm-mini-btn primary" id="vmVrmCompanionTaskPlan" title="Plan task">Plan</button>' +
-      '</div>' +
-    '</div>';
-
-  container.innerHTML = _SH.sectionHeader("Companion", "Your standalone VRM character — appearance, voice and permissions") +
-    _SH.card("Character", '<div style="display:flex;flex-direction:column;gap:14px;">' +
-      '<div>' + _SH.row("Show companion", _SH.toggle("vmSetVisible", p.visible, "vmCompanionSetVisible(this.checked)"), "Hide or restore the character. Hiding is always reversible here.") + '</div>' +
-      '<div>' + _SH.row("Active character", '<div class="vmvrm-mode"><button type="button" class="vmvrm-mode-btn' + (isVrm ? " on" : "") + '" data-vm-mode="vrm" onclick="vmCompanionSetMode(\'vrm\')">VRM companion</button><button type="button" class="vmvrm-mode-btn' + (!isVrm ? " on" : "") + '" data-vm-mode="cloud" onclick="vmCompanionSetMode(\'cloud\')">Cloud (legacy)</button></div>', "Only one is ever visible.") + '</div>' +
-      '<div><p style="color:#94a3b8;font-size:10px;margin:0 0 4px;text-transform:uppercase;letter-spacing:0.12em;font-family:\'Space Grotesk\',sans-serif;">Name</p>' + nameInput + '</div>' +
-      '<div><p style="color:#94a3b8;font-size:10px;margin:0 0 6px;text-transform:uppercase;letter-spacing:0.12em;font-family:\'Space Grotesk\',sans-serif;">Skin tone</p><div class="vmvrm-skins" id="vmSetSkins">' + swatches + '</div></div>' +
-      '</div>') +
-    desktopCard +
-    _SH.card("Size & Position", '<div style="display:flex;flex-direction:column;gap:16px;">' +
-      '<div><p style="color:#94a3b8;font-size:10px;margin:0 0 4px;text-transform:uppercase;letter-spacing:0.12em;font-family:\'Space Grotesk\',sans-serif;">Size <b id="vmSetSizeVal" style="color:#e2e8f0;">' + p.sizePct + '%</b></p><input id="vmSetSize" type="range" min="10" max="24" step="1" value="' + p.sizePct + '" oninput="vmCompanionSetSize(this.value)" style="width:100%;"></div>' +
-      '<div><p style="color:#94a3b8;font-size:10px;margin:0 0 4px;text-transform:uppercase;letter-spacing:0.12em;font-family:\'Space Grotesk\',sans-serif;">Docked position</p>' + _SH.select([{ value: "br", label: "Bottom-right" }, { value: "bl", label: "Bottom-left" }, { value: "tr", label: "Top-right" }, { value: "tl", label: "Top-left" }], "vmSetDock", p.dock, "vmCompanionSetDock(this.value)") + '</div>' +
-      '<div>' + _SH.row("Wander around", _SH.toggle("vmSetRoam", p.roam, "vmCompanionSetRoam(this.checked)"), "Let the character roam a little while idle. Turn off to keep it still. Dragging it by hand also pauses wandering.") + '</div>' +
-      '<div>' + _SH.btn("Reset position & size", "vmCompanionResetHome()") + '</div>' +
-      '</div>') +
-    _SH.card("Voice & Microphone", '<div style="display:flex;flex-direction:column;">' +
-      _SH.row("Hands-free voice", _SH.toggle("vmSetMuted", !p.muted, "vmCompanionSetMuted(!this.checked)"), "When off, the companion stops listening and stays silent.") +
-      _SH.row("Awake & ready", _SH.toggle("vmSetAwake", p.awake, "vmCompanionSetAwake(this.checked)"), "Sleep pauses hands-free listening without turning the character off. Wake re-arms it.") +
-      _SH.row("Resume listening after replies", _SH.toggle("vmSetVoiceFirst", p.voiceFirst, "vmCompanionSetVoiceFirst(this.checked)"), "Keep listening for your next sentence without a tap.") +
-      _SH.row("Screen context (vision)", _SH.toggle("vmSetVision", p.visionOn, "vmCompanionSetVision(this.checked)"), "Let the companion see your screen when you ask. Asks for permission first.") +
-      '<div style="margin-top:12px;"><p style="color:#94a3b8;font-size:10px;margin:0 0 4px;text-transform:uppercase;letter-spacing:0.12em;font-family:\'Space Grotesk\',sans-serif;">Voice</p>' + _SH.select([{ value: "", label: "Follow account voice" }, { value: "marcus", label: "Marcus" }, { value: "elena", label: "Elena" }, { value: "angelina", label: "Angelina" }, { value: "companion", label: "Companion (default)" }], "vmSetVoice", p.voiceKey, "vmCompanionSetVoiceKey(this.value)") + '</div>' +
-      '<div style="margin-top:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.05);"><p style="color:#e2e8f0;font-size:13px;margin:0 0 8px;">Microphone access: <span style="color:#94a3b8;">' + accessLabel + '</span></p>' + accessBtn + '</div>' +
-      '</div>') +
-    _SH.card("Tasks", '<p style="color:#94a3b8;font-size:12px;margin:0 0 12px;line-height:1.5;">ValleyMind can carry out multi-step tasks in the app — say something like \u201copen the Studio\u201d or \u201cscroll down\u201d. It only acts on what you allow here, and anything impactful asks for your confirmation first.</p>' +
-      '<div style="display:flex;flex-direction:column;">' + permRows + '</div>' +
-      '<div style="margin-top:14px;border-top:1px solid rgba(255,255,255,0.06);padding-top:12px;">' + taskPanel + '</div>' +
-      '<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">' +
-      _SH.btn("Open chat", "vmCompanionOpenChat()") +
-      '</div>') +
-    '<p style="color:#475569;font-size:11px;margin-top:4px;">Status: <span id="vmCompanionStatusLine">' + escapeCompanionAttr(p.statusLabel) + '</span></p>';
-
-  // Reflect any selected-state classes the module owns, then bind the inline
-  // task controls and paint the current plan into them.
-  if (vm.syncControls) vm.syncControls();
-  if (vm.wireTaskControls) vm.wireTaskControls();
-  if (vm.renderTask) vm.renderTask();
-  vmCompanionRefreshDesktopState();
-}
-
-function escapeCompanionAttr(s) {
-  return String(s == null ? "" : s)
-    .replace(/&/g, "&amp;").replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-}
-
-function _vmCompanion() { return window.vmVrmCompanion || null; }
-
-function vmCompanionSetVisible(on) {
-  var vm = _vmCompanion();
-  if (!vm) return;
-  if (on && vm.getMode() !== "vrm") vm.setMode("vrm", { fromUser: true });
-  vm.setVisible(!!on);
-  refreshCompanionSettings();
-}
-function vmCompanionSetMode(mode) {
-  var vm = _vmCompanion(); if (!vm) return;
-  vm.setMode(mode, { fromUser: true });
-  refreshCompanionSettings();
-}
-function vmCompanionSetSkin(name) {
-  var vm = _vmCompanion(); if (!vm) return;
-  vm.setSkin(name);
-}
-function vmCompanionSetSize(v) {
-  var vm = _vmCompanion(); if (!vm) return;
-  vm.setSize(v);
-  var lbl = document.getElementById("vmSetSizeVal");
-  if (lbl) lbl.textContent = v + "%";
-}
-function vmCompanionSetDock(v) { var vm = _vmCompanion(); if (vm) vm.setDock(v); }
-function vmCompanionSetName(v) { var vm = _vmCompanion(); if (vm) vm.setCharName(v); }
-function vmCompanionSetVoiceKey(v) {
-  var key = String(v || "").toLowerCase();
-  // The floating companion's own voice profile (four free voices). Stored under
-  // a shared same-origin key so the overlay WebView picks it up without a reload.
-  var profiles = ["marcus", "angelina", "elena", "companion"];
-  try {
-    if (profiles.indexOf(key) !== -1) localStorage.setItem("vmVoiceProfile", key);
-    else localStorage.removeItem("vmVoiceProfile");
-  } catch (e) { /* storage blocked */ }
-    var vm = _vmCompanion();
-  // The crew voice key follows the account preference; "companion" (and the
-  // follow-account option) leave it empty so the account/persona decides.
-  if (vm) vm.setVoiceKey(profiles.indexOf(key) !== -1 && key !== "companion" ? key : "");
-}
-
-// ── Per-persona voice selection ──────────────────────────────────────────
-// One row per persona, each independently selectable. This is purely additive:
-// the existing shared "Voice" select above still works and the server default
-// (Qwen) is untouched. The two local Piper voices are opt-in previews.
-function vmPersonaVoicesCard() {
-  var saved = _readPersonaVoices();
-
-  // Voice assignment buttons — clickable chips with gender labels
-  var voiceButtons = VM_PERSONA_VOICES.voices.map(function (v) {
-    var genderIcon = v.gender === "male" ? "♂" : "♀";
-    var isMainSelected = VM_PERSONA_VOICES.personas
-      .filter(function (p) { return p.key !== "companion"; })
-      .some(function (p) { return saved[p.key] === v.id; });
-    var isCompanionSelected = saved.companion === v.id;
-    var selected = isMainSelected || isCompanionSelected;
-    return '<button onclick="vmAssignVoice(\'' + v.id + '\')" ' +
-      'style="display:inline-block;margin:4px 4px 4px 0;padding:8px 12px;' +
-      'border:1px solid ' + (selected ? "rgba(0,212,255,0.4)" : "rgba(255,255,255,0.1)") + ';' +
-      'background:' + (selected ? "rgba(0,212,255,0.15)" : "rgba(15,23,42,0.5)") + ';' +
-      'border-radius:8px;color:#e2e8f0;cursor:pointer;font-size:12px;font-family:\'Inter\',sans-serif;">' +
-      v.label + ' <span style="font-size:10px;opacity:0.7;">' + genderIcon + '</span>' +
-      '</button>';
-  }).join("");
-
-  // Current assignments
-  var mainVoiceId = saved.marcus || saved.elena || saved.angelina || "guy";
-  var companionVoiceId = saved.companion || "christopher";
-  var mainEntry = _personaVoiceById(mainVoiceId);
-  var compEntry = _personaVoiceById(companionVoiceId);
-
-  var assignmentBox = '<div style="background:rgba(0,212,255,0.08);border:1px solid rgba(0,212,255,0.2);border-radius:12px;padding:16px;margin-bottom:16px;">' +
-    '<p style="color:#00d4ff;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;margin:0 0 12px;">Tap to use in chats or speak aloud</p>' +
-    '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;">' + voiceButtons + '</div>' +
-    '<div style="display:flex;gap:8px;margin-bottom:12px;">' +
-    '<button onclick="vmAssignVoiceDestination(\'main\')" style="flex:1;padding:10px;background:rgba(0,212,255,0.1);border:1px solid rgba(0,212,255,0.3);border-radius:8px;color:#00d4ff;cursor:pointer;font-size:12px;font-weight:600;">Use in Main Chat</button>' +
-    '<button onclick="vmAssignVoiceDestination(\'companion\')" style="flex:1;padding:10px;background:rgba(0,212,255,0.1);border:1px solid rgba(0,212,255,0.3);border-radius:8px;color:#00d4ff;cursor:pointer;font-size:12px;font-weight:600;">Use in Companion</button>' +
-    '</div>' +
-    '<div style="display:flex;flex-direction:column;gap:4px;">' +
-    '<div style="display:flex;justify-content:space-between;font-size:12px;color:#94a3b8;">' +
-    '<span>Main Chat voice:</span> <span style="color:#e2e8f0;font-weight:600;">' + (mainEntry ? mainEntry.label : mainVoiceId) + '</span>' +
-    '</div>' +
-    '<div style="display:flex;justify-content:space-between;font-size:12px;color:#94a3b8;">' +
-    '<span>Companion voice:</span> <span style="color:#e2e8f0;font-weight:600;">' + (compEntry ? compEntry.label : companionVoiceId) + '</span>' +
-    '</div>' +
-    '</div>' +
-  '</div>';
-
-  // Per-persona rows (fine-grained control)
-  var rows = VM_PERSONA_VOICES.personas.map(function (per) {
-    var sel = saved[per.key] || per.defaultVoice;
-    var isCompanion = per.key === "companion";
-    return _SH.row(per.label + (isCompanion ? " (Companion)" : " (Main Chat)"),
-      '<div style="display:flex;gap:8px;align-items:center;">' +
-        _SH.select(_personaVoiceOptions(), "vmPersonaVoice-" + per.key, sel,
-          "vmPersonaSetVoice('" + per.key + "', this.value)") +
-        _SH.btn("Preview", "vmPersonaPreviewVoice('" + per.key + "')") +
-      '</div>',
-      isCompanion ? "Companion keeps its own voice independently." : "Main chat persona keeps its own voice independently.");
-  }).join("");
-
-  return _SH.card("Persona voices",
-    '<p style="color:#94a3b8;font-size:12px;margin:0 0 12px;line-height:1.5;">Give each speaker its own voice. Preview any voice, assign it to Main Chat or Companion. Selections persist independently and never leak between destinations.</p>' +
-    assignmentBox +
-    '<div style="display:flex;flex-direction:column;">' + rows + '</div>' +
-    '<p style="color:#475569;font-size:11px;margin:10px 0 0;" id="vmPersonaVoiceStatus"></p>');
-}
-
-function vmPersonaSetVoice(personaKey, voiceId) {
-  if (!_personaVoiceById(voiceId)) return;
-  var saved = _readPersonaVoices();
-  saved[personaKey] = voiceId;
-  _writePersonaVoices(saved);
-  var st = document.getElementById("vmPersonaVoiceStatus");
-  if (st) { st.textContent = "Saving " + personaKey + " \u2026"; }
-  // Persist through the EXISTING generic settings route (cloud section) — no
-  // second settings controller, no new endpoint. Merge-flagged so this partial
-  // save cannot delete unrelated cloud keys (accent/personality_style/...).
-  settingsApiSave("cloud", { persona_voices: saved }, { merge: true }).then(function () {
-    if (st) { st.textContent = "Saved " + personaKey + " → " + voiceId; setTimeout(function () { st.textContent = ""; }, 2500); }
-  }).catch(function () {
-    if (st) { st.textContent = "Save failed for " + personaKey; setTimeout(function () { st.textContent = ""; }, 2500); }
-  });
-  try {
-    _vmInitVoiceOrb();
-    if (_vmVoiceOrb) {
-      _vmVoiceOrb.setPreset(_vmGetVoicePreset(voiceId));
-      _vmVoiceOrb.setState("selected");
-      setTimeout(function () { try { if (_vmVoiceOrb) _vmVoiceOrb.setState("idle"); } catch (e) {} }, 800);
-    }
-  } catch (e) {}
-}
-
-// Assign a voice to a destination (main or companion) from the assignment box.
-// vmSelectedVoice tracks the voice last tapped in the assignment box chips.
-var vmSelectedVoice = null;
-
-function vmAssignVoice(voiceId) {
-  if (!_personaVoiceById(voiceId)) return;
-  vmSelectedVoice = voiceId;
-  // Highlight the selected chip visually
-  document.querySelectorAll('button[onclick^="vmAssignVoice"]').forEach(function (b) {
-    b.style.borderColor = "rgba(255,255,255,0.1)";
-    b.style.background = "rgba(15,23,42,0.5)";
-  });
-  var btn = document.querySelector('button[onclick="vmAssignVoice(\'' + voiceId + '\')"]');
-  if (btn) {
-    btn.style.borderColor = "rgba(0,212,255,0.4)";
-    btn.style.background = "rgba(0,212,255,0.15)";
-  }
-}
-
-function vmAssignVoiceDestination(destination) {
-  if (!vmSelectedVoice) return;
-  var saved = _readPersonaVoices();
-  var st = document.getElementById("vmPersonaVoiceStatus");
-  if (destination === "main") {
-    // Apply to all main-chat personas so they stay consistent
-    ["marcus", "elena", "angelina"].forEach(function (key) {
-      saved[key] = vmSelectedVoice;
-    });
-  } else if (destination === "companion") {
-    saved.companion = vmSelectedVoice;
-  }
-  _writePersonaVoices(saved);
-  settingsApiSave("cloud", { persona_voices: saved }, { merge: true }).then(function () {
-    if (st) { st.textContent = "Saved " + vmSelectedVoice + " → " + destination; setTimeout(function () { st.textContent = ""; }, 2500); }
-    // Re-render to reflect updated selections
-    if (typeof renderSettingsContent === "function" && document.getElementById("settingsContent")) {
-      renderSettingsContent("voice");
-    }
-  }).catch(function () {
-    if (st) { st.textContent = "Save failed"; setTimeout(function () { st.textContent = ""; }, 2500); }
-  });
-}
-
-// Preview the selected voice through the EXISTING /api/tts route. The server
-// reads the saved per-persona selection: a Piper voice is synthesised by the
-// local Piper engine, a reference voice by the existing default engine. Either
-// way the returned url is played and the ACTUAL engine is reported (never
-// mislabelled).
-var VM_PERSONA_PREVIEW_TEXT = "Hey, it's good to see you again. This is a quick preview of how I sound.";
-var _personaPreviewPlayer = null;
-
-function _personaEngineLabel(engine) {
-  if (engine === "piper_local") return "local Piper";
-  if (engine === "edge_tts_free") return "free Edge voice";
-  if (engine === "qwen_tts") return "ValleyMind voice";
-  if (engine === "browser") return "device speech";
-  return engine || "voice";
-}
-
-function vmPersonaPreviewVoice(personaKey) {
-  var saved = _readPersonaVoices();
-  // Preview the voice selected via chips (vmSelectedVoice) if set, otherwise the saved voice for this persona.
-  var voiceId = vmSelectedVoice || saved[personaKey] || (VM_PERSONA_VOICES.personas.filter(function (p) { return p.key === personaKey; })[0] || {}).defaultVoice;
-  var entry = _personaVoiceById(voiceId);
-  if (!entry) return;
-  var st = document.getElementById("vmPersonaVoiceStatus");
-  // _savedVoiceProfile is defined in index.html; guard for environments where it isn't loaded.
-  var profile = typeof _savedVoiceProfile === "function" ? _savedVoiceProfile(personaKey) : "";
-
-  if (st) st.textContent = "Preparing preview\u2026";
-
-  // Stop any previous preview so the orb and audio are never left in a mixed state.
-  try { if (_personaPreviewPlayer) { _personaPreviewPlayer.pause(); _personaPreviewPlayer.currentTime = 0; _personaPreviewPlayer.src = ""; } } catch (e) {}
-  try { if (_vmVoiceOrb && typeof _vmVoiceOrb.disconnectAudio === "function") _vmVoiceOrb.disconnectAudio(); } catch (e) {}
-  try { if (_vmVoiceOrb) _vmVoiceOrb.setState("idle"); } catch (e) {}
-
-  // Initialise the orb for this voice and mark it as playing.
-  try {
-    _vmInitVoiceOrb();
-    if (_vmVoiceOrb) {
-      _vmVoiceOrb.setPreset(_vmGetVoicePreset(voiceId));
-      _vmVoiceOrb.setState("playing");
-    }
-  } catch (e) {}
-
-  apiFetch("/api/tts", {
-    method: "POST", credentials: "include",
-    headers: authHeaders({ "Content-Type": "application/json" }),
-    body: JSON.stringify({ text: VM_PERSONA_PREVIEW_TEXT, persona: personaKey, profile: profile }),
-    timeoutMs: 60000
-  }).then(function (r) { return r.json(); }).then(function (data) {
-    if (!data || !data.url) {
-      if (st) st.textContent = "(preview unavailable)";
-      try { if (_vmVoiceOrb) _vmVoiceOrb.setState("idle"); } catch (e) {}
-      return;
-    }
-    // Ensure player exists
-    if (!_personaPreviewPlayer) {
-      _personaPreviewPlayer = document.createElement("audio");
-      _personaPreviewPlayer.style.display = "none";
-      (document.body || document.documentElement).appendChild(_personaPreviewPlayer);
-    }
-    try { _personaPreviewPlayer.pause(); } catch (e) {}
-    _personaPreviewPlayer.currentTime = 0;
-    _personaPreviewPlayer.src = data.url;
-    // Connect orb to real audio so it animates with playback.
+  // Measure how many 3px bars (with 3px gap) fit across the bars parent.
+  // Must be called after the container is displayed (width is 0 while
+  // display:none), so bars span the full composer width.
+  function recomputeBarCount() {
     try {
-      if (_vmVoiceOrb && typeof _vmVoiceOrb.connectAudio === "function") {
-        _vmVoiceOrb.connectAudio(_personaPreviewPlayer);
-      }
-      if (_vmVoiceOrb) _vmVoiceOrb.setState("playing");
-    } catch (e) {}
-    var pr = _personaPreviewPlayer.play();
-    if (pr && pr.catch) pr.catch(function () { if (st) st.textContent = "(tap to allow audio)"; });
-    // Handle end
-    _personaPreviewPlayer.onended = function () {
-      try { if (_vmVoiceOrb) { if (typeof _vmVoiceOrb.disconnectAudio === "function") _vmVoiceOrb.disconnectAudio(); _vmVoiceOrb.setState("idle"); } } catch (e) {}
-    };
-    _personaPreviewPlayer.onerror = function () {
-      try { if (_vmVoiceOrb) { if (typeof _vmVoiceOrb.disconnectAudio === "function") _vmVoiceOrb.disconnectAudio(); _vmVoiceOrb.setState("idle"); } } catch (e) {}
-    };
-    if (st) {
-      var label = entry.label;
-      if (data.fallback_from === "piper_local" && data.engine !== "piper_local") {
-        st.textContent = entry.label + " unavailable \u2014 played " + _personaEngineLabel(data.engine) + " instead";
-      } else {
-        st.textContent = "Playing " + label + " \u2014 " + _personaEngineLabel(data.engine);
-      }
-      setTimeout(function () { if (st) st.textContent = ""; }, 4000);
+      if (!state.barsParent) return state.bars.length || BAR_COUNT;
+      var rect = state.barsParent.getBoundingClientRect();
+      var width = rect.width || state.barsParent.clientWidth || 0;
+      var computed = Math.floor((width - 26) / 6);
+      if (computed < 20) computed = 20;
+      if (computed > 200) computed = 200;
+      return computed;
+    } catch (e) {
+      return 20;
     }
-  }).catch(function () { 
-    if (st) st.textContent = "(preview unavailable)"; 
-    try { if (_vmVoiceOrb) _vmVoiceOrb.setState("idle"); } catch (e) {}
-  });
-}
-
-
-// ── Voice tab ────────────────────────────────────────────────────────────
-// A dedicated catalogue of the voices this deployment genuinely has, plus the
-// per-persona assignment below it. Every card's "Preview" plays a real sample
-// through the existing /api/tts route and reports the ACTUAL engine used (a
-// fallback is never labelled as the requested voice). Voices are only listed
-// when the project's own configuration confirms them: the four free edge
-// reference voices always exist; the two local Piper voices are shown as
-// available/local and are honestly reported as unavailable when their model
-// files are not present (the server falls back to the free engine and says so).
-function renderVoiceSection(container) {
-  container.innerHTML = _SH.sectionHeader("Voice", "Choose how each speaker sounds — and preview before you commit") +
-    '<div id="vmVoiceOrbWrap" style="display:flex;justify-content:center;margin:4px 0 18px;"><div id="vmVoiceOrb" style="width:260px;height:260px;max-width:90vw;max-height:90vw;background:transparent;border-radius:50%;overflow:hidden;"></div></div>' +
-    vmVoiceCatalogueCard() +
-    vmPersonaVoicesCard() +
-    '<p style="color:#475569;font-size:11px;margin-top:4px;">Status: <span id="vmVoiceTabStatus"></span></p>';
-  // Initialize orb after DOM is ready
-  setTimeout(function () {
-    _vmInitVoiceOrb();
-  }, 0);
-}
-
-function _vmInitVoiceOrb() {
-  try {
-    var c = document.getElementById("vmVoiceOrb");
-    if (!c) return;
-    if (_vmVoiceOrb && _vmVoiceOrbContainer === c) return;
-    if (_vmVoiceOrb && typeof _vmVoiceOrb.destroy === "function") {
-      try { _vmVoiceOrb.destroy(); } catch (e) {}
-    }
-    _vmVoiceOrbContainer = c;
-    if (typeof window.VoiceOrb === "undefined") {
-      // Try to load module
-      var s = document.createElement("script");
-      s.type = "module";
-      s.textContent = "import('/static/VoiceOrb.js').then(m=>{window.VoiceOrb=m.VoiceOrb;window.VOICE_PRESETS=m.VOICE_PRESETS; if(window._vmInitVoiceOrbRetry) window._vmInitVoiceOrbRetry();}).catch(()=>{});";
-      document.head.appendChild(s);
-      window._vmInitVoiceOrbRetry = function () {
-        _vmInitVoiceOrb();
-        delete window._vmInitVoiceOrbRetry;
-      };
-      return;
-    }
-    _vmVoiceOrb = new window.VoiceOrb(c, { preset: "deep", ariaLabel: "Voice animation" });
-    _vmVoiceOrb.setState("idle");
-  } catch (e) {
-    console.warn("[VoiceOrb] init failed", e);
   }
-}
 
-// Build one catalogue entry for a voice definition from VM_PERSONA_VOICES.
-function _vmVoiceCatalogueEntry(v) {
-  var isPiper = !!v.piper;
-  var engineLabel = isPiper ? "Local Piper model" : "Free Edge voice";
-  var detail = isPiper
-    ? ('On-device model \u00b7 ' + v.piper + ' \u00b7 no cloud, no per-character cost')
-    : ('Online reference voice \u00b7 ' + v.server + ' \u00b7 free');
-  var who = [];
-  VM_PERSONA_VOICES.personas.forEach(function (per) {
-    if (per.defaultVoice === v.id) who.push(per.label);
-  });
-  var whoTxt = who.length ? ("Default for " + who.join(", ")) : "Opt-in alternative";
-  return _SH.card(v.label,
-    '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">' +
-      '<div style="flex:1;">' +
-        '<div style="margin:0 0 6px;">' + _SH.badge(engineLabel, isPiper ? "#00d4ff" : "#64748b") + '</div>' +
-        '<p style="color:#94a3b8;font-size:12px;margin:0 0 4px;">' + detail + '</p>' +
-        '<p style="color:#64748b;font-size:11px;margin:0;">' + whoTxt + '</p>' +
-      '</div>' +
-      _SH.btn("Preview", "vmVoicePreview('" + v.id + "')") +
-    '</div>');
-}
-
-function vmVoiceCatalogueCard() {
-  var entries = VM_PERSONA_VOICES.voices.map(_vmVoiceCatalogueEntry).join("");
-  return _SH.card("Available voices",
-    '<p style="color:#94a3b8;font-size:12px;margin:0 0 12px;line-height:1.5;">These are the voices this build actually has. \u201cPreview\u201d plays a short sample and tells you which engine produced it.</p>' +
-    entries);
-}
-
-// Preview a SPECIFIC catalogue voice (not the persona's saved selection). The
-// server validates the voice id against its allowlist; the response reports the
-// engine that actually ran, so a fallback is never shown as the chosen voice.
-function vmVoicePreview(voiceId) {
-  var entry = _personaVoiceById(voiceId);
-  if (!entry) return;
-  var st = document.getElementById("vmVoiceTabStatus");
-  if (st) st.textContent = "Preparing preview\u2026";
-  // Update orb for selected voice
-  try {
-    _vmInitVoiceOrb();
-    if (_vmVoiceOrb) {
-      var preset = _vmGetVoicePreset(voiceId);
-      _vmVoiceOrbCurrentVoiceId = voiceId;
-      _vmVoiceOrb.setPreset(preset);
-      _vmVoiceOrb.setState("playing");
-      // Try to connect audio
-      if (!_personaPreviewPlayer) {
-        _personaPreviewPlayer = document.createElement("audio");
-        _personaPreviewPlayer.style.display = "none";
-        (document.body || document.documentElement).appendChild(_personaPreviewPlayer);
-      }
-      // Disconnect previous
-      try { if (typeof _vmVoiceOrb.disconnectAudio === "function") _vmVoiceOrb.disconnectAudio(); } catch (e) {}
-    }
-  } catch (e) {}
-  apiFetch("/api/tts", {
-    method: "POST", credentials: "include",
-    headers: authHeaders({ "Content-Type": "application/json" }),
-    body: JSON.stringify({ text: VM_PERSONA_PREVIEW_TEXT, voice: voiceId }),
-    timeoutMs: 60000
-  }).then(function (r) { return r.json(); }).then(function (data) {
-    if (!data || !data.url) {
-      if (st) st.textContent = "(preview unavailable: " + ((data && data.reason) || "no audio") + ")";
-      try { if (_vmVoiceOrb) _vmVoiceOrb.setState("idle"); } catch (e) {}
-      return;
-    }
-    // Ensure player exists
-    if (!_personaPreviewPlayer) {
-      _personaPreviewPlayer = document.createElement("audio");
-      _personaPreviewPlayer.style.display = "none";
-      (document.body || document.documentElement).appendChild(_personaPreviewPlayer);
-    }
-    try { _personaPreviewPlayer.pause(); } catch (e) {}
-    _personaPreviewPlayer.currentTime = 0;
-    _personaPreviewPlayer.src = data.url;
-    // Connect orb to audio
+  function buildBars(count) {
     try {
-      if (_vmVoiceOrb && typeof _vmVoiceOrb.connectAudio === "function") {
-        _vmVoiceOrb.connectAudio(_personaPreviewPlayer);
+      if (!state.barsParent) return;
+      if (state.bars.length) return;
+      var frag = document.createDocumentFragment();
+      for (var i = 0; i < count; i++) {
+        var b = document.createElement("div");
+        b.className = "vmWaveBar";
+        b.style.width = BAR_WIDTH + "px";
+        b.style.height = MIN_HEIGHT + "px";
+        b.style.marginRight = BAR_GAP + "px";
+        frag.appendChild(b);
+        state.bars.push(b);
       }
-      if (_vmVoiceOrb) _vmVoiceOrb.setState("playing");
+      state.barsParent.appendChild(frag);
+      state.levels = new Array(count).fill(0);
     } catch (e) {}
-    var pr = _personaPreviewPlayer.play();
-    if (pr && pr.catch) pr.catch(function () { if (onError) onError("(tap to allow audio)"); });
-    // Handle end
-    _personaPreviewPlayer.onended = function () {
-      try { if (_vmVoiceOrb) { if (typeof _vmVoiceOrb.disconnectAudio === "function") _vmVoiceOrb.disconnectAudio(); _vmVoiceOrb.setState("idle"); } } catch (e) {}
-    };
-    _personaPreviewPlayer.onerror = function () {
-      try { if (_vmVoiceOrb) { if (typeof _vmVoiceOrb.disconnectAudio === "function") _vmVoiceOrb.disconnectAudio(); _vmVoiceOrb.setState("idle"); } } catch (e) {}
-    };
-    _vmPlayPreviewUrl(data.url, function (err) {
-      if (st) st.textContent = err;
-    });
-    if (st) {
-      var label = entry.label;
-      if (data.fallback_from === "piper_local" && data.engine !== "piper_local") {
-        st.textContent = entry.label + " unavailable \u2014 played " + _personaEngineLabel(data.engine) + " instead";
-      } else {
-        st.textContent = "Playing " + label + " \u2014 " + _personaEngineLabel(data.engine);
+  }
+
+  function setLevels(levels) {
+    try {
+      if (!state.bars.length) return;
+      // Scrolling history: shift left, push new level on the right.
+      state.levels = state.levels.slice(1);
+      state.levels.push(levels[levels.length - 1] || 0);
+      for (var i = 0; i < state.bars.length; i++) {
+        var lvl = state.levels[i];
+        if (lvl < 0) lvl = 0;
+        if (lvl > 1) lvl = 1;
+        var h = MIN_HEIGHT + lvl * (MAX_HEIGHT - MIN_HEIGHT);
+        state.bars[i].style.height = h + "px";
       }
-      setTimeout(function () { if (st) st.textContent = ""; }, 4000);
-    }
-  }).catch(function () { 
-    if (st) st.textContent = "(preview unavailable)"; 
-    try { if (_vmVoiceOrb) _vmVoiceOrb.setState("idle"); } catch (e) {}
-  });
-}
-
-// One hidden <audio> reused for every preview so a new preview always stops the
-// previous one (no overlapping playback). Returns nothing; reports play errors
-// through the optional callback.
-function _vmPlayPreviewUrl(url, onError) {
-  if (!_personaPreviewPlayer) {
-    _personaPreviewPlayer = document.createElement("audio");
-    _personaPreviewPlayer.style.display = "none";
-    (document.body || document.documentElement).appendChild(_personaPreviewPlayer);
+    } catch (e) {}
   }
-  try { _personaPreviewPlayer.pause(); } catch (e) { /* not playing */ }
-  _personaPreviewPlayer.currentTime = 0;
-  _personaPreviewPlayer.src = url;
-  var pr = _personaPreviewPlayer.play();
-  if (pr && pr.catch) pr.catch(function () { if (onError) onError("(tap to allow audio)"); });
-}
 
-
-function vmCompanionSetMuted(muted) {
-  var vm = _vmCompanion(); if (!vm) return;
-  vm.setMuted(!!muted);
-  refreshCompanionSettings();
-}
-function vmCompanionSetVoiceFirst(on) {
-  var vm = _vmCompanion(); if (!vm) return;
-  if (vm.setVoiceFirst) vm.setVoiceFirst(!!on);
-}
-function vmCompanionSetRoam(on) {
-  var vm = _vmCompanion(); if (!vm) return;
-  if (vm.setRoam) vm.setRoam(!!on);
-}
-function vmCompanionSetAwake(on) {
-  var vm = _vmCompanion(); if (!vm) return;
-  if (vm.setAwake) vm.setAwake(!!on);
-  refreshCompanionSettings();
-}
-function vmCompanionSetVision(on) {
-  var vm = _vmCompanion(); if (!vm) return;
-  vm.setVision(!!on);
-}
-function vmCompanionAllowAccess() {
-  var vm = _vmCompanion(); if (!vm) return;
-  vm.allowAccess();
-  refreshCompanionSettings();
-}
-function vmCompanionDeclineAccess() {
-  var vm = _vmCompanion(); if (!vm) return;
-  vm.declineAccess();
-  refreshCompanionSettings();
-}
-function vmCompanionResetHome() { var vm = _vmCompanion(); if (vm) vm.home(); }
-// The task panel renders inline in this section, so "opening tasks" just
-// re-renders Companion (kept as a named entry point for the module surface).
-function vmCompanionOpenTasks() { refreshCompanionSettings(); }
-function vmCompanionOpenChat() { var vm = _vmCompanion(); if (vm) { vm.toggleChat(); closeSettings(); } }
-function vmCompanionTogglePerm(el, name) {
-  var vm = _vmCompanion(); if (!vm) return;
-  var perms = (vm.getTaskPermissions() || []).slice();
-  if (el.checked) { if (perms.indexOf(name) === -1) perms.push(name); }
-  else { perms = perms.filter(function (x) { return x !== name; }); }
-  vm.setTaskPermissions(perms);
-}
-
-// ── Companion visibility control (ONE interface, per-platform adapters) ──────
-// The Settings toggle "Show companion outside ValleyMind" is the SINGLE user
-// control. It drives vmCompanionControl(), which selects exactly one adapter:
-//   * windows-app     - the packaged Windows app (Electron IPC: no helper, no
-//                       port, no separate process; the app owns the window)
-//   * android-overlay - a native Android wrapper exposing window.vmCompanionAndroid
-//                       (system overlay). Not present in a browser/PWA.
-//   * controller      - the loopback helper (desktop/controller.py) used by the
-//                       hosted website on a desktop, so it keeps working.
-// Every adapter reports what the platform ACTUALLY did; unsupported
-// environments get an accurate limitation instead of a fake success.
-//
-// The always-on controller (desktop/controller.py) owns the small loopback-only
-// endpoint on a fixed port and launches the companion on demand, so turning the
-// toggle on starts everything automatically - no manual launcher needed.
-// Loopback is a secure context, so this works from the local and hosted site.
-var VM_DESKTOP_CONTROL_URL = "http://127.0.0.1:8737";
-var VM_DESKTOP_SETUP_HINT = "The desktop helper isn\u2019t running. Run desktop\\install-companion.ps1 once to enable automatic start.";
-var _vmDesktopPollToken = 0;
-var _vmDesktopSubscribed = false;
-
-// Adapter: packaged Windows app. window.vmDesktop is a direct IPC bridge - no
-// controller process and no loopback port - so the main app window is untouched.
-function _vmDesktopBridge() {
-  return (window.vmDesktop && typeof window.vmDesktop.setCompanionVisible === "function") ? window.vmDesktop : null;
-}
-// Adapter: a native Android wrapper (Capacitor/WebView + system overlay). Absent
-// today, so a browser/PWA is honestly reported as unable to float an overlay.
-function _vmCompanionAndroidBridge() {
-  return (window.vmCompanionAndroid && typeof window.vmCompanionAndroid.setVisible === "function") ? window.vmCompanionAndroid : null;
-}
-// Coarse platform detection, only used to choose an ACCURATE limitation message.
-function _vmCompanionPlatform() {
-  var ua = (typeof navigator !== "undefined" && navigator.userAgent) || "";
-  if (/Android/i.test(ua)) return "android";
-  if (/iPhone|iPad|iPod/i.test(ua)) return "ios";
-  if (/Windows/i.test(ua)) return "windows";
-  if (/Macintosh|Mac OS X/i.test(ua)) return "mac";
-  if (/Linux|X11/i.test(ua)) return "linux";
-  return "other";
-}
-// What to say when no native overlay mechanism exists here - never Windows-only
-// wording on a phone, and never a claim that something was shown.
-function vmCompanionLimitationMessage() {
-  var p = _vmCompanionPlatform();
-  if (p === "android") return "This browser or installed PWA can\u2019t float the character over other apps. That needs the ValleyMind Android app (system overlay).";
-  if (p === "ios") return "iOS doesn\u2019t allow a floating overlay from a browser or PWA. This needs the ValleyMind iOS app.";
-  if (p === "windows" || p === "mac" || p === "linux") return "Not running \u2014 " + VM_DESKTOP_SETUP_HINT;
-  return "Floating the companion outside the app isn\u2019t available in this environment.";
-}
-// Select the ONE adapter for this environment. The toggle talks only to this,
-// so Windows and Android share the exact same control flow.
-function vmCompanionControl() {
-  var ipc = _vmDesktopBridge();
-  if (ipc) {
-    return {
-      kind: "windows-app",
-      set: function (on) { return ipc.setCompanionVisible(on); }, // resolves to the ACTUAL visibility
-      subscribe: (typeof ipc.onCompanionVisibility === "function") ? ipc.onCompanionVisibility : null,
-      get: (typeof ipc.getCompanionVisible === "function") ? function () { return ipc.getCompanionVisible(); } : null,
-      unsupported: "Couldn\u2019t control the companion window",
-    };
+  function silence() {
+    try {
+      state.levels = new Array(state.bars.length).fill(0);
+      for (var i = 0; i < state.bars.length; i++) {
+        state.bars[i].style.height = MIN_HEIGHT + "px";
+      }
+    } catch (e) {}
   }
-  var android = _vmCompanionAndroidBridge();
-  if (android) {
-    return {
-      kind: "android-overlay",
-      set: function (on) { return android.setVisible(on); },      // resolves to the ACTUAL overlay state
-      subscribe: (typeof android.onCompanionVisibility === "function") ? android.onCompanionVisibility : null,
-      get: (typeof android.getVisible === "function") ? function () { return android.getVisible(); } : null,
-      // Android cannot float a window without the user granting "draw over other
-      // apps". We ask BEFORE claiming anything is on, and can deep-link the user
-      // to the system screen that grants it.
-      needsPermission: (typeof android.hasPermission === "function") ? function () { return !!android.hasPermission(); } : null,
-      requestPermission: (typeof android.requestPermission === "function") ? function () { return android.requestPermission(); } : null,
-      permissionMessage: "ValleyMind needs permission to draw over other apps. Opening Android settings\u2026",
-      unsupported: "Couldn\u2019t control the companion window",
-    };
-  }
-  var p = _vmCompanionPlatform();
-  if (p === "android" || p === "ios") {
-    // A browser/PWA on mobile can never create a system overlay: say so plainly
-    // rather than pretending (and without a pointless loopback call).
-    return {
-      kind: "unsupported",
-      set: function () { return Promise.reject(new Error("unsupported")); },
-      subscribe: null,
-      get: null,
-      unsupported: vmCompanionLimitationMessage(),
-    };
-  }
-  return { kind: "controller", set: null, subscribe: null, get: null, unsupported: vmCompanionLimitationMessage() };
-}
 
-// ── Presentation-mode coordinator (embedded <-> external) ───────────────────
-// The toggle switches between the EMBEDDED companion (inside ValleyMind) and the
-// EXTERNAL floating window. static/companion_presentation.js owns the invariant
-// that exactly ONE presentation is visible and that a switch never leaves the
-// companion invisible; here we only inject the real embedded-companion handle.
-// The embedded companion is hidden ONLY after external visibility is CONFIRMED,
-// and restored on OFF / failure, so the character can never vanish because of a
-// mode switch. The hide is non-persisting (vm.hide() never writes prefs), so a
-// reload always starts with the embedded companion visible again.
-var _vmPresentation = null;
-function _vmCompanionPresentation() {
-  if (_vmPresentation) return _vmPresentation;
-  var factory = (window.VmCompanionPresentation && window.VmCompanionPresentation.createCoordinator);
-  if (typeof factory !== "function") return null;
-  _vmPresentation = factory({
-    getEmbedded: function () {
-      var vm = window.vmVrmCompanion;
-      return (vm && typeof vm.isVisible === "function" && typeof vm.hide === "function" && typeof vm.show === "function") ? vm : null;
-    },
-  });
-  return _vmPresentation;
-}
-// Apply a KNOWN external visibility to the embedded companion: `on === true`
-// (external CONFIRMED on) hides the embedded companion; false restores it.
-function _vmCompanionApplyExternal(on) {
-  var pres = _vmCompanionPresentation();
-  if (!pres) return;
-  pres.reconcile(!!on);
-}
+  // ------------------------------------------------------------------ DOM/CSS
+  function injectCss() {
+    try {
+      if (document.getElementById("vmWaveCss")) return;
+      var style = document.createElement("style");
+      style.id = "vmWaveCss";
+      style.textContent =
+        "#vmWaveContainer{" +
+        "display:none;" +
+        "position:relative;" +
+        "z-index:50;" +
+        "height:34px;" +
+        "width:100%;" +
+        "max-width:100%;" +
+        "min-width:0;" +
+        "margin:0;" +
+        "padding:0 12px;" +
+        "background:rgba(0,0,0,0.35);" +
+        "border-radius:8px;" +
+        "display:flex;" +
+        "align-items:center;" +
+        "gap:2px;" +
+        "box-sizing:border-box;" +
+        "overflow:hidden;" +
+        "}" +
+        ".vmWaveBar{" +
+        "width:" + BAR_WIDTH + "px;" +
+        "border-radius:" + (BAR_WIDTH / 2) + "px;" +
+        "flex:0 0 " + BAR_WIDTH + "px;" +
+        "height:" + MIN_HEIGHT + "px;" +
+        "background:" + ACCENT + ";" +
+        "display:block;" +
+        "transform-origin:bottom;" +
+        "margin:0 1.5px;" +
+        "}" +
+        "#vmWaveContainer.vmWaveActive{" +
+        "display:flex;" +
+        "}" +
+        "#vmWaveBars{" +
+        "display:flex !important;" +
+        "flex-direction:row !important;" +
+        "flex-wrap:nowrap !important;" +
+        "align-items:center !important;" +
+        "justify-content:center !important;" +
+        "width:100% !important;" +
+        "max-width:100% !important;" +
+        "overflow:hidden !important;" +
+        "height:32px !important;" +
+        "}";
+      var head = document.head || document.getElementsByTagName("head")[0];
+      if (head) head.appendChild(style);
+    } catch (e) {}
+  }
 
-function _vmCompanionDiag(stage, detail) {
-  try {
-    var d = {
-      t: Date.now(),
-      stage: String(stage),
-      adapter: vmCompanionControl().kind,
-      platform: _vmCompanionPlatform(),
-      origin: (typeof location !== "undefined" && location.origin) || "",
-      electronApp: !!(_vmDesktopBridge() && window.vmDesktop && window.vmDesktop.isDesktop),
-      desktopBridge: !!_vmDesktopBridge(),
-      androidBridge: !!_vmCompanionAndroidBridge(),
-      controlUrl: VM_DESKTOP_CONTROL_URL,
-    };
-    if (detail) { for (var k in detail) { if (Object.prototype.hasOwnProperty.call(detail, k)) d[k] = detail[k]; } }
-    if (!window.__vmCompanionDiag) window.__vmCompanionDiag = [];
-    window.__vmCompanionDiag.push(d);
-    if (window.__vmCompanionDiag.length > 60) window.__vmCompanionDiag.shift();
-    if (typeof console !== "undefined" && console.warn) console.warn("[vm-companion-toggle] " + d.stage, d);
-    return d;
-  } catch (e) {
-    return null;
+  function cancelRaf() {
+    try {
+      if (state.raf) {
+        cancelAnimationFrame(state.raf);
+        state.raf = null;
+      }
+    } catch (e) {}
   }
-}
 
-function vmCompanionDesktopPref(label, color) {
-  var el = document.getElementById("vmCompanionDesktopStatus");
-  if (el) { el.textContent = label; el.style.color = color || "#475569"; }
-  _vmCompanionDiag("status", { label: label, warn: color === "#f59e0b" });
-}
-function vmCompanionSetDesktopToggle(on) {
-  var t = document.getElementById("vmSetDesktopVisible");
-  if (t) t.checked = !!on;
-}
-// Loopback control calls retry a few times: the helper may be mid-startup, or
-// Windows may briefly stall a loopback connection. Without this, a single blip
-// would look like "unreachable" and could revert the toggle. Only after every
-// attempt fails do we treat the helper as genuinely unreachable.
-function _vmCompanionFetch(path, opts) {
-  var url = VM_DESKTOP_CONTROL_URL + path;
-  var attempts = 4;
-  function attempt(n) {
-    return fetch(url, opts).catch(function (e) {
-      if (n <= 1) throw e;
-      return new Promise(function (res) { setTimeout(res, 300); }).then(function () {
-        return attempt(n - 1);
-      });
-    });
-  }
-  return attempt(attempts);
-}
-function vmCompanionRefreshDesktopState() {
-  if (!document.getElementById("vmSetDesktopVisible")) return;
-  _vmCompanionDiag("panel-refresh");
-  var ctrl = vmCompanionControl();
-  if (ctrl.kind === "unsupported") {
-    vmCompanionSetDesktopToggle(false);
-    vmCompanionDesktopPref(ctrl.unsupported, "#f59e0b");
-    return;
-  }
-  if (ctrl.kind !== "controller") {
-    // Native adapters (Windows app / Android overlay): subscribe to changes and
-    // read the current ACTUAL state. No loopback port is involved.
-    if (ctrl.subscribe && !_vmDesktopSubscribed) {
-      _vmDesktopSubscribed = true;
-      ctrl.subscribe(function (on) {
-        _vmCompanionDiag("native-broadcast", { visible: !!on });
-        _vmCompanionApplyExternal(!!on);
-        vmCompanionSetDesktopToggle(!!on);
-        vmCompanionDesktopPref(on ? "Showing outside ValleyMind" : "Hidden \u2014 the character stays in this app");
-      });
-    }
-    if (ctrl.get) {
-      Promise.resolve(ctrl.get())
-        .then(function (on) {
-          _vmCompanionDiag("native-get", { visible: !!on });
-          _vmCompanionApplyExternal(!!on);
-          vmCompanionSetDesktopToggle(!!on);
-          vmCompanionDesktopPref(on ? "Showing outside ValleyMind" : "Hidden \u2014 the character stays in this app");
-        })
-        .catch(function (e) {
-          // Couldn't read the real state: never leave the companion hidden on a
-          // false assumption — restore the embedded companion.
-          _vmCompanionDiag("native-get-error", { error: (e && e.message) || String(e) });
-          _vmCompanionApplyExternal(false);
-          vmCompanionDesktopPref(ctrl.unsupported, "#f59e0b");
+  function releaseAll() {
+    cancelRaf();
+    try {
+      if (state.stream) {
+        var tracks = state.stream.getTracks || function () { return []; };
+        tracks().forEach(function (t) {
+          try { t.stop(); } catch (e) {}
         });
-    }
-    return;
-  }
-  if (!window.fetch) { vmCompanionDesktopPref(vmCompanionLimitationMessage(), "#f59e0b"); return; }
-  _vmCompanionFetch("/state", { method: "GET" })
-    .then(function (r) { return r.ok ? r.json() : null; })
-    .then(function (j) {
-      if (j && j.running) {
-        _vmCompanionApplyExternal(!!j.visible);
-        vmCompanionSetDesktopToggle(j.visible);
-        vmCompanionDesktopPref(j.visible ? "Running \u2014 showing on your desktop" : "Running \u2014 hidden");
-      } else {
-        throw new Error("no state");
+        state.stream = null;
       }
-    })
-    .catch(function (e) {
-      _vmCompanionDiag("controller-state-error", { error: (e && e.message) || String(e) });
-      _vmCompanionApplyExternal(false);
-      vmCompanionSetDesktopToggle(false);
-      vmCompanionDesktopPref(vmCompanionLimitationMessage(), "#f59e0b");
-    });
-}
-// Confirm the REAL native window state instead of trusting the request. Polls
-// the controller until the window actually matches the intent, then reconciles
-// the switch. On timeout it restores the last known real state - never a false
-// ON for a window that is not on screen.
-function vmCompanionPollDesktopUntilVisible(token, desired) {
-  desired = !!desired;
-  var started = Date.now();
-  (function tick() {
-    if (token !== _vmDesktopPollToken) return;
-    if (!document.getElementById("vmSetDesktopVisible")) return; // panel closed
-    _vmCompanionFetch("/state", { method: "GET" })
-      .then(function (r) { return r.ok ? r.json() : null; })
-      .then(function (j) {
-        if (token !== _vmDesktopPollToken) return;
-        if (j && j.visible === desired) {
-          // External visibility is CONFIRMED: hide the embedded companion when
-          // it is on, restore it when it is off. This is the only place the
-          // embedded companion is hidden/shown by the toggle.
-          _vmCompanionDiag("confirm-ok", { desired: desired, state: j });
-          _vmCompanionApplyExternal(desired);
-          vmCompanionSetDesktopToggle(desired);
-          vmCompanionDesktopPref(desired ? "Showing on your desktop" : "Hidden \u2014 the character stays in this app");
-          return;
-        }
-        if (Date.now() - started > 45000) {
-          // Never claim a state we could not confirm: reconcile to the REAL
-          // visibility the controller last reported.
-          var actual = !!(j && j.visible === true);
-          _vmCompanionDiag("confirm-timeout", { desired: desired, state: j, waitedMs: Date.now() - started });
-          _vmCompanionApplyExternal(actual);
-          if (!actual) vmCompanionSetDesktopToggle(false);
-          vmCompanionDesktopPref(desired
-            ? "The companion didn\u2019t appear. " + VM_DESKTOP_SETUP_HINT
-            : "Couldn\u2019t confirm the companion is hidden.", "#f59e0b");
-          return;
-        }
-        vmCompanionDesktopPref(desired ? "Starting the companion\u2026" : "Hiding the companion\u2026");
-        setTimeout(tick, 1200);
-      })
-      .catch(function (e) {
-        if (token !== _vmDesktopPollToken) return;
-        if (Date.now() - started > 45000) {
-          // Lost the helper: it cannot be showing, so bring the character back.
-          _vmCompanionDiag("confirm-lost-helper", { desired: desired, error: (e && e.message) || String(e) });
-          _vmCompanionApplyExternal(false);
-          vmCompanionSetDesktopToggle(false);
-          vmCompanionDesktopPref("Lost contact with the desktop helper. " + VM_DESKTOP_SETUP_HINT, "#f59e0b");
-        } else setTimeout(tick, 1200);
-      });
-  })();
-}
-function vmCompanionSetDesktopVisible(on) {
-  on = !!on;
-  _vmCompanionDiag("toggle-request", { requested: on });
-  var token = ++_vmDesktopPollToken;
-  var ctrl = vmCompanionControl();
-  if (on && ctrl.kind === "controller") {
-    // The controller path can only confirm ON once the floating window really
-    // appears. Do NOT flip the switch on optimistically: a slow or missing
-    // helper would then show as a confusing "on, then straight back off".
-    vmCompanionDesktopPref("Turning on\u2026");
-  } else {
-    // Native adapters confirm within milliseconds and hiding is instant, so move
-    // the switch now for a responsive feel and reconcile to the confirmed state.
-    vmCompanionSetDesktopToggle(on);
-    vmCompanionDesktopPref(on ? "Turning on\u2026" : "Hiding\u2026");
-  }
-  // Going back to the embedded mode is requested: bring the embedded companion
-  // back AT ONCE so the character never sits invisible while the external window
-  // is being hidden. (Hidden only ever happened because external was confirmed
-  // on, so this restores exactly what we hid.) The confirmation step below
-  // reconciles again if the external window could not actually be hidden.
-  if (!on) _vmCompanionApplyExternal(false);
-
-  if (on && ctrl.needsPermission && !ctrl.needsPermission()) {
-    // Turning ON requires a platform permission the user has NOT granted yet
-    // (Android "draw over other apps"). Never claim the overlay is on: keep the
-    // switch off, keep the embedded companion visible, explain why, and open the
-    // system screen that grants it. When the user returns, the native side
-    // re-checks permission and pushes the real state back to this toggle.
-    _vmCompanionDiag("permission-required", { adapter: ctrl.kind });
-    _vmCompanionApplyExternal(false);
-    vmCompanionSetDesktopToggle(false);
-    vmCompanionDesktopPref(ctrl.permissionMessage || ctrl.unsupported, "#f59e0b");
-    if (ctrl.requestPermission) { try { ctrl.requestPermission(); } catch (e) { /* ignore */ } }
-    return;
+    } catch (e) {}
+    try {
+      if (state.ctx) {
+        try { state.ctx.close(); } catch (e) {}
+        state.ctx = null;
+      }
+    } catch (e) {}
+    try {
+      if (state.source) {
+        try { state.source.disconnect(); } catch (e) {}
+        state.source = null;
+      }
+    } catch (e) {}
+    state.analyser = null;
+    state.activeKind = null;
+    state.fallback = false;
+    state.token++;
   }
 
-  if (ctrl.kind !== "controller") {
-    // Native adapters: the promise resolves to the ACTUAL resulting state, so
-    // the toggle and status text never lie. "unsupported" rejects and reverts.
-    var pending;
-    try { pending = ctrl.set(on); } catch (e) { pending = Promise.reject(e); }
-    Promise.resolve(pending)
-      .then(function (actual) {
-        if (token !== _vmDesktopPollToken) return;
-        var vis = (typeof actual === "boolean") ? actual : on;
-        _vmCompanionDiag("native-result", { requested: on, actual: actual, resolved: vis });
-        // Only after the native window CONFIRMS its state do we hide/show the
-        // embedded companion, so a failed activation never leaves it hidden.
-        _vmCompanionApplyExternal(vis);
-        vmCompanionSetDesktopToggle(vis);
-        vmCompanionDesktopPref(vis ? "Showing outside ValleyMind" : "Hidden \u2014 the character stays in this app");
-      })
-      .catch(function (e) {
-        if (token !== _vmDesktopPollToken) return;
-        _vmCompanionDiag("native-error", { requested: on, error: (e && e.message) || String(e) });
-        _vmCompanionApplyExternal(false);
-        vmCompanionSetDesktopToggle(false);
-        vmCompanionDesktopPref(ctrl.unsupported, "#f59e0b");
-      });
-    return;
+  // --------------------------------------------------------------- render loop
+  function render() {
+    try {
+      if (!state.activeKind) return;
+      var newLevel = 0;
+      if (state.analyser) {
+        var buf = new Uint8Array(state.analyser.frequencyBinCount);
+        state.analyser.getByteTimeDomainData(buf);
+        var sum = 0;
+        for (var i = 0; i < buf.length; i++) sum += Math.abs(buf[i] - 128);
+        var raw = Math.min(1, sum / buf.length / 128);
+        newLevel = raw;
+      } else if (state.fallback) {
+        var now = Date.now();
+        var elapsed = now - state.lastPulse;
+        var decay = Math.max(0, 1 - elapsed / DECAY_MS);
+        newLevel = Math.max(0, state.voiceLevel * decay);
+      }
+      setLevels([newLevel]);
+      state.raf = requestAnimationFrame(render);
+    } catch (e) {
+      state.raf = null;
+    }
   }
 
-  if (!window.fetch) {
-    _vmCompanionApplyExternal(false);
-    vmCompanionSetDesktopToggle(false);
-    vmCompanionDesktopPref(vmCompanionLimitationMessage(), "#f59e0b");
-    return;
-  }
-  _vmCompanionFetch("/visibility", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ visible: on }),
-  })
-    .then(function (r) { return r.ok ? r.json() : null; })
-    .then(function (j) {
-      if (token !== _vmDesktopPollToken) return;
-      if (!j || !j.ok) {
-        _vmCompanionDiag("controller-refused", { requested: on, response: j });
-        _vmCompanionApplyExternal(false);
-        vmCompanionSetDesktopToggle(false);
-        vmCompanionDesktopPref("The desktop helper refused the request. " + VM_DESKTOP_SETUP_HINT, "#f59e0b");
+  // ---------------------------------------------------------------- user mic
+  function startUser() {
+    try {
+      navigator.mediaDevices = navigator.mediaDevices || {};
+      if (!navigator.mediaDevices.getUserMedia) {
+        state.fallback = true;
+        state.lastPulse = Date.now() - 999999;
+        state.raf = requestAnimationFrame(render);
         return;
       }
-      // Confirm the REAL window state rather than trusting the request.
-      vmCompanionPollDesktopUntilVisible(token, on);
-    })
-    .catch(function (e) {
-      if (token !== _vmDesktopPollToken) return;
-      _vmCompanionDiag("controller-unreachable", { requested: on, error: (e && e.message) || String(e) });
-      _vmCompanionApplyExternal(false);
-      vmCompanionSetDesktopToggle(false);
-      vmCompanionDesktopPref(vmCompanionLimitationMessage(), "#f59e0b");
-    });
-}
-
-// ══════════════════════════════════════════════════════════════
-// NOTIFICATIONS
-// ══════════════════════════════════════════════════════════════
-
-function renderNotificationsSection(container) {
-  container.innerHTML = _SH.sectionHeader("Notifications", "Control how ValleyMind communicates with you");
-  settingsApiGet("notifications").then(function (d) {
-    var data = d.data || {};
-    container.innerHTML = _SH.sectionHeader("Notifications", "Control how ValleyMind communicates with you") +
-      _SH.card("Notification Preferences", '<div style="display:flex;flex-direction:column;">' +
-        _SH.row("Daily Summary", _SH.toggle("notifDaily", data.daily_summary !== false), "Receive a daily summary from ValleyMind") +
-        _SH.row("Deadlines", _SH.toggle("notifDeadlines", data.deadlines !== false), "Notify about approaching deadlines") +
-        _SH.row("AI Suggestions", _SH.toggle("notifSuggestions", data.ai_suggestions === true), "Receive proactive AI suggestions") +
-        _SH.row("Project Updates", _SH.toggle("notifProjects", data.project_updates !== false), "Get notified about project changes") +
-        _SH.row("Memory Reminders", _SH.toggle("notifMemory", data.memory_reminders !== false), "Periodic memory review reminders") + '</div>') +
-      _SH.card("Delivery Methods", '<div style="display:flex;flex-direction:column;">' +
-        _SH.row("Email Notifications", _SH.toggle("notifEmail", data.email_notifications !== false), "Receive notifications via email") +
-        _SH.row("Push Notifications", _SH.toggle("notifPush", data.push_notifications !== false), "Receive push notifications in browser") + '</div>') +
-      '<div style="margin-top:4px;">' + _SH.btn("Save Notification Preferences", "saveNotifications()", "rgba(0,212,255,0.8)") + _SH.statusSpan("notifStatus") + '</div>';
-  }).catch(function () { container.innerHTML = _SH.sectionHeader("Notifications") + '<p style="color:#64748b;">Could not load notification settings.</p>'; });
-}
-
-function saveNotifications() {
-  var push = _getChecked("notifPush");
-  _saveSettingsAndShow("notifications", {
-    daily_summary: _getChecked("notifDaily"), deadlines: _getChecked("notifDeadlines"),
-    ai_suggestions: _getChecked("notifSuggestions"), project_updates: _getChecked("notifProjects"),
-    memory_reminders: _getChecked("notifMemory"), email_notifications: _getChecked("notifEmail"),
-    push_notifications: push,
-  }, "notifStatus");
-  // Make browser push actually work: remember the choice and, when enabling,
-  // ask for permission and fire a confirmation so the user sees it working.
-  try {
-    localStorage.setItem("vm_push", push ? "1" : "0");
-    if (push && "Notification" in window) {
-      if (Notification.permission === "granted") {
-        if (window.vmNotify) window.vmNotify("Notifications on", "ValleyMind will let you know when things are ready.");
-      } else if (Notification.permission !== "denied") {
-        Notification.requestPermission().then(function (p) {
-          if (p === "granted" && window.vmNotify) {
-            window.vmNotify("Notifications on", "ValleyMind will let you know when things are ready.");
+      var myToken = ++state.token;
+      navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
+        // Guard against late results: if stop() was called meanwhile, ignore.
+        if (myToken !== state.token) {
+          try { stream.getTracks().forEach(function (t) { try { t.stop(); } catch (e) {} }); } catch (e) {}
+          return;
+        }
+        try {
+          state.stream = stream;
+          var ctx = ensureContext();
+          if (!ctx || !ctx.createMediaStreamSource) {
+            state.fallback = true;
+            state.lastPulse = Date.now() - 999999;
+            state.raf = requestAnimationFrame(render);
+            return;
           }
+          state.source = ctx.createMediaStreamSource(stream);
+          state.analyser = ctx.createAnalyser();
+          state.analyser.fftSize = 2048;
+          state.source.connect(state.analyser);
+          state.raf = requestAnimationFrame(render);
+        } catch (e) {
+          state.fallback = true;
+          state.lastPulse = Date.now() - 999999;
+          state.raf = requestAnimationFrame(render);
+        }
+      }).catch(function () {
+        state.fallback = true;
+        state.lastPulse = Date.now() - 999999;
+        state.raf = requestAnimationFrame(render);
+      });
+    } catch (e) {
+      state.fallback = true;
+      state.lastPulse = Date.now() - 999999;
+      state.raf = requestAnimationFrame(render);
+    }
+  }
+
+  // ---------------------------------------------------------------- ai tts
+  // NOTE: We intentionally do NOT use createMediaElementSource (it can silence
+  // the audio). Use the fallback animation instead.
+  function startAi() {
+    try {
+      state.fallback = true;
+      state.lastPulse = Date.now() - 999999;
+      state.raf = requestAnimationFrame(render);
+    } catch (e) {}
+  }
+
+  // ------------------------------------------------------------------ public
+  function userPulse() {
+    try {
+      if (!state.activeKind || state.activeKind !== "user") return;
+      state.voiceLevel = 1;
+      state.lastPulse = Date.now();
+    } catch (e) {}
+  }
+
+  function start(kind) {
+    try {
+      if (!kind) return;
+      injectCss();
+      var container = document.getElementById("vmWaveContainer");
+      if (container) {
+        state.container = container;
+        var bp = document.getElementById("vmWaveBars");
+        if (bp) state.barsParent = bp;
+      }
+      releaseAll();
+      state.activeKind = kind;
+      if (state.container) {
+        try { state.container.style.display = "flex"; } catch (e) {}
+        try { state.container.classList.add("vmWaveActive"); } catch (e) {}
+        // Measure bar count AFTER container is displayed (width is 0 while
+        // display:none), so bars span the full composer width.
+        requestAnimationFrame(function () {
+          try {
+            var nc = recomputeBarCount();
+            if (state.bars.length !== nc) {
+              var oldBars = state.bars;
+              state.bars = [];
+              state.barsParent.innerHTML = "";
+              buildBars(nc);
+              // Transfer recent levels.
+              var k = Math.min(oldBars.length, state.bars.length);
+              for (var i = 0; i < k; i++) {
+                state.bars[i].style.height = oldBars[i].style.height;
+              }
+            }
+          } catch (e) {}
         });
       }
-    }
-  } catch (e) { /* non-fatal */ }
-}
+      if (kind === "user") startUser();
+      else if (kind === "ai") startAi();
+    } catch (e) {}
+  }
 
-// ══════════════════════════════════════════════════════════════
-// KNOWLEDGE BASE
-// ══════════════════════════════════════════════════════════════
+  function stop() {
+    try {
+      releaseAll();
+      if (state.container) {
+        try { state.container.style.display = "none"; } catch (e) {}
+        try { state.container.classList.remove("vmWaveActive"); } catch (e) {}
+      }
+      silence();
+      state.activeKind = null;
+    } catch (e) {}
+  }
 
-function renderKnowledgeSection(container) {
-  container.innerHTML = _SH.sectionHeader("Knowledge Base", "Upload documents, PDFs, and notes — ValleyMind uses this for context");
-  apiFetch("/api/settings/knowledge", { credentials: "include", headers: authHeaders() })
-    .then(function (r) { return r.json(); }).then(function (d) {
-      var items = d.items || [];
-      var icons = { pdf: "PDF", doc: "DOC", txt: "TXT", website: "WEB", image: "IMG", note: "NOTE" };
-      var listHtml = items.length > 0 ? items.map(function (item) {
-        var badge = icons[item.type] || "NOTE";
-        var chars = (item.content ? item.content.length : 0);
-        var meta = chars > 0 ? (chars > 999 ? (Math.round(chars / 100) / 10) + "k chars" : chars + " chars") : "";
-        return '<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:rgba(15,23,42,0.5);border-radius:8px;margin-bottom:4px;"><span style="font-size:9px;font-weight:700;color:#00d4ff;background:rgba(0,212,255,0.1);padding:2px 6px;border-radius:4px;">' + badge + '</span><div style="flex:1;min-width:0;"><span style="color:#e2e8f0;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block;">' + item.title + '</span>' + (meta ? '<span style="color:#64748b;font-size:10px;">' + meta + '</span>' : '') + '</div><button onclick="deleteKnowledgeItem(\'' + item.id + '\')" style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:14px;">&times;</button></div>';
-      }).join("") : '<p style="color:#475569;font-size:12px;">No items yet.</p>';
-      container.innerHTML = _SH.sectionHeader("Knowledge Base", "Upload PDFs, text files and notes — ValleyMind reads them when you chat") +
-        _SH.card("Add to Knowledge Base", '<div style="display:flex;gap:8px;flex-wrap:wrap;">' + _SH.btn("Add Note", "showAddKnowledgeNote()") + _SH.btn("Upload PDF", "document.getElementById('knowPdfInput').click()") + _SH.btn("Upload Text File", "document.getElementById('knowTxtInput').click()") + '</div>' +
-          '<input type="file" id="knowPdfInput" accept="application/pdf,.pdf" style="display:none;" onchange="uploadKnowledgePdf(this)">' +
-          '<input type="file" id="knowTxtInput" accept=".txt,.md,text/plain,text/markdown" style="display:none;" onchange="uploadKnowledgeTxt(this)">' +
-          '<div id="knowledgeAddForm" style="margin-top:10px;"></div><div id="knowUploadStatus" style="margin-top:8px;font-size:11px;color:#94a3b8;"></div>') +
-        _SH.card("Your Knowledge Items", listHtml);
-    }).catch(function () { container.innerHTML = _SH.sectionHeader("Knowledge Base") + '<p style="color:#64748b;">Could not load knowledge base.</p>'; });
-}
-
-function showAddKnowledgeNote() {
-  var form = document.getElementById("knowledgeAddForm");
-  if (!form) return;
-  form.innerHTML = '<div style="background:rgba(15,23,42,0.5);border-radius:8px;padding:12px;">' + _SH.input("Note title", "knowledgeNoteTitle") + '<div style="height:6px;"></div>' + _SH.textarea("Write your note content...", "knowledgeNoteContent") + '<div style="margin-top:8px;">' + _SH.btn("Save Note", "saveKnowledgeNote()", "rgba(0,212,255,0.8)") + ' <span style="font-size:11px;color:#94a3b8;" id="knowStatus"></span></div></div>';
-}
-
-function saveKnowledgeNote() {
-  var title = _getVal("knowledgeNoteTitle");
-  var content = _getVal("knowledgeNoteContent");
-  if (!title || !content) { var el = document.getElementById("knowStatus"); if (el) el.textContent = "Title and content required."; return; }
-  apiFetch("/api/settings/knowledge", { method: "POST", credentials: "include", headers: authHeaders({ "Content-Type": "application/json" }), body: JSON.stringify({ type: "note", title: title, content: content }) })
-    .then(function (r) { return r.json(); }).then(function () { _showSaved(); renderSettingsContent("knowledge"); })
-    .catch(function () { alert("Failed to save."); });
-}
-
-function _knowStatus(msg, color) {
-  var el = document.getElementById("knowUploadStatus");
-  if (el) { el.textContent = msg || ""; el.style.color = color || "#94a3b8"; }
-}
-
-function _postKnowledgeDoc(type, title, content) {
-  content = (content || "").replace(/\s+\n/g, "\n").trim();
-  if (!content) { _knowStatus("Couldn't read any text from that file.", "#ef4444"); return; }
-  _knowStatus("Saving “" + title + "”…");
-  apiFetch("/api/settings/knowledge", { method: "POST", credentials: "include", headers: authHeaders({ "Content-Type": "application/json" }), body: JSON.stringify({ type: type, title: title, content: content }) })
-    .then(function (r) { return r.json(); })
-    .then(function () { renderSettingsContent("knowledge"); })
-    .catch(function () { _knowStatus("Failed to save the document.", "#ef4444"); });
-}
-
-// Extract PDF text in the browser with the pdf.js already loaded by index.html.
-function uploadKnowledgePdf(input) {
-  var file = input.files && input.files[0];
-  input.value = "";
-  if (!file) return;
-  if (!window.pdfjsLib) { _knowStatus("PDF reader not available.", "#ef4444"); return; }
-  // pdf.js needs its worker; index.html loads v3.11.174 from cdnjs.
+  var api = { start: start, stop: stop, userPulse: userPulse };
   try {
-    if (window.pdfjsLib.GlobalWorkerOptions && !window.pdfjsLib.GlobalWorkerOptions.workerSrc) {
-      window.pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
-    }
-  } catch (e) { /* non-fatal */ }
-  var title = file.name.replace(/\.pdf$/i, "");
-  _knowStatus("Reading “" + file.name + "”…");
-  var reader = new FileReader();
-  reader.onload = function () {
-    var task = window.pdfjsLib.getDocument({ data: new Uint8Array(reader.result) });
-    task.promise.then(function (pdf) {
-      var pages = [];
-      var seq = Promise.resolve();
-      for (var i = 1; i <= pdf.numPages; i++) {
-        (function (n) {
-          seq = seq.then(function () {
-            _knowStatus("Extracting page " + n + " of " + pdf.numPages + "…");
-            return pdf.getPage(n).then(function (page) {
-              return page.getTextContent().then(function (tc) {
-                pages.push(tc.items.map(function (it) { return it.str; }).join(" "));
-              });
-            });
+    if (typeof window !== "undefined") {
+      window.vmWave = api;
+      // Recompute bar count on resize so the wave spans the full composer width.
+      try {
+        window.addEventListener("resize", function () {
+          try {
+            var nc = recomputeBarCount();
+            if (state.barsParent && state.bars.length !== nc && state.activeKind) {
+              var oldBars = state.bars;
+              state.bars = [];
+              state.barsParent.innerHTML = "";
+              buildBars(nc);
+              var k = Math.min(oldBars.length, state.bars.length);
+              for (var i = 0; i < k; i++) {
+                state.bars[i].style.height = oldBars[i].style.height;
+              }
+            }
+          } catch (e) {}
+        });
+      } catch (e) {}
+      // Recompute bar count when the container size changes (e.g. composer
+      // width changes on phone vs laptop).
+      try {
+        if (state.barsParent && typeof ResizeObserver !== "undefined") {
+          state.resizeObserver = new ResizeObserver(function () {
+            try {
+              var nc = recomputeBarCount();
+              if (state.bars.length !== nc && state.activeKind) {
+                var oldBars = state.bars;
+                state.bars = [];
+                state.barsParent.innerHTML = "";
+                buildBars(nc);
+                var k = Math.min(oldBars.length, state.bars.length);
+                for (var i = 0; i < k; i++) {
+                  state.bars[i].style.height = oldBars[i].style.height;
+                }
+              }
+            } catch (e) {}
           });
-        })(i);
-      }
-      seq.then(function () { _postKnowledgeDoc("pdf", title, pages.join("\n\n")); })
-        .catch(function () { _knowStatus("Couldn't extract text from that PDF.", "#ef4444"); });
-    }).catch(function () { _knowStatus("That PDF couldn't be opened.", "#ef4444"); });
-  };
-  reader.onerror = function () { _knowStatus("Couldn't read that file.", "#ef4444"); };
-  reader.readAsArrayBuffer(file);
-}
-
-function uploadKnowledgeTxt(input) {
-  var file = input.files && input.files[0];
-  input.value = "";
-  if (!file) return;
-  var title = file.name.replace(/\.(txt|md)$/i, "");
-  var reader = new FileReader();
-  reader.onload = function () { _postKnowledgeDoc(/\.md$/i.test(file.name) ? "doc" : "txt", title, String(reader.result || "")); };
-  reader.onerror = function () { _knowStatus("Couldn't read that file.", "#ef4444"); };
-  reader.readAsText(file);
-}
-
-function deleteKnowledgeItem(id) {
-  if (!confirm("Delete this item?")) return;
-  apiFetch("/api/settings/knowledge", { method: "DELETE", credentials: "include", headers: authHeaders({ "Content-Type": "application/json" }), body: JSON.stringify({ id: id }) })
-    .then(function (r) { return r.json(); }).then(function () { _showSaved(); renderSettingsContent("knowledge"); })
-    .catch(function () { alert("Failed to delete."); });
-}
-
-// ══════════════════════════════════════════════════════════════
-// MEDIA LIBRARY
-// ══════════════════════════════════════════════════════════════
-
-function renderMediaSection(container) {
-  container.innerHTML = _SH.sectionHeader("Media Library", "All your generated images and videos in one place");
-  apiFetch("/api/settings/media", { credentials: "include", headers: authHeaders() })
-    .then(function (r) { return r.json(); }).then(function (d) {
-      var images = d.images || [];
-      var videos = d.videos || [];
-      var imageHtml = images.length > 0 ? images.map(function (img) {
-        return '<div style="position:relative;border-radius:10px;overflow:hidden;border:1px solid rgba(255,255,255,0.06);background:rgba(15,23,42,0.5);"><img src="' + img.url + '" alt="' + img.name + '" style="width:100%;height:140px;object-fit:cover;display:block;" loading="lazy"><div style="padding:6px 8px;display:flex;align-items:center;justify-content:space-between;background:rgba(2,6,23,0.6);"><span style="color:#94a3b8;font-size:9px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100px;">' + img.name + '</span><div style="display:flex;gap:4px;"><a href="' + img.url + '" download style="background:none;border:none;color:#00d4ff;cursor:pointer;font-size:12px;text-decoration:none;" title="Download">DL</a><button onclick="deleteMedia(\'' + img.url + '\')" style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:12px;padding:0;" title="Delete">&times;</button></div></div></div>';
-      }).join("") : null;
-      container.innerHTML = _SH.sectionHeader("Media Library", "All your generated images and videos in one place") +
-        _SH.card("Images", imageHtml ? '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;">' + imageHtml + '</div>' : '<p style="color:#475569;font-size:12px;">No images yet. Generated images will appear here automatically.</p>') +
-        _SH.card("Videos", '<p style="color:#475569;font-size:12px;">No videos yet. Generated videos will appear here automatically.</p>');
-    }).catch(function () { container.innerHTML = _SH.sectionHeader("Media Library") + '<p style="color:#64748b;">Could not load media library.</p>'; });
-}
-
-function clearGeneratedImages() {
-  if (!confirm("Delete ALL your generated images? This cannot be undone.")) return;
-  var st = document.getElementById("clearImgStatus");
-  if (st) st.textContent = "Loading images…";
-  apiFetch("/api/settings/media", { credentials: "include", headers: authHeaders() })
-    .then(function (r) { return r.json(); }).then(function (d) {
-      var images = d.images || [];
-      if (!images.length) { if (st) st.textContent = "No images to clear."; return; }
-      var i = 0;
-      function next() {
-        if (i >= images.length) { if (st) st.textContent = "Cleared " + images.length + " image(s)."; renderSettingsContent("storage"); return; }
-        if (st) st.textContent = "Deleting " + (i + 1) + " of " + images.length + "…";
-        apiFetch("/api/settings/media", { method: "DELETE", credentials: "include", headers: authHeaders({ "Content-Type": "application/json" }), body: JSON.stringify({ url: images[i].url }) })
-          .then(function () { i++; next(); })
-          .catch(function () { i++; next(); });
-      }
-      next();
-    })
-    .catch(function () { if (st) st.textContent = "Could not load images."; });
-}
-
-function deleteMedia(url) {
-  if (!confirm("Delete this media file?")) return;
-  apiFetch("/api/settings/media", { method: "DELETE", credentials: "include", headers: authHeaders({ "Content-Type": "application/json" }), body: JSON.stringify({ url: url }) })
-    .then(function () { _showSaved(); renderSettingsContent("media"); })
-    .catch(function () { alert("Failed to delete."); });
-}
-
-// ══════════════════════════════════════════════════════════════
-// STORAGE
-// ══════════════════════════════════════════════════════════════
-
-function renderStorageSection(container) {
-  container.innerHTML = _SH.sectionHeader("Storage", "Real-time storage usage");
-  apiFetch("/api/settings/storage", { credentials: "include", headers: authHeaders() })
-    .then(function (r) { return r.json(); }).then(function (d) {
-      var u = d.usage || {};
-      var items = [
-        { label: "Images", key: "images_mb", color: "#00d4ff" },
-        { label: "Videos", key: "videos_mb", color: "#a855f7" },
-        { label: "Documents", key: "documents_mb", color: "#22c55e" },
-        { label: "Knowledge", key: "knowledge_mb", color: "#eab308" },
-        { label: "Memory", key: "memory_mb", color: "#ec4899" },
-        { label: "Cache", key: "cache_mb", color: "#64748b" },
-      ];
-      var bars = items.map(function (item) {
-        var val = u[item.key] || 0;
-        var pct = u.total_mb > 0 ? Math.min((val / u.total_mb) * 100, 100) : 0;
-        return '<div><div style="display:flex;justify-content:space-between;margin-bottom:4px;"><span style="color:#94a3b8;font-size:11px;">' + item.label + '</span><span style="color:#475569;font-size:11px;">' + val + ' MB</span></div><div style="width:100%;height:6px;background:rgba(255,255,255,0.06);border-radius:3px;overflow:hidden;"><div style="width:' + pct + '%;height:100%;background:' + item.color + ';border-radius:3px;transition:width 0.6s;"></div></div></div>';
-      }).join("");
-      var totalPct = u.used_pct || 0;
-      container.innerHTML = _SH.sectionHeader("Storage", "Real-time storage usage") +
-        _SH.card("Usage Breakdown", bars + '<div style="margin-top:16px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.06);">' +
-          '<div style="display:flex;justify-content:space-between;"><span style="color:#e2e8f0;font-size:13px;font-weight:600;">Total Used</span><span style="color:#e2e8f0;font-size:13px;font-weight:600;">' + (u.total_mb || 0) + ' MB</span></div>' +
-          '<div style="display:flex;justify-content:space-between;margin-top:4px;"><span style="color:#64748b;font-size:11px;">Available</span><span style="color:#64748b;font-size:11px;">' + (u.available_mb || 500) + ' MB</span></div>' +
-          '<div style="margin-top:10px;width:100%;height:8px;background:rgba(255,255,255,0.06);border-radius:4px;overflow:hidden;"><div style="width:' + Math.min(totalPct, 100) + '%;height:100%;background:linear-gradient(90deg,#00d4ff,#0ea5e9);border-radius:4px;transition:width 0.6s;"></div></div>' +
-          '<p style="color:#475569;font-size:10px;margin-top:4px;">' + totalPct + '% of 500 MB used</p></div>') +
-        _SH.card("Manage Storage", '<div style="display:flex;gap:8px;flex-wrap:wrap;">' + _SH.btn("Clear Cache", "clearLocalCache()") + _SH.btn("Clear Generated Images", "clearGeneratedImages()") + '</div><span id="clearImgStatus" style="font-size:11px;color:#94a3b8;display:block;margin-top:8px;"></span>');
-    }).catch(function () { container.innerHTML = _SH.sectionHeader("Storage") + '<p style="color:#64748b;">Could not load storage info.</p>'; });
-}
-
-// ══════════════════════════════════════════════════════════════
-// BILLING
-// ══════════════════════════════════════════════════════════════
-
-function renderBillingSection(container) {
-  container.innerHTML = _SH.sectionHeader("Billing", "Manage your subscription — Nigerian Naira (₦)");
-  apiFetch("/api/settings/billing", { credentials: "include", headers: authHeaders() })
-    .then(function (r) { return r.json(); }).then(function (d) {
-      var plans = d.plans || {};
-      var currentPlan = d.plan || "free";
-      var usage = d.usage || {};
-      var planCards = Object.keys(plans).map(function (key) {
-        var p = plans[key];
-        var isCurrent = key === currentPlan;
-        return '<div style="flex:1;min-width:180px;background:' + (isCurrent ? "rgba(0,212,255,0.06)" : "rgba(255,255,255,0.03)") + ';border:1px solid ' + (isCurrent ? "#00d4ff" : "rgba(255,255,255,0.06)") + ';border-radius:12px;padding:16px;"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;"><span style="color:#f1f5f9;font-size:15px;font-weight:700;">' + p.name + '</span>' + (isCurrent ? '<span style="background:rgba(0,212,255,0.15);color:#00d4ff;font-size:9px;padding:2px 6px;border-radius:4px;text-transform:uppercase;">Current</span>' : '') + '</div>' +
-          '<p style="color:#00d4ff;font-size:22px;font-weight:800;margin:0 0 10px;">₦' + p.price.toLocaleString() + '<span style="font-size:11px;color:#64748b;font-weight:400;">/mo</span></p>' +
-          (p.features || []).map(function (f) { return '<div style="display:flex;align-items:center;gap:6px;padding:3px 0;"><span style="color:#22c55e;font-size:12px;">✓</span><span style="color:#94a3b8;font-size:11px;">' + f + '</span></div>'; }).join("") +
-          (isCurrent ? '' : '<div style="margin-top:10px;">' + _SH.btn("Upgrade", "showComingSoon('Upgrade to " + p.name + "')", key === "free" ? "rgba(100,116,139,0.3)" : "rgba(0,212,255,0.8)") + '</div>') + '</div>';
-      }).join("");
-      container.innerHTML = _SH.sectionHeader("Billing", "Manage your subscription — Nigerian Naira (₦)") +
-        _SH.card("Current Plan: " + (plans[currentPlan] ? plans[currentPlan].name : "Free"), '<div style="display:flex;flex-wrap:wrap;gap:12px;">' + planCards + '</div>') +
-        _SH.card("Monthly Usage", '<div style="display:flex;gap:16px;flex-wrap:wrap;">' +
-          '<div style="background:rgba(15,23,42,0.5);border-radius:8px;padding:12px;flex:1;min-width:100px;"><p style="color:#94a3b8;font-size:10px;">Chats Used</p><p style="color:#e2e8f0;font-size:18px;font-weight:700;">' + (usage.monthly_chats || 0) + '</p></div>' +
-          '<div style="background:rgba(15,23,42,0.5);border-radius:8px;padding:12px;flex:1;min-width:100px;"><p style="color:#94a3b8;font-size:10px;">Images</p><p style="color:#e2e8f0;font-size:18px;font-weight:700;">' + (usage.monthly_images || 0) + '</p></div>' +
-          '<div style="background:rgba(15,23,42,0.5);border-radius:8px;padding:12px;flex:1;min-width:100px;"><p style="color:#94a3b8;font-size:10px;">Credits</p><p style="color:#e2e8f0;font-size:18px;font-weight:700;">' + (usage.credits_remaining || 0) + '</p></div></div>') +
-        _SH.card("Billing History", '<p style="color:#475569;font-size:12px;">No billing history yet.</p>') +
-        _SH.card("Payment Methods", '<p style="color:#475569;font-size:12px;">No payment methods saved. Card, bank transfer, and USSD options coming soon.</p>');
-    }).catch(function () { container.innerHTML = _SH.sectionHeader("Billing") + '<p style="color:#64748b;">Could not load billing info.</p>'; });
-}
-
-// ══════════════════════════════════════════════════════════════
-// PRIVACY & SECURITY
-// ══════════════════════════════════════════════════════════════
-
-function renderPrivacySection(container) {
-  container.innerHTML = _SH.sectionHeader("Privacy & Security", "Control your data and account security") +
-    _SH.card("Data Management", '<div style="display:flex;flex-wrap:wrap;gap:8px;">' +
-      _SH.btn("Export My Data", "exportMyData()") +
-      _SH.btn("Download Data", "exportMyData()") +
-      _SH.btn("Delete All Chats", "confirmDeleteChats()", "rgba(239,68,68,0.15)") +
-      _SH.btn("Clear Memory", "confirmClearMemory()", "rgba(239,68,68,0.15)") +
-      _SH.btn("Clear Local Cache", "clearLocalCache()") + '</div>') +
-    _SH.card("Privacy Controls", '<div style="display:flex;flex-direction:column;">' +
-      _SH.row("Data Retention", _SH.select(["30 days", "90 days", "1 year", "Forever"], "privacyRetention", "1 year"), "How long ValleyMind keeps your data") + '</div>') +
-    _SH.card("Account Actions", '<div style="display:flex;flex-wrap:wrap;gap:8px;">' +
-      _SH.btn("Logout", "confirmLogout()", "rgba(239,68,68,0.15)") +
-      _SH.btn("Delete Account", "confirmDeleteAccount()", "rgba(239,68,68,0.15)") + '</div>') +
-    _SH.card("Security Notes", '<p style="color:#94a3b8;font-size:12px;line-height:1.6;margin:0;">Your data is stored securely. ValleyMind uses encryption for all communications. Regular security audits are performed.</p>');
-}
-
-function confirmDeleteChats() {
-  if (confirm("Delete all chat history? This cannot be undone.")) {
-    apiFetch("/chat/sessions", { method: "DELETE", credentials: "include", headers: authHeaders() })
-      .then(function () { location.reload(); }).catch(function () { alert("Failed to delete chats."); });
-  }
-}
-
-function confirmClearMemory() {
-  if (confirm("Clear all long-term memory? This cannot be undone.")) {
-    apiFetch("/api/settings/memory-fields", { method: "PUT", credentials: "include", headers: authHeaders({ "Content-Type": "application/json" }), body: JSON.stringify({}) })
-      .then(function () { alert("Memory cleared."); _showSaved(); }).catch(function () { alert("Failed to clear memory."); });
-  }
-}
-
-function confirmLogout() { if (confirm("Are you sure you want to log out?")) { logout(); } }
-function confirmDeleteAccount() {
-  if (!confirm("Permanently delete your account? All your data — settings, memory, chats, projects and media — will be removed. This cannot be undone.")) return;
-  if (!confirm("Are you absolutely sure? This action is final and cannot be reversed.")) return;
-  apiFetch("/api/settings/account", { method: "DELETE", credentials: "include", headers: authHeaders() })
-    .then(function (r) { return r.json(); }).then(function (d) {
-      if (d.status === "success") {
-        clearAuthToken();
-        location.reload();
-      } else {
-        alert(d.message || "Could not delete account.");
-      }
-    }).catch(function () { alert("Connection error. Your account was not deleted."); });
-}
-
-function exportMyData() {
-  Promise.all([
-    apiFetch("/api/settings/profile", { credentials: "include", headers: authHeaders() }).then(function (r) { return r.json(); }),
-    apiFetch("/api/settings/memory-fields", { credentials: "include", headers: authHeaders() }).then(function (r) { return r.json(); }),
-    apiFetch("/api/settings/projects", { credentials: "include", headers: authHeaders() }).then(function (r) { return r.json(); }),
-    apiFetch("/api/settings/usage", { credentials: "include", headers: authHeaders() }).then(function (r) { return r.json(); }),
-  ]).then(function (results) {
-    var data = {
-      exported_at: new Date().toISOString(),
-      profile: (results[0] && results[0].profile) || {},
-      memory: (results[1] && results[1].fields) || {},
-      projects: (results[2] && results[2].projects) || [],
-      usage: (results[3] && results[3].usage) || {},
-    };
-    var blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-    var url = URL.createObjectURL(blob);
-    var a = document.createElement("a"); a.href = url; a.download = "valleymind-export.json"; a.click();
-    URL.revokeObjectURL(url);
-  }).catch(function () { alert("Could not export data."); });
-}
-
-function clearLocalCache() {
-  localStorage.removeItem("valleymind_sessions_cache");
-  localStorage.removeItem("valleymind_last_chat_id");
-  localStorage.removeItem("pinnedSessions");
-  alert("Local cache cleared.");
-}
-
-// ══════════════════════════════════════════════════════════════
-// LANGUAGE & REGION
-// ══════════════════════════════════════════════════════════════
-
-// The 16 supported response languages (contact core/african_culture.py for tiers).
-// Value = canonical ISO code persisted as `response_language`.
-var CULTURAL_LANGUAGES = [
-  { value: "en",  label: "English" },
-  { value: "pcm", label: "Nigerian Pidgin (Naija)" },
-  { value: "ig",  label: "Igbo" },
-  { value: "yo",  label: "Yoruba" },
-  { value: "ha",  label: "Hausa" },
-  { value: "sw",  label: "Swahili (Kiswahili)" },
-  { value: "zu",  label: "Zulu (isiZulu)" },
-  { value: "xh",  label: "Xhosa (isiXhosa)" },
-  { value: "af",  label: "Afrikaans" },
-  { value: "st",  label: "Sesotho" },
-  { value: "tn",  label: "Setswana" },
-  { value: "nso", label: "Sepedi" },
-  { value: "nr",  label: "isiNdebele" },
-  { value: "ss",  label: "siSwati" },
-  { value: "ve",  label: "Tshivenda" },
-  { value: "ts",  label: "Xitsonga" }
-];
-
-// Effective response-language value: prefer the stored canonical code, but
-// fall back gracefully to any legacy name selection.
-function _effectiveResponseLang(data) {
-  var code = data.response_language;
-  if (code) {
-    for (var i = 0; i < CULTURAL_LANGUAGES.length; i++) {
-      if (CULTURAL_LANGUAGES[i].value === code) return code;
+          state.resizeObserver.observe(state.barsParent);
+        }
+      } catch (e) {}
     }
-  }
-  var legacy = data.language;
-  var idx = {
-    "Nigerian Pidgin": "pcm", "Igbo": "ig", "Yoruba": "yo", "Hausa": "ha",
-    "Swahili": "sw", "Zulu": "zu", "Xhosa": "xh", "Afrikaans": "af"
-  };
-  if (legacy && idx[legacy]) return idx[legacy];
-  return "en";
-}
-
-function renderLanguageSection(container) {
-  container.innerHTML = _SH.sectionHeader("Language & Region", "How the AI talks to you");
-  settingsApiGet("language").then(function (d) {
-    var data = d.data || {};
-    var resp = _effectiveResponseLang(data);
-    container.innerHTML = _SH.sectionHeader("Language & Region", "How the AI talks to you") +
-      _SH.card("Response Language", '<p style="color:#94a3b8;font-size:10px;margin:0 0 4px;">Reply Language — the AI answers in this language</p>' + _SH.select(CULTURAL_LANGUAGES, "langResponseLang", resp)) +
-      _SH.card("Region & Formatting", '<div style="display:flex;gap:10px;"><div style="flex:1;"><p style="color:#94a3b8;font-size:10px;margin:0 0 4px;">Region</p>' + _SH.select(["Nigeria", "United States", "United Kingdom", "Canada", "Australia", "Germany", "France", "Other"], "langRegion", data.region) + '</div><div style="flex:1;"><p style="color:#94a3b8;font-size:10px;margin:0 0 4px;">Time Zone</p>' + _SH.select(["UTC+1 (WAT)", "UTC+0 (GMT)", "UTC-5 (EST)", "UTC-8 (PST)", "UTC+2 (CEST)", "UTC+8 (SGT)", "UTC+9 (JST)"], "langTimezone", data.timezone) + '</div></div>' +
-        '<div style="height:10px;"></div><div style="display:flex;gap:10px;"><div style="flex:1;"><p style="color:#94a3b8;font-size:10px;margin:0 0 4px;">Date Format</p>' + _SH.select(["DD/MM/YYYY", "MM/DD/YYYY", "YYYY-MM-DD"], "langDateFormat", data.date_format) + '</div><div style="flex:1;"><p style="color:#94a3b8;font-size:10px;margin:0 0 4px;">Currency</p>' + _SH.select(["NGN (₦)", "USD ($)", "EUR (€)", "GBP (£)"], "langCurrency", data.currency) + '</div></div>') +
-      '<div style="margin-top:4px;">' + _SH.btn("Save", "saveLanguagePrefs()", "rgba(0,212,255,0.8)") + _SH.statusSpan("langStatus") + '</div>';
-  }).catch(function () { container.innerHTML = _SH.sectionHeader("Language & Region") + '<p style="color:#64748b;">Could not load language settings.</p>'; });
-}
-
-function saveLanguagePrefs() {
-  _saveSettingsAndShow("language", {
-    response_language: _getVal("langResponseLang"), language: _getVal("langResponseLang"),
-    region: _getVal("langRegion"), timezone: _getVal("langTimezone"),
-    date_format: _getVal("langDateFormat"), currency: _getVal("langCurrency"),
-  }, "langStatus");
-}
-
-// ══════════════════════════════════════════════════════════════
-// CULTURE — keeps cultural identity INDEPENDENT from response language
-// ══════════════════════════════════════════════════════════════
-
-var CULTURAL_IDENTITIES = [
-  { value: "none",          label: "No specific cultural preference" },
-  { value: "igbo",          label: "Igbo" },
-  { value: "yoruba",        label: "Yoruba" },
-  { value: "hausa",         label: "Hausa" },
-  { value: "nigerian",      label: "Nigerian (broader Nigerian)" },
-  { value: "akan",          label: "Akan" },
-  { value: "swahili_ea",    label: "Swahili / East African" },
-  { value: "zulu",          label: "Zulu" },
-  { value: "xhosa",         label: "Xhosa" },
-  { value: "south_african", label: "South African / Southern African" },
-  { value: "other_african", label: "Other African" },
-  { value: "custom",        label: "Custom / Other" }
-];
-
-function renderCultureSection(container) {
-  container.innerHTML = _SH.sectionHeader("Culture", "Cultural identity & how the AI grounds its wisdom");
-  settingsApiGet("culture").then(function (d) {
-    var data = d.data || {};
-    container.innerHTML = _SH.sectionHeader("Culture", "Cultural identity & how the AI grounds its wisdom") +
-      '<p style="color:#64748b;font-size:12px;margin:0 0 14px;">Cultural identity is <b>separate</b> from response language and is never inferred from your name, location, accent or appearance. Choose only what you want the AI to reflect.</p>' +
-      _SH.card("Cultural Identity", '<p style="color:#94a3b8;font-size:10px;margin:0 0 4px;">Which cultural tradition should the AI reflect in its wisdom?</p>' + _SH.select(CULTURAL_IDENTITIES, "cultureIdentity", data.cultural_identity || "")) +
-      _SH.card("Cultural Wisdom", _SH.row("Use cultural adages & proverbs", _SH.toggle("cultureAdages", data.use_cultural_adages !== false), "When relevant, the AI may weave in proverbs from your chosen culture — never forced, never as scientific/medical/legal evidence.")) +
-      '<div style="margin-top:4px;">' + _SH.btn("Save", "saveCulturePrefs()", "rgba(0,212,255,0.8)") + _SH.statusSpan("cultureStatus") + '</div>';
-  }).catch(function () { container.innerHTML = _SH.sectionHeader("Culture") + '<p style="color:#64748b;">Could not load cultural settings.</p>'; });
-}
-
-function saveCulturePrefs() {
-  _saveSettingsAndShow("culture", {
-    cultural_identity: _getVal("cultureIdentity") || "",
-    use_cultural_adages: document.getElementById("cultureAdages") ? document.getElementById("cultureAdages").checked : true,
-  }, "cultureStatus");
-}
-
-// ══════════════════════════════════════════════════════════════
-// INTEGRATIONS
-// ══════════════════════════════════════════════════════════════
-
-function renderIntegrationsSection(container) {
-  var integrations = [
-    { name: "Google Drive", desc: "Connect your Google Drive files" },
-    { name: "OneDrive", desc: "Access Microsoft OneDrive documents" },
-    { name: "Dropbox", desc: "Link your Dropbox storage" },
-    { name: "GitHub", desc: "Import code repositories" },
-    { name: "Notion", desc: "Sync your Notion workspace" },
-    { name: "Calendar", desc: "Connect your calendar for scheduling" },
-  ];
-  container.innerHTML = _SH.sectionHeader("Integrations", "Connect ValleyMind to your favorite tools") +
-    _SH.card("Available Integrations", integrations.map(function (i) {
-      return '<div style="display:flex;align-items:center;gap:12px;padding:12px;background:rgba(15,23,42,0.5);border-radius:8px;margin-bottom:6px;"><div style="flex:1;"><span style="color:#e2e8f0;font-size:13px;font-weight:600;">' + i.name + '</span><p style="color:#64748b;font-size:11px;margin:2px 0 0;">' + i.desc + '</p></div><span style="background:rgba(100,116,139,0.15);color:#64748b;font-size:9px;padding:3px 8px;border-radius:4px;text-transform:uppercase;">Coming Soon</span></div>';
-    }).join("")) +
-    _SH.card("Future Integrations", '<p style="color:#64748b;font-size:12px;margin:0;">More integrations are in development: Slack, Discord, Trello, Figma, and more.</p>');
-}
-
-// ══════════════════════════════════════════════════════════════
-// EXTENSIONS
-// ══════════════════════════════════════════════════════════════
-
-function renderExtensionsSection(container) {
-  container.innerHTML = _SH.sectionHeader("Extensions", "Extend ValleyMind with plugins and extensions") +
-    _SH.card("Extension Store", '<div style="text-align:center;padding:24px 0;"><p style="color:#e2e8f0;font-size:15px;font-weight:600;margin:12px 0 4px;">Extension Marketplace</p><p style="color:#64748b;font-size:12px;max-width:400px;margin:0 auto;">The ValleyMind Extension Store is coming soon. Developers will be able to create and publish plugins.</p><div style="margin-top:16px;display:flex;justify-content:center;gap:8px;flex-wrap:wrap;">' +
-      _SH.badge("Custom LLM Connectors") + _SH.badge("Data Sources") + _SH.badge("Export Formats") + _SH.badge("Workflow Automation") + _SH.badge("Custom Tools") + '</div></div>') +
-    _SH.card("Installed Extensions", '<p style="color:#475569;font-size:12px;">No extensions installed yet.</p>');
-}
-
-// ══════════════════════════════════════════════════════════════
-// USAGE
-// ══════════════════════════════════════════════════════════════
-
-function _usageMeter(label, used, limit) {
-  var pct = limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0;
-  var over = limit > 0 && used >= limit;
-  var barColor = over ? "#f43f5e" : (pct >= 80 ? "#f59e0b" : "#00d4ff");
-  return '<div style="background:rgba(15,23,42,0.5);border-radius:10px;padding:14px;flex:1;min-width:150px;">' +
-    '<p style="color:#94a3b8;font-size:10px;text-transform:uppercase;letter-spacing:0.08em;">' + label + '</p>' +
-    '<p style="color:#e2e8f0;font-size:22px;font-weight:700;margin:2px 0 8px;">' + used +
-      ' <span style="color:#475569;font-size:13px;font-weight:500;">/ ' + limit + '</span></p>' +
-    '<div style="height:6px;border-radius:99px;background:rgba(255,255,255,0.07);overflow:hidden;">' +
-      '<div style="height:100%;width:' + pct + '%;background:' + barColor + ';transition:width 0.3s;"></div></div>' +
-    '</div>';
-}
-
-function renderUsageSection(container) {
-  container.innerHTML = _SH.sectionHeader("Usage", "Your ValleyMind activity overview");
-  apiFetch("/api/settings/usage", { credentials: "include", headers: authHeaders() })
-    .then(function (r) { return r.json(); }).then(function (d) {
-      var u = d.usage || {};
-      var tier = (u.tier || "free");
-      var tierBadge = '<span style="display:inline-block;padding:3px 10px;border-radius:999px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;margin-left:8px;' +
-        (tier === "paid" ? 'background:rgba(0,212,255,0.15);color:#00d4ff;border:1px solid rgba(0,212,255,0.3);' : 'background:rgba(148,163,184,0.12);color:#94a3b8;border:1px solid rgba(148,163,184,0.2);') + '">' + tier + ' tier</span>';
-      container.innerHTML = _SH.sectionHeader("Usage", "Your ValleyMind activity overview") +
-        _SH.card("Generation Limits" + tierBadge, '<div style="display:flex;gap:12px;flex-wrap:wrap;">' +
-          _usageMeter("Images", u.images_generated || 0, u.images_limit || 0) +
-          _usageMeter("Videos", u.videos_generated || 0, u.videos_limit || 0) +
-          '</div>') +
-        _SH.card("Activity Overview", '<div style="display:flex;gap:12px;flex-wrap:wrap;">' +
-          '<div style="background:rgba(15,23,42,0.5);border-radius:10px;padding:14px;flex:1;min-width:120px;"><p style="color:#94a3b8;font-size:10px;text-transform:uppercase;">Chat Sessions</p><p style="color:#e2e8f0;font-size:22px;font-weight:700;">' + (u.chat_sessions || 0) + '</p></div>' +
-          '<div style="background:rgba(15,23,42,0.5);border-radius:10px;padding:14px;flex:1;min-width:120px;"><p style="color:#94a3b8;font-size:10px;text-transform:uppercase;">Messages</p><p style="color:#e2e8f0;font-size:22px;font-weight:700;">' + (u.chat_messages || 0) + '</p></div>' +
-          '<div style="background:rgba(15,23,42,0.5);border-radius:10px;padding:14px;flex:1;min-width:120px;"><p style="color:#94a3b8;font-size:10px;text-transform:uppercase;">Memory</p><p style="color:#e2e8f0;font-size:22px;font-weight:700;">' + (u.memory_entries || 0) + '</p></div>' +
-          '<div style="background:rgba(15,23,42,0.5);border-radius:10px;padding:14px;flex:1;min-width:120px;"><p style="color:#94a3b8;font-size:10px;text-transform:uppercase;">Storage</p><p style="color:#e2e8f0;font-size:22px;font-weight:700;">' + (u.storage_mb || 0) + ' MB</p></div></div>') +
-        _SH.card("Recent Sessions", '<div style="max-height:300px;overflow-y:auto;">' +
-          ((u.sessions || []).length > 0 ? u.sessions.slice(0, 20).map(function (s) {
-            return '<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.04);"><span style="color:#e2e8f0;font-size:11px;">' + (s.title || "Untitled") + '</span><span style="color:#475569;font-size:10px;">' + _pluralize(s.message_count || 0, "msg") + '</span></div>';
-          }).join("") : '<p style="color:#475569;font-size:12px;">No sessions yet.</p>') + '</div>');
-    }).catch(function () { container.innerHTML = _SH.sectionHeader("Usage") + '<p style="color:#64748b;">Could not load usage data.</p>'; });
-}
-
-// ── Open/Close Settings ──────────────────────────────────────
-
-window.openSettings = function () {
-  window.openSettingsSection("account");
-};
-
-// Open Settings straight to a named section (used by the companion's task
-// launch to surface Settings → Companion). Kept as one path so the overlay,
-// nav build and section render can never drift apart.
-window.openSettingsSection = function (id) {
-  var overlay = document.getElementById("settingsOverlay");
-  if (overlay) overlay.style.display = "flex";
-  buildSettingsNav();
-  switchSettingsSection(id || "account");
-};
-
-window.closeSettings = function () {
-  var overlay = document.getElementById("settingsOverlay");
-  if (overlay) overlay.style.display = "none";
-};
+  } catch (e) {}
+  try {
+    if (typeof module !== "undefined" && module.exports) {
+      module.exports = api;
+    }
+  } catch (e) {}
+})();

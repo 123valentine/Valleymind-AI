@@ -2966,6 +2966,12 @@ body[data-vm-companion="cloud"] #vmVrmCompanion { display: none !important; }
       <p id="suggestionStatus" style="min-height:16px;color:#94a3b8;font-size:10px;margin-top:6px;"></p>
     </div>
   </div>
+  <div class="px-6 mb-4">
+    <button onclick="location.reload()" class="w-full py-3 px-4 rounded-xl border border-cyan-400/30 bg-cyan-400/10 text-cyan-400 font-bold flex items-center justify-center gap-2 hover:bg-cyan-400/20 transition-all duration-300">
+      <span class="material-icons">refresh</span>
+      <span class="font-label-caps text-xs uppercase tracking-wider">Reload App</span>
+    </button>
+  </div>
   <div class="px-6 pt-6 border-t border-white/10">
     <div class="flex items-center gap-3 px-2">
       <div class="w-10 h-10 rounded-full bg-surface-container-highest border border-cyan-400/20 flex items-center justify-center">
@@ -3950,17 +3956,6 @@ const VALLEY_DEBUG = false;
         try {
             splash.style.opacity = "0";
             setTimeout(function () { splash.style.display = "none"; }, 500);
-        } catch (e) {}
-        try {
-            var msg = document.createElement("div");
-            msg.textContent = "App didn't finish loading. Tap to reload.";
-            msg.style.cssText =
-                "position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);" +
-                "background:#020617;color:#fff;padding:16px 24px;" +
-                "border-radius:12px;border:1px solid #00d4ff;" +
-                "z-index:100000;cursor:pointer;font-family:sans-serif;";
-            msg.onclick = function () { location.reload(); };
-            document.body.appendChild(msg);
         } catch (e) {}
     }
 
