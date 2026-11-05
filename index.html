@@ -4592,21 +4592,9 @@ function toggleMessageContextMenu(e, msgIndex) {
     // Remember which assistant message this menu was opened for, so the actions
     // (listen / email / report / details) can read that message's text.
     menu._sourceWrap = (e.target && e.target.closest) ? e.target.closest(".assistant-message") : null;
-
-    const x = e.clientX;
-    const y = e.clientY;
-    const menuW = 210;
-    const menuH = menu.offsetHeight || 180;
-    const winW = window.innerWidth;
-    const winH = window.innerHeight;
-
-    let left = x;
-    let top = y + 8;
-    if (left + menuW > winW - 12) left = winW - menuW - 12;
-    if (top + menuH > winH - 12) top = y - menuH - 8;
-
-    menu.style.left = left + "px";
-    menu.style.top = top + "px";
+    var btn = (e.currentTarget && e.currentTarget.getBoundingClientRect) ? e.currentTarget : ((e.target && e.target.closest) ? e.target.closest("button") : null);
+    try { menu.style.top = "auto"; menu.style.right = "auto"; positionMenuAbove("messageContextMenu", btn || "personaBtn"); }
+    catch (err) { menu.style.left = "8px"; menu.style.top = "8px"; }
 
     if (typeof lucide !== "undefined" && lucide.createIcons) {
         lucide.createIcons();
@@ -4655,13 +4643,13 @@ function draftResponseEmail(text) {
         "&body=" + encodeURIComponent(body);
 }
 
-// Report a bad response €” routed to the same /suggestions feedback channel.
-function reportResponseIssue(text) {
-    var note = window.prompt("What's wrong with this response? A short note helps us fix it.");
-    if (note === null) return;                       // cancelled
+// Report a bad response - routed to the same /suggestions feedback channel.
+function reportResponseIssue(text, kind) {
+    var _lbl = (kind === "bug") ? "Report a bug" : "Report an issue";
+    var note = window.prompt(_lbl + ": What's wrong? (optional)", "");
+    if (note === null) return;
     note = (note || "").trim();
-    if (!note) return;
-    var payload = "[Report issue] " + note + "\n\n--- response ---\n" + String(text || "").slice(0, 600);
+    var payload = "[" + _lbl + "] " + note + "\n\n--- response ---\n" + String(text || "").slice(0, 600);
     apiFetch("/suggestions", {
         method: "POST",
         headers: authHeaders({ "Content-Type": "application/json" }),
@@ -4680,6 +4668,84 @@ function showResponseDetails(wrap) {
 }
 
 // Re-run the original prompt and regenerate ONLY that AI reply (no duplicate user message).
+
+// --- User message menu (long-press ~500ms / right-click): Copy, Select text, Edit ---
+var _vmUserMsgMenuTarget = null;
+function _vmCloseUserMsgMenu() {
+    try { var m = document.getElementById("userMessageMenu"); if (m) { m.classList.remove("open"); m.style.display = "none"; m.style.left=""; m.style.top=""; } } catch (e) {}
+    _vmUserMsgMenuTarget = null;
+}
+function _vmOpenUserMsgMenu(targetWrap, anchorEl, clientX, clientY) {
+    try {
+        if (typeof closeMessageContextMenu === "function") closeMessageContextMenu();
+        _vmCloseUserMsgMenu();
+        var m = document.getElementById("userMessageMenu");
+        if (!m || !targetWrap) return;
+        _vmUserMsgMenuTarget = targetWrap;
+        m.classList.add("open"); m.style.display = "block";
+        var anchor = anchorEl || targetWrap;
+        try { m.style.top = "auto"; m.style.right = "auto"; positionMenuAbove("userMessageMenu", anchor); }
+        catch (e) { if (typeof clientX === "number") { m.style.position="fixed"; m.style.left = Math.max(8, Math.min(clientX, window.innerWidth - 180)) + "px"; m.style.top = Math.max(8, (clientY||40) - 8) + "px"; m.style.bottom = "auto"; } }
+        if (typeof lucide !== "undefined" && lucide.createIcons) try { lucide.createIcons(); } catch (e) {}
+    } catch (e) {}
+}
+function _vmUserMsgAction(action) {
+    var wrap = _vmUserMsgMenuTarget;
+    var bubble = wrap ? (wrap.querySelector(".bubble") || wrap) : null;
+    var text = bubble ? (bubble.innerText || bubble.textContent || "").trim() : "";
+    _vmCloseUserMsgMenu();
+    if (!wrap) return;
+    if (action === "copy") {
+        try {
+            if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(function(){ try{ if(typeof _vmToast==="function") _vmToast("Copied."); }catch(e){} }).catch(function(){ try{ if(typeof _vmToast==="function") _vmToast("Copy unavailable."); }catch(e){} });
+            else { try{ if(typeof _vmToast==="function") _vmToast("Copy unavailable."); }catch(e){} }
+        } catch (e) { try { if(typeof _vmToast==="function") _vmToast("Copy unavailable."); } catch (e2) {} }
+    } else if (action === "select") {
+        try {
+            if (bubble) { bubble.style.userSelect = "text"; bubble.style.webkitUserSelect = "text"; bubble.style.cursor = "text"; }
+            var sel = window.getSelection ? window.getSelection() : null;
+            if (sel && bubble && document.createRange) { var r = document.createRange(); r.selectNodeContents(bubble); sel.removeAllRanges(); sel.addRange(r); }
+        } catch (e) {}
+    } else if (action === "edit") {
+        // Fill composer for editing; do NOT send. Sending creates a new message.
+        try {
+            var ci = document.getElementById("chatInput");
+            if (ci) { ci.value = text; ci.focus(); try { ci.dispatchEvent(new Event("input", { bubbles: true })); ci.style.height = "auto"; ci.style.height = Math.min(ci.scrollHeight || 44, 140) + "px"; } catch (e) {} }
+        } catch (e) {}
+    }
+}
+(function _vmInitUserMsgMenuHandlers(){
+    try {
+        var msgs = document.getElementById("messages");
+        var root = msgs || document;
+        var timer = null, startX=0, startY=0, startTarget=null;
+        function clearLP(){ if(timer){ clearTimeout(timer); timer=null; } }
+        root.addEventListener("contextmenu", function(ev){
+            try {
+                var um = ev.target && ev.target.closest ? ev.target.closest(".user-message") : null;
+                if (!um) return;
+                ev.preventDefault();
+                _vmOpenUserMsgMenu(um, um, ev.clientX, ev.clientY);
+            } catch (e) {}
+        }, false);
+        root.addEventListener("touchstart", function(ev){
+            try {
+                var um = ev.target && ev.target.closest ? ev.target.closest(".user-message") : null;
+                if (!um) return;
+                var t = ev.touches && ev.touches[0]; if(!t) return;
+                startX=t.clientX; startY=t.clientY; startTarget=um; clearLP();
+                timer = setTimeout(function(){ _vmOpenUserMsgMenu(startTarget, startTarget, startX, startY); }, 500);
+            } catch (e) {}
+        }, { passive: true });
+        root.addEventListener("touchmove", function(ev){ try { var t=ev.touches&&ev.touches[0]; if(t && (Math.abs(t.clientX-startX)>10 || Math.abs(t.clientY-startY)>10)) clearLP(); } catch(e){} }, { passive: true });
+        root.addEventListener("touchend", function(){ clearLP(); }, { passive: true });
+        root.addEventListener("touchcancel", function(){ clearLP(); }, { passive: true });
+        document.addEventListener("click", function(ev){ try { var m=document.getElementById("userMessageMenu"); if(m && m.classList && m.classList.contains("open") && !m.contains(ev.target)) _vmCloseUserMsgMenu(); } catch(e){} }, true);
+        document.addEventListener("keydown", function(ev){ try { if(ev && ev.key==="Escape"){ _vmCloseUserMsgMenu(); if(typeof closeMessageContextMenu==="function") closeMessageContextMenu(); } } catch(e){} }, true);
+    } catch (e) {}
+})();
+
+
 function regenerateResponse(btn) {
     if (typeof isThinking !== "undefined" && isThinking) return;
     var wrapper = btn && btn.closest ? btn.closest(".assistant-message") : null;

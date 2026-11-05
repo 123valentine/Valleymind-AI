@@ -25,4 +25,7 @@ if errorlevel 1 exit /b 1
 rem 7) Regenerate (vm-fix15 item 3): replaces AI reply in-place, no duplicate user message.
 "%NODE%" test_regenerate.js
 if errorlevel 1 exit /b 1
+rem 8) vm-b (voices/preview/speak/menus): mapping, cloud-over-local, save isolation, defaults, fallback, long-press/edit.
+"%NODE%" test_vm_b.js
+if errorlevel 1 exit /b 1
 echo ALL_CHECKS_PASS
