@@ -104,7 +104,7 @@
 <script src="/static/task_controller.js?v=1"></script>
 <script src="/static/cloud_rig.js?v=2"></script>
 <script src="/static/cloud_anim.js?v=2"></script>
-<script src="/static/vm_wave.js?v=10" defer></script>
+<script src="/static/vm_wave.js?v=11" defer></script>
 <script id="tailwind-config">
   tailwind.config = {
     darkMode: "class",
@@ -2135,11 +2135,13 @@
   @media(max-width:768px){
     #composerRow{ flex-direction: column; }
     #chatInput{ width: 100%; flex: none; }
-    #personaSwitcher{ width: 100%; margin-bottom: 2px; }
-    #personaBtn{ width: 100%; height:30px; padding:0 12px; font-size:13px; justify-content: center; }
     #personaBtn #personaBtnLabel{ font-weight:800; }
     #personaMenu{ left:0; right:auto; min-width:180px; }
-    #composerRow > div:last-child{ width: 100%; justify-content: flex-end; }
+    /* Bottom row (+, persona left; mic, send right) stays on its own row below textarea/wave */
+    #composerBtnRow{ width:100%; display:flex; align-items:center; gap:6px; }
+    #composerLeftGroup{ display:flex; align-items:center; gap:6px; flex:0 1 auto; min-width:0; }
+    #composerRightGroup{ display:flex; align-items:center; gap:6px; margin-left:auto; flex:0 0 auto; }
+    #personaSwitcher, #personaBtn{ max-width:100%; }
   }
   #composerChips{
     display:none; flex-wrap:wrap; gap:6px;
@@ -2183,19 +2185,18 @@
     #personaBtn{height:32px;padding:0 12px;font-size:13px}
 
   @media(max-width:480px){
-    /* G1a: compact rounded composer box on phones. Textarea on top; slim
-       bottom row: + button + persona pill on the left, mic + send on the
-       right. Laptop layout untouched. */
+    /* Compact composer: textarea/wave full-width row above; bottom row = +,persona left + mic,send right */
     #composer{ padding:8px; border-radius:16px; max-height: 42dvh; overflow:hidden; display:flex; flex-direction:column; gap:5px; }
     #composerRow{ display:flex; flex-direction:column; gap:6px; width:100%; }
-    /* Row 1: textarea full width */
-    #chatInput{ order:1; width:100%; flex:none; min-height:44px; }
-    /* Row 2: slim button row — left = + and persona, right = mic + send */
-    #composerRow > div:first-child{ order:2; width:auto; flex:none; display:flex; align-items:center; gap:6px; }
-    #personaSwitcher{ order:2; width:auto; flex:none; display:flex; align-items:center; }
-    #composerRow > div:last-child{ order:2; width:auto; flex:none; margin-left:auto; display:flex; align-items:center; gap:6px; }
+    #chatInput{ order:1; width:100%; flex:none; min-height:44px; max-height:140px; }
+    #vmWaveContainer{ order:1; width:100%; }
+    #micWordsCounter{ order:1; }
+    #composerBtnRow{ order:2; width:100%; display:flex; align-items:center; gap:6px; }
+    #composerLeftGroup{ display:flex; align-items:center; gap:6px; min-width:0; flex:0 1 auto; }
+    #composerRightGroup{ display:flex; align-items:center; gap:6px; margin-left:auto; flex:0 0 auto; }
+    #personaSwitcher{ width:auto; flex:0 1 auto; min-width:0; }
     #plusBtn,#micBtn,#sendBtn{ width:34px; height:34px; }
-    #personaBtn{ height:auto; min-height:32px; padding:5px 10px; font-size:12px; white-space:nowrap; }
+    #personaBtn{ height:auto; min-height:32px; padding:5px 10px; font-size:12px; white-space:nowrap; max-width:100%; }
     /* Hide the "Listening" label pill on phone — show listening state via mic button only */
     #micWaveform .vm-label{ display:none !important; }
     #vmWaveContainer{ margin:4px 0 0; }
