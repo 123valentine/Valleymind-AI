@@ -106,9 +106,9 @@ const settings = fs.readFileSync(path.join('static','settings.js'), 'utf8');
     const ctx = { console, document:doc, window:{getSelection:function(){return {removeAllRanges:function(){},addRange:function(){}};}}, navigator:{}, Event:function(t,o){this.type=t;}, _vmToast:function(){}, closeMessageContextMenu:function(){}, positionMenuAbove:function(){}, lucide:null, send:function(){ throw new Error('SEND_CALLED'); } };
     ctx._vmUserMsgMenuTarget = { querySelector:function(){ return { innerText:'hello from user', textContent:'hello from user', style:{} }; } };
     vm.createContext(ctx);
-    const fn = html.match(/function _vmUserMsgAction\(action\) \{[\s\S]*?\n\}\n\(function _vmInitUserMsgMenuHandlers/);
+    const fn = html.match(/function _vmUserMsgAction\(action\) \{[\s\S]*?\r?\}\r?\n\(function _vmInitUserMsgMenuHandlers/);
     if (!fn) throw new Error('no _vmUserMsgAction');
-    vm.runInContext(fn[0].replace(/\n\(function _vmInitUserMsgMenuHandlers/,'') + '\nfunction _vmCloseUserMsgMenu(){try{var m=document.getElementById("userMessageMenu"); if(m){m.classList.remove("open");m.style.display="none";}}catch(e){} _vmUserMsgMenuTarget=null;}', ctx);
+    vm.runInContext(fn[0].replace(/\r?\n\(function _vmInitUserMsgMenuHandlers/,'') + '\nfunction _vmCloseUserMsgMenu(){try{var m=document.getElementById("userMessageMenu"); if(m){m.classList.remove("open");m.style.display="none";}}catch(e){} _vmUserMsgMenuTarget=null;}', ctx);
     ctx._vmUserMsgAction('edit');
     assert('Edit DOM: fills composer without sending', input.value==='hello from user' && input._f===true);
   } catch(e){ assert('Edit DOM: fills composer without sending', false, e.message); }
