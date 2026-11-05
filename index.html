@@ -4666,16 +4666,28 @@ function showResponseDetails(wrap) {
     _vmToast("Assistant: " + persona + " · " + chars + " chars · Engine: ValleyMind AI");
 }
 
-// Re-run the most recent prompt and stream a fresh response.
+// Re-run the original prompt and regenerate ONLY that AI reply (no duplicate user message).
 function regenerateResponse(btn) {
     if (typeof isThinking !== "undefined" && isThinking) return;
-    var text = window._lastUserText || "";
+    var wrapper = btn && btn.closest ? btn.closest(".assistant-message") : null;
+    if (!wrapper) {
+        // fallback: last assistant message
+        var msgs = document.getElementById("messages");
+        if (msgs) { var all = msgs.querySelectorAll(".assistant-message"); wrapper = all.length ? all[all.length - 1] : null; }
+    }
+    var text = "";
+    if (wrapper && wrapper.dataset && wrapper.dataset.userText) text = wrapper.dataset.userText;
+    if (!text && wrapper) {
+        // fallback: preceding user-message bubble
+        var prev = wrapper.previousElementSibling;
+        while (prev && !/\buser-message\b/.test(prev.className || "")) prev = prev.previousElementSibling;
+        if (prev) { var ub = prev.querySelector(".bubble"); text = ub ? (ub.textContent || "").trim() : ""; }
+    }
+    if (!text) text = window._lastUserText || "";
     if (!text) { _vmToast("Nothing to regenerate yet."); return; }
-    var input = document.getElementById("chatInput");
-    if (!input) return;
-    input.value = text;
-    if (typeof autoGrowInput === "function") autoGrowInput();
-    window.send();
+    // Replace this AI bubble's content in-place via send()'s streaming path.
+    window._regenCtx = { wrapper: wrapper, userText: text };
+    try { window.send(); } catch (e) { window._regenCtx = null; }
 }
 
 // Share a single response €” native share sheet where available, else clipboard.
@@ -5617,6 +5629,8 @@ function addMessage(text, type = "ai", imageData, mediaUrl, videoUrl) {
     }
 
     if (type === "ai") {
+        // Store the user message that prompted this reply (for Regenerate).
+        try { if (window._lastUserText) wrapper.dataset.userText = window._lastUserText; } catch (e) {}
         const toolbar = document.createElement("div");
         toolbar.className = "msg-toolbar";
 
@@ -11217,7 +11231,7 @@ window.send = async function () {
     } else {
         stopListening();
     }
-    const text = input.value.trim();
+    var text = input.value.trim();
     // Read this reply aloud only when the turn came from voice (opt-in, never default).
     window._speakThisReply = _voiceTurn; _voiceTurn = false;
 
@@ -11236,8 +11250,20 @@ window.send = async function () {
         try { lucide.createIcons(); } catch (e) {}
     }
 
+    // Regenerate mode: re-run for an existing AI reply without adding a user message.
+    var _regenCtx = window._regenCtx || null;
+    window._regenCtx = null;
+    if (_regenCtx && _regenCtx.userText) {
+        text = String(_regenCtx.userText || "").trim();
+        // ensure we have the text; input state left untouched
+    }
+    // Trim/cap and collapse repeated whitespace (safety net; does not alter meaning).
+    if (text) {
+        text = String(text).replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+        if (text.length > 16000) text = text.slice(0, 16000);
+    }
     // An attached video goes to the vision model, not the chat router.
-    if (pendingVideoFile) {
+    if (!_regenCtx && pendingVideoFile) {
         input.value = "";
         autoGrowInput();
         setThinkingState(true);
@@ -11256,7 +11282,7 @@ window.send = async function () {
         return;
     }
 
-    if (!text && !pendingImageData) return;
+    if (!text && !pendingImageData) { if (_regenCtx) window._regenCtx = null; return; }
 
     // Lock thinking state
     setThinkingState(true);
@@ -11283,18 +11309,15 @@ window.send = async function () {
             console.warn("Failed to auto-create session.", err);
         }
     }
-
-    var sentImage = pendingImageData;
-    if (text) {
-        addMessage(text, "user", sentImage || null);
-    } else if (sentImage) {
-        addMessage("Image attached", "user", sentImage);
+    var sentImage = pendingImageData;
+    if (_regenCtx) {
+        if (text) window._lastUserText = text;
+        try { var _rw = _regenCtx.wrapper; if (_rw) { var _rb = _rw.querySelector(".bubble"); if (_rb) { _rb.innerHTML = ""; _rb.textContent = ""; } } } catch (e) {}
+    } else {
+        if (text) { addMessage(text, "user", sentImage || null); } else if (sentImage) { addMessage("Image attached", "user", sentImage); }
+        input.value = ""; clearImageUpload(); resetComposerHeight(); updateSendButtonDim();
+        if (currentChatId) clearChatDraft(currentChatId);
     }
-    input.value = "";
-    clearImageUpload();          // clear chips now that they've been sent
-    resetComposerHeight();       // shrink box back to single line
-    updateSendButtonDim();
-    if (currentChatId) clearChatDraft(currentChatId);   // sent €” no longer a draft
     setInputPlaceholder("sending");
     const thinking = addThinkingIndicator();
 
@@ -11561,9 +11584,13 @@ window.send = async function () {
                     }
                     if (!bubbleEl) {
                         removeThinkingIndicator(thinking);
-                        addMessage("", "ai");
-                        var msgs = document.getElementById("messages");
-                        bubbleEl = msgs ? msgs.lastElementChild : null;
+                        if (_regenCtx && _regenCtx.wrapper) {
+                            bubbleEl = _regenCtx.wrapper;
+                        } else {
+                            addMessage("", "ai");
+                            var msgs = document.getElementById("messages");
+                            bubbleEl = msgs ? msgs.lastElementChild : null;
+                        }
                         if (bubbleEl) {
                             var bub = bubbleEl.querySelector(".bubble");
                             if (bub) bub.textContent = "";
@@ -11686,7 +11713,12 @@ window.send = async function () {
                 upsertLocalSession({ chat_id: currentChatId, title: fallbackData.updated_title });
                 renderSessionList();
             }
-            addMessage(reply, "ai");
+            if (_regenCtx && _regenCtx.wrapper) {
+                var _fb = _regenCtx.wrapper.querySelector(".bubble");
+                if (_fb) _fb.textContent = reply; else addMessage(reply, "ai");
+            } else {
+                addMessage(reply, "ai");
+            }
 
             /* Backend already persisted messages in /chat €” no duplicate save needed */
             if (currentChatId) saveLastChatId(currentChatId);
@@ -11702,7 +11734,21 @@ window.send = async function () {
             }
         } catch (fallbackErr) {
             removeThinkingIndicator(thinking);
-            addMessage(streamError || fallbackErr.message || "Connection error. Please try again.", "ai");
+            var _errMsg = streamError || fallbackErr.message || "Connection error. Please try again.";
+            if (_regenCtx && _regenCtx.wrapper) {
+                var _eb = _regenCtx.wrapper.querySelector(".bubble");
+                if (_eb) _eb.textContent = _errMsg; else addMessage(_errMsg, "ai");
+            } else {
+                addMessage(_errMsg, "ai");
+                // Keep user's text restorable on failure.
+                try {
+                    var _ri = document.getElementById("chatInput");
+                    if (_ri && !_ri.value.trim() && (lastSentMessage || _sendOriginalText)) {
+                        _ri.value = lastSentMessage || _sendOriginalText || "";
+                        if (typeof autoGrowInput === "function") autoGrowInput();
+                    }
+                } catch (e) {}
+            }
         }
     }
 
