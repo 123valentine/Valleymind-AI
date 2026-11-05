@@ -92,6 +92,7 @@
 
   function injectCss() {
     try {
+      if (typeof document === "undefined") return;
       if (document.getElementById("vmWaveCss")) return;
       var style = document.createElement("style");
       style.id = "vmWaveCss";
@@ -334,8 +335,8 @@
 
   function startUser() {
     try {
-      navigator.mediaDevices = navigator.mediaDevices || {};
-      if (!navigator.mediaDevices.getUserMedia) {
+      var nav = (typeof navigator !== "undefined") ? navigator : null;
+      if (!nav || !nav.mediaDevices || !nav.mediaDevices.getUserMedia) {
         state.fallback = true;
         state.useEventSource = true;
         state.levelSource = "events";
@@ -345,7 +346,7 @@
       }
       var myToken = ++state.token;
       var constraints = { audio: { echoCancellation: true, noiseSuppression: true } };
-      navigator.mediaDevices.getUserMedia(constraints).then(function (stream) {
+      nav.mediaDevices.getUserMedia(constraints).then(function (stream) {
         if (myToken !== state.token || state.activeKind !== "user") {
           try { stream.getTracks().forEach(function (t) { try { t.stop(); } catch (e) {} }); } catch (e) {}
           return;
@@ -421,11 +422,13 @@
     try {
       if (!kind) return;
       injectCss();
-      var container = document.getElementById("vmWaveContainer");
-      if (container) {
-        state.container = container;
-        var bp = document.getElementById("vmWaveBars");
-        if (bp) state.barsParent = bp;
+      if (typeof document !== "undefined") {
+        var container = document.getElementById("vmWaveContainer");
+        if (container) {
+          state.container = container;
+          var bp = document.getElementById("vmWaveBars");
+          if (bp) state.barsParent = bp;
+        }
       }
       // Idempotent: never restart the wave when recognition restarts.
       if (kind === "user" && isUserWaveHealthy()) {
