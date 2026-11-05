@@ -945,6 +945,104 @@ function _vmHydratePersonaVoices(opts) {
   return _vmPersonaVoicesHydrating;
 }
 
+function _vmInitVoiceOrb() {
+  try {
+    var c = document.getElementById("vmVoiceOrb");
+    if (!c) return;
+    if (_vmVoiceOrb && _vmVoiceOrbContainer === c) return;
+    if (_vmVoiceOrb && typeof _vmVoiceOrb.destroy === "function") {
+      try { _vmVoiceOrb.destroy(); } catch (e) {}
+    }
+    _vmVoiceOrbContainer = c;
+    if (typeof window.VoiceOrb === "undefined") {
+      // Try to load module
+      var s = document.createElement("script");
+      s.type = "module";
+      s.textContent = "import('/static/VoiceOrb.js').then(m=>{window.VoiceOrb=m.VoiceOrb;window.VOICE_PRESETS=m.VOICE_PRESETS; if(window._vmInitVoiceOrbRetry) window._vmInitVoiceOrbRetry();}).catch(()=>{});";
+      document.head.appendChild(s);
+      window._vmInitVoiceOrbRetry = function () {
+        _vmInitVoiceOrb();
+        delete window._vmInitVoiceOrbRetry;
+      };
+      return;
+    }
+    _vmVoiceOrb = new window.VoiceOrb(c, { preset: "deep", ariaLabel: "Voice animation" });
+    _vmVoiceOrb.setState("idle");
+  } catch (e) {
+    console.warn("[VoiceOrb] init failed", e);
+  }
+}
+
+// Build one catalogue entry for a voice definition from VM_PERSONA_VOICES.
+function _vmVoiceCatalogueEntry(v) {
+    var isPiper = !!v.piper;
+    var engineLabel = isPiper ? "Local Piper model" : "Free Edge voice";
+    var detail = isPiper
+      ? ('On-device model \u00b7 ' + v.piper + ' \u00b7 no cloud, no per-character cost')
+      : ('Online reference voice \u00b7 ' + v.server + ' \u00b7 free');
+    var who = [];
+    VM_PERSONA_VOICES.personas.forEach(function (per) {
+      if (per.defaultVoice === v.id) who.push(per.label);
+    });
+    var whoTxt = who.length ? ("Default for " + who.join(", ")) : "Opt-in alternative";
+    return _SH.card(v.label,
+      '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">' +
+        '<div style="flex:1;">' +
+          '<div style="margin:0 0 6px;">' + _SH.badge(engineLabel, isPiper ? "#00d4ff" : "#64748b") + '</div>' +
+          '<p style="color:#94a3b8;font-size:12px;margin:0 0 4px;">' + detail + '</p>' +
+          '<p style="color:#64748b;font-size:11px;margin:0;">' + whoTxt + '</p>' +
+        '</div>' +
+        _SH.btn("Preview", "vmVoicePreview('" + v.id + "')") +
+      '</div>');
+  }
+
+// Render the full available-voices catalogue card.
+function vmVoiceCatalogueCard() {
+    var entries = VM_PERSONA_VOICES.voices.map(_vmVoiceCatalogueEntry).join("");
+    return _SH.card("Available voices",
+      '<p style="color:#94a3b8;font-size:12px;margin:0 0 12px;line-height:1.5;">These are the voices this build actually has. \u201cPreview\u201d plays a short sample and tells you which engine produced it.</p>' +
+      entries);
+  }
+
+// Render a single voice card guarded by try/catch so one failing card shows a
+// note instead of blanking the whole Voice section.
+function _vmRenderVoiceCatalogueSafe() {
+  try { return vmVoiceCatalogueCard(); } catch (e) {
+    console.warn("[Voice] catalogue card failed", e);
+    return '<p style="color:#ef4444;font-size:11px;margin:8px 0;">Could not load voice catalogue.</p>';
+  }
+}
+function _vmRenderVoicePersonasSafe() {
+  try { return vmPersonaVoicesCard(); } catch (e) {
+    console.warn("[Voice] persona card failed", e);
+    return '<p style="color:#ef4444;font-size:11px;margin:8px 0;">Could not load Personal Voices.</p>';
+  }
+}
+
+function renderVoiceSection(container) {
+  container.innerHTML = _SH.sectionHeader("Voice", "Choose how each speaker sounds — and preview before you commit") +
+    '<div id="vmVoiceOrbWrap" style="display:flex;justify-content:center;margin:4px 0 18px;"><div id="vmVoiceOrb" style="width:260px;height:260px;max-width:90vw;max-height:90vw;background:transparent;border-radius:50%;overflow:hidden;"></div></div>' +
+    _vmRenderVoiceCatalogueSafe() +
+    _vmRenderVoicePersonasSafe() +
+    '<p style="color:#475569;font-size:11px;margin-top:4px;">Status: <span id="vmVoiceTabStatus"></span></p>';
+  // Initialize orb after DOM is ready (guarded so orb failure cannot blank the section).
+  setTimeout(function () {
+    try { _vmInitVoiceOrb(); } catch (e) { console.warn("[VoiceOrb] init failed", e); }
+  }, 0);
+  // Cloud hydrate is NON-BLOCKING: section already rendered from local data.
+  // Bound by a 3s timeout so a hung fetch cannot stall the page.
+  try {
+    var _vmHydrateStart = Date.now();
+    _vmHydratePersonaVoices().then(function () {
+      // Hydrate resolved; cards already rendered locally. No synchronous re-render
+      // here so a late cloud result cannot clobber another active section.
+    }).catch(function () {});
+    var _vmHydrateTimer = setTimeout(function () {
+      // 3s timeout reached: hydrate is allowed to settle in the background.
+    }, 3000);
+  } catch (e) { console.warn("[Voice] hydrate scheduled failed", e); }
+}
+
 function renderCompanionSection(container) {
   renderCompanionInto(container);
 }
