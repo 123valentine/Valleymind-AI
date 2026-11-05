@@ -77,9 +77,10 @@ const settings = fs.readFileSync(path.join('static','settings.js'), 'utf8');
 // --- 6) unknown profile / playback failure falls back to saved Edge voice (never silence) ---
 (function(){
   const tvStart = html.indexOf('window.toggleVoicePlayback');
-  const tvEnd = html.indexOf('// --- User message menu (long-press', tvStart);
-  const tvBody = tvStart >= 0 ? html.slice(tvStart, tvEnd > tvStart ? tvEnd : tvStart + 2500) : '';
-  assert('Speak Aloud plays returned url without piper_local-only engine filter', tvBody && /_vmPlayTtsAudio\(playUrl\)/.test(tvBody) && !/data\.engine\s*===\s*['"]piper_local['"]\s*&&/.test(tvBody));
+  const tvEnd = html.indexOf('function quickSend', tvStart);
+  const tvBody = tvStart >= 0 && tvEnd > tvStart ? html.slice(tvStart, tvEnd) : '';
+  assert('Speak Aloud plays returned url without piper_local-only engine filter', tvBody && /_vmPlayTtsAudio\(data\.url\)/.test(tvBody) && !/data\.engine\s*===\s*['"]piper_local['"]\s*&&/.test(tvBody));
+  assert('Speak Aloud sends profile/voice for reply persona', tvBody && /_vmTtsPayload\(text, persona\)/.test(tvBody) && /wrapper\.dataset\.persona/.test(tvBody));
   assert('_vmEdgeFallbackPlay exists and maps to safe Edge voice', /function _vmEdgeFallbackPlay/.test(html) && /emap\[p\]/.test(html));
   assert('Speak Aloud shows "voice not available" and falls back to Edge', tvBody && /voice not available/.test(tvBody) && /_vmEdgeFallbackPlay\(text, persona\)/.test(tvBody));
   assert('Speak Aloud uses reply persona (data-persona) at press time', tvBody && /wrapper\.dataset\.persona/.test(tvBody) && /_vmTtsPayload\(text, persona\)/.test(tvBody));
