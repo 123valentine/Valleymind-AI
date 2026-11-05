@@ -1,4 +1,4 @@
-// ── Settings System ──────────────────────────────────────────
+﻿// ΓöÇΓöÇ Settings System ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 
 var SETTINGS_SECTIONS = [
   { id: "account",       label: "Account" },
@@ -193,9 +193,9 @@ function _saveSettingsAndShow(section, data, statusId) {
   });
 }
 
-// ══════════════════════════════════════════════════════════════
+// ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
 // ACCOUNT
-// ══════════════════════════════════════════════════════════════
+// ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
 
 function renderAccountSection(container) {
   container.innerHTML = _SH.sectionHeader("Account", "Manage your ValleyMind identity and security") + '<p style="color:#64748b;font-size:12px;">Loading profile...</p>';
@@ -226,7 +226,7 @@ function renderAccountSection(container) {
       _SH.card("Email", '<p style="color:#64748b;font-size:12px;margin:0 0 8px;font-family:\'Inter\',sans-serif;">' + email + '</p><p style="color:#475569;font-size:11px;margin:0;font-family:\'Inter\',sans-serif;">Email cannot be changed at this time.</p>') +
       _SH.card("Password", _SH.input("Current password", "settingsOldPass", "password") + '<div style="height:8px;"></div>' + _SH.input("New password", "settingsNewPass", "password") + '<div style="height:10px;"></div>' + _SH.btn("Update Password", "settingsChangePassword()", "rgba(14,165,233,0.8)") + _SH.statusSpan("settingsPassStatus")) +
       _SH.card("Two-Factor Authentication", '<div style="display:flex;align-items:center;justify-content:space-between;"><div><span style="color:#e2e8f0;font-size:13px;font-family:\'Inter\',sans-serif;">Two-Factor Authentication</span><p style="color:#64748b;font-size:11px;margin:2px 0 0;font-family:\'Inter\',sans-serif;">Add an extra layer of security</p></div>' + _SH.toggle("settings2FA", false) + '</div>') +
-      _SH.card("Connected Accounts", '<div style="display:flex;align-items:center;gap:12px;padding:8px 12px;background:rgba(15,23,42,0.5);border-radius:8px;"><div style="width:32px;height:32px;border-radius:50%;background:#4285F4;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:14px;flex-shrink:0;">G</div><div style="flex:1;"><span style="color:#e2e8f0;font-size:13px;font-family:\'Inter\',sans-serif;">Google</span><p style="color:#64748b;font-size:10px;margin:1px 0 0;font-family:\'Inter\',sans-serif;">Connected</p></div><span style="color:#22c55e;font-size:10px;font-family:\'Inter\',sans-serif;">✓ Linked</span></div>') +
+      _SH.card("Connected Accounts", '<div style="display:flex;align-items:center;gap:12px;padding:8px 12px;background:rgba(15,23,42,0.5);border-radius:8px;"><div style="width:32px;height:32px;border-radius:50%;background:#4285F4;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:14px;flex-shrink:0;">G</div><div style="flex:1;"><span style="color:#e2e8f0;font-size:13px;font-family:\'Inter\',sans-serif;">Google</span><p style="color:#64748b;font-size:10px;margin:1px 0 0;font-family:\'Inter\',sans-serif;">Connected</p></div><span style="color:#22c55e;font-size:10px;font-family:\'Inter\',sans-serif;">Γ£ô Linked</span></div>') +
       _SH.card("Active Sessions", '<p style="color:#64748b;font-size:12px;margin:0;font-family:\'Inter\',sans-serif;">1 active session (current device)</p>') +
       _SH.card("Login History", '<div style="color:#64748b;font-size:12px;font-family:\'Inter\',sans-serif;"><div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.04);"><span>Current session</span><span style="color:#475569;">Just now</span></div><p style="margin-top:8px;color:#475569;font-size:11px;">Full login history will appear here as you use ValleyMind.</p></div>') +
       _SH.card("Devices", '<div style="display:flex;align-items:center;gap:12px;padding:8px 12px;background:rgba(15,23,42,0.5);border-radius:8px;"><div style="flex:1;"><span style="color:#e2e8f0;font-size:13px;font-family:\'Inter\',sans-serif;">Current Device</span><p style="color:#64748b;font-size:10px;margin:1px 0 0;font-family:\'Inter\',sans-serif;">Active now</p></div><span style="color:#22c55e;font-size:10px;font-family:\'Inter\',sans-serif;">Current</span></div>');
@@ -240,7 +240,7 @@ function settingsAvatarUpload(input) {
   input.value = "";
   if (!file) return;
   var status = document.getElementById("settingsAvatarStatus");
-  if (status) status.textContent = "Reading…";
+  if (status) status.textContent = "ReadingΓÇª";
   var reader = new FileReader();
   reader.onload = function (e) {
     var img = new Image();
@@ -253,7 +253,7 @@ function settingsAvatarUpload(input) {
       canvas.width = w; canvas.height = h;
       canvas.getContext("2d").drawImage(img, 0, 0, w, h);
       var dataUrl = canvas.toDataURL("image/jpeg", 0.85);
-      if (status) status.textContent = "Uploading…";
+      if (status) status.textContent = "UploadingΓÇª";
       apiFetch("/api/settings/profile", {
         method: "PUT", credentials: "include",
         headers: authHeaders({ "Content-Type": "application/json" }),
@@ -309,9 +309,9 @@ function updateProfile() {
   }).catch(function () { var el = document.getElementById("settingsProfileStatus"); if (el) el.textContent = "Connection error"; });
 }
 
-// ══════════════════════════════════════════════════════════════
+// ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
 // INTERESTS & GOALS
-// ══════════════════════════════════════════════════════════════
+// ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
 
 var INTEREST_OPTIONS = [
   "Technology", "AI & Machine Learning", "Programming", "Design", "Video Editing", "Photography",
@@ -321,7 +321,7 @@ var INTEREST_OPTIONS = [
 ];
 
 function renderInterestsSection(container) {
-  container.innerHTML = _SH.sectionHeader("Interests & Goals", "Tell ValleyMind what you care about — it personalizes recommendations, suggestions and answers") + '<p style="color:#64748b;">Loading...</p>';
+  container.innerHTML = _SH.sectionHeader("Interests & Goals", "Tell ValleyMind what you care about ΓÇö it personalizes recommendations, suggestions and answers") + '<p style="color:#64748b;">Loading...</p>';
   settingsApiGet("interests").then(function (d) {
     var data = d.data || {};
     _interestTags = data.tags || [];
@@ -332,15 +332,15 @@ function renderInterestsSection(container) {
       var active = tags.indexOf(opt) !== -1;
       return '<span onclick="toggleInterest(\'' + opt.replace(/'/g, "\\'") + '\')" id="int_' + opt.replace(/[^a-zA-Z0-9]/g, "_") + '" style="display:inline-block;background:' + (active ? "rgba(0,212,255,0.15)" : "rgba(255,255,255,0.04)") + ';color:' + (active ? "#00d4ff" : "#64748b") + ';border:1px solid ' + (active ? "rgba(0,212,255,0.3)" : "rgba(255,255,255,0.08)") + ';border-radius:999px;padding:6px 14px;font-size:12px;cursor:pointer;transition:all 0.15s;font-family:\'Inter\',sans-serif;">' + opt + '</span>';
     }).join("");
-    container.innerHTML = _SH.sectionHeader("Interests & Goals", "Tell ValleyMind what you care about — it personalizes recommendations, suggestions and answers") +
+    container.innerHTML = _SH.sectionHeader("Interests & Goals", "Tell ValleyMind what you care about ΓÇö it personalizes recommendations, suggestions and answers") +
       _SH.card("Interests", '<div style="display:flex;flex-wrap:wrap;gap:8px;">' + chips + '</div>' +
-        '<div style="height:10px;"></div>' + _SH.input("Add another interest…", "newInterestInput") +
+        '<div style="height:10px;"></div>' + _SH.input("Add another interestΓÇª", "newInterestInput") +
         '<div style="margin-top:8px;">' + _SH.btn("Add Interest", "addInterest()") + '</div>') +
       _SH.card("Goals", '<p style="color:#94a3b8;font-size:10px;margin:0 0 6px;">Your goals</p>' +
         (goals.length ? goals.map(function (g, i) {
           return '<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:rgba(15,23,42,0.5);border-radius:8px;margin-bottom:6px;"><span style="color:#00d4ff;">&#9830;</span><span style="color:#e2e8f0;font-size:13px;flex:1;">' + g + '</span><button onclick="removeGoal(' + i + ')" style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:13px;">&times;</button></div>';
         }).join("") : '<p style="color:#475569;font-size:12px;">No goals yet. Add a goal below.</p>') +
-        '<div style="height:8px;"></div>' + _SH.input("Add a goal…", "newGoalInput") +
+        '<div style="height:8px;"></div>' + _SH.input("Add a goalΓÇª", "newGoalInput") +
         '<div style="margin-top:8px;">' + _SH.btn("Add Goal", "addGoal()") + '</div>') +
       '<div style="margin-top:4px;">' + _SH.btn("Save Interests & Goals", "saveInterests()", "rgba(0,212,255,0.8)") + _SH.statusSpan("interestsStatus") + '</div>';
   }).catch(function () { container.innerHTML = _SH.sectionHeader("Interests & Goals") + '<p style="color:#64748b;">Could not load interests.</p>'; });
@@ -386,9 +386,9 @@ function saveInterests() {
   _saveSettingsAndShow("interests", { tags: _interestTags, goals: _interestGoals }, "interestsStatus");
 }
 
-// ══════════════════════════════════════════════════════════════
+// ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
 // ACCESSIBILITY
-// ══════════════════════════════════════════════════════════════
+// ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
 
 function renderAccessibilitySection(container) {
   container.innerHTML = _SH.sectionHeader("Accessibility", "Make ValleyMind work the way you need it to");
@@ -417,9 +417,9 @@ function saveAccessibility() {
   }, "accStatus");
 }
 
-// ══════════════════════════════════════════════════════════════
+// ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
 // SECURITY
-// ══════════════════════════════════════════════════════════════
+// ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
 
 function renderSecuritySection(container) {
   container.innerHTML = _SH.sectionHeader("Security", "Manage your account security") +
@@ -455,16 +455,16 @@ function securityChangePassword() {
 
 function secSignOutOthers() {
   var status = document.getElementById("secSessionStatus");
-  if (status) status.textContent = "Signing out other sessions…";
+  if (status) status.textContent = "Signing out other sessionsΓÇª";
   apiFetch("/auth/signout-others", { method: "POST", credentials: "include", headers: authHeaders() })
     .then(function (r) { return r.json(); }).then(function (d) {
       if (status) status.textContent = d.status === "success" ? "Other sessions signed out." : (d.message || "Failed.");
     }).catch(function () { if (status) status.textContent = "Connection error."; });
 }
 
-// ══════════════════════════════════════════════════════════════
+// ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
 // CONNECTED ACCOUNTS
-// ══════════════════════════════════════════════════════════════
+// ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
 
 function renderConnectedSection(container) {
   container.innerHTML = _SH.sectionHeader("Connected Accounts", "Link accounts to sign in faster and sync content");
@@ -478,7 +478,7 @@ function renderConnectedSection(container) {
         '<div style="flex:1;"><span style="color:#e2e8f0;font-size:13px;font-family:\'Inter\',sans-serif;">' + name + '</span>' +
         '<p style="color:#64748b;font-size:10px;margin:1px 0 0;font-family:\'Inter\',sans-serif;">' + (connected ? "Connected" : "Not connected") + '</p></div>' +
         (connected
-          ? '<span style="color:#22c55e;font-size:10px;font-family:\'Inter\',sans-serif;">✓ Linked</span>'
+          ? '<span style="color:#22c55e;font-size:10px;font-family:\'Inter\',sans-serif;">Γ£ô Linked</span>'
           : _SH.btn("Connect", "showComingSoon('Connect " + name + "')")) + '</div>';
     };
     container.innerHTML = _SH.sectionHeader("Connected Accounts", "Link accounts to sign in faster and sync content") +
@@ -489,9 +489,9 @@ function renderConnectedSection(container) {
   });
 }
 
-// ══════════════════════════════════════════════════════════════
+// ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
 // TUTORIALS & HELP
-// ══════════════════════════════════════════════════════════════
+// ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
 
 function renderTutorialsSection(container) {
   var guideList = (window.VM_GUIDES || []).map(function (g) {
@@ -510,20 +510,20 @@ function renderTutorialsSection(container) {
       _SH.btn("Replay Chat Guide", "vmGuideForce('chat')", "rgba(0,212,255,0.8)") +
       _SH.btn("Replay Studio Guide", "vmGuideForce('studio')") +
       _SH.btn("Reset All Tutorials", "resetTutorials()", "rgba(239,68,68,0.15)") + _SH.statusSpan("tutorialStatus") + '</div>') +
-    _SH.card("How It Works", '<p style="color:#94a3b8;font-size:12px;line-height:1.6;margin:0;font-family:\'Inter\',sans-serif;">Each feature shows a short introduction the first time you open it. Once you\'ve seen a walkthrough it won\'t repeat — you can replay any of them here at any time.</p>');
+    _SH.card("How It Works", '<p style="color:#94a3b8;font-size:12px;line-height:1.6;margin:0;font-family:\'Inter\',sans-serif;">Each feature shows a short introduction the first time you open it. Once you\'ve seen a walkthrough it won\'t repeat ΓÇö you can replay any of them here at any time.</p>');
 }
 
 function resetTutorials() {
   var status = document.getElementById("tutorialStatus");
   if (!confirm("Reset all tutorials? Every feature walkthrough will show again the next time you open it.")) return;
   if (window.vmGuideReset) vmGuideReset();
-  if (status) { status.textContent = "Tutorials reset — they'll show again as you explore."; setTimeout(function () { status.textContent = ""; }, 3500); }
+  if (status) { status.textContent = "Tutorials reset ΓÇö they'll show again as you explore."; setTimeout(function () { status.textContent = ""; }, 3500); }
   renderSettingsContent("tutorials");
 }
 
-// ══════════════════════════════════════════════════════════════
+// ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
 // MEMORY
-// ══════════════════════════════════════════════════════════════
+// ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
 
 var MEMORY_FIELDS = [
   { key: "about_me", label: "About Me" },
@@ -548,7 +548,7 @@ function renderMemorySection(container) {
         return '<div style="margin-bottom:14px;"><p style="color:#94a3b8;font-size:11px;margin:0 0 6px;font-family:\'Inter\',sans-serif;">' + f.label + '</p>' +
           _SH.textarea("Tell ValleyMind about " + f.label.toLowerCase() + "...", "mem_" + f.key, val) + '</div>';
       }).join("");
-      container.innerHTML = _SH.sectionHeader("Memory", "Tell ValleyMind about yourself — every update is saved to long-term memory") +
+      container.innerHTML = _SH.sectionHeader("Memory", "Tell ValleyMind about yourself ΓÇö every update is saved to long-term memory") +
         _SH.card("Your Personal Context", fieldsHtml + '<div style="margin-top:8px;">' + _SH.btn("Save All Memory Fields", "saveAllMemoryFields()", "rgba(0,212,255,0.8)") + _SH.statusSpan("memSaveStatus") + '</div>') +
         _SH.card("Memory Tools", '<div style="display:flex;flex-wrap:wrap;gap:8px;">' +
           _SH.btn("Memory Timeline", "showMemoryTimeline()") +
@@ -607,9 +607,9 @@ function exportMemory() {
     }).catch(function () { alert("Could not export memory."); });
 }
 
-// ══════════════════════════════════════════════════════════════
+// ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
 // PROJECTS
-// ══════════════════════════════════════════════════════════════
+// ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
 
 function renderProjectsSection(container) {
   container.innerHTML = _SH.sectionHeader("Projects", "Save projects so ValleyMind has context about your work");
@@ -656,12 +656,12 @@ function deleteProject(pid) {
     .catch(function () { alert("Failed to delete."); });
 }
 
-// ══════════════════════════════════════════════════════════════
+// ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
 // CREATOR PROFILE
-// ══════════════════════════════════════════════════════════════
+// ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
 
 function renderCreatorSection(container) {
-  container.innerHTML = _SH.sectionHeader("Creator Profile", "Configure your creative identity — used automatically for content generation");
+  container.innerHTML = _SH.sectionHeader("Creator Profile", "Configure your creative identity ΓÇö used automatically for content generation");
   settingsApiGet("creator").then(function (d) {
     var data = d.data || {};
     container.innerHTML = _SH.sectionHeader("Creator Profile", "Configure your creative identity") +
@@ -704,9 +704,9 @@ function saveCreatorProfile() {
   }, "creatorStatus");
 }
 
-// ══════════════════════════════════════════════════════════════
+// ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
 // AI PREFERENCES
-// ══════════════════════════════════════════════════════════════
+// ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
 
 // "Complete your ValleyMind preferences" entry card for existing users. It opens
 // the SAME wizard component /static/onboarding.js uses for first-run signups, so
@@ -723,7 +723,7 @@ function _prefSetupBanner(data) {
   return '<div style="display:flex;align-items:center;gap:14px;justify-content:space-between;flex-wrap:wrap;background:linear-gradient(135deg,rgba(0,212,255,0.08),rgba(14,165,233,0.04));border:1px solid rgba(0,212,255,0.22);border-radius:12px;padding:16px 18px;margin-bottom:16px;">' +
     '<div style="flex:1;min-width:220px;">' +
       '<div style="color:#f1f5f9;font-size:13.5px;font-weight:700;font-family:\'Inter\',sans-serif;">Complete your ValleyMind preferences</div>' +
-      '<p style="color:#94a3b8;font-size:12px;margin:4px 0 0;font-family:\'Inter\',sans-serif;">A short guided setup — language, communication style, and how you like to work. Quick and skippable; change anything later.</p>' +
+      '<p style="color:#94a3b8;font-size:12px;margin:4px 0 0;font-family:\'Inter\',sans-serif;">A short guided setup ΓÇö language, communication style, and how you like to work. Quick and skippable; change anything later.</p>' +
     '</div>' +
     '<div style="display:flex;gap:8px;flex-wrap:wrap;">' +
       '<button onclick="openPreferencesSetup({source:\'settings\'})" style="border:none;border-radius:8px;background:#00d4ff;color:#003642;font-weight:700;padding:9px 16px;cursor:pointer;font-size:12px;font-family:\'Inter\',sans-serif;">Set preferences</button>' +
@@ -760,9 +760,9 @@ function saveAIPreferences() {
   }, "prefStatus");
 }
 
-// ══════════════════════════════════════════════════════════════
+// ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
 // APPEARANCE
-// ══════════════════════════════════════════════════════════════
+// ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
 
 function renderAppearanceSection(container) {
   container.innerHTML = _SH.sectionHeader("Appearance", "Customize the look and feel of ValleyMind");
@@ -804,9 +804,9 @@ function setSettingsAccent(color) {
   document.documentElement.style.setProperty("--accent-color", color);
 }
 
-// ══════════════════════════════════════════════════════════════
+// ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
 // COMPANION
-// ══════════════════════════════════════════════════════════════
+// ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
 // The standalone VRM character has no attached controls any more; every knob
 // lives here. All state is owned by static/vrm_companion.js and reached through
 // the window.vmVrmCompanion surface, so this section is a pure view + wire-up.
@@ -819,7 +819,7 @@ var VM_COMPANION_PERMS = [
   { id: "type", label: "Type into fields" },
 ];
 
-// ── Persona voice catalogue ──────────────────────────────────────────────
+// ΓöÇΓöÇ Persona voice catalogue ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 // The four speaking personas of the Round Table / companion. Each keeps its own
 // independently selectable voice. The EXISTING server voice stays the default
 // and the fallback: nothing here changes the Qwen default playback path (see
@@ -969,7 +969,7 @@ function renderCompanionInto(container) {
   var accessBtn = _SH.btn("Allow microphone", "vmCompanionAllowAccess()", "rgba(0,212,255,0.8)") +
     " " + _SH.btn("Not now", "vmCompanionDeclineAccess()");
   if (p.access === "allowed") {
-    accessLabel = "Microphone allowed — hands-free voice is on";
+    accessLabel = "Microphone allowed ΓÇö hands-free voice is on";
     accessBtn = _SH.btn("Turn off mic access", "vmCompanionDeclineAccess()");
   } else if (p.access === "declined") {
     accessLabel = "Microphone off";
@@ -1018,12 +1018,12 @@ function renderCompanionInto(container) {
         '<button type="button" class="vmvrm-mini-btn" id="vmVrmCompanionTaskStop" title="Stop / cancel the task">Stop</button>' +
       '</div>' +
       '<div class="vmvrm-task-row">' +
-        '<input type="text" id="vmVrmCompanionTaskInput" placeholder="Describe a task…" maxlength="2000" autocomplete="off" aria-label="Describe a task">' +
+        '<input type="text" id="vmVrmCompanionTaskInput" placeholder="Describe a taskΓÇª" maxlength="2000" autocomplete="off" aria-label="Describe a task">' +
         '<button type="button" class="vmvrm-mini-btn primary" id="vmVrmCompanionTaskPlan" title="Plan task">Plan</button>' +
       '</div>' +
     '</div>';
 
-  container.innerHTML = _SH.sectionHeader("Companion", "Your standalone VRM character — appearance, voice and permissions") +
+  container.innerHTML = _SH.sectionHeader("Companion", "Your standalone VRM character ΓÇö appearance, voice and permissions") +
     _SH.card("Character", '<div style="display:flex;flex-direction:column;gap:14px;">' +
       '<div>' + _SH.row("Show companion", _SH.toggle("vmSetVisible", p.visible, "vmCompanionSetVisible(this.checked)"), "Hide or restore the character. Hiding is always reversible here.") + '</div>' +
       '<div>' + _SH.row("Active character", '<div class="vmvrm-mode"><button type="button" class="vmvrm-mode-btn' + (isVrm ? " on" : "") + '" data-vm-mode="vrm" onclick="vmCompanionSetMode(\'vrm\')">VRM companion</button><button type="button" class="vmvrm-mode-btn' + (!isVrm ? " on" : "") + '" data-vm-mode="cloud" onclick="vmCompanionSetMode(\'cloud\')">Cloud (legacy)</button></div>', "Only one is ever visible.") + '</div>' +
@@ -1045,7 +1045,7 @@ function renderCompanionInto(container) {
       '<div style="margin-top:12px;"><p style="color:#94a3b8;font-size:10px;margin:0 0 4px;text-transform:uppercase;letter-spacing:0.12em;font-family:\'Space Grotesk\',sans-serif;">Voice</p>' + _SH.select([{ value: "", label: "Follow account voice" }, { value: "marcus", label: "Marcus" }, { value: "elena", label: "Elena" }, { value: "angelina", label: "Angelina" }, { value: "companion", label: "Companion (default)" }], "vmSetVoice", p.voiceKey, "vmCompanionSetVoiceKey(this.value)") + '</div>' +
       '<div style="margin-top:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.05);"><p style="color:#e2e8f0;font-size:13px;margin:0 0 8px;">Microphone access: <span style="color:#94a3b8;">' + accessLabel + '</span></p>' + accessBtn + '</div>' +
       '</div>') +
-    _SH.card("Tasks", '<p style="color:#94a3b8;font-size:12px;margin:0 0 12px;line-height:1.5;">ValleyMind can carry out multi-step tasks in the app — say something like \u201copen the Studio\u201d or \u201cscroll down\u201d. It only acts on what you allow here, and anything impactful asks for your confirmation first.</p>' +
+    _SH.card("Tasks", '<p style="color:#94a3b8;font-size:12px;margin:0 0 12px;line-height:1.5;">ValleyMind can carry out multi-step tasks in the app ΓÇö say something like \u201copen the Studio\u201d or \u201cscroll down\u201d. It only acts on what you allow here, and anything impactful asks for your confirmation first.</p>' +
       '<div style="display:flex;flex-direction:column;">' + permRows + '</div>' +
       '<div style="margin-top:14px;border-top:1px solid rgba(255,255,255,0.06);padding-top:12px;">' + taskPanel + '</div>' +
       '<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">' +
@@ -1108,16 +1108,16 @@ function vmCompanionSetVoiceKey(v) {
   if (vm) vm.setVoiceKey(profiles.indexOf(key) !== -1 && key !== "companion" ? key : "");
 }
 
-// ── Per-persona voice selection ──────────────────────────────────────────
+// ΓöÇΓöÇ Per-persona voice selection ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 // One row per persona, each independently selectable. This is purely additive:
 // the existing shared "Voice" select above still works and the server default
 // (Qwen) is untouched. The two local Piper voices are opt-in previews.
 function vmPersonaVoicesCard() {
   var saved = _vmNormalizePersonaVoices(_readPersonaVoices());
 
-  // Voice assignment buttons — clickable chips with gender labels
+  // Voice assignment buttons ΓÇö clickable chips with gender labels
   var voiceButtons = VM_PERSONA_VOICES.voices.map(function (v) {
-    var genderIcon = v.gender === "male" ? "♂" : "♀";
+    var genderIcon = v.gender === "male" ? "ΓÖé" : "ΓÖÇ";
     var isMainSelected = VM_PERSONA_VOICES.personas
       .filter(function (p) { return p.key !== "companion"; })
       .some(function (p) { return saved[p.key] === v.id; });
@@ -1182,11 +1182,11 @@ function vmPersonaSetVoice(personaKey, voiceId) {
   _writePersonaVoices(saved);
   var st = document.getElementById("vmPersonaVoiceStatus");
   if (st) { st.textContent = "Saving " + personaKey + " \u2026"; }
-  // Persist through the EXISTING generic settings route (cloud section) — no
+  // Persist through the EXISTING generic settings route (cloud section) ΓÇö no
   // second settings controller, no new endpoint. Merge-flagged so this partial
   // save cannot delete unrelated cloud keys (accent/personality_style/...).
   settingsApiSave("cloud", { persona_voices: saved }, { merge: true }).then(function () {
-    if (st) { st.textContent = "Saved " + personaKey + " → " + voiceId; setTimeout(function () { st.textContent = ""; }, 2500); }
+    if (st) { st.textContent = "Saved " + personaKey + " ΓåÆ " + voiceId; setTimeout(function () { st.textContent = ""; }, 2500); }
   }).catch(function () {
     if (st) { st.textContent = "Save failed for " + personaKey; setTimeout(function () { st.textContent = ""; }, 2500); }
   });
@@ -1233,7 +1233,7 @@ function vmAssignVoiceDestination(destination) {
   }
   _writePersonaVoices(saved);
   settingsApiSave("cloud", { persona_voices: saved }, { merge: true }).then(function () {
-    if (st) { st.textContent = "Saved " + vmSelectedVoice + " → " + destination; setTimeout(function () { st.textContent = ""; }, 2500); }
+    if (st) { st.textContent = "Saved " + vmSelectedVoice + " ΓåÆ " + destination; setTimeout(function () { st.textContent = ""; }, 2500); }
     // Re-render to reflect updated selections
     if (typeof renderSettingsContent === "function" && document.getElementById("settingsContent")) {
       renderSettingsContent("voice");
@@ -1259,253 +1259,128 @@ function _personaEngineLabel(engine) {
   return engine || "voice";
 }
 
+// Post-Preview Save controls (Main Chat vs Companion, never overwrite each other).
+// States: Saving... / Saved / Save failed
+function _vmPreviewSaveVoice(voiceId, destination, btnId) {
+  var btn = document.getElementById(btnId);
+  var setS = function (t, ok) { try { if (btn) { btn.textContent = t; btn.disabled = (t === "Saving..."); btn.style.opacity = (t === "Saving...") ? "0.7" : "1"; if (ok === true) btn.style.borderColor = "rgba(34,197,94,0.5)"; if (ok === false) btn.style.borderColor = "rgba(239,68,68,0.5)"; } } catch (e) {} };
+  if (!_personaVoiceById(voiceId)) { setS("Save failed", false); return; }
+  setS("Saving...", null);
+  try {
+    var saved = _readPersonaVoices();
+    if (destination === "main") {
+      ["marcus", "elena", "angelina"].forEach(function (k) { saved[k] = voiceId; });
+    } else if (destination === "companion") {
+      saved.companion = voiceId; // only companion key
+    } else { setS("Save failed", false); return; }
+    _writePersonaVoices(saved);
+    if (typeof settingsApiSave === "function") {
+      settingsApiSave("cloud", { persona_voices: saved }, { merge: true }).then(function () {
+        setS("Saved", true);
+        try { if (window && window.vmPersonaVoicesSync) window.vmPersonaVoicesSync(saved); } catch (e) {}
+        setTimeout(function () { setS(destination === "main" ? "Save to Main Chat" : "Save to Companion", null); }, 1800);
+      }).catch(function () { setS("Save failed", false); });
+    } else { setS("Save failed", false); }
+  } catch (e) { setS("Save failed", false); }
+}
+
+function _vmPreviewSaveHtml(voiceId, prefix) {
+  var safe = String(voiceId || "").replace(/[^a-zA-Z0-9_\-]/g, "");
+  var mId = "vmPvSaveMain_" + prefix + "_" + safe;
+  var cId = "vmPvSaveComp_" + prefix + "_" + safe;
+  return '<div class="vm-pv-save-row" style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">' +
+    '<button id="' + mId + '" type="button" onclick="_vmPreviewSaveVoice(\'' + safe + '\',\'main\',\'' + mId + '\')" style="padding:6px 10px;background:rgba(0,212,255,0.12);border:1px solid rgba(0,212,255,0.35);border-radius:8px;color:#cbd5e1;cursor:pointer;font-size:11px;">Save to Main Chat</button>' +
+    '<button id="' + cId + '" type="button" onclick="_vmPreviewSaveVoice(\'' + safe + '\',\'companion\',\'' + cId + '\')" style="padding:6px 10px;background:rgba(148,163,184,0.1);border:1px solid rgba(148,163,184,0.25);border-radius:8px;color:#cbd5e1;cursor:pointer;font-size:11px;">Save to Companion</button>' +
+    '</div>';
+}
+
 function vmPersonaPreviewVoice(personaKey) {
-  var saved = _readPersonaVoices();
-  // Preview the voice selected via chips (vmSelectedVoice) if set, otherwise the saved voice for this persona.
-  var voiceId = vmSelectedVoice || saved[personaKey] || (VM_PERSONA_VOICES.personas.filter(function (p) { return p.key === personaKey; })[0] || {}).defaultVoice;
-  var entry = _personaVoiceById(voiceId);
-  if (!entry) return;
-  var st = document.getElementById("vmPersonaVoiceStatus");
-  // _savedVoiceProfile is defined in index.html; guard for environments where it isn't loaded.
-  var profile = typeof _savedVoiceProfile === "function" ? _savedVoiceProfile(personaKey) : "";
-
-  if (st) st.textContent = "Preparing preview\u2026";
-
-  // Stop any previous preview so the orb and audio are never left in a mixed state.
-  try { if (_personaPreviewPlayer) { _personaPreviewPlayer.pause(); _personaPreviewPlayer.currentTime = 0; _personaPreviewPlayer.src = ""; } } catch (e) {}
-  try { if (_vmVoiceOrb && typeof _vmVoiceOrb.disconnectAudio === "function") _vmVoiceOrb.disconnectAudio(); } catch (e) {}
-  try { if (_vmVoiceOrb) _vmVoiceOrb.setState("idle"); } catch (e) {}
-
-  // Initialise the orb for this voice and mark it as playing.
   try {
-    _vmInitVoiceOrb();
-    if (_vmVoiceOrb) {
-      _vmVoiceOrb.setPreset(_vmGetVoicePreset(voiceId));
-      _vmVoiceOrb.setState("playing");
-    }
-  } catch (e) {}
-
-  apiFetch("/api/tts", {
-    method: "POST", credentials: "include",
-    headers: authHeaders({ "Content-Type": "application/json" }),
-    body: JSON.stringify({ text: VM_PERSONA_PREVIEW_TEXT, persona: personaKey, profile: profile }),
-    timeoutMs: 60000
-  }).then(function (r) { return r.json(); }).then(function (data) {
-    if (!data || !data.url) {
-      if (st) st.textContent = "(preview unavailable)";
-      try { if (_vmVoiceOrb) _vmVoiceOrb.setState("idle"); } catch (e) {}
-      return;
-    }
-    // Ensure player exists
-    if (!_personaPreviewPlayer) {
-      _personaPreviewPlayer = document.createElement("audio");
-      _personaPreviewPlayer.style.display = "none";
-      (document.body || document.documentElement).appendChild(_personaPreviewPlayer);
-    }
-    try { _personaPreviewPlayer.pause(); } catch (e) {}
-    _personaPreviewPlayer.currentTime = 0;
-    _personaPreviewPlayer.src = data.url;
-    // Connect orb to real audio so it animates with playback.
-    try {
-      if (_vmVoiceOrb && typeof _vmVoiceOrb.connectAudio === "function") {
-        _vmVoiceOrb.connectAudio(_personaPreviewPlayer);
-      }
-      if (_vmVoiceOrb) _vmVoiceOrb.setState("playing");
-    } catch (e) {}
-    var pr = _personaPreviewPlayer.play();
-    if (pr && pr.catch) pr.catch(function () { if (st) st.textContent = "(tap to allow audio)"; });
-    // Handle end
-    _personaPreviewPlayer.onended = function () {
-      try { if (_vmVoiceOrb) { if (typeof _vmVoiceOrb.disconnectAudio === "function") _vmVoiceOrb.disconnectAudio(); _vmVoiceOrb.setState("idle"); } } catch (e) {}
-    };
-    _personaPreviewPlayer.onerror = function () {
-      try { if (_vmVoiceOrb) { if (typeof _vmVoiceOrb.disconnectAudio === "function") _vmVoiceOrb.disconnectAudio(); _vmVoiceOrb.setState("idle"); } } catch (e) {}
-    };
-    if (st) {
-      var label = entry.label;
-      if (data.fallback_from === "piper_local" && data.engine !== "piper_local") {
-        st.textContent = entry.label + " unavailable \u2014 played " + _personaEngineLabel(data.engine) + " instead";
-      } else {
-        st.textContent = "Playing " + label + " \u2014 " + _personaEngineLabel(data.engine);
-      }
-      st.innerHTML += ' <button onclick="vmPersonaSetVoice(\'' + personaKey + '\', \'' + voiceId + '\')" style="margin-left:8px;padding:4px 8px;background:#00d4ff;border:none;border-radius:4px;color:#fff;cursor:pointer;font-size:12px;">Save</button>';
-      setTimeout(function () { if (st) st.textContent = ""; }, 4000);
-    }
-  }).catch(function () { 
-    if (st) st.textContent = "(preview unavailable)"; 
-    try { if (_vmVoiceOrb) _vmVoiceOrb.setState("idle"); } catch (e) {}
-  });
-}
-
-
-// ── Voice tab ────────────────────────────────────────────────────────────
-// A dedicated catalogue of the voices this deployment genuinely has, plus the
-// per-persona assignment below it. Every card's "Preview" plays a real sample
-// through the existing /api/tts route and reports the ACTUAL engine used (a
-// fallback is never labelled as the requested voice). Voices are only listed
-// when the project's own configuration confirms them: the four free edge
-// reference voices always exist; the two local Piper voices are shown as
-// available/local and are honestly reported as unavailable when their model
-// files are not present (the server falls back to the free engine and says so).
-function renderVoiceSection(container) {
-  container.innerHTML = _SH.sectionHeader("Voice", "Choose how each speaker sounds - and preview before you commit") +
-    '<div id="vmVoiceOrbWrap" style="display:flex;justify-content:center;margin:4px 0 18px;"><div id="vmVoiceOrb" style="width:260px;height:260px;max-width:90vw;max-height:90vw;background:transparent;border-radius:50%;overflow:hidden;"></div></div>' +
-    '<div id="vmVoiceSectionDynamic">' + vmVoiceCatalogueCard() + vmPersonaVoicesCard() + '</div>' +
-    '<p style="color:#475569;font-size:11px;margin-top:4px;">Status: <span id="vmVoiceTabStatus"></span></p>';
-  // Initialize orb after DOM is ready
-  setTimeout(function () {
-    _vmInitVoiceOrb();
-  }, 0);
-  // Hydrate cloud persona_voices (cloud wins over stale local) then refresh cards.
-  try {
-    _vmHydratePersonaVoices().then(function () {
-      var dyn = document.getElementById("vmVoiceSectionDynamic");
-      if (dyn && typeof _settingsCurrentSection !== "undefined" && _settingsCurrentSection === "voice") {
-        dyn.innerHTML = vmVoiceCatalogueCard() + vmPersonaVoicesCard();
-      }
-    }).catch(function () {});
-  } catch (e) {}
-}
-
-function _vmInitVoiceOrb() {
-  try {
-    var c = document.getElementById("vmVoiceOrb");
-    if (!c) return;
-    if (_vmVoiceOrb && _vmVoiceOrbContainer === c) return;
-    if (_vmVoiceOrb && typeof _vmVoiceOrb.destroy === "function") {
-      try { _vmVoiceOrb.destroy(); } catch (e) {}
-    }
-    _vmVoiceOrbContainer = c;
-    if (typeof window.VoiceOrb === "undefined") {
-      // Try to load module
-      var s = document.createElement("script");
-      s.type = "module";
-      s.textContent = "import('/static/VoiceOrb.js').then(m=>{window.VoiceOrb=m.VoiceOrb;window.VOICE_PRESETS=m.VOICE_PRESETS; if(window._vmInitVoiceOrbRetry) window._vmInitVoiceOrbRetry();}).catch(()=>{});";
-      document.head.appendChild(s);
-      window._vmInitVoiceOrbRetry = function () {
-        _vmInitVoiceOrb();
-        delete window._vmInitVoiceOrbRetry;
+    var saved = _vmNormalizePersonaVoices(_readPersonaVoices());
+    // Preview the clicked/selected voice (falls back to saved/default).
+    var voiceId = (typeof vmSelectedVoice !== "undefined" && vmSelectedVoice) ? vmSelectedVoice : (saved[personaKey] || (VM_PERSONA_VOICES.personas.filter(function (p) { return p.key === personaKey; })[0] || {}).defaultVoice);
+    var entry = _personaVoiceById(voiceId);
+    if (!entry) return;
+    var st = document.getElementById("vmPersonaVoiceStatus");
+    if (st) st.textContent = "Preparing preview\u2026";
+    try { if (_personaPreviewPlayer) { _personaPreviewPlayer.pause(); _personaPreviewPlayer.currentTime = 0; } } catch (e) {}
+    try { if (_vmVoiceOrb) _vmVoiceOrb.setState("loading"); } catch (e) {}
+    var label = (entry && entry.label) ? entry.label : voiceId;
+    // Send the explicit clicked voice id so the preview plays that voice.
+    apiFetch("/api/tts", {
+      method: "POST", credentials: "include",
+      headers: typeof authHeaders === "function" ? authHeaders({ "Content-Type": "application/json" }) : { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: VM_PERSONA_PREVIEW_TEXT, persona: personaKey, voice: voiceId })
+    }).then(function (res) {
+      if (!res.ok) throw new Error("Request failed (" + res.status + ")");
+      return res.json();
+    }).then(function (data) {
+      if (!data || !data.url) throw new Error((data && data.message) ? data.message : "No audio returned");
+      var done = function (ok, errMsg) {
+        try { if (_vmVoiceOrb) _vmVoiceOrb.setState("idle"); } catch (e) {}
+        if (!st) return;
+        if (ok) {
+          st.innerHTML = 'Playing ' + label + ' \u2014 ' + _personaEngineLabel(data.engine) + (data.fallback_from ? ' (fallback)' : '') + _vmPreviewSaveHtml(voiceId, "persona_" + personaKey);
+        } else {
+          st.textContent = "Preview error: " + (errMsg || "could not play audio");
+        }
       };
-      return;
-    }
-    _vmVoiceOrb = new window.VoiceOrb(c, { preset: "deep", ariaLabel: "Voice animation" });
-    _vmVoiceOrb.setState("idle");
+      _vmPlayPreviewUrl(data.url, function (err) { done(false, err); });
+      // optimistic label; _vmPlayPreviewUrl callback handles failure. Mark playing after play attempt.
+      setTimeout(function () { if (st && st.textContent.indexOf("Preparing") === 0) { st.innerHTML = 'Playing ' + label + ' \u2014 ' + _personaEngineLabel(data.engine) + _vmPreviewSaveHtml(voiceId, "persona_" + personaKey); } }, 250);
+    }).catch(function (err) {
+      try { if (_vmVoiceOrb) _vmVoiceOrb.setState("idle"); } catch (e) {}
+      if (st) st.textContent = "Preview error: " + (err && err.message ? err.message : "request failed");
+    });
   } catch (e) {
-    console.warn("[VoiceOrb] init failed", e);
+    var st2 = document.getElementById("vmPersonaVoiceStatus");
+    if (st2) st2.textContent = "Preview error: request failed";
   }
 }
 
-// Build one catalogue entry for a voice definition from VM_PERSONA_VOICES.
-function _vmVoiceCatalogueEntry(v) {
-  var isPiper = !!v.piper;
-  var engineLabel = isPiper ? "Local Piper model" : "Free Edge voice";
-  var detail = isPiper
-    ? ('On-device model \u00b7 ' + v.piper + ' \u00b7 no cloud, no per-character cost')
-    : ('Online reference voice \u00b7 ' + v.server + ' \u00b7 free');
-  var who = [];
-  VM_PERSONA_VOICES.personas.forEach(function (per) {
-    if (per.defaultVoice === v.id) who.push(per.label);
-  });
-  var whoTxt = who.length ? ("Default for " + who.join(", ")) : "Opt-in alternative";
-  return _SH.card(v.label,
-    '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">' +
-      '<div style="flex:1;">' +
-        '<div style="margin:0 0 6px;">' + _SH.badge(engineLabel, isPiper ? "#00d4ff" : "#64748b") + '</div>' +
-        '<p style="color:#94a3b8;font-size:12px;margin:0 0 4px;">' + detail + '</p>' +
-        '<p style="color:#64748b;font-size:11px;margin:0;">' + whoTxt + '</p>' +
-      '</div>' +
-      _SH.btn("Preview", "vmVoicePreview('" + v.id + "')") +
-    '</div>');
-}
-
-function vmVoiceCatalogueCard() {
-  var entries = VM_PERSONA_VOICES.voices.map(_vmVoiceCatalogueEntry).join("");
-  return _SH.card("Available voices",
-    '<p style="color:#94a3b8;font-size:12px;margin:0 0 12px;line-height:1.5;">These are the voices this build actually has. \u201cPreview\u201d plays a short sample and tells you which engine produced it.</p>' +
-    entries);
-}
-
-// Preview a SPECIFIC catalogue voice (not the persona's saved selection). The
-// server validates the voice id against its allowlist; the response reports the
-// engine that actually ran, so a fallback is never shown as the chosen voice.
 function vmVoicePreview(voiceId) {
-  var entry = _personaVoiceById(voiceId);
-  if (!entry) return;
-  var st = document.getElementById("vmVoiceTabStatus");
-  if (st) st.textContent = "Preparing preview\u2026";
-  // Update orb for selected voice
   try {
-    _vmInitVoiceOrb();
-    if (_vmVoiceOrb) {
-      var preset = _vmGetVoicePreset(voiceId);
-      _vmVoiceOrbCurrentVoiceId = voiceId;
-      _vmVoiceOrb.setPreset(preset);
-      _vmVoiceOrb.setState("playing");
-      // Try to connect audio
-      if (!_personaPreviewPlayer) {
-        _personaPreviewPlayer = document.createElement("audio");
-        _personaPreviewPlayer.style.display = "none";
-        (document.body || document.documentElement).appendChild(_personaPreviewPlayer);
+    var entry = _personaVoiceById(voiceId);
+    if (!entry) return;
+    var st = document.getElementById("vmPvStatus-" + voiceId);
+    if (st) st.textContent = "Loading\u2026";
+    try { if (window.vmVrmCompanion && window.vmVrmCompanion.setExpression) window.vmVrmCompanion.setExpression("happy", 0.5); } catch (e) {}
+    try { if (_vmVoiceOrb) _vmVoiceOrb.setState("loading"); } catch (e) {}
+    var label = (entry && entry.label) ? entry.label : voiceId;
+    apiFetch("/api/tts", {
+      method: "POST", credentials: "include",
+      headers: typeof authHeaders === "function" ? authHeaders({ "Content-Type": "application/json" }) : { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: VM_PERSONA_PREVIEW_TEXT, voice: voiceId })
+    }).then(function (res) {
+      if (!res.ok) throw new Error("Request failed (" + res.status + ")");
+      return res.json();
+    }).then(function (data) {
+      if (!data || !data.url) throw new Error((data && data.message) ? data.message : "No audio returned");
+      // Single play path (no double-play). Show errors if playback fails.
+      _vmPlayPreviewUrl(data.url, function (err) {
+        try { if (_vmVoiceOrb) _vmVoiceOrb.setState("idle"); } catch (e) {}
+        if (st) st.textContent = "Preview error: " + (err || "could not play audio");
+      });
+      try {
+        var el = _personaPreviewPlayer;
+        if (el) {
+          el.onplay = function () { try { if (_vmVoiceOrb) _vmVoiceOrb.attachAnalyser(el); _vmVoiceOrb.setState("speaking"); } catch (e) {} };
+          el.onended = function () { try { if (_vmVoiceOrb) _vmVoiceOrb.setState("idle"); } catch (e) {} };
+        }
+      } catch (e) {}
+      if (st) {
+        var note = (data.fallback_from === "piper_local" && data.engine !== "piper_local") ? (label + " unavailable \u2014 played " + _personaEngineLabel(data.engine) + " instead") : ("Playing " + label + " \u2014 " + _personaEngineLabel(data.engine));
+        st.innerHTML = note + _vmPreviewSaveHtml(voiceId, "cat_" + voiceId);
       }
-      // Disconnect previous
-      try { if (typeof _vmVoiceOrb.disconnectAudio === "function") _vmVoiceOrb.disconnectAudio(); } catch (e) {}
-    }
-  } catch (e) {}
-  apiFetch("/api/tts", {
-    method: "POST", credentials: "include",
-    headers: authHeaders({ "Content-Type": "application/json" }),
-    body: JSON.stringify({ text: VM_PERSONA_PREVIEW_TEXT, voice: voiceId }),
-    timeoutMs: 60000
-  }).then(function (r) { return r.json(); }).then(function (data) {
-    if (!data || !data.url) {
-      if (st) st.textContent = "(preview unavailable: " + ((data && data.reason) || "no audio") + ")";
+    }).catch(function (err) {
       try { if (_vmVoiceOrb) _vmVoiceOrb.setState("idle"); } catch (e) {}
-      return;
-    }
-    // Ensure player exists
-    if (!_personaPreviewPlayer) {
-      _personaPreviewPlayer = document.createElement("audio");
-      _personaPreviewPlayer.style.display = "none";
-      (document.body || document.documentElement).appendChild(_personaPreviewPlayer);
-    }
-    try { _personaPreviewPlayer.pause(); } catch (e) {}
-    _personaPreviewPlayer.currentTime = 0;
-    _personaPreviewPlayer.src = data.url;
-    // Connect orb to audio
-    try {
-      if (_vmVoiceOrb && typeof _vmVoiceOrb.connectAudio === "function") {
-        _vmVoiceOrb.connectAudio(_personaPreviewPlayer);
-      }
-      if (_vmVoiceOrb) _vmVoiceOrb.setState("playing");
-    } catch (e) {}
-    var pr = _personaPreviewPlayer.play();
-    if (pr && pr.catch) pr.catch(function () { if (onError) onError("(tap to allow audio)"); });
-    // Handle end
-    _personaPreviewPlayer.onended = function () {
-      try { if (_vmVoiceOrb) { if (typeof _vmVoiceOrb.disconnectAudio === "function") _vmVoiceOrb.disconnectAudio(); _vmVoiceOrb.setState("idle"); } } catch (e) {}
-    };
-    _personaPreviewPlayer.onerror = function () {
-      try { if (_vmVoiceOrb) { if (typeof _vmVoiceOrb.disconnectAudio === "function") _vmVoiceOrb.disconnectAudio(); _vmVoiceOrb.setState("idle"); } } catch (e) {}
-    };
-    _vmPlayPreviewUrl(data.url, function (err) {
-      if (st) st.textContent = err;
+      if (st) st.textContent = "Preview error: " + (err && err.message ? err.message : "request failed");
     });
-    if (st) {
-      var label = entry.label;
-      if (data.fallback_from === "piper_local" && data.engine !== "piper_local") {
-        st.textContent = entry.label + " unavailable \u2014 played " + _personaEngineLabel(data.engine) + " instead";
-      } else {
-        st.textContent = "Playing " + label + " \u2014 " + _personaEngineLabel(data.engine);
-      }
-      st.innerHTML += ' <button onclick="vmPersonaSetVoice(\'' + personaKey + '\', \'' + voiceId + '\')" style="margin-left:8px;padding:4px 8px;background:#00d4ff;border:none;border-radius:4px;color:#fff;cursor:pointer;font-size:12px;">Save</button>';
-      setTimeout(function () { if (st) st.textContent = ""; }, 4000);
-    }
-  }).catch(function () { 
-    if (st) st.textContent = "(preview unavailable)"; 
-    try { if (_vmVoiceOrb) _vmVoiceOrb.setState("idle"); } catch (e) {}
-  });
+  } catch (e) {
+    var st2 = document.getElementById("vmPvStatus-" + voiceId);
+    if (st2) st2.textContent = "Preview error: request failed";
+  }
 }
-
 // One hidden <audio> reused for every preview so a new preview always stops the
 // previous one (no overlapping playback). Returns nothing; reports play errors
 // through the optional callback.
@@ -1568,7 +1443,7 @@ function vmCompanionTogglePerm(el, name) {
   vm.setTaskPermissions(perms);
 }
 
-// ── Companion visibility control (ONE interface, per-platform adapters) ──────
+// ΓöÇΓöÇ Companion visibility control (ONE interface, per-platform adapters) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 // The Settings toggle "Show companion outside ValleyMind" is the SINGLE user
 // control. It drives vmCompanionControl(), which selects exactly one adapter:
 //   * windows-app     - the packaged Windows app (Electron IPC: no helper, no
@@ -1662,7 +1537,7 @@ function vmCompanionControl() {
   return { kind: "controller", set: null, subscribe: null, get: null, unsupported: vmCompanionLimitationMessage() };
 }
 
-// ── Presentation-mode coordinator (embedded <-> external) ───────────────────
+// ΓöÇΓöÇ Presentation-mode coordinator (embedded <-> external) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 // The toggle switches between the EMBEDDED companion (inside ValleyMind) and the
 // EXTERNAL floating window. static/companion_presentation.js owns the invariant
 // that exactly ONE presentation is visible and that a switch never leaves the
@@ -1773,7 +1648,7 @@ function vmCompanionRefreshDesktopState() {
         })
         .catch(function (e) {
           // Couldn't read the real state: never leave the companion hidden on a
-          // false assumption — restore the embedded companion.
+          // false assumption ΓÇö restore the embedded companion.
           _vmCompanionDiag("native-get-error", { error: (e && e.message) || String(e) });
           _vmCompanionApplyExternal(false);
           vmCompanionDesktopPref(ctrl.unsupported, "#f59e0b");
@@ -1947,9 +1822,9 @@ function vmCompanionSetDesktopVisible(on) {
     });
 }
 
-// ══════════════════════════════════════════════════════════════
+// ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
 // NOTIFICATIONS
-// ══════════════════════════════════════════════════════════════
+// ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
 
 function renderNotificationsSection(container) {
   container.innerHTML = _SH.sectionHeader("Notifications", "Control how ValleyMind communicates with you");
@@ -1995,12 +1870,12 @@ function saveNotifications() {
   } catch (e) { /* non-fatal */ }
 }
 
-// ══════════════════════════════════════════════════════════════
+// ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
 // KNOWLEDGE BASE
-// ══════════════════════════════════════════════════════════════
+// ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
 
 function renderKnowledgeSection(container) {
-  container.innerHTML = _SH.sectionHeader("Knowledge Base", "Upload documents, PDFs, and notes — ValleyMind uses this for context");
+  container.innerHTML = _SH.sectionHeader("Knowledge Base", "Upload documents, PDFs, and notes ΓÇö ValleyMind uses this for context");
   apiFetch("/api/settings/knowledge", { credentials: "include", headers: authHeaders() })
     .then(function (r) { return r.json(); }).then(function (d) {
       var items = d.items || [];
@@ -2011,7 +1886,7 @@ function renderKnowledgeSection(container) {
         var meta = chars > 0 ? (chars > 999 ? (Math.round(chars / 100) / 10) + "k chars" : chars + " chars") : "";
         return '<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:rgba(15,23,42,0.5);border-radius:8px;margin-bottom:4px;"><span style="font-size:9px;font-weight:700;color:#00d4ff;background:rgba(0,212,255,0.1);padding:2px 6px;border-radius:4px;">' + badge + '</span><div style="flex:1;min-width:0;"><span style="color:#e2e8f0;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block;">' + item.title + '</span>' + (meta ? '<span style="color:#64748b;font-size:10px;">' + meta + '</span>' : '') + '</div><button onclick="deleteKnowledgeItem(\'' + item.id + '\')" style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:14px;">&times;</button></div>';
       }).join("") : '<p style="color:#475569;font-size:12px;">No items yet.</p>';
-      container.innerHTML = _SH.sectionHeader("Knowledge Base", "Upload PDFs, text files and notes — ValleyMind reads them when you chat") +
+      container.innerHTML = _SH.sectionHeader("Knowledge Base", "Upload PDFs, text files and notes ΓÇö ValleyMind reads them when you chat") +
         _SH.card("Add to Knowledge Base", '<div style="display:flex;gap:8px;flex-wrap:wrap;">' + _SH.btn("Add Note", "showAddKnowledgeNote()") + _SH.btn("Upload PDF", "document.getElementById('knowPdfInput').click()") + _SH.btn("Upload Text File", "document.getElementById('knowTxtInput').click()") + '</div>' +
           '<input type="file" id="knowPdfInput" accept="application/pdf,.pdf" style="display:none;" onchange="uploadKnowledgePdf(this)">' +
           '<input type="file" id="knowTxtInput" accept=".txt,.md,text/plain,text/markdown" style="display:none;" onchange="uploadKnowledgeTxt(this)">' +
@@ -2043,7 +1918,7 @@ function _knowStatus(msg, color) {
 function _postKnowledgeDoc(type, title, content) {
   content = (content || "").replace(/\s+\n/g, "\n").trim();
   if (!content) { _knowStatus("Couldn't read any text from that file.", "#ef4444"); return; }
-  _knowStatus("Saving “" + title + "”…");
+  _knowStatus("Saving ΓÇ£" + title + "ΓÇ¥ΓÇª");
   apiFetch("/api/settings/knowledge", { method: "POST", credentials: "include", headers: authHeaders({ "Content-Type": "application/json" }), body: JSON.stringify({ type: type, title: title, content: content }) })
     .then(function (r) { return r.json(); })
     .then(function () { renderSettingsContent("knowledge"); })
@@ -2063,7 +1938,7 @@ function uploadKnowledgePdf(input) {
     }
   } catch (e) { /* non-fatal */ }
   var title = file.name.replace(/\.pdf$/i, "");
-  _knowStatus("Reading “" + file.name + "”…");
+  _knowStatus("Reading ΓÇ£" + file.name + "ΓÇ¥ΓÇª");
   var reader = new FileReader();
   reader.onload = function () {
     var task = window.pdfjsLib.getDocument({ data: new Uint8Array(reader.result) });
@@ -2073,7 +1948,7 @@ function uploadKnowledgePdf(input) {
       for (var i = 1; i <= pdf.numPages; i++) {
         (function (n) {
           seq = seq.then(function () {
-            _knowStatus("Extracting page " + n + " of " + pdf.numPages + "…");
+            _knowStatus("Extracting page " + n + " of " + pdf.numPages + "ΓÇª");
             return pdf.getPage(n).then(function (page) {
               return page.getTextContent().then(function (tc) {
                 pages.push(tc.items.map(function (it) { return it.str; }).join(" "));
@@ -2108,9 +1983,9 @@ function deleteKnowledgeItem(id) {
     .catch(function () { alert("Failed to delete."); });
 }
 
-// ══════════════════════════════════════════════════════════════
+// ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
 // MEDIA LIBRARY
-// ══════════════════════════════════════════════════════════════
+// ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
 
 function renderMediaSection(container) {
   container.innerHTML = _SH.sectionHeader("Media Library", "All your generated images and videos in one place");
@@ -2130,7 +2005,7 @@ function renderMediaSection(container) {
 function clearGeneratedImages() {
   if (!confirm("Delete ALL your generated images? This cannot be undone.")) return;
   var st = document.getElementById("clearImgStatus");
-  if (st) st.textContent = "Loading images…";
+  if (st) st.textContent = "Loading imagesΓÇª";
   apiFetch("/api/settings/media", { credentials: "include", headers: authHeaders() })
     .then(function (r) { return r.json(); }).then(function (d) {
       var images = d.images || [];
@@ -2138,7 +2013,7 @@ function clearGeneratedImages() {
       var i = 0;
       function next() {
         if (i >= images.length) { if (st) st.textContent = "Cleared " + images.length + " image(s)."; renderSettingsContent("storage"); return; }
-        if (st) st.textContent = "Deleting " + (i + 1) + " of " + images.length + "…";
+        if (st) st.textContent = "Deleting " + (i + 1) + " of " + images.length + "ΓÇª";
         apiFetch("/api/settings/media", { method: "DELETE", credentials: "include", headers: authHeaders({ "Content-Type": "application/json" }), body: JSON.stringify({ url: images[i].url }) })
           .then(function () { i++; next(); })
           .catch(function () { i++; next(); });
@@ -2155,9 +2030,9 @@ function deleteMedia(url) {
     .catch(function () { alert("Failed to delete."); });
 }
 
-// ══════════════════════════════════════════════════════════════
+// ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
 // STORAGE
-// ══════════════════════════════════════════════════════════════
+// ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
 
 function renderStorageSection(container) {
   container.innerHTML = _SH.sectionHeader("Storage", "Real-time storage usage");
@@ -2188,12 +2063,12 @@ function renderStorageSection(container) {
     }).catch(function () { container.innerHTML = _SH.sectionHeader("Storage") + '<p style="color:#64748b;">Could not load storage info.</p>'; });
 }
 
-// ══════════════════════════════════════════════════════════════
+// ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
 // BILLING
-// ══════════════════════════════════════════════════════════════
+// ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
 
 function renderBillingSection(container) {
-  container.innerHTML = _SH.sectionHeader("Billing", "Manage your subscription — Nigerian Naira (₦)");
+  container.innerHTML = _SH.sectionHeader("Billing", "Manage your subscription ΓÇö Nigerian Naira (Γéª)");
   apiFetch("/api/settings/billing", { credentials: "include", headers: authHeaders() })
     .then(function (r) { return r.json(); }).then(function (d) {
       var plans = d.plans || {};
@@ -2203,11 +2078,11 @@ function renderBillingSection(container) {
         var p = plans[key];
         var isCurrent = key === currentPlan;
         return '<div style="flex:1;min-width:180px;background:' + (isCurrent ? "rgba(0,212,255,0.06)" : "rgba(255,255,255,0.03)") + ';border:1px solid ' + (isCurrent ? "#00d4ff" : "rgba(255,255,255,0.06)") + ';border-radius:12px;padding:16px;"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;"><span style="color:#f1f5f9;font-size:15px;font-weight:700;">' + p.name + '</span>' + (isCurrent ? '<span style="background:rgba(0,212,255,0.15);color:#00d4ff;font-size:9px;padding:2px 6px;border-radius:4px;text-transform:uppercase;">Current</span>' : '') + '</div>' +
-          '<p style="color:#00d4ff;font-size:22px;font-weight:800;margin:0 0 10px;">₦' + p.price.toLocaleString() + '<span style="font-size:11px;color:#64748b;font-weight:400;">/mo</span></p>' +
-          (p.features || []).map(function (f) { return '<div style="display:flex;align-items:center;gap:6px;padding:3px 0;"><span style="color:#22c55e;font-size:12px;">✓</span><span style="color:#94a3b8;font-size:11px;">' + f + '</span></div>'; }).join("") +
+          '<p style="color:#00d4ff;font-size:22px;font-weight:800;margin:0 0 10px;">Γéª' + p.price.toLocaleString() + '<span style="font-size:11px;color:#64748b;font-weight:400;">/mo</span></p>' +
+          (p.features || []).map(function (f) { return '<div style="display:flex;align-items:center;gap:6px;padding:3px 0;"><span style="color:#22c55e;font-size:12px;">Γ£ô</span><span style="color:#94a3b8;font-size:11px;">' + f + '</span></div>'; }).join("") +
           (isCurrent ? '' : '<div style="margin-top:10px;">' + _SH.btn("Upgrade", "showComingSoon('Upgrade to " + p.name + "')", key === "free" ? "rgba(100,116,139,0.3)" : "rgba(0,212,255,0.8)") + '</div>') + '</div>';
       }).join("");
-      container.innerHTML = _SH.sectionHeader("Billing", "Manage your subscription — Nigerian Naira (₦)") +
+      container.innerHTML = _SH.sectionHeader("Billing", "Manage your subscription ΓÇö Nigerian Naira (Γéª)") +
         _SH.card("Current Plan: " + (plans[currentPlan] ? plans[currentPlan].name : "Free"), '<div style="display:flex;flex-wrap:wrap;gap:12px;">' + planCards + '</div>') +
         _SH.card("Monthly Usage", '<div style="display:flex;gap:16px;flex-wrap:wrap;">' +
           '<div style="background:rgba(15,23,42,0.5);border-radius:8px;padding:12px;flex:1;min-width:100px;"><p style="color:#94a3b8;font-size:10px;">Chats Used</p><p style="color:#e2e8f0;font-size:18px;font-weight:700;">' + (usage.monthly_chats || 0) + '</p></div>' +
@@ -2218,9 +2093,9 @@ function renderBillingSection(container) {
     }).catch(function () { container.innerHTML = _SH.sectionHeader("Billing") + '<p style="color:#64748b;">Could not load billing info.</p>'; });
 }
 
-// ══════════════════════════════════════════════════════════════
+// ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
 // PRIVACY & SECURITY
-// ══════════════════════════════════════════════════════════════
+// ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
 
 function renderPrivacySection(container) {
   container.innerHTML = _SH.sectionHeader("Privacy & Security", "Control your data and account security") +
@@ -2254,7 +2129,7 @@ function confirmClearMemory() {
 
 function confirmLogout() { if (confirm("Are you sure you want to log out?")) { logout(); } }
 function confirmDeleteAccount() {
-  if (!confirm("Permanently delete your account? All your data — settings, memory, chats, projects and media — will be removed. This cannot be undone.")) return;
+  if (!confirm("Permanently delete your account? All your data ΓÇö settings, memory, chats, projects and media ΓÇö will be removed. This cannot be undone.")) return;
   if (!confirm("Are you absolutely sure? This action is final and cannot be reversed.")) return;
   apiFetch("/api/settings/account", { method: "DELETE", credentials: "include", headers: authHeaders() })
     .then(function (r) { return r.json(); }).then(function (d) {
@@ -2295,9 +2170,9 @@ function clearLocalCache() {
   alert("Local cache cleared.");
 }
 
-// ══════════════════════════════════════════════════════════════
+// ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
 // LANGUAGE & REGION
-// ══════════════════════════════════════════════════════════════
+// ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
 
 // The 16 supported response languages (contact core/african_culture.py for tiers).
 // Value = canonical ISO code persisted as `response_language`.
@@ -2344,9 +2219,9 @@ function renderLanguageSection(container) {
     var data = d.data || {};
     var resp = _effectiveResponseLang(data);
     container.innerHTML = _SH.sectionHeader("Language & Region", "How the AI talks to you") +
-      _SH.card("Response Language", '<p style="color:#94a3b8;font-size:10px;margin:0 0 4px;">Reply Language — the AI answers in this language</p>' + _SH.select(CULTURAL_LANGUAGES, "langResponseLang", resp)) +
+      _SH.card("Response Language", '<p style="color:#94a3b8;font-size:10px;margin:0 0 4px;">Reply Language ΓÇö the AI answers in this language</p>' + _SH.select(CULTURAL_LANGUAGES, "langResponseLang", resp)) +
       _SH.card("Region & Formatting", '<div style="display:flex;gap:10px;"><div style="flex:1;"><p style="color:#94a3b8;font-size:10px;margin:0 0 4px;">Region</p>' + _SH.select(["Nigeria", "United States", "United Kingdom", "Canada", "Australia", "Germany", "France", "Other"], "langRegion", data.region) + '</div><div style="flex:1;"><p style="color:#94a3b8;font-size:10px;margin:0 0 4px;">Time Zone</p>' + _SH.select(["UTC+1 (WAT)", "UTC+0 (GMT)", "UTC-5 (EST)", "UTC-8 (PST)", "UTC+2 (CEST)", "UTC+8 (SGT)", "UTC+9 (JST)"], "langTimezone", data.timezone) + '</div></div>' +
-        '<div style="height:10px;"></div><div style="display:flex;gap:10px;"><div style="flex:1;"><p style="color:#94a3b8;font-size:10px;margin:0 0 4px;">Date Format</p>' + _SH.select(["DD/MM/YYYY", "MM/DD/YYYY", "YYYY-MM-DD"], "langDateFormat", data.date_format) + '</div><div style="flex:1;"><p style="color:#94a3b8;font-size:10px;margin:0 0 4px;">Currency</p>' + _SH.select(["NGN (₦)", "USD ($)", "EUR (€)", "GBP (£)"], "langCurrency", data.currency) + '</div></div>') +
+        '<div style="height:10px;"></div><div style="display:flex;gap:10px;"><div style="flex:1;"><p style="color:#94a3b8;font-size:10px;margin:0 0 4px;">Date Format</p>' + _SH.select(["DD/MM/YYYY", "MM/DD/YYYY", "YYYY-MM-DD"], "langDateFormat", data.date_format) + '</div><div style="flex:1;"><p style="color:#94a3b8;font-size:10px;margin:0 0 4px;">Currency</p>' + _SH.select(["NGN (Γéª)", "USD ($)", "EUR (Γé¼)", "GBP (┬ú)"], "langCurrency", data.currency) + '</div></div>') +
       '<div style="margin-top:4px;">' + _SH.btn("Save", "saveLanguagePrefs()", "rgba(0,212,255,0.8)") + _SH.statusSpan("langStatus") + '</div>';
   }).catch(function () { container.innerHTML = _SH.sectionHeader("Language & Region") + '<p style="color:#64748b;">Could not load language settings.</p>'; });
 }
@@ -2359,9 +2234,9 @@ function saveLanguagePrefs() {
   }, "langStatus");
 }
 
-// ══════════════════════════════════════════════════════════════
-// CULTURE — keeps cultural identity INDEPENDENT from response language
-// ══════════════════════════════════════════════════════════════
+// ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+// CULTURE ΓÇö keeps cultural identity INDEPENDENT from response language
+// ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
 
 var CULTURAL_IDENTITIES = [
   { value: "none",          label: "No specific cultural preference" },
@@ -2385,7 +2260,7 @@ function renderCultureSection(container) {
     container.innerHTML = _SH.sectionHeader("Culture", "Cultural identity & how the AI grounds its wisdom") +
       '<p style="color:#64748b;font-size:12px;margin:0 0 14px;">Cultural identity is <b>separate</b> from response language and is never inferred from your name, location, accent or appearance. Choose only what you want the AI to reflect.</p>' +
       _SH.card("Cultural Identity", '<p style="color:#94a3b8;font-size:10px;margin:0 0 4px;">Which cultural tradition should the AI reflect in its wisdom?</p>' + _SH.select(CULTURAL_IDENTITIES, "cultureIdentity", data.cultural_identity || "")) +
-      _SH.card("Cultural Wisdom", _SH.row("Use cultural adages & proverbs", _SH.toggle("cultureAdages", data.use_cultural_adages !== false), "When relevant, the AI may weave in proverbs from your chosen culture — never forced, never as scientific/medical/legal evidence.")) +
+      _SH.card("Cultural Wisdom", _SH.row("Use cultural adages & proverbs", _SH.toggle("cultureAdages", data.use_cultural_adages !== false), "When relevant, the AI may weave in proverbs from your chosen culture ΓÇö never forced, never as scientific/medical/legal evidence.")) +
       '<div style="margin-top:4px;">' + _SH.btn("Save", "saveCulturePrefs()", "rgba(0,212,255,0.8)") + _SH.statusSpan("cultureStatus") + '</div>';
   }).catch(function () { container.innerHTML = _SH.sectionHeader("Culture") + '<p style="color:#64748b;">Could not load cultural settings.</p>'; });
 }
@@ -2397,9 +2272,9 @@ function saveCulturePrefs() {
   }, "cultureStatus");
 }
 
-// ══════════════════════════════════════════════════════════════
+// ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
 // INTEGRATIONS
-// ══════════════════════════════════════════════════════════════
+// ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
 
 function renderIntegrationsSection(container) {
   var integrations = [
@@ -2417,9 +2292,9 @@ function renderIntegrationsSection(container) {
     _SH.card("Future Integrations", '<p style="color:#64748b;font-size:12px;margin:0;">More integrations are in development: Slack, Discord, Trello, Figma, and more.</p>');
 }
 
-// ══════════════════════════════════════════════════════════════
+// ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
 // EXTENSIONS
-// ══════════════════════════════════════════════════════════════
+// ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
 
 function renderExtensionsSection(container) {
   container.innerHTML = _SH.sectionHeader("Extensions", "Extend ValleyMind with plugins and extensions") +
@@ -2428,9 +2303,9 @@ function renderExtensionsSection(container) {
     _SH.card("Installed Extensions", '<p style="color:#475569;font-size:12px;">No extensions installed yet.</p>');
 }
 
-// ══════════════════════════════════════════════════════════════
+// ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
 // USAGE
-// ══════════════════════════════════════════════════════════════
+// ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
 
 function _usageMeter(label, used, limit) {
   var pct = limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0;
@@ -2470,14 +2345,14 @@ function renderUsageSection(container) {
     }).catch(function () { container.innerHTML = _SH.sectionHeader("Usage") + '<p style="color:#64748b;">Could not load usage data.</p>'; });
 }
 
-// ── Open/Close Settings ──────────────────────────────────────
+// ΓöÇΓöÇ Open/Close Settings ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 
 window.openSettings = function () {
   window.openSettingsSection("account");
 };
 
 // Open Settings straight to a named section (used by the companion's task
-// launch to surface Settings → Companion). Kept as one path so the overlay,
+// launch to surface Settings ΓåÆ Companion). Kept as one path so the overlay,
 // nav build and section render can never drift apart.
 window.openSettingsSection = function (id) {
   var overlay = document.getElementById("settingsOverlay");

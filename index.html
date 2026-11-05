@@ -4826,48 +4826,51 @@ function _stopMsgAudio() {
     _msgAudioBtn = null;
 }
 
-window.toggleVoicePlayback = function (btn) {
+window.toggleVoicePlayback = async function (btn) {
     var el = getPersonaPlayer();
     // Clicking the button that is currently playing stops it.
     if (_msgAudioBtn === btn && el && !el.paused) { _stopMsgAudio(); return; }
     _stopMsgAudio();
     unlockPersonaAudio();
 
-    var wrapper = btn.closest('.assistant-message');
+    var wrapper = btn && btn.closest ? btn.closest('.assistant-message') : null;
     var bubble = wrapper ? wrapper.querySelector('.bubble') : null;
     var text = bubble ? bubble.textContent.trim() : '';
     if (!text) return;
 
     _voiceIcon(btn, 'loader-2');
     _msgAudioBtn = btn;
-    var persona = (typeof currentPersona !== 'undefined' && currentPersona) ? currentPersona : 'marcus';
-    var msgProfile = _savedVoiceProfile(persona);
+    // Use the persona that wrote this reply (stored on the message), not the global current persona.
+    var persona = (wrapper && wrapper.dataset && wrapper.dataset.persona)
+        ? String(wrapper.dataset.persona)
+        : ((typeof currentPersona !== 'undefined' && currentPersona) ? String(currentPersona) : 'marcus');
 
-    apiFetch('/api/tts', {
-        method: 'POST',
-        credentials: 'include',
-        headers: authHeaders({ 'Content-Type': 'application/json' }),
-        body: JSON.stringify({ text: text.slice(0, 1500), persona: persona, profile: msgProfile })
-    }).then(function (r) { return r.json(); }).then(function (j) {
-        // Play the assigned voice through the persistent, unlocked element.
-        // Accepts both qwen_tts (default) and edge_tts_free (saved voice profile).
-        if (j && j.status === 'success' && j.url && (j.engine === 'qwen_tts' || j.engine === 'edge_tts_free')) {
-            var pl = getPersonaPlayer();
-            pl.onended = function () { _voiceIcon(btn, 'play'); _msgAudioBtn = null; vmWaveform.assistantStop(); try{window.vmWave&&vmWave.stop()}catch(e){} };
-            pl.onerror = function () { _voiceIcon(btn, 'play'); _msgAudioBtn = null; vmWaveform.assistantStop(); try{window.vmWave&&vmWave.stop()}catch(e){} };
-            pl.src = j.url;
-            _voiceIcon(btn, 'pause');
-            pl.play().catch(function () { _voiceIcon(btn, 'play'); _msgAudioBtn = null; vmWaveform.assistantStop(); try{window.vmWave&&vmWave.stop()}catch(e){} });
-            vmWaveform.assistantStart(pl);
-            try{window.vmWave&&vmWave.start("ai", pl)}catch(e){}
-        } else {
-            // No audio from the server €” stay silent rather than use the
-            // device's native voice (which broke persona gender on some devices).
-            _voiceIcon(btn, 'play'); _msgAudioBtn = null;
+    try {
+        var body = _vmTtsPayload(text, persona); // reads saved voice at press time; all 6 ids incl Piper
+        var res = await apiFetch('/api/tts', { method: 'POST', credentials: 'include', headers: authHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify(body) });
+        var data = await res.json().catch(function () { return {}; });
+        if (_msgAudioBtn !== btn) return;
+        var played = false;
+        if (data && data.url && el) played = await _vmPlayTtsAudio(data.url); // plays piper_local/edge/qwen
+        if (!played && _msgAudioBtn === btn) {
+            try { _vmToast("voice not available"); } catch (e) {}
+            played = await _vmEdgeFallbackPlay(text, persona);
         }
-    }).catch(function () {
-        _voiceIcon(btn, 'play'); _msgAudioBtn = null;
-    });
+        if (_msgAudioBtn !== btn) return;
+        if (played && el) {
+            _voiceIcon(btn, 'square');
+            try {
+                el.onended = function () { if (_msgAudioBtn === btn) _stopMsgAudio(); else _voiceIcon(btn, 'volume-2'); };
+                el.onerror = function () { if (_msgAudioBtn === btn) _stopMsgAudio(); else _voiceIcon(btn, 'volume-2'); };
+            } catch (e) {}
+            return;
+        }
+        _voiceIcon(btn, 'volume-2'); if (_msgAudioBtn === btn) _msgAudioBtn = null;
+        try { _vmToast("voice not available"); } catch (e) {}
+    } catch (e) {
+        if (_msgAudioBtn === btn) { _voiceIcon(btn, 'volume-2'); _msgAudioBtn = null; }
+        try { _vmToast("voice not available"); } catch (e) {}
+    }
 };
 
 document.addEventListener("click", function (e) {
@@ -5630,8 +5633,9 @@ function addMessage(text, type = "ai", imageData, mediaUrl, videoUrl) {
     }
 
     if (type === "ai") {
-        // Store the user message that prompted this reply (for Regenerate).
+        // Store the user message that prompted this reply (for Regenerate) and the reply persona (for TTS).
         try { if (window._lastUserText) wrapper.dataset.userText = window._lastUserText; } catch (e) {}
+        try { wrapper.dataset.persona = (typeof currentPersona !== 'undefined' && currentPersona) ? String(currentPersona) : 'marcus'; } catch (e) {}
         const toolbar = document.createElement("div");
         toolbar.className = "msg-toolbar";
 
@@ -6236,65 +6240,82 @@ function unlockPersonaAudio() {
     document.addEventListener(evt, unlockPersonaAudio, { passive: true, capture: true });
 });
 
-// Play a persona's reply in their fixed, server-generated Qwen voice (identical
-// on every device). Only when the SERVER genuinely can't synthesise (Qwen
-// unconfigured, over the budget cap, or offline) do we fall back to the device
-// voice €” never on a mere play() rejection, which is what used to hijack the
-// voice with the browser default.
-// Map a saved catalogue voice id (guy/aria/jenny/christopher/...) to the
-// FREE_VOICE_MAP profile key the /api/tts free edge-tts path understands.
-// Piper voice ids (kristin_piper, ljspeech_piper) return "" — the server
-// handles them via the saved per-persona Piper selection (_persona_voice_selection).
+// Play a persona's reply in their fixed, server-generated voice (identical
+// on every device). Plays piper_local/edge_tts_free/qwen_tts; on failure shows
+// "voice not available" and falls back to a saved Edge voice. Never silences.
+function _vmDefaultCompanionVoiceId() { return "jenny"; } // Jenny else Aria; never override saved choice
+function _vmSavedPersonaVoiceId(persona) {
+    try {
+        var p = String(persona || (typeof currentPersona !== 'undefined' ? currentPersona : 'marcus') || 'marcus');
+        var saved = JSON.parse(localStorage.getItem("vmPersonaVoices") || "{}") || {};
+        var vid = String(saved[p] || "");
+        if (!vid && p === "companion") vid = _vmDefaultCompanionVoiceId();
+        return vid;
+    } catch (e) { return (String(persona||"") === "companion") ? _vmDefaultCompanionVoiceId() : ""; }
+}
 function _savedVoiceProfile(persona) {
     try {
-        var saved = JSON.parse(localStorage.getItem("vmPersonaVoices") || "{}") || {};
-        var voiceId = String(saved[persona] || "");
+        var voiceId = _vmSavedPersonaVoiceId(persona);
+        if (!voiceId) return "";
+        var map = { guy: "marcus", aria: "elena", jenny: "angelina", christopher: "companion" };
+        return map[voiceId] || "";
     } catch (e) { return ""; }
-    if (!voiceId) return "";
-    var map = { guy: "marcus", aria: "elena", jenny: "angelina", christopher: "companion" };
-    return map[voiceId] || "";
+}
+function _vmTtsPayload(text, persona) {
+    var p = String(persona || 'marcus');
+    var vid = _vmSavedPersonaVoiceId(p);
+    var body = { text: String(text || "").slice(0, 1500), persona: p };
+    if (vid) body.voice = vid; // all 6 incl kristin_piper/ljspeech_piper
+    try { var prof = _savedVoiceProfile(p); if (prof) body.profile = prof; } catch (e) {}
+    return body;
+}
+function _vmPlayTtsAudio(url) {
+    return new Promise(function (resolve) {
+        try {
+            var el = getPersonaPlayer();
+            if (el && el._voiceUrl && el._voiceUrl !== url) { try { URL.revokeObjectURL(el._voiceUrl); } catch (e) {} }
+            if (el) { el._voiceUrl = url; }
+            if (typeof playPersonaAudio === "function") {
+                playPersonaAudio(url, function () { resolve(true); }, function () { resolve(false); });
+                return;
+            }
+            if (el) { el.onended = function () { resolve(true); }; el.onerror = function () { resolve(false); }; el.src = url;
+                var pr = el.play(); if (pr && pr.catch) pr.catch(function () { resolve(false); }); return; }
+        } catch (e) {}
+        resolve(false);
+    });
+}
+async function _vmEdgeFallbackPlay(text, persona) {
+    try {
+        var p = String(persona || 'marcus');
+        var emap = { marcus: 'guy', angelina: 'jenny', elena: 'aria', companion: 'jenny' };
+        var vid = _vmSavedPersonaVoiceId(p);
+        var edgeVid = (vid && /^(guy|aria|jenny|christopher)$/.test(vid)) ? vid : (emap[p] || (p === 'companion' ? _vmDefaultCompanionVoiceId() : 'jenny'));
+        var res = await apiFetch("/api/tts", { method: "POST", credentials: "include", headers: authHeaders({ "Content-Type": "application/json" }), body: JSON.stringify({ text: String(text||"").slice(0,1500), persona: p, voice: edgeVid }) });
+        var data = await res.json().catch(function () { return {}; });
+        if (data && data.url) return await _vmPlayTtsAudio(data.url);
+    } catch (e) {}
+    return false;
 }
 
 async function speakPersona(text, persona) {
     if (!text) return;
     unlockPersonaAudio();
+    try { if (window.speechSynthesis) try { window.speechSynthesis.cancel(); } catch (e) {} } catch (e) {}
+    var p = String(persona || (typeof currentPersona !== 'undefined' ? currentPersona : 'marcus') || 'marcus');
     try {
-        var profile = _savedVoiceProfile(persona || currentPersona);
-        var res = await apiFetch("/api/tts", {
-            method: "POST",
-            credentials: "include",
-            headers: authHeaders({ "Content-Type": "application/json" }),
-            body: JSON.stringify({ text: text, persona: persona || currentPersona, profile: profile }),
-            timeoutMs: 60000
-        });
-        var data = await res.json();
-        if (data && data.url && (data.engine === "qwen_tts" || data.engine === "edge_tts_free")) {
-            if (window.speechSynthesis) window.speechSynthesis.cancel();
-            var el = getPersonaPlayer();
-            if (el) {
-                try { el.pause(); } catch (e) {}
-                el.onended = function () { vmWaveform.assistantStop(); try{window.vmWave&&vmWave.stop()}catch(e){} };
-                el.onerror = function () { vmWaveform.assistantStop(); try{window.vmWave&&vmWave.stop()}catch(e){} };
-                el.src = data.url;
-                var pr = el.play();
-                vmWaveform.assistantStart(el);
-                try{window.vmWave&&vmWave.start("ai", el)}catch(e){}
-                // Stay silent (never a wrong-gender device voice) if the unlocked
-                // element is somehow still blocked; the reply text is already shown.
-                if (pr && pr.catch) pr.catch(function (err) {
-                    console.warn("[TTS] persona audio blocked:", err && err.name);
-                    vmWaveform.assistantStop();
-                    try{window.vmWave&&vmWave.stop()}catch(e){}
-                });
-            }
-            return;
+        var body = _vmTtsPayload(text, p);
+        var res = await apiFetch("/api/tts", { method: "POST", credentials: "include", headers: authHeaders({ "Content-Type": "application/json" }), body: JSON.stringify(body), timeoutMs: 60000 });
+        var data = await res.json().catch(function(){ return {}; });
+        if (data && data.url) {
+            var ok = await _vmPlayTtsAudio(data.url);
+            if (ok) { try { var el = getPersonaPlayer(); if (el) { vmWaveform.assistantStart(el); try{window.vmWave&&vmWave.start("ai", el)}catch(e){} el.addEventListener("ended", function _vmTtsEnd(){ try{vmWaveform.assistantStop(); window.vmWave&&vmWave.stop();}catch(e){} el.removeEventListener("ended",_vmTtsEnd); }, {once:true}); } } catch (e) {} return; }
         }
-        // Server has no Qwen audio to give €” stay silent rather than fall back to
-        // the device's native voice, which is what made Marcus sound female on
-        // some devices (the assigned Qwen voice is gender-correct everywhere).
-    } catch (e) {
-        // Same: never substitute the browser's voice for a persona.
-    }
+    } catch (e) { console.warn("Persona TTS error:", e); }
+    try { _vmToast("voice not available"); } catch (e) {}
+    var fell = await _vmEdgeFallbackPlay(text, p);
+    if (fell) { try { var el2 = getPersonaPlayer(); if (el2) { vmWaveform.assistantStart(el2); try{window.vmWave&&vmWave.start("ai", el2)}catch(e){} el2.addEventListener("ended", function _vmTtsEnd2(){ try{vmWaveform.assistantStop(); window.vmWave&&vmWave.stop();}catch(e){} el2.removeEventListener("ended",_vmTtsEnd2); }, {once:true}); } } catch (e) {} return; }
+    try { _vmToast("voice not available"); } catch (e) {}
 }
 
 function quickSend(button) {
@@ -11310,7 +11331,8 @@ window.send = async function () {
             console.warn("Failed to auto-create session.", err);
         }
     }
-    var sentImage = pendingImageData;
+
+    var sentImage = pendingImageData;
     if (_regenCtx) {
         if (text) window._lastUserText = text;
         try { var _rw = _regenCtx.wrapper; if (_rw) { var _rb = _rw.querySelector(".bubble"); if (_rb) { _rb.innerHTML = ""; _rb.textContent = ""; } } } catch (e) {}
