@@ -4,7 +4,6 @@ var vm = require('./static/vm_wave.js');
 
 var passed = 0;
 var failed = 0;
-var pending = 0;
 
 function check(name, ok, msg) {
   if (ok) {
@@ -14,11 +13,6 @@ function check(name, ok, msg) {
     console.log("FAIL: " + name + " - " + (msg || ""));
     failed++;
   }
-}
-
-function done() {
-  pending--;
-  if (pending <= 0) finish();
 }
 
 function finish() {
@@ -48,7 +42,7 @@ try {
   check("vm.start/stop does not throw", false, e.message);
 }
 
-// (2) Loop keeps scrolling in silence (loop running, quiet interval ~100ms, no throw).
+// (2) Loop keeps scrolling in silence (loop running, quiet interval ~100ms).
 try {
   vm.stop();
   vm.start('user');
@@ -69,7 +63,6 @@ try {
   var d2 = vm.debugInfo();
   check("recognition restart does not stop the wave: still running", d2.loopRunning === true, "loopRunning=" + d2.loopRunning);
   check("recognition restart does not stop the wave: activeKind preserved", d2.loopRunning === true && d1.loopRunning === true);
-  // multiple restarts
   for (var i = 0; i < 5; i++) vm.start('user');
   var d3 = vm.debugInfo();
   check("recognition restart x5: wave still running", d3.loopRunning === true, "loopRunning=" + d3.loopRunning);
@@ -95,7 +88,6 @@ try {
 try {
   vm.stop();
   vm.start('user');
-  // In Node, getUserMedia is unavailable -> events fallback
   var df = vm.debugInfo();
   check("fallback source activates (no analyser): source is events", df.source === 'events', "source=" + df.source);
   check("fallback source: loop running", df.loopRunning === true);
@@ -119,8 +111,7 @@ try {
   check("Bar count * 6 <= container width", false, e.message);
 }
 
-// (7) Level raises after pulses (async: wait for ticks to compute level from events).
-pending++;
+// (7)+(8) Async: level raises after event pulses; then start('ai') works. Sequenced to avoid interference.
 try {
   vm.stop();
   vm.start('user');
@@ -128,7 +119,6 @@ try {
   vm.userPulse();
   vm.userPulse();
   vm.userPulse();
-  // wait ~180ms for at least one tick (quiet interval ~100ms) to sample event level
   setTimeout(function () {
     try {
       var after = vm.debugInfo().level;
@@ -136,34 +126,27 @@ try {
     } catch (e) {
       check("level raises newest bar height (event pulses raise level)", false, e.message);
     }
-    done();
+    // (8) now test AI
+    try {
+      vm.stop();
+      vm.start('ai');
+      var da = vm.debugInfo();
+      check("vm.start('ai') does not throw, loop runs", da.loopRunning === true);
+      setTimeout(function () {
+        try { vm.stop(); check("vm.stop() after ai does not throw", true); } catch (e) { check("vm.stop() after ai", false, e.message); }
+        finish();
+      }, 60);
+    } catch (e) {
+      check("vm.start('ai') does not throw", false, e.message);
+      finish();
+    }
   }, 180);
 } catch (e) {
   check("level raises newest bar height (event pulses raise level)", false, e.message);
-  done();
+  finish();
 }
 
-// (8) start('ai') does not throw.
-pending++;
-try {
-  vm.stop();
-  vm.start('ai');
-  var da = vm.debugInfo();
-  check("vm.start('ai') does not throw, loop runs", da.loopRunning === true);
-  setTimeout(function () {
-    try { vm.stop(); check("vm.stop() after ai does not throw", true); } catch (e) { check("vm.stop() after ai", false, e.message); }
-    done();
-  }, 60);
-} catch (e) {
-  check("vm.start('ai') does not throw", false, e.message);
-  done();
-}
-
-// safety timeout
 setTimeout(function () {
-  if (pending > 0) {
-    check("tests completed (timeout)", false, "pending=" + pending);
-    pending = 0;
-    finish();
-  }
-}, 3000);
+  check("tests completed (timeout)", false, "forced timeout");
+  finish();
+}, 4000);
