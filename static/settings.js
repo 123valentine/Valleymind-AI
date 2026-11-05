@@ -885,6 +885,66 @@ function _writePersonaVoices(map) {
   try { localStorage.setItem("vmPersonaVoices", JSON.stringify(map)); } catch (e) { /* storage blocked */ }
 }
 
+// Default companion = female Edge voice (Jenny, else Aria) only when unset.
+// Never override a saved choice. Applied after cloud-hydrated merge.
+function _vmDefaultCompanionPersonaVoice() {
+  try {
+    if (_personaVoiceById("jenny")) return "jenny";
+    if (_personaVoiceById("aria")) return "aria";
+  } catch (e) {}
+  return "jenny";
+}
+
+function _vmNormalizePersonaVoices(map) {
+  var out = {};
+  if (map && typeof map === "object") {
+    try { out = JSON.parse(JSON.stringify(map)); } catch (e) { out = map; }
+  }
+  if (!out.companion) out.companion = _vmDefaultCompanionPersonaVoice();
+  return out;
+}
+
+var _vmPersonaVoicesHydrated = false;
+var _vmPersonaVoicesHydrating = null;
+
+// Cloud persona_voices wins over stale localStorage; merged result written back.
+// Guarded: network failures keep local (normalized) without breaking UI.
+function _vmHydratePersonaVoices(opts) {
+  opts = opts || {};
+  if (_vmPersonaVoicesHydrated && !opts.force) {
+    return Promise.resolve(_vmNormalizePersonaVoices(_readPersonaVoices()));
+  }
+  if (_vmPersonaVoicesHydrating && !opts.force) return _vmPersonaVoicesHydrating;
+  _vmPersonaVoicesHydrating = (function () {
+    var local = _readPersonaVoices();
+    return Promise.resolve().then(function () {
+      if (typeof settingsApiGet !== "function") return {};
+      return settingsApiGet("cloud").catch(function () { return null; });
+    }).then(function (d) {
+      var cloudRaw = (d && typeof d === "object" && d.persona_voices && typeof d.persona_voices === "object")
+        ? d.persona_voices : {};
+      // Cloud wins per present key; keep local keys not overridden by cloud? Merge with cloud winning.
+      var merged = {};
+      var k;
+      for (k in local) { if (Object.prototype.hasOwnProperty.call(local, k) && local[k]) merged[k] = local[k]; }
+      for (k in cloudRaw) { if (Object.prototype.hasOwnProperty.call(cloudRaw, k) && cloudRaw[k]) merged[k] = cloudRaw[k]; }
+      merged = _vmNormalizePersonaVoices(merged);
+      _writePersonaVoices(merged);
+      _vmPersonaVoicesHydrated = true;
+      try { if (window && window.vmPersonaVoicesSync) window.vmPersonaVoicesSync(merged); } catch (e) {}
+      return merged;
+    }).catch(function () {
+      var fallback = _vmNormalizePersonaVoices(local);
+      try { _writePersonaVoices(fallback); } catch (e) {}
+      return fallback;
+    }).then(function (result) {
+      _vmPersonaVoicesHydrating = null;
+      return result;
+    });
+  })();
+  return _vmPersonaVoicesHydrating;
+}
+
 function renderCompanionSection(container) {
   renderCompanionInto(container);
 }
@@ -1053,7 +1113,7 @@ function vmCompanionSetVoiceKey(v) {
 // the existing shared "Voice" select above still works and the server default
 // (Qwen) is untouched. The two local Piper voices are opt-in previews.
 function vmPersonaVoicesCard() {
-  var saved = _readPersonaVoices();
+  var saved = _vmNormalizePersonaVoices(_readPersonaVoices());
 
   // Voice assignment buttons — clickable chips with gender labels
   var voiceButtons = VM_PERSONA_VOICES.voices.map(function (v) {
@@ -1288,15 +1348,23 @@ function vmPersonaPreviewVoice(personaKey) {
 // available/local and are honestly reported as unavailable when their model
 // files are not present (the server falls back to the free engine and says so).
 function renderVoiceSection(container) {
-  container.innerHTML = _SH.sectionHeader("Voice", "Choose how each speaker sounds — and preview before you commit") +
+  container.innerHTML = _SH.sectionHeader("Voice", "Choose how each speaker sounds - and preview before you commit") +
     '<div id="vmVoiceOrbWrap" style="display:flex;justify-content:center;margin:4px 0 18px;"><div id="vmVoiceOrb" style="width:260px;height:260px;max-width:90vw;max-height:90vw;background:transparent;border-radius:50%;overflow:hidden;"></div></div>' +
-    vmVoiceCatalogueCard() +
-    vmPersonaVoicesCard() +
+    '<div id="vmVoiceSectionDynamic">' + vmVoiceCatalogueCard() + vmPersonaVoicesCard() + '</div>' +
     '<p style="color:#475569;font-size:11px;margin-top:4px;">Status: <span id="vmVoiceTabStatus"></span></p>';
   // Initialize orb after DOM is ready
   setTimeout(function () {
     _vmInitVoiceOrb();
   }, 0);
+  // Hydrate cloud persona_voices (cloud wins over stale local) then refresh cards.
+  try {
+    _vmHydratePersonaVoices().then(function () {
+      var dyn = document.getElementById("vmVoiceSectionDynamic");
+      if (dyn && typeof _settingsCurrentSection !== "undefined" && _settingsCurrentSection === "voice") {
+        dyn.innerHTML = vmVoiceCatalogueCard() + vmPersonaVoicesCard();
+      }
+    }).catch(function () {});
+  } catch (e) {}
 }
 
 function _vmInitVoiceOrb() {
@@ -2422,3 +2490,6 @@ window.closeSettings = function () {
   var overlay = document.getElementById("settingsOverlay");
   if (overlay) overlay.style.display = "none";
 };
+
+// vm-b: hydrate persona voices on load (cloud wins)
+try{ if(typeof document!=='undefined'){ if(document.readyState==='loading'){ document.addEventListener('DOMContentLoaded', function(){ try{ _vmHydratePersonaVoices(); }catch(e){} }); } else { _vmHydratePersonaVoices(); } } }catch(e){}
