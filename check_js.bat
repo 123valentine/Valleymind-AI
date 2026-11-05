@@ -11,12 +11,18 @@ if errorlevel 1 exit /b 1
 rem 3) runtime test: call silence/micStop/assistantStop with uninitialised bars
 "%NODE%" -e "const fs=require('fs');const h=fs.readFileSync('index.html','utf8');const s=h.indexOf('var vmWaveform');const nl=String.fromCharCode(10);const e=h.indexOf(nl+'})();',s);let c=h.slice(s,e+5);c=c.replace('var vmWaveform','global.vmWaveform');global.window={};global.document={addEventListener:function(){},hidden:false,getElementById:function(){return null;}};global.navigator={};eval(c);try{vmWaveform.micStop();vmWaveform.assistantStop();vmWaveform.cleanup();console.log('UNINIT_OK');}catch(err){console.log('FAIL uninit: '+err.message);process.exit(1);}"
 if errorlevel 1 exit /b 1
-rem 4) STT duplicate test: simulate cumulative interims then a final, verify
-rem    textarea value equals the phrase exactly once (no duplication).
+rem 4) STT buffer test (vm-fix15 item 1): committed finals + single replaced interim,
+rem    no concatenated interims; restart between sentences gives each once.
 "%NODE%" test_stt_dup.js
 if errorlevel 1 exit /b 1
-rem 5) Waveform test: silence = flat, sound moves bars, levels rise then decay,
+rem 5) Waveform test (item 5): silence = flat/slow, sound moves bars, levels rise then decay,
 rem    start/stop/restart cycles do not throw.
 "%NODE%" test_wave.js
+if errorlevel 1 exit /b 1
+rem 6) Mic flow (vm-fix15 item 2): flush/append/scroll, no send on stop, send converts once.
+"%NODE%" test_mic_flow.js
+if errorlevel 1 exit /b 1
+rem 7) Regenerate (vm-fix15 item 3): replaces AI reply in-place, no duplicate user message.
+"%NODE%" test_regenerate.js
 if errorlevel 1 exit /b 1
 echo ALL_CHECKS_PASS
