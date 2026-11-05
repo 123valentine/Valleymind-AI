@@ -104,7 +104,7 @@
 <script src="/static/task_controller.js?v=1"></script>
 <script src="/static/cloud_rig.js?v=2"></script>
 <script src="/static/cloud_anim.js?v=2"></script>
-<script src="/static/vm_wave.js?v=9" defer></script>
+<script src="/static/vm_wave.js?v=10" defer></script>
 <script id="tailwind-config">
   tailwind.config = {
     darkMode: "class",
@@ -6537,7 +6537,9 @@ function _sttDebugRender() {
     try {
         if (window.vmWave && typeof window.vmWave.debugInfo === "function") {
             var wi = window.vmWave.debugInfo();
-            waveInfo = " waveSrc=" + (wi && wi.source ? wi.source : "none") + " waveLvl=" + ((wi && wi.level != null) ? wi.level.toFixed(3) : "0.000");
+            var loopStr = (wi && wi.loopRunning) ? "yes" : "no";
+            var intv = (wi && wi.interval != null) ? wi.interval : 0;
+            waveInfo = " loop=" + loopStr + " interval=" + intv + "ms waveSrc=" + (wi && wi.source ? wi.source : "none") + " waveLvl=" + ((wi && wi.level != null) ? wi.level.toFixed(3) : "0.000");
         }
     } catch (e) {}
     panel.innerHTML =
@@ -6656,10 +6658,18 @@ function startListening() {
         var buf = _sttBuffer;
         _sttPieces.forEach(function (p) { if (p.trimmed) buf = (buf ? buf + " " : "") + p.trimmed; });
         try { updateMicCounter(buf); } catch (e) {}
-        // Boost CSS fallback waveform when speech is detected.
-        if (_sttPieces.some(function (p) { return p.trimmed; })) {
-            try{window.vmWave&&vmWave.userPulse()}catch(e){}
-        }
+            // Raise wave level on every onresult (interim or final).
+        try{window.vmWave&&vmWave.userPulse()}catch(e){}
+    };
+    _recognition.onaudiostart = function () {
+        if (session !== _sttSession) return;
+        _sttLastEventTime = Date.now();
+        try{window.vmWave&&vmWave.userPulse()}catch(e){}
+    };
+    _recognition.onspeechstart = function () {
+        if (session !== _sttSession) return;
+        _sttLastEventTime = Date.now();
+        try{window.vmWave&&vmWave.userPulse()}catch(e){}
     };
     _recognition.onerror = function (ev) {
         // Ignore events from a superseded session.
@@ -6685,8 +6695,7 @@ function startListening() {
         _listening = false;
         stopListening();
     };
-    // Start waveform mic access BEFORE SpeechRecognition; failure does not break STT.
-    vmWaveform.micStart();
+    // Start waveform (idempotent): never restart the wave on recognition restarts.
     try{window.vmWave&&vmWave.start("user")}catch(e){}
     try { _recognition.start(); } catch (e) {
         _sttLastError = e.message;
@@ -8689,10 +8698,8 @@ function rtStartListening() {
         }
     };
     rtRecognition.onend = function () { if (rtVoiceOn && rtListening) { try { rtRecognition.start(); } catch (e) {} } };
-    // Request mic access for the waveform BEFORE starting SpeechRecognition so
-    // the browser can grant both. getUserMedia is async; if it fails, the CSS
-    // fallback in micStart() handles the visualisation without breaking STT.
-    vmWaveform.micStart();
+    // Start waveform (idempotent). Never compete with SpeechRecognition via a
+    // second getUserMedia stream; vmWave handles analyser/fallback internally.
     try{window.vmWave&&vmWave.start("user")}catch(e){}
     try { rtRecognition.start(); } catch (e) {}
     rtListening = true;

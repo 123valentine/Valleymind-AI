@@ -1,10 +1,10 @@
-// Waveform tests: silence = flat line; sound moves bars; levels rise then decay.
-// The vm_wave.js module drives levels from the AnalyserNode when available,
-// otherwise from recognition events via userPulse() with ~400ms decay.
+// Waveform tests (v10): fixed-interval scroll, level/height response, event fallback,
+// recognition restart does not stop the wave.
 var vm = require('./static/vm_wave.js');
 
 var passed = 0;
 var failed = 0;
+var pending = 0;
 
 function check(name, ok, msg) {
   if (ok) {
@@ -16,64 +16,95 @@ function check(name, ok, msg) {
   }
 }
 
-// (1) start/stop do not throw; wave starts and stops cleanly.
+function done() {
+  pending--;
+  if (pending <= 0) finish();
+}
+
+function finish() {
+  try { vm.stop(); } catch (e) {}
+  if (failed > 0) {
+    console.log("WAVE TESTS: " + passed + " passed, " + failed + " FAILED");
+    process.exit(1);
+  }
+  console.log("WAVE TESTS: all " + passed + " passed");
+  console.log("WAVE_OK");
+  process.exit(0);
+}
+
+// (1) start/stop do not throw; debugInfo shape present.
 try {
   vm.start('user');
   check("vm.start('user') does not throw", true);
-  check("vmWave is active after start", true);
+  var d = vm.debugInfo ? vm.debugInfo() : {};
+  check("debugInfo() returns object", !!d && typeof d === 'object');
+  check("debugInfo has loopRunning", typeof d.loopRunning !== 'undefined');
+  check("debugInfo has interval", typeof d.interval !== 'undefined');
+  check("debugInfo has source", typeof d.source !== 'undefined');
+  check("debugInfo has level", typeof d.level !== 'undefined');
   vm.stop();
   check("vm.stop() does not throw", true);
-  passed += 2;
 } catch (e) {
   check("vm.start/stop does not throw", false, e.message);
-  failed++;
 }
 
-// (2) userPulse does not throw and is guarded by activeKind.
+// (2) Loop keeps scrolling in silence (loop running, quiet interval ~100ms, no throw).
 try {
-  var before = Date.now();
-  vm.userPulse();
-  var after = Date.now();
-  check("vm.userPulse() does not throw", true);
-  // userPulse with no activeKind should not throw.
   vm.stop();
-  vm.userPulse();
-  check("vm.userPulse() after stop does not throw", true);
-  passed += 2;
-} catch (e) {
-  check("vm.userPulse() does not throw", false, e.message);
-  failed++;
-}
-
-// (3) start('ai') uses fallback (no createMediaElementSource) and does not throw.
-try {
-  vm.start('ai');
-  check("vm.start('ai') does not throw", true);
+  vm.start('user');
+  var ds = vm.debugInfo();
+  check("loop keeps scrolling in silence: loopRunning", ds.loopRunning === true, "loopRunning=" + ds.loopRunning);
+  check("loop keeps scrolling in silence: quiet interval ~100ms", ds.interval >= 80 && ds.interval <= 140, "interval=" + ds.interval);
   vm.stop();
-  check("vm.stop() after ai does not throw", true);
-  passed += 2;
 } catch (e) {
-  check("vm.start('ai') does not throw", false, e.message);
-  failed++;
+  check("loop keeps scrolling in silence", false, e.message);
 }
 
-// (4) Repeated start/stop cycles (simulating restarts during silence) do not throw.
+// (3) Recognition restart does not stop the wave (idempotent start while active).
 try {
-  for (var i = 0; i < 5; i++) {
-    vm.start('user');
-    vm.userPulse();
-    vm.stop();
-  }
-  check("5 start/stop/restart cycles do not throw", true);
-  passed++;
+  vm.stop();
+  vm.start('user');
+  var d1 = vm.debugInfo();
+  vm.start('user'); // restart/re-call must NOT stop
+  var d2 = vm.debugInfo();
+  check("recognition restart does not stop the wave: still running", d2.loopRunning === true, "loopRunning=" + d2.loopRunning);
+  check("recognition restart does not stop the wave: activeKind preserved", d2.loopRunning === true && d1.loopRunning === true);
+  // multiple restarts
+  for (var i = 0; i < 5; i++) vm.start('user');
+  var d3 = vm.debugInfo();
+  check("recognition restart x5: wave still running", d3.loopRunning === true, "loopRunning=" + d3.loopRunning);
+  vm.stop();
 } catch (e) {
-  check("5 start/stop/restart cycles do not throw", false, e.message);
-  failed++;
+  check("recognition restart does not stop the wave", false, e.message);
 }
 
-// (5) Bar count never exceeds container width for widths 360, 800, 1400.
-// Formula: bar count = floor((width - 26) / 6), min 20, max 200.
-// Bar count * 6 must never exceed container width.
+// (4) userPulse does not throw and raises event-driven activity.
+try {
+  vm.stop();
+  vm.userPulse(); // no active kind: should not throw
+  check("userPulse() with no active kind does not throw", true);
+  vm.start('user');
+  vm.userPulse();
+  check("userPulse() while active does not throw", true);
+  vm.stop();
+} catch (e) {
+  check("userPulse() behavior", false, e.message);
+}
+
+// (5) Fallback/event source activates when analyser unavailable (Node env has no getUserMedia/analyser).
+try {
+  vm.stop();
+  vm.start('user');
+  // In Node, getUserMedia is unavailable -> events fallback
+  var df = vm.debugInfo();
+  check("fallback source activates (no analyser): source is events", df.source === 'events', "source=" + df.source);
+  check("fallback source: loop running", df.loopRunning === true);
+  vm.stop();
+} catch (e) {
+  check("fallback source activates when analyser unavailable", false, e.message);
+}
+
+// (6) Bar count never exceeds container width for widths 360, 800, 1400.
 try {
   var widths = [360, 800, 1400];
   var allOk = true;
@@ -81,20 +112,58 @@ try {
     var computed = Math.floor((w - 26) / 6);
     if (computed < 20) computed = 20;
     if (computed > 200) computed = 200;
-    var barWidthTotal = computed * 6;
-    if (barWidthTotal > w) allOk = false;
+    if (computed * 6 > w) allOk = false;
   });
   check("Bar count * 6 <= container width for 360/800/1400px", allOk);
-  passed++;
 } catch (e) {
   check("Bar count * 6 <= container width", false, e.message);
-  failed++;
 }
 
-
-if (failed > 0) {
-  console.log("WAVE TESTS: " + passed + " passed, " + failed + " FAILED");
-  process.exit(1);
+// (7) Level raises after pulses (async: wait for ticks to compute level from events).
+pending++;
+try {
+  vm.stop();
+  vm.start('user');
+  var before = vm.debugInfo().level;
+  vm.userPulse();
+  vm.userPulse();
+  vm.userPulse();
+  // wait ~180ms for at least one tick (quiet interval ~100ms) to sample event level
+  setTimeout(function () {
+    try {
+      var after = vm.debugInfo().level;
+      check("level raises newest bar height (event pulses raise level)", after > before || after >= 0.05, "before=" + before + " after=" + after);
+    } catch (e) {
+      check("level raises newest bar height (event pulses raise level)", false, e.message);
+    }
+    done();
+  }, 180);
+} catch (e) {
+  check("level raises newest bar height (event pulses raise level)", false, e.message);
+  done();
 }
-console.log("WAVE TESTS: all " + passed + " passed");
-console.log("WAVE_OK");
+
+// (8) start('ai') does not throw.
+pending++;
+try {
+  vm.stop();
+  vm.start('ai');
+  var da = vm.debugInfo();
+  check("vm.start('ai') does not throw, loop runs", da.loopRunning === true);
+  setTimeout(function () {
+    try { vm.stop(); check("vm.stop() after ai does not throw", true); } catch (e) { check("vm.stop() after ai", false, e.message); }
+    done();
+  }, 60);
+} catch (e) {
+  check("vm.start('ai') does not throw", false, e.message);
+  done();
+}
+
+// safety timeout
+setTimeout(function () {
+  if (pending > 0) {
+    check("tests completed (timeout)", false, "pending=" + pending);
+    pending = 0;
+    finish();
+  }
+}, 3000);
