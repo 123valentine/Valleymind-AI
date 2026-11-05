@@ -2093,13 +2093,15 @@
   /* â”€â”€ Conversation-focused chat workspace â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
      Conversation first; everything else secondary. More breathing room,
      lighter bubbles, and a comfortable reading column on wide screens. */
-  #messages{ gap:28px !important; }
+  #messages{ gap:16px !important; padding:18px 16px !important; }
   /* Never let a message grow wider than the container. Without min-width:0,
      a flex child's min-content (e.g. a long unwrappable code line inside
      pre with overflow-x:auto) expands the bubble beyond the viewport. */
   .assistant-message, .user-message{ min-width:0; max-width:100%; }
   .user-message .bubble{ background:rgba(0,212,255,0.10); border-color:rgba(255,255,255,0.06); }
-  .assistant-message .bubble{ padding:12px 22px; }
+  .assistant-message .bubble{ padding:12px 20px; background:rgba(255,255,255,0.035); border-radius:12px; }
+  /* Richly formatted assistant replies: let HTML flow naturally instead of pre-wrap. */
+  .bubble.ai-rich{ white-space:normal; }
   .msg-toolbar{ opacity:0.72; transition:opacity .15s; }
   .msg-toolbar:hover{ opacity:1; }
   /* Comfortable reading width on desktop; center so large monitors don't
@@ -5682,9 +5684,17 @@ function addMessage(text, type = "ai", imageData, mediaUrl, videoUrl) {
     }
 
     if (textWithoutMedia) {
-        var txtSpan = document.createElement("span");
-        txtSpan.textContent = textWithoutMedia;
-        bubble.appendChild(txtSpan);
+        if (type === "ai" &&
+            typeof window.VMRichRender !== "undefined" &&
+            typeof window.VMPresentationSelector !== "undefined" &&
+            window.VMPresentationSelector.select(textWithoutMedia) !== "plain") {
+            bubble.innerHTML = window.VMRichRender.render(textWithoutMedia);
+            bubble.classList.add("ai-rich");
+        } else {
+            var txtSpan = document.createElement("span");
+            txtSpan.textContent = textWithoutMedia;
+            bubble.appendChild(txtSpan);
+        }
     }
 
     if (type === "user") {
@@ -11718,6 +11728,16 @@ window.send = async function () {
                 }
             }
             if (streamError) break;
+        }
+
+        /* Enrich a completed streamed assistant reply with intelligent formatting
+           (headings, lists, tables, code, ...). Plain/simple answers stay as
+           plain text, so existing behavior is unchanged for simple replies. */
+        if (bubbleEl && !streamError && fullReply) {
+            var _bub = bubbleEl.querySelector(".bubble");
+            if (_bub && typeof window.VMEnrichAssistantReply === "function") {
+                window.VMEnrichAssistantReply(_bub, fullReply);
+            }
         }
 
         if (!bubbleEl && !streamError) {

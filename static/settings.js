@@ -2464,5 +2464,187 @@ window.closeSettings = function () {
   if (overlay) overlay.style.display = "none";
 };
 
+// =====================================================================
+// VMRichRender — safe, intelligent response formatting
+// Reuses the already-loaded `marked` (v9.1.6) CDN script: no new deps.
+// Renders assistant replies as structured HTML: headings, paragraphs,
+// emphasis, lists/checklists, blockquotes, code blocks, tables, images.
+// All model-generated content passes through a whitelist sanitizer so no
+// script, event handler, or javascript: URL can execute.
+// =====================================================================
+window.VMRichRender = (function () {
+  "use strict";
+
+  var ALLOWED_TAGS = {
+    h1:1,h2:1,h3:1,h4:1,h5:1,h6:1,p:1,br:1,hr:1,
+    ul:1,ol:1,li:1,blockquote:1,pre:1,code:1,
+    strong:1,em:1,b:1,i:1,a:1,
+    table:1,thead:1,tbody:1,tr:1,th:1,td:1,
+    img:1,input:1,div:1,span:1,sub:1,sup:1
+  };
+  var ALLOWED_ATTRS = {
+    a: { href:1, title:1 },
+    img: { src:1, alt:1, title:1 },
+    input: { type:1, checked:1, disabled:1, readonly:1 },
+    th: { colspan:1, rowspan:1 },
+    td: { colspan:1, rowspan:1 }
+  };
+  var DROP_TAGS = { script:1,style:1,noscript:1,iframe:1,object:1,embed:1,
+    form:1,button:1,textarea:1,canvas:1,svg:1,math:1 };
+
+  function escapeHtml(text) {
+    return String(text)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  }
+
+  function isSafeUrl(value) {
+    var v = String(value || "").trim();
+    return v.slice(0, 7) === "http://" || v.slice(0, 8) === "https://";
+  }
+
+  function unwrap(el) {
+    var parent = el.parentNode;
+    if (!parent) { el.remove(); return; }
+    var frag = document.createDocumentFragment();
+    while (el.firstChild) frag.appendChild(el.firstChild);
+    if (frag.firstChild) parent.insertBefore(frag, el);
+    el.remove();
+  }
+
+  function sanitizeHtml(html) {
+    try {
+      var doc = new DOMParser().parseFromString(html, "text/html");
+      var walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_COMMENT, null, false);
+      var nodes = [], n;
+      while ((n = walker.nextNode())) nodes.push(n);
+      for (var i = 0; i < nodes.length; i++) {
+        var el = nodes[i];
+        if (el.nodeType === 8) { el.remove(); continue; }
+        var tag = el.tagName && el.tagName.toLowerCase();
+        if (DROP_TAGS[tag]) { el.remove(); continue; }
+        if (!ALLOWED_TAGS[tag]) { unwrap(el); continue; }
+        var attrs = el.attributes;
+        for (var j = attrs.length - 1; j >= 0; j--) {
+          var a = attrs[j];
+          var name = a.name.toLowerCase();
+          if (name.slice(0, 2) === "on") { el.removeAttribute(name); continue; }
+          if (name === "style" || name === "class") { el.removeAttribute(name); continue; }
+          var keep = false;
+          if (ALLOWED_ATTRS[tag] && ALLOWED_ATTRS[tag][name]) keep = true;
+          else if ((name === "href" || name === "src") && isSafeUrl(a.value)) keep = true;
+          else if (name === "alt" || name === "title" || name === "colspan" || name === "rowspan") keep = true;
+          if (!keep) el.removeAttribute(name);
+        }
+      }
+      return doc.body.innerHTML || "";
+    } catch (e) {
+      return "";
+    }
+  }
+
+  var CITE_RE = /\[(\d+|[A-Za-z][A-Za-z0-9 .&'-]*\d*)\]/g;
+
+  function render(text) {
+    if (text == null) return "";
+    var t = String(text);
+    if (!t.trim()) return "";
+
+    t = t.replace(/\[Image:\s*([^\n\]]+)\]/gi, function (m, url) {
+      url = url.trim();
+      return '<img src="' + escapeHtml(url) + '" alt="image" style="max-width:100%;border-radius:8px;margin:8px 0;display:block;">';
+    });
+    t = t.replace(/\[Video:\s*([^\n\]]+)\]/gi, function (m, url) {
+      url = url.trim();
+      return '<video src="' + escapeHtml(url) + '" controls playsInline style="max-width:100%;border-radius:12px;margin:8px 0;display:block;"></video>';
+    });
+
+    var citeStore = [];
+    var protectedText = t.replace(CITE_RE, function (m, inner) {
+      var idx = citeStore.length;
+      citeStore.push(inner);
+      return "\uFFF7C" + idx + "\uFFF7C";
+    });
+
+    var html = "";
+    if (typeof window !== "undefined" && typeof window.marked === "function") {
+      try {
+        html = window.marked.parse(protectedText, { mangle: false, headerIds: false, gfm: true }) || "";
+      } catch (e) { html = ""; }
+    }
+    if (!html) {
+      var paras = t.split(/\n\n+/);
+      html = paras.map(function (p) {
+        return "<p>" + escapeHtml(p).replace(/\n/g, "<br>") + "</p>";
+      }).join("");
+    }
+
+    html = html.replace(/\uFFF7C(\d+)\uFFF7C/g, function (m, idx) {
+      return "<span class=\"vm-cite\">[" + escapeHtml(citeStore[idx] || "") + "]</span>";
+    });
+
+    return sanitizeHtml(html);
+  }
+
+  return { render: render };
+})();
+
+// ---------------------------------------------------------------------
+// VMPresentationSelector — choose the best presentation for a reply
+// ---------------------------------------------------------------------
+window.VMPresentationSelector = (function () {
+  "use strict";
+
+  function select(text) {
+    if (!text || !text.trim()) return "plain";
+    var t = text.trim();
+    var lines = t.split(/\r?\n/);
+
+    var tableLines = 0;
+    for (var i = 0; i < lines.length; i++) {
+      if (lines[i].split("|").length > 3) tableLines++;
+    }
+    if (tableLines >= 2) return "table";
+
+    if (t.indexOf("```") !== -1 || t.indexOf("~~~") !== -1) return "code";
+
+    if (/^#{1,6}\s/.test(t) || /^#{1,6}$/m.test(t) || /^[\t ]*>/.test(t)) return "structured";
+
+    if (/^[\t ]*[-*+]\s+\[( |x)\]/m.test(t)) return "checklist";
+
+    if (/^[\t ]*[-*+]\s/m.test(t) || /^[\t ]*\d+\.\s/m.test(t)) return "list";
+
+    if (t.length > 300 && /\n\n/.test(t)) return "structured";
+
+    return "plain";
+  }
+
+  return { select: select };
+})();
+
+// ---------------------------------------------------------------------
+// VMEnrichAssistantReply — enrich a completed assistant bubble
+// Plain/simple answers are left as plain text (no behavior change).
+// ---------------------------------------------------------------------
+window.VMEnrichAssistantReply = function (bub, fullText) {
+  "use strict";
+  if (!bub || !fullText || !fullText.trim()) return;
+  if (typeof window.VMPresentationSelector === "undefined" ||
+      typeof window.VMRichRender === "undefined") return;
+  try {
+    var fmt = window.VMPresentationSelector.select(fullText);
+    if (fmt === "plain") return;
+    var html = window.VMRichRender.render(fullText);
+    if (!html || !html.trim()) return;
+    bub.innerHTML = html;
+    bub.classList.add("ai-rich");
+  } catch (e) {
+    // Keep the existing plain-text bubble on any unexpected error.
+  }
+};
+
 // vm-b: hydrate persona voices on load (cloud wins)
 try{ if(typeof document!=='undefined'){ if(document.readyState==='loading'){ document.addEventListener('DOMContentLoaded', function(){ try{ _vmHydratePersonaVoices(); }catch(e){} }); } else { _vmHydratePersonaVoices(); } } }catch(e){}
