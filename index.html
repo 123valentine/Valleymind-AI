@@ -2642,7 +2642,7 @@ body[data-vm-companion="cloud"] #vmVrmCompanion { display: none !important; }
 <!-- Message Context Menu -->
 <div class="message-context-menu" id="messageContextMenu">
   <div class="message-context-item" onclick="handleMessageContextAction('listen')">
-    <i data-lucide="volume-2" style="width:16px;height:16px;"></i> Listen to response
+    <i data-lucide="volume-2" style="width:16px;height:16px;"></i> Read aloud
   </div>
   <div class="message-context-item" onclick="handleMessageContextAction('email')">
     <i data-lucide="mail" style="width:16px;height:16px;"></i> Draft in Email
@@ -2650,9 +2650,19 @@ body[data-vm-companion="cloud"] #vmVrmCompanion { display: none !important; }
   <div class="message-context-item" onclick="handleMessageContextAction('details')">
     <i data-lucide="info" style="width:16px;height:16px;"></i> Response details
   </div>
-  <div class="message-context-item" onclick="handleMessageContextAction('report')">
-    <i data-lucide="alert-triangle" style="width:16px;height:16px;"></i> Report issue
+  <div class="message-context-item" onclick="handleMessageContextAction('bug')">
+    <i data-lucide="bug" style="width:16px;height:16px;"></i> Report a bug
   </div>
+  <div class="message-context-item" onclick="handleMessageContextAction('issue')">
+    <i data-lucide="alert-triangle" style="width:16px;height:16px;"></i> Report an issue
+  </div>
+</div>
+
+<!-- User Message Context Menu (long-press / right-click) -->
+<div class="message-context-menu" id="userMessageMenu">
+  <div class="message-context-item" onclick="_vmUserMsgAction('copy')"><i data-lucide="copy" style="width:16px;height:16px;"></i> Copy</div>
+  <div class="message-context-item" onclick="_vmUserMsgAction('select')"><i data-lucide="text-cursor-input" style="width:16px;height:16px;"></i> Select text</div>
+  <div class="message-context-item" onclick="_vmUserMsgAction('edit')"><i data-lucide="pencil" style="width:16px;height:16px;"></i> Edit</div>
 </div>
 
 <!-- AUTH (unified Sign Up | Login card) -->
@@ -4502,7 +4512,7 @@ function setThinkingState(thinking) {
 var _menuPositionTimer = null;
 function positionMenuAbove(menuId, btnId) {
     var menu = document.getElementById(menuId);
-    var btn = document.getElementById(btnId);
+    var btn = (btnId && typeof btnId === "object" && btnId.getBoundingClientRect) ? btnId : document.getElementById(btnId);
     if (!menu || !btn) return;
     var rect = btn.getBoundingClientRect();
     // Temporarily show to measure true height.
@@ -4630,7 +4640,9 @@ function handleMessageContextAction(action) {
             showResponseDetails(wrap);
             break;
         case "report":
-            reportResponseIssue(text);
+        case "bug":
+        case "issue":
+            reportResponseIssue(text, action);
             break;
     }
 }
