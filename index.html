@@ -6497,8 +6497,8 @@ var _sttLastError = "";      // last STT error (for debug panel)
 var _sttLastEventTime = 0;   // timestamp of last recognition event (watchdog)
 var _sttWatchdogTimer = null; // watchdog: restart if no event for 4s
 var _sttStopWaitTimer = null; // wait up to 1200ms for last final on stop
-var _sttBuffer = "";         // accumulated buffer during recording (nothing written to textarea while recording)
-var _sttPieces = [];         // dedup pieces for cumulative interims (replace previous if startsWith)
+var _sttCommitted = "";      // committed text: finals only, each once
+var _sttInterim = "";        // current interim: latest non-final transcript only, replaced (never appended)
 var _sendAbortController = null; // AbortController for in-flight chat request
 var _sendAborted = false; // set when user cancels
 var _sendOriginalText = ""; // text to restore on cancel
@@ -6546,7 +6546,7 @@ function _sttDebugRender() {
         "<div style='font-size:12px;font-weight:bold;color:#fff;margin-bottom:4px;'>STT DEBUG</div>" +
         "<div style='font-size:11px;color:#bbc9cf;'>recording=" + _userWantsMic + " listening=" + _listening + "</div>" +
         "<div style='font-size:11px;color:#bbc9cf;'>restarts=" + _sttRestartCount + " lastError=" + (_sttLastError || "none") + " secsSinceEvent=" + secsSinceEvent + "</div>" +
-        "<div style='font-size:11px;color:#bbc9cf;'>bufferLen=" + ((_sttBuffer || "").trim().split(/\s+/).length) + " buffer=" + JSON.stringify((_sttBuffer || "").trim()) + "</div>" +
+        "<div style='font-size:11px;color:#bbc9cf;'>bufferLen=" + (((_sttCommitted||"") + " " + (_sttInterim||"")).trim().split(/\s+/).filter(Boolean).length) + " buffer=" + JSON.stringify((((_sttCommitted||"") + " " + (_sttInterim||"")).trim())) + "</div>" +
         "<div style='font-size:11px;color:#bbc9cf;'>startCount=" + _sttDebugStartCount + "</div>" +
         "<div style='font-size:11px;color:#bbc9cf;'>textarea=" + JSON.stringify((input && input.value) || "") + "</div>" +
         "<div style='font-size:11px;color:#bbc9cf;'>vmWaveBars flex=" + (vbStyle ? vbStyle.flexDirection : "n/a") + " width=" + (vbStyle ? vbStyle.width : "n/a") + waveInfo + "</div>" +
@@ -6582,7 +6582,11 @@ function toggleVoice() {
         stopAndConvert();
         return;
     }
-    // First tap: start recording, userWantsMic = true.
+    // First tap: start recording, userWantsMic = true. Fresh buffer.
+    _sttCommitted = "";
+    _sttInterim = "";
+    _sttRestartCount = 0;
+    _sttLastError = "";
     _userWantsMic = true;
     startListening();
 }
@@ -6600,9 +6604,9 @@ function startListening() {
     _recognition.lang = navigator.language || "en-US";
     _recognition.interimResults = true;
     _recognition.continuous = true;
-    // Fresh buffer: nothing is written to the textarea while recording.
-    _sttBuffer = "";
-    _sttPieces = [];
+    // Keep committed across recognition restarts; interim moved to committed on restart.
+    // (Fresh recording clears in toggleVoice.) Capture base for this session.
+    var _sttCommittedBase = (_sttCommitted || "").trim();
     _sttFinal = "";
     _sttLastFinal = "";
     var input = document.getElementById("chatInput");
@@ -6611,54 +6615,41 @@ function startListening() {
         // Ignore events from a superseded session.
         if (session !== _sttSession) return;
         _sttLastEventTime = Date.now();   // watchdog heartbeat
-        // Build dedup pieces: cumulative interim replaces previous piece; finals committed once.
-        var pieces = [];
-        for (var i = ev.resultIndex; i < ev.results.length; i++) {
-            var t = ev.results[i][0] ? ev.results[i][0].transcript : "";
-            var isFinal = !!ev.results[i].isFinal;
+        // Rebuild from the FULL result list each time:
+        //   committed = all isFinal results (each once, by result index)
+        //   interim   = latest non-final transcript only, REPLACING previous (never appended)
+        var finals = [];
+        var latestInterim = "";
+        for (var i = 0; i < ev.results.length; i++) {
+            var res = ev.results[i];
+            var t = (res && res[0]) ? (res[0].transcript || "") : "";
             var trimmed = t.trim();
-            var lower = trimmed.toLowerCase();
-            if (pieces.length > 0) {
-                var prev = pieces[pieces.length - 1];
-                var prevLower = prev.trimmed.toLowerCase();
-                if (lower.startsWith(prevLower) && lower.length > prev.trimmed.length) {
-                    pieces[pieces.length - 1] = { trimmed: trimmed, text: t };
-                    continue;
-                }
-            }
-            pieces.push({ trimmed: trimmed, text: t, isFinal: isFinal });
-        }
-        // Commit finals once into the buffer; interims replace the trailing piece cumulatively.
-        pieces.forEach(function (p) {
-            if (!p.trimmed) return;
-            if (p.isFinal) {
-                // Final: commit once (dedup against last final piece).
-                if (_sttBuffer && _sttBuffer.trim()) {
-                    var lastWord = _sttBuffer.trim().split(/\s+/).pop();
-                    if (p.trimmed.toLowerCase() === lastWord.toLowerCase()) return;
-                }
-                _sttBuffer = (_sttBuffer ? _sttBuffer + " " : "") + p.trimmed;
+            if (!trimmed) continue;
+            if (res.isFinal) {
+                finals.push(trimmed);
             } else {
-                // Interim: cumulative replace the previous interim piece if it startsWith it.
-                if (_sttPieces.length > 0) {
-                    var prev = _sttPieces[_sttPieces.length - 1];
-                    var prevLower = prev.trimmed.toLowerCase();
-                    var lower = p.trimmed.toLowerCase();
-                    if (lower.startsWith(prevLower) && lower.length > prev.trimmed.length) {
-                        _sttPieces[_sttPieces.length - 1] = p;
-                    } else {
-                        _sttPieces.push(p);
-                    }
+                // Replace: keep only the latest non-final.
+                if (!latestInterim || trimmed.toLowerCase().indexOf(latestInterim.toLowerCase()) === 0 || latestInterim.toLowerCase().indexOf(trimmed.toLowerCase()) === 0 || trimmed.length >= latestInterim.length) {
+                    latestInterim = trimmed;
                 } else {
-                    _sttPieces.push(p);
+                    // New segment not extending previous; replace as current interim.
+                    latestInterim = trimmed;
                 }
             }
-        });
-        // NO textarea write while recording. Just keep buffer + pieced interim visible via counter.
-        var buf = _sttBuffer;
-        _sttPieces.forEach(function (p) { if (p.trimmed) buf = (buf ? buf + " " : "") + p.trimmed; });
+        }
+        // Dedup consecutive identical finals (can occur across engine quirks).
+        var deduped = [];
+        for (var f = 0; f < finals.length; f++) {
+            if (deduped.length === 0 || deduped[deduped.length - 1].toLowerCase() !== finals[f].toLowerCase()) {
+                deduped.push(finals[f]);
+            }
+        }
+        var sessionFinals = deduped.join(" ");
+        _sttCommitted = (_sttCommittedBase ? _sttCommittedBase + (sessionFinals ? " " : "") : "") + sessionFinals;
+        _sttInterim = latestInterim;
+        var buf = (_sttCommitted + (_sttCommitted && _sttInterim ? " " : "") + _sttInterim).trim();
         try { updateMicCounter(buf); } catch (e) {}
-            // Raise wave level on every onresult (interim or final).
+        // Raise wave level on every onresult (interim or final).
         try{window.vmWave&&vmWave.userPulse()}catch(e){}
     };
     _recognition.onaudiostart = function () {
@@ -6712,6 +6703,13 @@ function startListening() {
 
 function scheduleRestart() {
     if (!_userWantsMic) return;
+    // On restart, move the interim into committed once, then clear it.
+    try {
+        if (_sttInterim && _sttInterim.trim()) {
+            _sttCommitted = (_sttCommitted && _sttCommitted.trim() ? _sttCommitted.trim() + " " : "") + _sttInterim.trim();
+            _sttInterim = "";
+        }
+    } catch (e) {}
     _sttRestartCount++;
     if (_sttRestartCount > 5) {
         // Backoff exhausted: stop recording, keep buffer, surface text on stop.
@@ -6766,8 +6764,11 @@ function flushBufferToTextarea() {
     var input = document.getElementById("chatInput");
     if (!input) return;
     var existing = input.value;
-    var buf = (_sttBuffer || "").trim();
+    // Buffer = committed (finals only) + current interim (replaced, never appended).
+    var buf = (((_sttCommitted || "") + " " + (_sttInterim || "")).replace(/\s+/g, " ")).trim();
     if (!buf) {
+        _sttCommitted = "";
+        _sttInterim = "";
         resetMicState();
         return;
     }
@@ -6779,8 +6780,8 @@ function flushBufferToTextarea() {
     try {
         input.setSelectionRange(input.value.length, input.value.length);
     } catch (e) {}
-    _sttBuffer = "";
-    _sttPieces = [];
+    _sttCommitted = "";
+    _sttInterim = "";
     resetMicState();
     try { updateMicCounter(""); } catch (e) {}
 }
