@@ -79,6 +79,49 @@ VMEnrichAssistantReply(bubRich, '# Title\n\nSome text.');
 assert('enrich structured sets innerHTML', typeof bubRich.innerHTML === 'string' && bubRich.innerHTML.length > 0);
 assert('enrich structured adds ai-rich class', called === true);
 
+// --- STEP 2 requirement 4: plain reply, markdown table, marked missing, enrich throws ---
+// Plain reply shows text, no apology
+var bubPlainReply = { textContent: 'Hello', innerHTML: '', classList: { add: function(){} }, querySelector: function(){ return null; } };
+VMEnrichAssistantReply(bubPlainReply, 'Hello');
+assert('plain reply shows text, no apology', bubPlainReply.innerHTML === '');
+
+// Markdown table reply shows structured HTML, no apology
+var bubTable = { textContent: '| a | b |\n|---|---|\n| 1 | 2 |', innerHTML: '', classList: { add: function(){} }, querySelector: function(){ return this; } };
+VMEnrichAssistantReply(bubTable, '| a | b |\n|---|---|\n| 1 | 2 |');
+assert('markdown table reply shows content, no apology', typeof bubTable.innerHTML === 'string' && bubTable.innerHTML.indexOf('a') !== -1 && bubTable.innerHTML.indexOf('b') !== -1 && bubTable.innerHTML.indexOf('apologize') === -1);
+
+// Reply when marked is missing: falls back to plain text, no apology
+var ctxNoMarked = {
+  window: { DOMParser: stubDOMParser, marked: undefined },
+  document: stubDocument,
+  DOMParser: stubDOMParser, marked: undefined, console: console,
+  Promise: Promise, Object: Object, setTimeout: setTimeout, clearTimeout: clearTimeout, Date: Date,
+  NodeFilter: { SHOW_ELEMENT: 1, SHOW_COMMENT: 128 }
+};
+var ctx2 = vm.createContext(ctxNoMarked);
+vm.runInContext(settingsSrc, ctx2);
+var VMRichRenderNoMarked = ctx2.window.VMRichRender;
+var rNoMarked = VMRichRenderNoMarked.render('plain text reply');
+assert('reply when marked missing shows text, no apology', typeof rNoMarked === 'string' && rNoMarked.indexOf('plain text reply') !== -1);
+
+// Reply when VMEnrichAssistantReply throws: bubble keeps content, no apology
+var bubThrow = { textContent: 'some text', innerHTML: '', classList: { add: function(){ throw new Error('boom'); } }, querySelector: function(){ return this; } };
+try {
+  VMEnrichAssistantReply(bubThrow, '# Title\n\nSome text.');
+  assert('enrich throws but bubble keeps content, no apology', typeof bubThrow.innerHTML === 'string' && bubThrow.innerHTML.indexOf('apologize') === -1);
+} catch (e) {
+  assert('enrich throws but bubble keeps content, no apology', false, e.message);
+}
+
+// Enrichment never causes apology: any exception is caught, bubble stays as-is
+var bubNoApology = { textContent: 'Hello world', innerHTML: '', classList: { add: function(){} }, querySelector: function(){ return this; } };
+try {
+  VMEnrichAssistantReply(bubNoApology, 'Hello world');
+  assert('enrichment never produces apology bubble', bubNoApology.innerHTML === '');
+} catch (e) {
+  assert('enrichment never produces apology bubble', false, e.message);
+}
+
 VMEnrichAssistantReply(null, 'x');
 VMEnrichAssistantReply(bubRich, '');
 assert('enrich guards no throw', true);
