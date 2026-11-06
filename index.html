@@ -11535,6 +11535,45 @@ window.send = async function () {
     var streamError = null;
     var lastSentMessage = text;
     if (text) window._lastUserText = text;   // remembered for Regenerate
+    // vm-fix20: stream timeout (~45s inactivity) + retry once before showing error;
+    // visibilitychange-visible with dead/hung stream triggers one retry.
+    var _vmStreamRetryMax = 2;
+    window._vmChatStreamActive = true;
+    window._vmStreamLastActivity = Date.now();
+    var _vmVisRetryHandler = function() {
+        try {
+            if (!document.hidden && window._vmChatStreamActive && !_sendAborted && _sendAbortController) {
+                var idle = Date.now() - (window._vmStreamLastActivity || 0);
+                if (idle > 12000) {
+                    console.warn("[stream] visibility resume with stale stream (" + idle + "ms), aborting for retry");
+                    window._vmStreamVisibilityAbort = true;
+                    try { _sendAbortController.abort(); } catch(e){}
+                }
+            }
+        } catch(e){}
+    };
+    try { document.addEventListener("visibilitychange", _vmVisRetryHandler); } catch(e){}
+    for (var _vmStreamAttempt = 0; _vmStreamAttempt < _vmStreamRetryMax; _vmStreamAttempt++) {
+        streamError = null;
+        window._vmStreamVisibilityAbort = false;
+        _vmStreamTimedOut = false;
+        if (_vmStreamAttempt > 0) {
+            console.warn("[stream] auto-retry attempt " + (_vmStreamAttempt + 1) + "/" + _vmStreamRetryMax);
+            // Clean up partial UI only if no user-visible answer content was rendered.
+            try {
+                if (statusIndicator && statusIndicator.parentNode) statusIndicator.remove();
+            } catch(e){}
+            statusIndicator = null;
+            try { if (thinkingBlock) { thinkingBlock.finish(); thinkingBlock = null; } } catch(e){}
+            if (!fullReply && !bubbleEl) {
+                try { removeThinkingIndicator(thinking); } catch(e){}
+            }
+            // fresh controller for retry
+            try { if (_sendAbortController) _sendAbortController.abort(); } catch(e){}
+            _sendAbortController = new AbortController();
+            await new Promise(function(r){ setTimeout(r, 700); });
+            if (_sendAborted) break;
+        }
     try {
         var body = { message: text || "(image attached)", persona: currentPersona };
         if (currentChatId) body.chat_id = currentChatId;
@@ -11565,9 +11604,17 @@ window.send = async function () {
         var thinkingBlock = null;
         var streamReplyMode = false;
 
+        var _vmStreamLastActivity = Date.now();
+        var _vmStreamTimedOut = false;
+        function _vmReadWithTimeout(reader, ms) {
+            return new Promise(function(resolve, reject) {
+                var t = setTimeout(function(){ _vmStreamTimedOut = true; try { if (_sendAbortController) _sendAbortController.abort(); } catch(e){} reject(new Error('__vm_stream_timeout__')); }, ms);
+                reader.read().then(function(v){ clearTimeout(t); resolve(v); }, function(e){ clearTimeout(t); reject(e); });
+            });
+        }
         while (true) {
             if (_sendAborted) break;
-            var chunk = await reader.read();
+            var chunk = await _vmReadWithTimeout(reader, 45000); _vmStreamLastActivity = Date.now();
             if (chunk.done) break;
 
             buffer += decoder.decode(chunk.value, { stream: true });
@@ -11942,9 +11989,23 @@ window.send = async function () {
             speakPersona(fullReply, currentPersona);
         }
     } catch (err) {
-        if (!streamError) streamError = err.message || "Connection error";
-        if (thinkingBlock) { thinkingBlock.finish(); thinkingBlock = null; }
+        if (_sendAborted) { streamError = streamError || "aborted"; }
+        else if (_vmStreamTimedOut || (err && err.message === '__vm_stream_timeout__')) { if (!streamError) streamError = 'Stream timed out. Retrying failed - please try again.'; }
+        else { if (!streamError) streamError = (err && err.message) ? err.message : "Connection error"; }
+        try { if (thinkingBlock) { thinkingBlock.finish(); thinkingBlock = null; } } catch(e){}
+        // Retry once automatically on timeout/error/visibility-abort when no answer content was shown.
+        var _vmCanRetry = !_sendAborted && (_vmStreamAttempt < _vmStreamRetryMax - 1) && !fullReply && !bubbleEl;
+        if (_vmCanRetry) {
+            console.warn("[stream] transient failure, will retry once:", streamError);
+            streamError = null;
+            continue;
+        }
     }
+        // success or non-retryable failure
+        break;
+    }
+    try { document.removeEventListener("visibilitychange", _vmVisRetryHandler); } catch(e){}
+    window._vmChatStreamActive = false;
 
     // Fallback to non-streaming if streaming failed
     if (streamError) {
