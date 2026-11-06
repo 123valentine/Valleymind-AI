@@ -1128,6 +1128,193 @@ def _search_wikipedia(query: str) -> str:
         return f"Live search results:\n- {title}: {extract[:400]}"
     return LIVE_DATA_UNAVAILABLE
 
+# ─── vm-fix20 Part 3: search-sourced images ──────────────────────────
+# Image priority (per source): search API image -> og:image/twitter:image
+# (server-side fetch) -> Wikipedia/Wikimedia (people/places/companies/logos,
+# with attribution) -> favicon -> none. Never AI-generate images for
+# logos/products/people/places; never fetch images for private individuals.
+# All fetches are server-side, free/public, https-only, with SSRF guards.
+
+_IMAGE_FETCH_TIMEOUT = 3
+_IMAGE_MAX_BYTES = 2 * 1024 * 1024  # only read enough of <head> for meta tags
+
+_PRIVATE_HOSTS = {
+    "localhost", "127.0.0.1", "0.0.0.0", "::1",
+    "metadata.google.internal", "169.254.169.254",
+    "instance-data", "100.100.100.200",
+}
+_PRIVATE_SIGNALS = (
+    "@", "email", "phone", "address", "private", "personal", "home address",
+    "ssn", "passport", "dob", "date of birth", "resident", "my ",
+)
+
+
+def _is_private_or_local_host(hostname: str) -> bool:
+    h = (hostname or "").lower()
+    if h in _PRIVATE_HOSTS:
+        return True
+    import ipaddress
+    try:
+        ip = ipaddress.ip_address(h)
+        return ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast
+    except ValueError:
+        return False  # domain name - allowed
+
+
+def _looks_like_private_individual(query: str) -> bool:
+    q = (query or "").lower()
+    return any(sig in q for sig in _PRIVATE_SIGNALS)
+
+
+def _resolve_url(maybe_relative: str, base_url: str) -> str:
+    try:
+        from urllib.parse import urljoin
+        return urljoin(base_url or "", maybe_relative or "")
+    except Exception:
+        return maybe_relative or ""
+
+
+def _host_credit(url: str) -> str:
+    try:
+        from urllib.parse import urlparse
+        host = (urlparse(url).hostname or "")
+        parts = host.split(".")
+        return (parts[0][:1].upper() + parts[0][1:]) if parts and parts[0] else ""
+    except Exception:
+        return ""
+
+
+def _extract_og_image_from_html(html_text: str, base_url: str):
+    """Return {image_url, image_credit} from og:image/twitter:image or None."""
+    if not html_text:
+        return None
+    credit = ""
+    m = re.search(r"<title[^>]*>(.*?)</title>", html_text or "", re.IGNORECASE | re.DOTALL)
+    if m:
+        credit = re.sub(r"<[^>]+>", "", m.group(1)).strip()
+    patterns = [
+        r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']+)["\']',
+        r'<meta[^>]+property=["\']og:image:url["\'][^>]+content=["\']([^"\']+)["\']',
+        r'<meta[^>]+name=["\']twitter:image["\'][^>]+content=["\']([^"\']+)["\']',
+        r'<meta[^>]+name=["\']twitter:image:src["\'][^>]+content=["\']([^"\']+)["\']',
+    ]
+    for pat in patterns:
+        mm = re.search(pat, html_text or "", re.IGNORECASE)
+        if mm:
+            img = _resolve_url(mm.group(1), base_url)
+            if img.lower().startswith("https://"):
+                return {"image_url": img, "image_credit": credit or _host_credit(base_url)}
+    return None
+
+
+def _fetch_page_head(url: str):
+    """Fetch only enough of an https page to read <head> meta tags."""
+    try:
+        from urllib.parse import urlparse
+        parsed = urlparse(url)
+        if (parsed.scheme or "").lower() != "https":
+            return ""
+        if _is_private_or_local_host(parsed.hostname):
+            return ""
+        chunks = []
+        total = 0
+        with requests.get(url, timeout=_IMAGE_FETCH_TIMEOUT, stream=True,
+                          headers={"User-Agent": "ValleymindBot/1.0 (image metadata)"}) as resp:
+            ct = (resp.headers.get("Content-Type") or "").lower()
+            if "text/html" not in ct:
+                return ""
+            for chunk in resp.iter_content(chunk_size=8192):
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                total += len(chunk)
+                if total >= _IMAGE_MAX_BYTES:
+                    break
+        return b"".join(chunks).decode("utf-8", errors="replace")
+    except Exception:
+        return ""
+
+
+def _source_image_from_page(url: str):
+    """og:image/twitter:image from a source page, server-side, guarded."""
+    try:
+        html = _fetch_page_head(url)
+        if not html:
+            return None
+        return _extract_og_image_from_html(html, url)
+    except Exception:
+        return None
+
+
+def _wikimedia_image(query: str):
+    """Wikipedia/Wikimedia pageimage for a public entity, with attribution.
+
+    Skipped for queries that look like private individuals.
+    """
+    if not query or _looks_like_private_individual(query):
+        return None
+    try:
+        import urllib.parse as _parse
+        import urllib.request as _req
+        title = query.strip()
+        api_url = (
+            "https://en.wikipedia.org/w/api.php"
+            "?action=query&prop=pageimages&format=json"
+            f"&pithumbsize=400&titles={_parse.quote(title)}"
+        )
+        req = _req.Request(api_url, headers={"User-Agent": "ValleymindBot/1.0 (image attribution)"})
+        with _req.urlopen(req, timeout=8) as resp:
+            data = json.loads(resp.read().decode("utf-8", errors="replace"))
+        pages = (data.get("query") or {}).get("pages") or {}
+        for page in pages.values():
+            thumb = (page.get("thumbnail") or {})
+            img = thumb.get("source") or page.get("pageimage")
+            if img and str(img).startswith("https://"):
+                return {"image_url": img, "image_credit": "Wikipedia/Wikimedia - " + title}
+    except Exception:
+        pass
+    return None
+
+
+def _enrich_results_with_images(results, query: str = ""):
+    """Attach image/image_credit to top search results (server-side, capped)."""
+    if not results:
+        return
+    tried = 0
+    for r in results:
+        if tried >= 3:
+            break
+        url = r.get("url") or ""
+        if not url or not str(url).lower().startswith("https"):
+            continue
+        tried += 1
+        img = None
+        try:
+            img = _source_image_from_page(url)
+        except Exception:
+            img = None
+        if not img:
+            host = ""
+            try:
+                from urllib.parse import urlparse
+                host = (urlparse(url).hostname or "").lower()
+            except Exception:
+                pass
+            if any(d in host for d in ("wikipedia.org", "wikimedia.org")):
+                title = r.get("title") or query or ""
+                try:
+                    img = _wikimedia_image(title)
+                except Exception:
+                    img = None
+        if img:
+            r["image"] = img.get("image_url", "")
+            r["image_credit"] = img.get("image_credit", "")
+
+
+# ─── end Part 3 image helpers ─────────────────────────────────────────
+
+
+
 def _search_api_sports(query: str) -> str:
     if provider_blocked("apisports"):
         _log("API-SPORTS skipped: free quota unavailable")

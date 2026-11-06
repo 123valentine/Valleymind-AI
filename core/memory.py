@@ -516,10 +516,10 @@ class MemorySystem:
             self._cache[chat_id] = self.load_chat(chat_id)
         return self._cache[chat_id]
 
-    def add_message(self, chat_id: str, role: str, content: str, timestamp=None, image_data: str = "", image_url: str = "", video_url: str = ""):
+    def add_message(self, chat_id: str, role: str, content: str, timestamp=None, image_data: str = "", image_url: str = "", video_url: str = "", images: list = None):
         role = str(role or "user").strip()
         content = str(content or "").strip()
-        if not content and not image_data and not image_url and not video_url:
+        if not content and not image_data and not image_url and not video_url and not images:
             print(f"[WARNING] add_message: empty content and no media for role '{role}'; skipping.")
             return
 
@@ -537,6 +537,21 @@ class MemorySystem:
                 msg["image_url"] = image_url
             if video_url:
                 msg["video_url"] = video_url
+            if images:
+                clean_images = []
+                for im in images or []:
+                    if not isinstance(im, dict):
+                        continue
+                    url = str(im.get("url", "") or "").strip()
+                    if not url:
+                        continue
+                    clean_images.append({
+                        "url": url,
+                        "source": str(im.get("source", "") or "").strip(),
+                        "credit": str(im.get("credit", "") or "").strip(),
+                    })
+                if clean_images:
+                    msg["images"] = clean_images
             messages.append(msg)
             self.save_chat(chat_id, messages)
 

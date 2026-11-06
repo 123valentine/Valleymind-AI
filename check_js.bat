@@ -33,4 +33,9 @@ rem 9) vm-fix20 Part 2: continue/truncation path, clean search/Wikipedia, stream
 if errorlevel 1 exit /b 1
 python tests\test_vm_fix20_part2.py
 if errorlevel 1 exit /b 1
+rem 10) vm-fix20 Part 3: image extraction helpers + TinyFish field probe (guarded by TINYFISH_API_KEY).
+python tests\test_vm_fix20_part3.py
+if errorlevel 1 exit /b 1
+python tests\test_vm_fix20_tinyfish_probe.py
+if errorlevel 1 exit /b 1
 echo ALL_CHECKS_PASS

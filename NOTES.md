@@ -53,13 +53,20 @@
 3. [TODO] Client ~45s stream timeout; on timeout/error/visibilitychange-visible+dead stream retry once before error; backend tries next provider before apology where safe.
 4. [DONE, committed] `messageContextMenu`: closes on outside pointerdown/mousedown/touchstart (capture), scroll (capture/window), Escape (global handler extended), and after item chosen; listeners removed on close via `_vmMsgCtxRemoveListeners`; opens as single menu (closes persona/plus/user menus). `closeMessageContextMenu` clears refs/listeners.
 
-## PART 3 plan (after Part 2 tests pass)
-- Search-sourced images priority (1)-(5) as specified; NEVER generate logos/products/people/places; no private-individual images. Server-side og fetch 3s, size+content-type limits, https only, block private/local. Per source `{title,url,site,date,snippet,image,image_credit}`. Render/citations/persist/fallback/sanitise as specified. Make one real, small request to TinyFish in a test script and print which fields it returns (images?).
+## PART 3 (DONE, committed)
+- Search-sourced images priority (1)-(5): `core/external_apis.py` adds `_source_image_from_page` (og:image/twitter:image, server fetch, 3s timeout, 2MB cap, text/html content-type, https-only, SSRF private/local block), `_wikimedia_image` (Wikipedia/Wikimedia pageimage + attribution, skipped for private-individual signals), `_enrich_results_with_images` (capped to top 3 sources). `core/source_intelligence.py` adds `image`/`image_credit` to Evidence + `to_frontend_metadata`, enriches ranked results before building evidence.
+- Per source `{title,url,site,date,snippet,image,image_credit}` via frontend metadata; real values only, missing omitted.
+- Render (`index.html`): source rows image-left/text-right, stacked under 560px, fixed aspect ratio, lazy load, onerror hides image (favicon/site name shown instead), tap image -> larger view via openImageViewer; inline [1][2] citations unchanged; Sources row only when real search ran.
+- Persist: `core/memory.py add_message(..., images)` stores `{url,source,credit}`; `core/brain.py stream_respond` persists assistant images; `index.html renderChatHistory/addMessage` reloads and renders images for user and AI messages.
+- Fallbacks: failed/blocked images hidden, favicon + site name shown, never broken; http/https sanitised via og https-only + SSRF guard; rel noopener noreferrer on source links; no remote HTML execution.
+- Never AI-generates images for logos/products/people/places; no images for private individuals (`_looks_like_private_individual` guard).
+- One real TinyFish field probe added (`tests/test_vm_fix20_tinyfish_probe.py`); SKIPs cleanly when `TINYFISH_API_KEY` unset (not configured in this env).
 
 ## Env vars / deps (name BEFORE adding)
 - Existing/used: `TINYFISH_API_KEY` (`core/external_apis.py:740-741`) - no change planned.
-- Planned additions: none at this time. Part 3 og/image fetch can use existing `httpx`/`requests`/stdlib; if any new env var or dependency becomes necessary, I will name it BEFORE adding it.
+- No new env vars or dependencies added. Part 3 uses existing `requests`/`urllib` stdlib.
 
-## Backend files changed so far (before push)
-- Part 2.2: `core/external_apis.py`, `core/source_intelligence.py`, `core/brain.py`. (More possible: `app.py`, `core/memory.py`.) Final exact list declared before pushing.
-- Also allowed: `index.html`, `static/settings.js`, `tests/*`, `check_js.bat`, `NOTES.md`.
+## Backend files changed (declared before push)
+- Part 2.2 + 2.1 + 2.3 + 2.4 + Part 3: `core/brain.py`, `core/external_apis.py`, `core/source_intelligence.py`, `core/memory.py`.
+- Also changed (allowed): `index.html`, `check_js.bat`, `tests/test_vm_fix20_part2.js`, `tests/test_vm_fix20_part2.py`, `tests/test_vm_fix20_part3.py`, `tests/test_vm_fix20_tinyfish_probe.py`, `NOTES.md`.
+- NOT changed: `app.py`, `core/db.py`, `static/settings.js` (no changes needed), any Android/camera files, avatar/voice/TTS/mic systems.

@@ -107,6 +107,8 @@ class Evidence:
     accessed_at: str = ""
     tier: int = 3
     freshness_label: str = ""  # "today" | "yesterday" | "recent" | "old" | ""
+    image: str = ""            # search-sourced image URL (https, server-fetched)
+    image_credit: str = ""     # attribution for the image
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -221,6 +223,8 @@ class EvidencePackage:
                 "published": ev.published,
                 "freshness_category": self.freshness_category,
                 "freshness_label": ev.freshness_label,
+                "image": ev.image,
+                "image_credit": ev.image_credit,
             })
         return sources
 
@@ -821,6 +825,8 @@ def _build_evidence_from_snippet(result: dict) -> Evidence:
         accessed_at=datetime.now(timezone.utc).isoformat(),
         tier=source.tier,
         freshness_label=age_label,
+        image=result.get("image", ""),
+        image_credit=result.get("image_credit", ""),
     )
 
 
@@ -1031,6 +1037,7 @@ class SourceIntelligence:
             get_last_structured_results,
             _reset_search_sources,
             LIVE_DATA_UNAVAILABLE,
+            _enrich_results_with_images,
         )
 
         log: list[str] = []
@@ -1080,6 +1087,11 @@ class SourceIntelligence:
         deduped = _dedupe_results(all_results)
         log.append(f"After dedup: {len(deduped)} unique sources")
         ranked = _rank_results(deduped, plan)
+        # Attach search-sourced images (og:image / Wikimedia / favicon) server-side.
+        try:
+            _enrich_results_with_images(ranked, message)
+        except Exception as exc:
+            log.append(f"Image enrichment skipped: {exc}")
 
         # Step 4: Fetch page content from top results (up to 3)
         fetched_urls = set()
@@ -1122,6 +1134,8 @@ class SourceIntelligence:
                     accessed_at=datetime.now(timezone.utc).isoformat(),
                     tier=source.tier,
                     freshness_label=age_label,
+                    image=r.get("image", ""),
+                    image_credit=r.get("image_credit", ""),
                 )
                 if ev.content and ev.url:
                     evidence.append(ev)

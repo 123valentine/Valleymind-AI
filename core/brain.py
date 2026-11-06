@@ -1768,6 +1768,10 @@ class MarcusBrain:
                                     "supports_claims": ev.supports_claims,
                                     "published": ev.published,
                                     "tier": ev.tier,
+
+                                    "image": ev.image,
+
+                                    "image_credit": ev.image_credit,
                                 })
                         print(f"[SOURCE INTEL] Non-stream research: {len(evidence_package.evidence)} evidence items, "
                               f"confidence={evidence_package.confidence}")
@@ -1997,6 +2001,10 @@ class MarcusBrain:
                                 "supports_claims": ev.supports_claims,
                                 "published": ev.published,
                                 "tier": ev.tier,
+
+                                "image": ev.image,
+
+                                "image_credit": ev.image_credit,
                                 "freshness_label": ev.freshness_label,
                             })
                     print(f"[STREAM RESEARCH] {len(evidence_package.evidence)} evidence items, "
