@@ -4643,47 +4643,98 @@ document.addEventListener("keydown", function (e) {
         var xm = document.getElementById("plusMenu");
         if (pm) pm.style.display = "none";
         if (xm) xm.style.display = "none";
+        try { if (typeof closeMessageContextMenu === "function") closeMessageContextMenu(); } catch (e2) {}
     }
 });
+
+var _vmMsgCtxOutsideHandler = null;
+var _vmMsgCtxScrollHandler = null;
+function _vmMsgCtxRemoveListeners() {
+    if (_vmMsgCtxOutsideHandler) {
+        document.removeEventListener("pointerdown", _vmMsgCtxOutsideHandler, true);
+        document.removeEventListener("mousedown", _vmMsgCtxOutsideHandler, true);
+        document.removeEventListener("touchstart", _vmMsgCtxOutsideHandler, true);
+        _vmMsgCtxOutsideHandler = null;
+    }
+    if (_vmMsgCtxScrollHandler) {
+        document.removeEventListener("scroll", _vmMsgCtxScrollHandler, true);
+        window.removeEventListener("scroll", _vmMsgCtxScrollHandler, true);
+        _vmMsgCtxScrollHandler = null;
+    }
+}
 
 function toggleMessageContextMenu(e, msgIndex) {
     e.preventDefault();
     const menu = document.getElementById("messageContextMenu");
     if (!menu) return;
 
+    var btn = (e && e.currentTarget) ? e.currentTarget : ((e && e.target && e.target.closest) ? e.target.closest(".message-options-btn") : null);
     const isSame = menu.dataset.activeMsgIndex == msgIndex && menu.classList.contains("open");
     closeMessageContextMenu();
 
     if (isSame) return;
+
+    // Only one menu at a time.
+    try { var pm = document.getElementById("personaMenu"); if (pm) pm.style.display = "none"; } catch (e0) {}
+    try { var xm = document.getElementById("plusMenu"); if (xm) xm.style.display = "none"; } catch (e1) {}
+    try { if (typeof closeUserMessageMenu === "function") closeUserMessageMenu(); } catch (e2) {}
 
     menu.dataset.activeMsgIndex = msgIndex;
     menu.classList.add("open");
     // Remember which assistant message this menu was opened for, so the actions
     // (listen / email / report / details) can read that message's text.
     menu._sourceWrap = (e.target && e.target.closest) ? e.target.closest(".assistant-message") : null;
-    var btn = (e.currentTarget && e.currentTarget.getBoundingClientRect) ? e.currentTarget : ((e.target && e.target.closest) ? e.target.closest("button") : null);
-    try { menu.style.top = "auto"; menu.style.right = "auto"; positionMenuAbove("messageContextMenu", btn || "personaBtn"); }
-    catch (err) { menu.style.left = "8px"; menu.style.top = "8px"; }
+    try { menu.style.top = "auto"; menu.style.right = "auto"; positionMenuAbove("messageContextMenu", btn, { gap: 8, rightMargin: 14 }); } catch (e3) {}
 
-    if (typeof lucide !== "undefined" && lucide.createIcons) {
-        lucide.createIcons();
-    }
+    // Close on outside tap/touchstart and on scroll. Listeners removed on close.
+    _vmMsgCtxOutsideHandler = function(ev) {
+        try {
+            var m = document.getElementById("messageContextMenu");
+            if (!m || !m.classList.contains("open")) return;
+            var t = ev && ev.target;
+            if (t && m.contains(t)) return;
+            if (t && t.closest && t.closest(".message-options-btn")) return;
+            closeMessageContextMenu();
+        } catch (err) {}
+    };
+    _vmMsgCtxScrollHandler = function(ev) {
+        try {
+            var m = document.getElementById("messageContextMenu");
+            if (!m || !m.classList.contains("open")) return;
+            var t = ev && ev.target;
+            if (t && m.contains(t)) return;
+            closeMessageContextMenu();
+        } catch (err) {}
+    };
+    setTimeout(function() {
+        if (!_vmMsgCtxOutsideHandler) return;
+        document.addEventListener("pointerdown", _vmMsgCtxOutsideHandler, true);
+        document.addEventListener("mousedown", _vmMsgCtxOutsideHandler, true);
+        document.addEventListener("touchstart", _vmMsgCtxOutsideHandler, { capture: true, passive: true });
+        if (_vmMsgCtxScrollHandler) {
+            document.addEventListener("scroll", _vmMsgCtxScrollHandler, true);
+            window.addEventListener("scroll", _vmMsgCtxScrollHandler, true);
+        }
+    }, 0);
 }
 
 function closeMessageContextMenu() {
     const menu = document.getElementById("messageContextMenu");
     if (!menu) return;
     menu.classList.remove("open");
-    menu.style.left = "";
     menu.style.top = "";
-    delete menu.dataset.activeMsgIndex;
+    menu.style.left = "";
+    menu.style.right = "";
+    try { delete menu.dataset.activeMsgIndex; } catch (e) {}
+    try { menu._sourceWrap = null; } catch (e) {}
+    _vmMsgCtxRemoveListeners();
 }
 
 function handleMessageContextAction(action) {
     var menu = document.getElementById("messageContextMenu");
-    var wrap = menu ? menu._sourceWrap : null;
-    var bubble = wrap ? wrap.querySelector(".bubble") : null;
-    var text = bubble ? bubble.textContent.trim() : "";
+    var msgIndex = menu ? menu.dataset.activeMsgIndex : null;
+    var sourceWrap = menu ? menu._sourceWrap : null;
+    console.log(`[VMAI-CTX] ${action} clicked for message ${msgIndex}`);
     closeMessageContextMenu();
     switch (action) {
         case "listen":
