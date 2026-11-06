@@ -2105,9 +2105,13 @@
   .msg-toolbar{ opacity:0.72; transition:opacity .15s; }
   .msg-toolbar:hover{ opacity:1; }
   /* Comfortable reading width on desktop; center so large monitors don't
-     stretch the conversation edge-to-edge. */
+     stretch the conversation edge-to-edge. Use more of the available
+     viewport while keeping a readable line length. */
   @media(min-width:1280px){
-    #messages{ max-width:960px; margin-left:auto; margin-right:auto; }
+    #messages{ max-width:1120px; margin-left:auto; margin-right:auto; }
+  }
+  @media(min-width:1600px){
+    #messages{ max-width:1240px; }
   }
   /* Tablet: give the conversation more room by tightening the sidebar. */
   @media(min-width:769px) and (max-width:1199px){
@@ -3081,7 +3085,7 @@ body[data-vm-companion="cloud"] #vmVrmCompanion { display: none !important; }
 
     <!-- INPUT BAR -->
     <div class="chat-composer-bar" style="padding:12px 24px 24px;background:linear-gradient(180deg, rgba(5,14,24,0.35), rgba(5,14,24,0.92));box-shadow:0 -24px 50px rgba(0,0,0,0.35);">
-      <div style="max-width:900px;margin:0 auto;">
+      <div style="max-width:1100px;margin:0 auto;">
 
         <!-- HIDDEN FILE INPUTS -->
         <input type="file" id="chatImageInput" accept="image/*" style="display:none;">
