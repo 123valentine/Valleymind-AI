@@ -2445,14 +2445,16 @@ def chat():
         # ── Route ─────────────────────────────────────────────────────
         router = get_router()
         decision = router.classify(message, has_image=bool(image_data), source=source)
+        # vm-fix19: never generate fake images for real-world logos/products/people/places
+        _filtered_caps = _vm_filter_fake_image_gen(message, decision.capabilities)
 
-        caps_str = ", ".join(c.value for c in decision.capabilities)
-        print(f"[Router] Dispatching /chat → [{caps_str}]")
+        caps_str = ", ".join(c.value for c in _filtered_caps)
+        print(f"[Router] Dispatching /chat -> [{caps_str}]")
 
-        # ── Dispatch ──────────────────────────────────────────────────
-        has_text = pm.Capability.TEXT in decision.capabilities
-        has_image = pm.Capability.IMAGE in decision.capabilities
-        has_video = pm.Capability.VIDEO in decision.capabilities
+        # -- Dispatch --
+        has_text = pm.Capability.TEXT in _filtered_caps
+        has_image = pm.Capability.IMAGE in _filtered_caps
+        has_video = pm.Capability.VIDEO in _filtered_caps
 
         if has_video and has_text:
             return _dispatch_video_text_json(user_id, message, chat_id, image_data)
@@ -2635,6 +2637,50 @@ def _video_disabled_stream(user_id, message, chat_id):
         mimetype='text/event-stream',
         headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no', 'Connection': 'keep-alive'},
     )
+
+
+
+def _vm_filter_fake_image_gen(message: str, capabilities):
+    """STEP 2.4 / vm-fix19: Never call image generation for real-world logos,
+    products, people, or places. If the request is asking to SEE/SHOW/FIND a
+    real entity's logo/photo/picture (not to create/design/draw one), strip
+    IMAGE capability and fall back to TEXT so we never produce fake AI images.
+    Returns a (possibly filtered) tuple of capabilities."""
+    try:
+        caps = tuple(capabilities) if capabilities else ()
+        if not caps:
+            return caps
+        # Check if IMAGE is in capabilities
+        try:
+            from core.provider_manager import Capability
+            has_img = Capability.IMAGE in caps
+        except Exception:
+            has_img = any(getattr(c, 'value', c) == 'image' for c in caps)
+        if not has_img:
+            return caps
+        text = (message or '').lower()
+        # Explicit creative generation verbs — allow image gen
+        creative = re.search(r'\b(create|design|draw|generate|make|paint|illustrate|render|sketch|imagine|produce|compose|craft|build)\b.{0,60}\b(image|picture|photo|logo|poster|flyer|banner|artwork|illustration|graphic|icon|art|visual|infographic|diagram)\b|\b(generate|create|draw|make|design)\s+(an?\s+)?(image|picture|logo|poster|artwork|illustration)\b', text)
+        # Also allow if user clearly says "design/create a logo FOR..." (creative)
+        if creative:
+            return caps
+        # Real-entity lookup patterns: show/find/display/what does X look like / logo of / photo of
+        lookup = re.search(r'\b(show|find|get|display|see|view|what does|what do|look like|looks like|picture of|photo of|image of|logo of|logos? of|logo for|brand logo|product image|headshot of|portrait of)\b', text)
+        entity = re.search(r'\b(logo|logos|product|products|person|people|place|places|brand|brands|company|companies|screenshot|headshot|portrait|face|celebrity|iphone|samsung|chatgpt|google|apple|microsoft|amazon|meta|nvidia)\b', text)
+        if lookup and entity:
+            # Strip IMAGE, keep/ensure TEXT
+            filtered = tuple(c for c in caps if getattr(c, 'value', str(c)) != 'image')
+            if not filtered:
+                try:
+                    from core.provider_manager import Capability
+                    filtered = (Capability.TEXT,)
+                except Exception:
+                    filtered = caps
+            print(f"[Router] vm-fix19: stripped IMAGE for real-entity lookup (no fake images): {text[:80]!r}")
+            return filtered
+        return caps
+    except Exception:
+        return capabilities
 
 
 def _dispatch_image_json(user_id, message, chat_id, image_data):
@@ -3297,14 +3343,16 @@ def chat_stream():
         # ── Route ─────────────────────────────────────────────────────
         router = get_router()
         decision = router.classify(message, has_image=bool(image_data), source=source)
+        # vm-fix19: never generate fake images for real-world logos/products/people/places
+        _filtered_caps = _vm_filter_fake_image_gen(message, decision.capabilities)
 
-        caps_str = ", ".join(c.value for c in decision.capabilities)
-        print(f"[Router] Dispatching /chat/stream → [{caps_str}]")
+        caps_str = ", ".join(c.value for c in _filtered_caps)
+        print(f"[Router] Dispatching /chat/stream -> [{caps_str}]")
 
-        # ── Dispatch ──────────────────────────────────────────────────
-        has_text = pm.Capability.TEXT in decision.capabilities
-        has_image = pm.Capability.IMAGE in decision.capabilities
-        has_video = pm.Capability.VIDEO in decision.capabilities
+        # -- Dispatch --
+        has_text = pm.Capability.TEXT in _filtered_caps
+        has_image = pm.Capability.IMAGE in _filtered_caps
+        has_video = pm.Capability.VIDEO in _filtered_caps
 
         if has_video and has_text:
             return _dispatch_video_text_stream(user_id, message, chat_id, image_data)

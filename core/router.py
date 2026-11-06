@@ -55,11 +55,17 @@ Available capabilities (use the exact string values):
            brainstorming, facts, emotional support, search queries,
            code questions asked alongside conversation, or any request
            that benefits from a written explanation or discussion.
-  image  — user wants to SEE a visual output: picture, illustration,
-           artwork, design, logo, poster, flyer, banner, meme, diagram,
-           visual concept, mockup, painting, drawing, render.
-           Also: "show me", "visualize", "imagine this scene",
-           "turn into art", "design a", "make a poster/flyer/logo".
+  image  — user wants a NEW visual CREATED/GENERATED: illustration,
+           artwork, original design, poster, flyer, banner, meme, diagram,
+           visual concept, mockup, painting, drawing, render, or a newly
+           designed logo/artwork (creative generation).
+           Also: "visualize this concept", "imagine this scene",
+           "turn into art", "design a poster/flyer", "draw/create/generate/make an image".
+           IMPORTANT: Do NOT classify as image when the user wants to SEE or
+           FIND a real-world logo, product photo, person, place, brand image,
+           or screenshot (e.g. "show me the Nike logo", "photo of iPhone",
+           "ChatGPT logo"). For those, use ["text"] — never generate fake
+           images of real entities.
   video  — user wants a VIDEO or animation: movie, clip, footage, timelapse,
            cinematic scene, animated sequence, motion graphics,
            animated birthday invitation, turning an image into motion,
