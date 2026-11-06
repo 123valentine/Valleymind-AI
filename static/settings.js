@@ -2465,12 +2465,14 @@ window.closeSettings = function () {
 };
 
 // =====================================================================
-// VMRichRender — safe, intelligent response formatting
+// VMRichRender - safe, intelligent response formatting (vm-fix19)
 // Reuses the already-loaded `marked` (v9.1.6) CDN script: no new deps.
 // Renders assistant replies as structured HTML: headings, paragraphs,
 // emphasis, lists/checklists, blockquotes, code blocks, tables, images.
-// All model-generated content passes through a whitelist sanitizer so no
-// script, event handler, or javascript: URL can execute.
+// vm-fix19: converts dash-row/ASCII tables (incl. fenced tabular blocks)
+// to real <table>; strips stray unrendered markdown markers from display
+// text (never inside <pre>/<code>). All output passes through a whitelist
+// sanitizer so no script, event handler, or javascript: URL can execute.
 // =====================================================================
 window.VMRichRender = (function () {
   "use strict";
@@ -2546,12 +2548,160 @@ window.VMRichRender = (function () {
     }
   }
 
+  // vm-fix19: detect and convert text/ASCII tables to markdown pipe tables
+  function _splitTableRow(line) {
+    var l = String(line || '').replace(/^\s+|\s+$/g, '');
+    if (l.charAt(0) === '|') l = l.slice(1);
+    if (l.charAt(l.length - 1) === '|') l = l.slice(0, -1);
+    return l.split('|').map(function (c) { return c.replace(/^\s+|\s+$/g, ''); });
+  }
+  function _isSepRow(line) {
+    var t = String(line || '').replace(/^\s+|\s+$/g, '');
+    return /^[\|\s\-:=+]+$/.test(t) && /-/.test(t) && t.length >= 3;
+  }
+  function _isPipeRow(line) {
+    var t = String(line || '');
+    return t.indexOf('|') !== -1 && _splitTableRow(t).length >= 2;
+  }
+  function _pipeTableFromLines(lines) {
+    if (!lines || lines.length < 2) return null;
+    var rows = [];
+    for (var i = 0; i < lines.length; i++) {
+      var ln = lines[i];
+      if (_isSepRow(ln)) continue;
+      if (!_isPipeRow(ln) && !/\S/.test(ln)) continue;
+      rows.push(_splitTableRow(ln));
+    }
+    if (rows.length < 2) return null;
+    var cols = 0;
+    for (var r = 0; r < rows.length; r++) if (rows[r].length > cols) cols = rows[r].length;
+    if (cols < 2) return null;
+    for (var r2 = 0; r2 < rows.length; r2++) while (rows[r2].length < cols) rows[r2].push('');
+    var out = [];
+    out.push('| ' + rows[0].join(' | ') + ' |');
+    var sep = []; for (var c = 0; c < cols; c++) sep.push('---');
+    out.push('| ' + sep.join(' | ') + ' |');
+    for (var d = 1; d < rows.length; d++) out.push('| ' + rows[d].join(' | ') + ' |');
+    return out.join('\n');
+  }
+  function _asciiTableFromLines(lines) {
+    // Handle +---+---+ bordered or dash-separated aligned columns
+    var clean = [];
+    for (var i = 0; i < lines.length; i++) {
+      var ln = String(lines[i] || '');
+      if (/^\s*[+\-=]+\s*$/.test(ln)) continue; // border/separator
+      if (!/\S/.test(ln)) continue;
+      clean.push(ln);
+    }
+    if (clean.length < 2) return null;
+    // Try splitting by 2+ spaces or tabs
+    var rows = clean.map(function (ln) {
+      return ln.replace(/^\s+|\s+$/g, '').split(/\s{2,}|\t+/).map(function (c) { return c.replace(/^\s+|\s+$/g, ''); });
+    });
+    var cols = 0;
+    for (var r = 0; r < rows.length; r++) if (rows[r].length > cols) cols = rows[r].length;
+    if (cols < 2) return null;
+    for (var r2 = 0; r2 < rows.length; r2++) while (rows[r2].length < cols) rows[r2].push('');
+    var out = [];
+    out.push('| ' + rows[0].join(' | ') + ' |');
+    var sep = []; for (var c = 0; c < cols; c++) sep.push('---');
+    out.push('| ' + sep.join(' | ') + ' |');
+    for (var d = 1; d < rows.length; d++) out.push('| ' + rows[d].join(' | ') + ' |');
+    return out.join('\n');
+  }
+  function _convertTabularText(text) {
+    if (!text) return text;
+    var t = String(text);
+    // 1) Convert fenced blocks that contain tabular content
+    t = t.replace(/```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/g, function (m, lang, body) {
+      var lines = body.split(/\r?\n/);
+      var hasSep = false, pipeLines = 0;
+      for (var i = 0; i < lines.length; i++) {
+        if (_isSepRow(lines[i]) || /^\s*[+\-=]{3,}\s*$/.test(lines[i])) hasSep = true;
+        if (_isPipeRow(lines[i])) pipeLines++;
+      }
+      var looksTabular = (pipeLines >= 2 && hasSep) || (pipeLines >= 3);
+      // Also detect space-aligned dash tables like the screenshot
+      var hasDashSep = /[-]{3,}/.test(body) && /\n/.test(body);
+      var multiColSpace = 0;
+      for (var j = 0; j < lines.length; j++) {
+        if (/\S\s{2,}\S/.test(lines[j])) multiColSpace++;
+      }
+      var looksAscii = hasDashSep && multiColSpace >= 2 && lines.length >= 3;
+      if (looksTabular) {
+        var tbl = _pipeTableFromLines(lines);
+        if (tbl) return '\n' + tbl + '\n';
+      }
+      if (looksAscii) {
+        var tbl2 = _asciiTableFromLines(lines);
+        if (tbl2) return '\n' + tbl2 + '\n';
+      }
+      return m; // keep original fence
+    });
+    // 2) Convert unfenced pipe tables that marked might miss (rare) - leave as-is for marked
+    // 3) Convert unfenced ASCII dash tables
+    var lines = t.split(/\r?\n/);
+    var out = [], buf = [], inAscii = false;
+    function flushAscii() {
+      if (buf.length >= 3) {
+        var hasDash = false, multi = 0;
+        for (var k = 0; k < buf.length; k++) {
+          if (/[-=]{3,}/.test(buf[k])) hasDash = true;
+          if (/\S\s{2,}\S/.test(buf[k])) multi++;
+        }
+        if (hasDash && multi >= 2) {
+          var tbl = _asciiTableFromLines(buf);
+          if (tbl) { out.push(tbl); buf = []; inAscii = false; return; }
+        }
+      }
+      for (var b = 0; b < buf.length; b++) out.push(buf[b]);
+      buf = []; inAscii = false;
+    }
+    for (var i = 0; i < lines.length; i++) {
+      var ln = lines[i];
+      var isTableLine = /^\s*[+\-|=]/.test(ln) || /\S\s{2,}\S/.test(ln) || /[-=]{3,}/.test(ln);
+      if (isTableLine) { inAscii = true; buf.push(ln); }
+      else { if (inAscii) flushAscii(); out.push(ln); }
+    }
+    if (inAscii) flushAscii();
+    return out.join('\n');
+  }
+  function _stripStrayMarkdown(html) {
+    // Final pass: strip stray unrendered ** or leading # from display text
+    // nodes only (never inside <pre>/<code>). Item 10.
+    try {
+      var doc = new DOMParser().parseFromString(html, 'text/html');
+      var walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT, null, false);
+      var nodes = [], n;
+      while ((n = walker.nextNode())) nodes.push(n);
+      for (var i = 0; i < nodes.length; i++) {
+        var node = nodes[i];
+        var parent = node.parentNode;
+        var inPre = false;
+        var p = parent;
+        while (p && p !== doc.body) {
+          var tag = p.tagName && p.tagName.toLowerCase();
+          if (tag === 'pre' || tag === 'code') { inPre = true; break; }
+          p = p.parentNode;
+        }
+        if (inPre) continue;
+        var t = node.textContent || '';
+        var t2 = t.replace(/\*\*/g, '').replace(/(^|\s)#{1,6}\s/g, '$1');
+        if (t2 !== t) node.textContent = t2;
+      }
+      return doc.body.innerHTML || html;
+    } catch (e) { return html; }
+  }
+
   var CITE_RE = /\[(\d+|[A-Za-z][A-Za-z0-9 .&'-]*\d*)\]/g;
 
   function render(text) {
     if (text == null) return "";
     var t = String(text);
     if (!t.trim()) return "";
+
+    // vm-fix19: convert dash-row/ASCII/fenced tabular text to real markdown tables
+    try { t = _convertTabularText(t); } catch (e) {}
 
     t = t.replace(/\[Image:\s*([^\n\]]+)\]/gi, function (m, url) {
       url = url.trim();
@@ -2586,7 +2736,10 @@ window.VMRichRender = (function () {
       return "<span class=\"vm-cite\">[" + escapeHtml(citeStore[idx] || "") + "]</span>";
     });
 
-    return sanitizeHtml(html);
+    var safe = sanitizeHtml(html);
+    // vm-fix19 item 10: strip stray unrendered markdown markers (not in code)
+    try { safe = _stripStrayMarkdown(safe); } catch (e) {}
+    return safe;
   }
 
   return { render: render };
@@ -2635,10 +2788,19 @@ window.VMEnrichAssistantReply = function (bub, fullText) {
   if (typeof window.VMPresentationSelector === "undefined" ||
       typeof window.VMRichRender === "undefined") return;
   try {
-    var fmt = window.VMPresentationSelector.select(fullText);
-    if (fmt === "plain") return;
-    var html = window.VMRichRender.render(fullText);
+    var t = String(fullText);
+    var fmt = window.VMPresentationSelector.select(t);
+    // vm-fix19: render markdown for AI replies with any markdown syntax
+    // (bold, italic, headings, lists, tables, code, blockquotes, links)
+    // so raw ** * # - symbols never appear unrendered. Only truly plain
+    // short answers with no markdown markers stay as plain text.
+    var hasMd = /\*\*|\*[^*]|^#{1,6}\s|^[-*+]\s|^\d+\.\s|```|~~~|\|.*\|.*\n.*\|[-: ]|^>\s|\[.+\]\(.+\)|^---+$/m.test(t);
+    if (fmt === "plain" && !hasMd) return;
+    var html = window.VMRichRender.render(t);
     if (!html || !html.trim()) return;
+    // For very short pure-text that rendered to just a simple <p>, keep plain
+    // to avoid unnecessary DOM churn — but only if no markdown was present.
+    if (fmt === "plain" && !hasMd) return;
     bub.innerHTML = html;
     bub.classList.add("ai-rich");
   } catch (e) {

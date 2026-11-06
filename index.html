@@ -5723,7 +5723,11 @@ function addMessage(text, type = "ai", imageData, mediaUrl, videoUrl) {
             typeof window.VMRichRender !== "undefined" &&
             typeof window.VMPresentationSelector !== "undefined") {
             try {
-                if (window.VMPresentationSelector.select(textWithoutMedia) !== "plain") {
+                var _fmt = window.VMPresentationSelector.select(textWithoutMedia);
+                // vm-fix19: render markdown for any AI reply with markdown syntax
+                // so raw ** * # - never appear unrendered (items 2,10)
+                var _hasMd = /\*\*|\*[^*]|^#{1,6}\s|^[-*+]\s|^\d+\.\s|```|~~~|\|.*\|.*\n.*\|[-: ]|^>\s|\[.+\]\(.+\)|^---+$/m.test(textWithoutMedia);
+                if (_fmt !== "plain" || _hasMd) {
                     bubble.innerHTML = window.VMRichRender.render(textWithoutMedia);
                     bubble.classList.add("ai-rich");
                 } else {
