@@ -32,16 +32,16 @@
 - When all fail → brain.py:2065 apology
 - **Unrelated to client change, but is the primary reason user sees the apology.**
 
-## STEP 2 - FIX plan
-1. Wrap every call to VMRichRender, VMPresentationSelector, VMEnrichAssistantReply in try/catch + typeof check. On failure, reply renders exactly as before (plain text), error only logged to console. Enrichment must never run inside the code path that decides request success.
-2. Run enrichment asynchronously (requestAnimationFrame) AFTER reply is fully shown, so it can never turn a successful reply into an error bubble.
-3. Fix confirmed cause: index.html enrichment hook call site lacks try/catch inside send() try block → wrap it.
-4. Tests: plain reply, markdown+table reply, marked missing, VMEnrichAssistantReply throws — all show text, no apology.
+## STEP 2 - DONE (all items committed)
+1. DONE (b57a22d): Wrap VMRichRender/VMPresentationSelector/VMEnrichAssistantReply calls in try/catch + typeof check. addMessage (index.html:5686-5707) and post-stream hook (index.html:11735-11752) both guarded. On failure, reply renders plain text, error logged to console only.
+2. DONE (b57a22d): Post-stream enrichment deferred via requestAnimationFrame so it runs AFTER reply is shown and can never turn a successful reply into an error bubble.
+3. DONE (b57a22d): Confirmed cause fixed — enrichment hook call site now wrapped in try/catch inside send() try block, so enrichment exceptions never set streamError or trigger fallback-to-apology.
+4. DONE (1876cad): tests/test_vm_richrender.js — 28/28 pass (plain reply, markdown table, marked missing, enrich throws — all show text, no apology).
 
 ## Next commits (separate, test between each)
-- (A) Layout fixes from Phase 1 (width, spacing, avatar layer)
-- (B) Tables with horizontal scroll
-- Stop after A and B this session; write (C) cards, (D) search results, (E) PDF export into NOTES.md.
+- DONE (d337406): (A) Layout fixes from Phase 1 — desktop #messages max-width 960px→1120px (+1240px at 1600px), composer max-width 900px→1100px, spacing retained (gap 16px, padding 18px 16px).
+- DONE (15c441e): (B) Tables with horizontal scroll — bubble.ai-rich table overflow-x:auto, white-space:nowrap cells, professional borders/header/zebra striping.
+- PENDING (next session): (C) cards, (D) search result presentation, (E) PDF export.
 
 ## Gate
 - check_js.bat passes, inline block count == origin/main (30), diff only index.html, static/settings.js, tests, check_js.bat. Push normally, wait Render Live, fetch live files proving try/catch guards + async enrichment. If live check fails, git revert and push. Report new commit hash + confirmed cause, then remove worktree.
