@@ -46,8 +46,10 @@
 - **No route found** for fetching/proxying images or page metadata/og:image extraction (`rg` in app/core for og:image/twitter:image/proxy metadata returned only SSRF notes in `core/external_apis.py:749,765`).
 
 ## PART 2 progress
-1. [TODO] Raise reply limit; detect finish_reason/length in stream+non-stream; auto-continue or "Continue"; tables not cut off. (Respect mid-stream provider-fail constraint.)
+1. [DONE, committing] Raise reply limits (Groq stream/non-stream 4096, openai-compat 4096); `_call_groq_stream` detects `finish_reason` and emits control event; `stream_respond` auto-continues up to 3 times on `finish_reason==length` (new LLM calls per continuation; no mid-stream provider splice) so tables/long answers not cut off; emits `stream_continue`/`truncated` events. Client handles `stream_continue` and shows "Continue response" button on `truncated`. On stream failure before any output, tries non-stream cluster once before apology; never replaces already-emitted partial output with apology.
 2. [DONE, committed] Clean search query (strip filler like "list"/"what is") via `core/external_apis.py:clean_search_query()` used by TinyFish/DDG + `core/source_intelligence.plan_search`; require real results before claiming / `LIVE_DATA_UNAVAILABLE` treated as no live context; on search intent with no reliable results pass search-unavailable directive so model answers from general knowledge + brief note, never refuses (`core/brain.py` `_groq_messages` `search_note`, `stream_respond`). Fixed Wikipedia `query.split()[0]` junk fallback: cleaned query, title-search fallback, rejects disambiguation/definition hits unrelated to request (`core/external_apis.py:_search_wikipedia/_wikipedia_result_relevant`).
+3. [TODO] Client ~45s stream timeout; on timeout/error/visibilitychange-visible+dead stream retry once before error; backend tries next provider before apology where safe.
+4. [TODO] messageContextMenu closes on outside tap, touchstart, Escape, scroll, after item chosen; remove listeners on close; one menu at a time.
 3. [TODO] Client ~45s stream timeout; on timeout/error/visibilitychange-visible+dead stream retry once before error; backend tries next provider before apology where safe.
 4. [TODO] messageContextMenu closes on outside tap, touchstart, Escape, scroll, after item chosen; remove listeners on close; one menu at a time.
 

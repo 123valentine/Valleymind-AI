@@ -11777,6 +11777,36 @@ window.send = async function () {
                     continue;
                 }
 
+                if (evt.stream_continue) {
+                    if (thinkingBlock) {
+                        try { thinkingBlock.addStep("Continuing long response…"); } catch (e) {}
+                    }
+                    continue;
+                }
+                if (evt.truncated) {
+                    var msgsC = document.getElementById("messages");
+                    if (msgsC) {
+                        var contWrap = document.createElement("div");
+                        contWrap.className = "assistant-message";
+                        var contBtn = document.createElement("button");
+                        contBtn.type = "button";
+                        contBtn.className = "vm-continue-btn";
+                        contBtn.textContent = "Continue response";
+                        contBtn.style.cssText = "margin:6px 0 2px 12px;padding:8px 12px;border-radius:10px;border:1px solid rgba(148,163,184,0.35);background:rgba(148,163,184,0.12);color:#e2e8f0;cursor:pointer;font:inherit;";
+                        contBtn.onclick = function(){
+                            var inp = document.getElementById("chat-input") || document.getElementById("userInput");
+                            var sb = document.getElementById("sendBtn");
+                            if (inp) { inp.value = "Continue exactly where you left off."; inp.dispatchEvent(new Event("input", {bubbles:true})); }
+                            if (sb) sb.click();
+                            try { contBtn.disabled = true; contBtn.textContent = "Continuing…"; } catch(e){}
+                        };
+                        contWrap.appendChild(contBtn);
+                        msgsC.appendChild(contWrap);
+                        msgsC.scrollTop = msgsC.scrollHeight;
+                    }
+                    continue;
+                }
+
                 if (evt.token !== undefined) {
                     if (evt.token === "" || evt.token === " ") continue;
 

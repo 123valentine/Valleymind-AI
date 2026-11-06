@@ -336,7 +336,7 @@ def _call_groq(messages: list, model_name: str, timeout: int = 30, timeout_retri
     payload = {
         "model": model_name,
         "messages": messages,
-        "max_completion_tokens": 512,
+        "max_completion_tokens": 4096,
         "include_reasoning": False,
     }
 
@@ -387,13 +387,16 @@ def _call_groq(messages: list, model_name: str, timeout: int = 30, timeout_retri
     return content.strip()
 
 
-def _call_groq_stream(messages: list, model_name: str = "", timeout: int = 30):
+def _call_groq_stream(messages: list, model_name: str = "", timeout: int = 30, max_completion_tokens: int = 4096):
+    """Stream Groq tokens. Yields str content chunks and may yield a final
+    control dict {"__vm_control":"finish","finish_reason": "..."} so callers can
+    detect truncation (finish_reason == "length") and continue."""
     config = get_config()
     api_key = config.groq_api_key
     if not api_key:
         raise RuntimeError("GROQ_API_KEY is not configured.")
     resolved_model = model_name or get_latest_groq_model()
-    print(f"[API] Streaming Groq chat completions with model: {resolved_model}")
+    print(f"[API] Streaming Groq chat completions with model: {resolved_model} max_completion_tokens={max_completion_tokens}")
 
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -402,11 +405,12 @@ def _call_groq_stream(messages: list, model_name: str = "", timeout: int = 30):
     payload = {
         "model": resolved_model,
         "messages": messages,
-        "max_completion_tokens": 512,
+        "max_completion_tokens": max(256, int(max_completion_tokens or 4096)),
         "include_reasoning": False,
         "stream": True,
     }
 
+    finish_reason = None
     try:
         url = f"{config.groq_base_url.rstrip('/')}/openai/v1/chat/completions" if "openai/v1" not in config.groq_base_url else f"{config.groq_base_url.rstrip('/')}/chat/completions"
         response = requests.post(
@@ -431,7 +435,11 @@ def _call_groq_stream(messages: list, model_name: str = "", timeout: int = 30):
                 data = json.loads(data_str)
                 choices = data.get("choices", [])
                 if choices:
-                    delta = choices[0].get("delta", {})
+                    choice = choices[0]
+                    fr = choice.get("finish_reason")
+                    if fr:
+                        finish_reason = str(fr)
+                    delta = choice.get("delta", {})
                     content = delta.get("content", "")
                     if content:
                         yield content
@@ -440,38 +448,42 @@ def _call_groq_stream(messages: list, model_name: str = "", timeout: int = 30):
     except Exception as exc:
         print(f"[GROQ STREAM ERROR] {exc}")
         raise
+    if finish_reason:
+        yield {"__vm_control": "finish", "finish_reason": finish_reason}
 
 
-def _call_llm_cluster_stream(messages: list, timeout: int = 30):
+def _call_llm_cluster_stream(messages: list, timeout: int = 30, max_completion_tokens: int = 4096):
     """Stream tokens with full provider failover, invisible to the user.
 
-    Groq streams natively token-by-token. If Groq fails at any point BEFORE
-    emitting output, we fall through to the non-streaming cluster (OpenRouter →
-    NVIDIA → Gemini → ProviderManager) and yield its full result as one chunk —
-    the user still gets a real answer, never an apology, as long as any single
-    provider succeeds. Raises only if literally every provider fails.
+    Yields str content chunks and may yield control dicts (e.g. finish_reason)
+    from providers that report them. Groq streams natively token-by-token. If
+    Groq fails at any point BEFORE emitting output, we fall through to the
+    non-streaming cluster and yield its full result as one chunk. Raises only
+    if literally every provider fails.
     """
     config = get_config()
 
-    # ── Primary: Groq streaming ──────────────────────────────────────
+    # Primary: Groq streaming
     if config.groq_api_key:
         try:
             model = get_latest_groq_model()
             if model:
                 emitted = False
                 try:
-                    for token in _call_groq_stream(messages, model, timeout=timeout):
-                        emitted = True
-                        yield token
+                    for item in _call_groq_stream(messages, model, timeout=timeout, max_completion_tokens=max_completion_tokens):
+                        if isinstance(item, dict):
+                            yield item
+                            continue
+                        if item:
+                            emitted = True
+                            yield item
                     if emitted:
                         print("[LLM CLUSTER STREAM] Response served by: Groq")
                         return
-                    # 200 but no content — treat as failure, fall through
+                    # 200 but no content - treat as failure, fall through
                     print("[LLM CLUSTER STREAM] Groq streamed no content. Rotating to fallback cluster.")
                 except Exception as exc:
                     if emitted:
-                        # Already sent partial output; can't cleanly restart on
-                        # another provider mid-stream, so end here.
                         print(f"[LLM CLUSTER STREAM] Groq failed mid-stream after output: {_short_error_detail(str(exc))}")
                         return
                     print(f"[LLM CLUSTER STREAM] Groq failed before output: {_short_error_detail(str(exc))}. Rotating to fallback cluster.")
@@ -482,7 +494,7 @@ def _call_llm_cluster_stream(messages: list, timeout: int = 30):
     else:
         print("[LLM CLUSTER STREAM] Groq unavailable: no API key. Rotating to fallback cluster.")
 
-    # ── Fallbacks: reuse the non-streaming rotation, emit as one chunk ─
+    # Fallbacks: reuse the non-streaming rotation, emit as one chunk
     response, meta = _call_llm_cluster_impl(messages, timeout=timeout)
     print(f"[LLM CLUSTER STREAM] Response served by: {_served_by(meta)} (non-streamed fallback)")
     yield response
@@ -503,7 +515,7 @@ def _call_openai_compat(
     payload = {
         "model": model,
         "messages": messages,
-        "max_tokens": 1024,
+        "max_tokens": 4096,
     }
 
     print(f"[API] Calling {provider_label} chat completions with model: {model}")
@@ -2090,15 +2102,65 @@ class MarcusBrain:
             msgs = self._groq_messages(cid, message, image_data, live_context=live_ctx, mongo_history=mongo_history, global_memories=global_memories, knowledge_data=knowledge_data, recovered_context=recovered_context, search_note=search_note)
             full_reply = ""
 
+            def _stream_once(_msgs, _finish_box, _max_tokens=4096):
+                for item in _call_llm_cluster_stream(_msgs, max_completion_tokens=_max_tokens):
+                    if isinstance(item, dict):
+                        if item.get("__vm_control") == "finish":
+                            _finish_box[0] = str(item.get("finish_reason") or "")
+                        else:
+                            yield item
+                        continue
+                    if item:
+                        yield item
+
             try:
-                for token in _call_llm_cluster_stream(msgs):
-                    full_reply += token
-                    yield token
+                # Auto-continue when a provider reports finish_reason=="length" so long
+                # answers/tables are not cut off. Continuations are new LLM calls (provider
+                # fallback applies per call); we never splice providers mid-stream.
+                _cont_msgs = list(msgs)
+                _max_cont = 3
+                _cont_n = 0
+                while True:
+                    _seg = ""
+                    _finish_box = [None]
+                    for yielded in _stream_once(_cont_msgs, _finish_box):
+                        if isinstance(yielded, str):
+                            _seg += yielded
+                            full_reply += yielded
+                            yield yielded
+                        elif yielded is not None:
+                            yield yielded
+                    _finish = _finish_box[0]
+                    if _finish == "length" and _seg.strip() and _cont_n < _max_cont:
+                        _cont_n += 1
+                        print(f"[STREAM] finish_reason=length, auto-continuing ({_cont_n}/{_max_cont})")
+                        yield {"stream_continue": True, "index": _cont_n}
+                        _cont_msgs = list(msgs) + [
+                            {"role": "assistant", "content": full_reply[-12000:]},
+                            {"role": "user", "content": "Continue exactly where you left off. Do not repeat previous text, do not add a preamble. Continue the same answer/table/list."},
+                        ]
+                        continue
+                    if _finish == "length" and _seg.strip() and _cont_n >= _max_cont:
+                        yield {"truncated": True, "finish_reason": "length"}
+                    break
             except Exception as exc:
-                print(f"[STREAM ERROR] All LLM providers failed: {_short_error_detail(str(exc))}")
-                fallback = "I apologize, but I'm having trouble processing your request right now."
-                full_reply = fallback
-                yield fallback
+                print(f"[STREAM ERROR] LLM stream failed: {_short_error_detail(str(exc))}")
+                # Try next provider once with the non-streaming cluster before apologizing,
+                # but only when nothing has been emitted yet.
+                if not full_reply.strip():
+                    try:
+                        response, meta = _call_llm_cluster(msgs)
+                        print(f"[STREAM ERROR] Recovered via {_served_by(meta)} (non-stream fallback)")
+                        full_reply = response
+                        yield response
+                    except Exception as exc2:
+                        print(f"[STREAM ERROR] All LLM providers failed: {_short_error_detail(str(exc2))}")
+                        fallback = "I apologize, but I'm having trouble processing your request right now."
+                        full_reply = fallback
+                        yield fallback
+                else:
+                    # Partial output already sent - cannot safely replace; leave as-is.
+                    print("[STREAM ERROR] Partial output was emitted before failure; not replacing with apology.")
 
             try:
                 self.memory.add_message(cid, "assistant", full_reply or "No response", timestamp)
