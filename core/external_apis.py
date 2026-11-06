@@ -634,10 +634,9 @@ def _wikipedia_result_relevant(query: str, data: dict) -> bool:
         return True
     h_tokens = set(re.findall(r"[A-Za-z0-9]{3,}", hay))
     overlap = len(q_tokens & h_tokens)
-    # Require at least some topical overlap; reject generic single-word definitions.
-    if overlap >= 1 and (overlap >= 2 or len(q_tokens) <= 2):
-        return True
-    return False
+    # Require at least one topical overlap token so single-word/generic definitions
+    # (e.g. "List", "What") are rejected unless genuinely about the query topic.
+    return overlap >= 1
 
 
 def _trim(text: str, limit: int = 240) -> str:

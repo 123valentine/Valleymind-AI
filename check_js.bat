@@ -28,4 +28,9 @@ if errorlevel 1 exit /b 1
 rem 8) vm-b (voices/preview/speak/menus): mapping, cloud-over-local, save isolation, defaults, fallback, long-press/edit.
 "%NODE%" test_vm_b.js
 if errorlevel 1 exit /b 1
+rem 9) vm-fix20 Part 2: continue/truncation path, clean search/Wikipedia, stream retry/timeout/visibility, menu close handlers.
+"%NODE%" tests\test_vm_fix20_part2.js
+if errorlevel 1 exit /b 1
+python tests\test_vm_fix20_part2.py
+if errorlevel 1 exit /b 1
 echo ALL_CHECKS_PASS
