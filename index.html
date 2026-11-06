@@ -91,7 +91,7 @@
   .vm-switch input:focus-visible + .vm-switch-track { box-shadow: 0 0 0 2px rgba(0,212,255,0.45); }
 </style>
 <script src="/static/companion_presentation.js?v=1"></script>
-<script src="/static/settings.js?v=16"></script>
+<script src="/static/settings.js?v=17"></script>
 <script src="/static/pref_setup_model.js?v=3"></script>
 <script src="/static/onboarding.js?v=3"></script>
     <script src="/static/music_studio.js?v=10"></script>
@@ -2093,7 +2093,13 @@
   /* â”€â”€ Conversation-focused chat workspace â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
      Conversation first; everything else secondary. More breathing room,
      lighter bubbles, and a comfortable reading column on wide screens. */
-  #messages{ gap:16px !important; padding:18px 16px !important; }
+  /* vm-fix19 item 6: extra bottom padding so the fixed VRM companion
+     (bottom-docked by default) never overlaps message text. Avatar code
+     untouched — layout-only adjustment. */
+  #messages{ gap:16px !important; padding:18px 16px 160px !important; }
+  @media(max-width:768px){
+    #messages{ padding-bottom:180px !important; }
+  }
   /* Never let a message grow wider than the container. Without min-width:0,
      a flex child's min-content (e.g. a long unwrappable code line inside
      pre with overflow-x:auto) expands the bubble beyond the viewport. */
@@ -2151,6 +2157,38 @@
     main{ margin-left:240px !important; }
     #messages{ max-width:none; }
   }
+  /* vm-fix19 item 3: image+text layout for results with real image URLs.
+     Image left (fixed aspect, object-fit cover, lazy+onerror in renderer),
+     text right; stack vertically under 560px. */
+  .bubble.ai-rich .vm-img-text,
+  .bubble.ai-rich .vm-result-card {
+    display:flex; gap:12px; align-items:flex-start; margin:10px 0;
+  }
+  .bubble.ai-rich .vm-img-text > img,
+  .bubble.ai-rich .vm-result-card > img,
+  .bubble.ai-rich .vm-result-card .vm-result-img {
+    width:120px; min-width:120px; height:90px; object-fit:cover;
+    border-radius:8px; flex:0 0 120px; margin:0;
+  }
+  .bubble.ai-rich .vm-img-text > div,
+  .bubble.ai-rich .vm-result-card .vm-result-body { flex:1; min-width:0; }
+  @media(max-width:560px){
+    .bubble.ai-rich .vm-img-text,
+    .bubble.ai-rich .vm-result-card { flex-direction:column; }
+    .bubble.ai-rich .vm-img-text > img,
+    .bubble.ai-rich .vm-result-card > img,
+    .bubble.ai-rich .vm-result-card .vm-result-img { width:100%; min-width:0; height:160px; flex:none; }
+  }
+  /* General rich content polish */
+  .bubble.ai-rich h1,.bubble.ai-rich h2,.bubble.ai-rich h3,.bubble.ai-rich h4{ margin:12px 0 6px; line-height:1.25; }
+  .bubble.ai-rich p{ margin:6px 0; }
+  .bubble.ai-rich ul,.bubble.ai-rich ol{ margin:6px 0 6px 20px; padding:0; }
+  .bubble.ai-rich li{ margin:2px 0; }
+  .bubble.ai-rich blockquote{ border-left:3px solid rgba(0,212,255,0.4); margin:8px 0; padding:4px 12px; color:rgba(255,255,255,0.75); }
+  .bubble.ai-rich pre{ overflow-x:auto; background:rgba(0,0,0,0.25); border-radius:8px; padding:10px 12px; margin:8px 0; }
+  .bubble.ai-rich code{ font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:0.92em; }
+  .bubble.ai-rich :not(pre)>code{ background:rgba(255,255,255,0.08); padding:1px 5px; border-radius:4px; }
+  .bubble.ai-rich hr{ border:0; border-top:1px solid rgba(255,255,255,0.1); margin:10px 0; }
   /* Composer bar: subtle separating line, roomier on phones. */
   .chat-composer-bar{ border-top:1px solid rgba(255,255,255,0.05); }
   @media(max-width:768px){
@@ -5337,6 +5375,8 @@ function renderInlineCitations(bubbleEl, sourceMetadata) {
                     e.preventDefault();
                     var panel = bub.querySelector(".sources-section");
                     if (panel) {
+                        // vm-fix19 item 11: expand panel so citation target is visible
+                        panel.classList.remove("sources-collapsed");
                         var rows = panel.querySelectorAll(".source-row");
                         var idx = num - 1;
                         if (rows[idx]) rows[idx].scrollIntoView({ behavior: "smooth", block: "center" });
@@ -5463,7 +5503,8 @@ function renderSourcesPanel(bubbleEl, sourceMetadata, confidence) {
     if (!valid.length) return;
 
     var section = document.createElement("div");
-    section.className = "sources-section sources-collapsed";
+    // vm-fix19 items 5,11: collapsible when more than 3; expanded when <=3
+    section.className = "sources-section" + (valid.length > 3 ? " sources-collapsed" : "");
 
     // Collapsed header bar (always visible)
     var header = document.createElement("div");
@@ -5484,7 +5525,7 @@ function renderSourcesPanel(bubbleEl, sourceMetadata, confidence) {
     var chipsRow = document.createElement("div");
     chipsRow.className = "sources-chips";
 
-    valid.slice(0, 6).forEach(function (s) {
+    valid.slice(0, 6).forEach(function (s, idx) {
         var domain = s.domain || "";
         var displayName = s.name || domain.split(".")[0].charAt(0).toUpperCase() + domain.split(".")[0].slice(1);
         var chip = document.createElement("a");
@@ -5492,6 +5533,7 @@ function renderSourcesPanel(bubbleEl, sourceMetadata, confidence) {
         chip.target = "_blank";
         chip.rel = "noopener noreferrer";
         chip.className = "source-chip";
+        chip.title = (s.title || displayName) + (s.published ? " (" + s.published + ")" : "");
         var favSrc = s.icon || ("https://www.google.com/s2/favicons?sz=32&domain=" + encodeURIComponent(domain));
         chip.innerHTML = '<img class="source-chip-fav" src="' + favSrc + '" width="14" height="14" loading="lazy" onerror="this.style.display=\'none\'">' +
             '<span class="source-chip-name">' + displayName + '</span>';
@@ -5507,13 +5549,15 @@ function renderSourcesPanel(bubbleEl, sourceMetadata, confidence) {
         var more = document.createElement("span");
         more.className = "source-chip source-chip-more";
         more.textContent = "+" + (valid.length - 6) + " more";
+        more.style.cursor = "pointer";
+        more.onclick = function () { section.classList.toggle("sources-collapsed"); };
         chipsRow.appendChild(more);
     }
 
     section.appendChild(header);
     section.appendChild(chipsRow);
 
-    // Expandable full details (hidden by default)
+    // Expandable full details (hidden when collapsed)
     var detailsWrap = document.createElement("div");
     detailsWrap.className = "sources-details";
 
@@ -5557,9 +5601,20 @@ function renderSourcesPanel(bubbleEl, sourceMetadata, confidence) {
             titleEl.title = s.title;
             info.appendChild(titleEl);
         }
+        // vm-fix19 items 5,11: show snippet and date when available (real data only)
+        if (s.snippet || s.content) {
+            var snip = document.createElement("div");
+            snip.className = "source-snippet";
+            snip.style.cssText = "font-size:11px;color:rgba(255,255,255,0.55);margin-top:2px;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;";
+            snip.textContent = String(s.snippet || s.content || "").slice(0, 220);
+            info.appendChild(snip);
+        }
         var domainEl = document.createElement("div");
         domainEl.className = "source-domain";
-        domainEl.textContent = domain;
+        var metaParts = [domain];
+        if (s.published) metaParts.push(String(s.published));
+        else if (s.freshness_label) metaParts.push(String(s.freshness_label));
+        domainEl.textContent = metaParts.join(" · ");
         info.appendChild(domainEl);
 
         row.appendChild(fav);

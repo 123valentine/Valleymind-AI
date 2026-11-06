@@ -2486,7 +2486,8 @@ window.VMRichRender = (function () {
   };
   var ALLOWED_ATTRS = {
     a: { href:1, title:1 },
-    img: { src:1, alt:1, title:1 },
+    img: { src:1, alt:1, title:1, loading:1, onerror:1 },
+    video: { src:1, controls:1, playsinline:1, preload:1 },
     input: { type:1, checked:1, disabled:1, readonly:1 },
     th: { colspan:1, rowspan:1 },
     td: { colspan:1, rowspan:1 }
@@ -2533,12 +2534,15 @@ window.VMRichRender = (function () {
         for (var j = attrs.length - 1; j >= 0; j--) {
           var a = attrs[j];
           var name = a.name.toLowerCase();
-          if (name.slice(0, 2) === "on") { el.removeAttribute(name); continue; }
+          // vm-fix19: allow only a safe img onerror that hides broken images (item 3,4)
+          if (name === "onerror" && tag === "img" && /this\.style\.display\s*=\s*['"]none['"]/.test(a.value || "")) {
+            // keep this specific safe handler
+          } else if (name.slice(0, 2) === "on") { el.removeAttribute(name); continue; }
           if (name === "style" || name === "class") { el.removeAttribute(name); continue; }
           var keep = false;
           if (ALLOWED_ATTRS[tag] && ALLOWED_ATTRS[tag][name]) keep = true;
           else if ((name === "href" || name === "src") && isSafeUrl(a.value)) keep = true;
-          else if (name === "alt" || name === "title" || name === "colspan" || name === "rowspan") keep = true;
+          else if (name === "alt" || name === "title" || name === "colspan" || name === "rowspan" || name === "loading" || name === "preload" || name === "controls" || name === "playsinline") keep = true;
           if (!keep) el.removeAttribute(name);
         }
       }
@@ -2705,11 +2709,12 @@ window.VMRichRender = (function () {
 
     t = t.replace(/\[Image:\s*([^\n\]]+)\]/gi, function (m, url) {
       url = url.trim();
-      return '<img src="' + escapeHtml(url) + '" alt="image" style="max-width:100%;border-radius:8px;margin:8px 0;display:block;">';
+      // vm-fix19 items 3,4: lazy load, onerror hides (no broken/fake placeholders shown)
+      return '<img src="' + escapeHtml(url) + '" alt="image" loading="lazy" onerror="this.style.display=\'none\'" style="max-width:100%;border-radius:8px;margin:8px 0;display:block;">';
     });
     t = t.replace(/\[Video:\s*([^\n\]]+)\]/gi, function (m, url) {
       url = url.trim();
-      return '<video src="' + escapeHtml(url) + '" controls playsInline style="max-width:100%;border-radius:12px;margin:8px 0;display:block;"></video>';
+      return '<video src="' + escapeHtml(url) + '" controls playsInline preload="metadata" style="max-width:100%;border-radius:12px;margin:8px 0;display:block;"></video>';
     });
 
     var citeStore = [];
