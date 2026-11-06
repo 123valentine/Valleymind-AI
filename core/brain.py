@@ -1131,7 +1131,7 @@ class MarcusBrain:
             used += len(block)
         return "\n\n".join(blocks)
 
-    def _groq_messages(self, chat_id: str, user_message: str, image_data: str = "", live_context: str = "", expanded_query: str = "", mongo_history: list = None, global_memories: str = "", knowledge_data: str = "", recovered_context: str = "") -> list:
+    def _groq_messages(self, chat_id: str, user_message: str, image_data: str = "", live_context: str = "", expanded_query: str = "", mongo_history: list = None, global_memories: str = "", knowledge_data: str = "", recovered_context: str = "", search_note: str = "") -> list:
         try:
             self.memory.reload()
             long_term = self.memory.get_full_memory() or {}
@@ -1377,7 +1377,7 @@ class MarcusBrain:
         system_with_context = "\n".join(sections)
         messages = [{"role": "system", "content": system_with_context}]
 
-        if live_context:
+        if live_context and str(live_context).strip() and str(live_context).strip() != str(LIVE_DATA_UNAVAILABLE):
             print(f"[GROQ MESSAGES] Prepending live data to user message")
             context_header = (
                 f"[SYSTEM DIRECTIVE: LIVE SEARCH ENGAGED]\n"
@@ -1389,6 +1389,14 @@ class MarcusBrain:
                 f"accurate, detailed chronological answer.\n\n"
                 f"LIVE CONTEXT DATA:\n"
                 f"{live_context}\n\n"
+            )
+            user_message = context_header + user_message
+        elif search_note:
+            context_header = (
+                f"[SYSTEM DIRECTIVE: LIVE SEARCH UNAVAILABLE]\n"
+                f"{search_note}\n"
+                f"Answer from general knowledge. Be helpful and never refuse. "
+                f"Do not claim you found live search results.\n\n"
             )
             user_message = context_header + user_message
         for msg in recent:
@@ -1898,6 +1906,7 @@ class MarcusBrain:
                 pass
 
             live_ctx = ""
+            search_note = ""
             self._pending_sources = []
             directed_site, directed_query = parse_directed_search(message)
             research_info = classify_research_intent(message, recent_context=self._recent_context_for_routing(cid))
@@ -1991,9 +2000,11 @@ class MarcusBrain:
                     try:
                         _reset_search_sources()
                         result = _fetch_live_context_force(search_message, site=directed_site or "")
-                        if result:
+                        if result and str(result).strip() != str(LIVE_DATA_UNAVAILABLE):
                             live_ctx = result
                             self._pending_sources = get_last_search_sources()
+                        elif result:
+                            live_ctx = ""
                     except Exception as exc:
                         print(f"[STREAM SEARCH FALLBACK ERROR] {exc}")
                     if self._pending_sources:
@@ -2006,6 +2017,12 @@ class MarcusBrain:
                            "research_confidence": evidence_package.confidence}
                 elif not live_ctx:
                     print("[STREAM SEARCH] No live context found - proceeding with cached knowledge only")
+
+                # Do not claim results exist when search ran but returned nothing reliable.
+                if intent != "none" and not (live_ctx and str(live_ctx).strip() and str(live_ctx).strip() != str(LIVE_DATA_UNAVAILABLE)):
+                    search_note = "Live search was attempted but unavailable or returned no reliable results for this request."
+                    if live_ctx and str(live_ctx).strip() == str(LIVE_DATA_UNAVAILABLE):
+                        live_ctx = ""
 
             yield {"thinking_process": {"step": "synthesizing", "label": "Synthesizing answer..."}}
 
@@ -2070,7 +2087,7 @@ class MarcusBrain:
             except Exception as exc:
                 print(f"[CONV RECOVERY] Recovery failed (non-fatal): {exc}")
 
-            msgs = self._groq_messages(cid, message, image_data, live_context=live_ctx, mongo_history=mongo_history, global_memories=global_memories, knowledge_data=knowledge_data, recovered_context=recovered_context)
+            msgs = self._groq_messages(cid, message, image_data, live_context=live_ctx, mongo_history=mongo_history, global_memories=global_memories, knowledge_data=knowledge_data, recovered_context=recovered_context, search_note=search_note)
             full_reply = ""
 
             try:

@@ -559,6 +559,87 @@ def extract_sports_entities(message: str) -> dict:
     }
 
 
+_SEARCH_FILLER_RE = re.compile(
+    r"^(?:please\s+|can\s+you\s+|could\s+you\s+|would\s+you\s+|i\s+want\s+(?:to\s+know\s+)?|"
+    r"tell\s+me\s+(?:about\s+)?|show\s+me\s+(?:a\s+)?|give\s+me\s+(?:a\s+)?|"
+    r"find\s+(?:me\s+)?(?:info(?:rmation)?\s+(?:on|about)\s+)?|search\s+(?:for\s+)?|"
+    r"look\s+up\s+|lookup\s+)"
+    r"(?P<rest>.+)$",
+    re.IGNORECASE,
+)
+_SEARCH_INTENT_PREFIX_RE = re.compile(
+    r"^(?P<verb>list|name|show|give|what(?:'s|\s+is|\s+are|\s+was|\s+were)?|who(?:'s|\s+is|\s+are)?|"
+    r"when(?:'s|\s+is|\s+was)?|where(?:'s|\s+is|\s+are)?|why(?:'s|\s+is|\s+are)?|how(?:'s|\s+to)?|"
+    r"which|define|explain|describe|compare|latest|current|newest|recent|top|best)\b[\s:,-]*",
+    re.IGNORECASE,
+)
+_SEARCH_STOP_TOKENS = {
+    "a", "an", "the", "is", "are", "was", "were", "be", "been", "to", "of", "for", "in", "on",
+    "at", "by", "with", "and", "or", "from", "about", "into", "it", "its", "this", "that",
+    "these", "those", "me", "my", "your", "their", "our", "do", "does", "did", "can",
+    "could", "would", "should", "please", "list", "name", "show", "give", "find", "search",
+    "tell", "what", "whats", "who", "whos", "when", "where", "why", "how", "which",
+}
+_SEARCH_KEEP_TERMS = {"latest", "current", "newest", "recent", "today", "now", "model", "models", "price", "prices", "release", "released", "version", "vs", "versus", "review", "reviews", "specs", "comparison"}
+
+
+def clean_search_query(query: str, max_terms: int = 8) -> str:
+    """Build a cleaner web-search query from natural user intent.
+
+    Strips conversational filler/intent prefixes (e.g. "list", "what is") but
+    preserves meaningful entities and modifiers. Never returns a single generic
+    stopword; falls back to the normalized original query.
+    """
+    text = re.sub(r"\s+", " ", str(query or "")).strip()
+    if not text:
+        return ""
+    # Strip outer conversational filler, then intent prefix (once or twice).
+    m = _SEARCH_FILLER_RE.match(text)
+    if m:
+        text = m.group("rest").strip(" ?.!,:;-")
+    for _ in range(2):
+        m = _SEARCH_INTENT_PREFIX_RE.match(text)
+        if not m:
+            break
+        rest = text[m.end():].strip(" ?.!,:;-")
+        if not rest:
+            break
+        text = rest
+    text = re.sub(r"\s+", " ", text).strip(" ?.!,:;-")
+    if not text:
+        text = re.sub(r"\s+", " ", str(query or "")).strip()
+
+    tokens = re.findall(r"[A-Za-z0-9][A-Za-z0-9.+_-]*", text)
+    meaningful = [t for t in tokens if (t.lower() not in _SEARCH_STOP_TOKENS or t.lower() in _SEARCH_KEEP_TERMS) and len(t) > 1]
+    if not meaningful:
+        meaningful = [t for t in tokens if len(t) > 1]
+    if meaningful:
+        return " ".join(meaningful[:max_terms])
+    return re.sub(r"\s+", " ", str(query or "")).strip()[:160]
+
+
+def _wikipedia_result_relevant(query: str, data: dict) -> bool:
+    """Reject disambiguation/definition hits unrelated to the query (e.g. 'List', 'What')."""
+    title = str((data or {}).get("title") or "").strip()
+    extract = str((data or {}).get("extract") or "").strip()
+    if not title or not extract:
+        return False
+    if (data or {}).get("type") == "disambiguation":
+        return False
+    hay = f"{title} {extract}".lower()
+    if any(p in hay for p in ("may refer to:", "can refer to:", "disambiguation")):
+        return False
+    q_tokens = {t.lower() for t in re.findall(r"[A-Za-z0-9]{3,}", str(query or "")) if t.lower() not in _SEARCH_STOP_TOKENS}
+    if not q_tokens:
+        return True
+    h_tokens = set(re.findall(r"[A-Za-z0-9]{3,}", hay))
+    overlap = len(q_tokens & h_tokens)
+    # Require at least some topical overlap; reject generic single-word definitions.
+    if overlap >= 1 and (overlap >= 2 or len(q_tokens) <= 2):
+        return True
+    return False
+
+
 def _trim(text: str, limit: int = 240) -> str:
     text = re.sub(r"\s+", " ", str(text or "")).strip()
     if len(text) <= limit:
@@ -825,13 +906,14 @@ def _search_tinyfish(query: str, site: str = "") -> str:
         _log("TinyFish skipped: TINYFISH_API_KEY not set")
         return ""
 
+    effective_query = clean_search_query(query) or str(query or "").strip()
     if site:
         # Directed search: constrain to the requested site, no date padding
-        execution_query = f"site:{site} {query}"
+        execution_query = f"site:{site} {effective_query}"
     else:
         current_date_str = datetime.now().strftime("%B %Y")
-        execution_query = f"{query} {current_date_str} news updates"
-    _log(f"TinyFish query: {execution_query}")
+        execution_query = f"{effective_query} {current_date_str}"
+    _log(f"TinyFish query: {execution_query} (from: {str(query)[:100]!r})")
 
     import urllib.request as _urllib_req
     import urllib.parse as _urllib_parse
@@ -940,7 +1022,8 @@ def _search_ddg_lite(query: str) -> str:
     import urllib.parse as _parse
     import html as _html
 
-    encoded = _parse.quote(query)
+    effective_query = clean_search_query(query) or str(query or "").strip()
+    encoded = _parse.quote(effective_query)
     url = f"https://lite.duckduckgo.com/lite/?q={encoded}"
     try:
         req = _req.Request(url, headers={
@@ -979,38 +1062,72 @@ def _search_ddg_lite(query: str) -> str:
 
 
 def _search_wikipedia(query: str) -> str:
-    """Wikipedia API fallback — extractive summary for factual queries."""
+    """Wikipedia API fallback - extractive summary for factual queries.
+
+    Never falls back to a single generic token like query.split()[0] (which
+    turns "List 3 AI tools..." into "List"). Uses a cleaned query and rejects
+    disambiguation/definition hits unrelated to the request.
+    """
     import urllib.request as _req
     import urllib.parse as _parse
 
-    encoded = _parse.quote(query)
-    api_url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{encoded}"
-    try:
-        req = _req.Request(api_url, headers={
-            "User-Agent": "ValleymindBot/1.0 (research assistant)",
-        })
-        with _req.urlopen(req, timeout=10) as resp:
-            data = json.loads(resp.read().decode("utf-8", errors="replace"))
-    except Exception:
-        # Try search-based approach if direct title lookup fails
-        try:
-            search_url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{_parse.quote(query.split()[0])}"
-            req = _req.Request(search_url, headers={
-                "User-Agent": "ValleymindBot/1.0 (research assistant)",
-            })
-            with _req.urlopen(req, timeout=10) as resp:
-                data = json.loads(resp.read().decode("utf-8", errors="replace"))
-        except Exception as exc:
-            _log(f"Wikipedia failed: {_safe_error(exc)[:80]}")
-            return LIVE_DATA_UNAVAILABLE
+    cleaned = clean_search_query(query) or re.sub(r"\s+", " ", str(query or "")).strip()
+    headers = {"User-Agent": "ValleymindBot/1.0 (research assistant)"}
 
-    extract = data.get("extract", "")
-    title = data.get("title", "")
-    if extract:
+    def _summary(title_or_query: str):
+        if not title_or_query:
+            return None
+        url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{_parse.quote(str(title_or_query).strip().replace(' ', '_'))}"
+        try:
+            req = _req.Request(url, headers=headers)
+            with _req.urlopen(req, timeout=10) as resp:
+                return json.loads(resp.read().decode("utf-8", errors="replace"))
+        except Exception:
+            return None
+
+    candidates = []
+    for c in (query, cleaned):
+        c = re.sub(r"\s+", " ", str(c or "")).strip()
+        if c and c not in candidates:
+            candidates.append(c)
+
+    data = None
+    for cand in candidates:
+        data = _summary(cand)
+        if data and _wikipedia_result_relevant(cand, data):
+            break
+        data = None
+
+    # Search API fallback (uses cleaned query terms) - never query.split()[0].
+    if not data and cleaned:
+        try:
+            search_url = (
+                "https://en.wikipedia.org/w/rest.php/v1/search/title"
+                f"?q={_parse.quote(cleaned)}&limit=3"
+            )
+            req = _req.Request(search_url, headers=headers)
+            with _req.urlopen(req, timeout=10) as resp:
+                sdata = json.loads(resp.read().decode("utf-8", errors="replace"))
+            for page in (sdata.get("pages") or [])[:3]:
+                key = page.get("key") or page.get("title") or ""
+                if not key:
+                    continue
+                data = _summary(str(key).replace("_", " "))
+                if data and _wikipedia_result_relevant(cleaned, data):
+                    break
+                data = None
+        except Exception as exc:
+            _log(f"Wikipedia search fallback failed: {_safe_error(exc)[:80]}")
+
+    if not data:
+        return LIVE_DATA_UNAVAILABLE
+
+    extract = str(data.get("extract") or "").strip()
+    title = str(data.get("title") or "").strip()
+    if extract and _wikipedia_result_relevant(cleaned or query, data):
         _log(f"Wikipedia: found summary for '{title}'")
         return f"Live search results:\n- {title}: {extract[:400]}"
     return LIVE_DATA_UNAVAILABLE
-
 
 def _search_api_sports(query: str) -> str:
     if provider_blocked("apisports"):

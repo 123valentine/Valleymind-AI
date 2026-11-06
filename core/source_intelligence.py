@@ -541,10 +541,16 @@ def plan_search(message: str, directed_site: str = "", research_domain: str = ""
             plan.target_domains.extend(strategy["domains"])
             plan.source_type = strategy["type"]
 
-    # Generate primary query — use the user's message as-is
-    plan.queries.append(text)
+        # Generate primary query - strip intent filler ("list"/"what is") for web search,
+    # but keep meaningful entities/modifiers.
+    try:
+        from core.external_apis import clean_search_query as _clean_sq
+        cleaned = _clean_sq(text) or text
+    except Exception:
+        cleaned = text
+    plan.queries.append(cleaned)
 
-    # Generate supplementary queries based on domain and question type
+# Generate supplementary queries based on domain and question type
     from datetime import datetime as _dt
     _current_year = str(_dt.now().year)
     if plan.domain == "tech":
@@ -552,32 +558,32 @@ def plan_search(message: str, directed_site: str = "", research_domain: str = ""
             clean = re.sub(r"\bmy\b", "the", text, flags=re.IGNORECASE)
             plan.queries.append(f"{clean} solution fix")
         if any(kw in lower for kw in ["api", "endpoint", "sdk", "library"]):
-            plan.queries.append(f"official documentation {text}")
+            plan.queries.append(f"{cleaned} official documentation")
         if plan.needs_freshness:
-            plan.queries.append(f"{text} {_current_year}")
+            plan.queries.append(f"{cleaned} {_current_year}")
     elif plan.domain == "news":
-        plan.queries.append(f"{text} latest news")
+        plan.queries.append(f"{cleaned} latest news")
         if plan.needs_freshness:
-            plan.queries.append(f"{text} today")
+            plan.queries.append(f"{cleaned} today")
     elif plan.domain == "sports":
-        plan.queries.append(f"{text} scores results")
-        plan.queries.append(f"{text} latest news")
+        plan.queries.append(f"{cleaned} scores results")
+        plan.queries.append(f"{cleaned} latest news")
     elif plan.domain == "science":
-        plan.queries.append(f"{text} research study")
-        plan.queries.append(f"{text} latest findings")
+        plan.queries.append(f"{cleaned} research study")
+        plan.queries.append(f"{cleaned} latest findings")
     elif plan.domain == "media":
-        plan.queries.append(f"{text} reviews ratings")
-        plan.queries.append(f"{text} cast information")
+        plan.queries.append(f"{cleaned} reviews ratings")
+        plan.queries.append(f"{cleaned} cast information")
     elif plan.domain == "finance":
         # Prefer live market data: add a "live/current price" query plus news context
         plan.source_type = plan.source_type if plan.source_type != "general" else "financial"
-        plan.queries.append(f"{text} live price today")
+        plan.queries.append(f"{cleaned} live price today")
         if plan.needs_freshness:
-            plan.queries.append(f"{text} current price {_dt.now().strftime('%B %d %Y')} {_current_year}")
+            plan.queries.append(f"{cleaned} current price {_dt.now().strftime('%B %d %Y')} {_current_year}")
     else:
         # General: add a freshness query if needed
         if plan.needs_freshness:
-            plan.queries.append(f"{text} latest {_current_year}")
+            plan.queries.append(f"{cleaned} latest {_current_year}")
 
     # Limit to 3 queries max
     plan.queries = plan.queries[:3]
