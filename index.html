@@ -2102,6 +2102,37 @@
   .assistant-message .bubble{ padding:12px 20px; background:rgba(255,255,255,0.035); border-radius:12px; }
   /* Richly formatted assistant replies: let HTML flow naturally instead of pre-wrap. */
   .bubble.ai-rich{ white-space:normal; }
+  /* Tables in rich replies: scroll horizontally on narrow screens instead of
+     overflowing or squashing the bubble. Professional borders and padding. */
+  .bubble.ai-rich table{
+    border-collapse:collapse;
+    width:100%;
+    margin:8px 0;
+    font-size:13px;
+  }
+  .bubble.ai-rich table th,
+  .bubble.ai-rich table td{
+    border:1px solid rgba(255,255,255,0.12);
+    padding:6px 10px;
+    text-align:left;
+    white-space:nowrap;
+  }
+  .bubble.ai-rich table th{
+    background:rgba(0,212,255,0.15);
+    color:#00d4ff;
+    font-weight:700;
+    text-transform:uppercase;
+    font-size:11px;
+    letter-spacing:0.08em;
+  }
+  .bubble.ai-rich table tr:nth-child(even) td{
+    background:rgba(255,255,255,0.03);
+  }
+  /* Horizontal scroll container for wide tables */
+  .bubble.ai-rich table{
+    display:block;
+    overflow-x:auto;
+  }
   .msg-toolbar{ opacity:0.72; transition:opacity .15s; }
   .msg-toolbar:hover{ opacity:1; }
   /* Comfortable reading width on desktop; center so large monitors don't
