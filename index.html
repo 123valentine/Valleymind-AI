@@ -5686,10 +5686,22 @@ function addMessage(text, type = "ai", imageData, mediaUrl, videoUrl) {
     if (textWithoutMedia) {
         if (type === "ai" &&
             typeof window.VMRichRender !== "undefined" &&
-            typeof window.VMPresentationSelector !== "undefined" &&
-            window.VMPresentationSelector.select(textWithoutMedia) !== "plain") {
-            bubble.innerHTML = window.VMRichRender.render(textWithoutMedia);
-            bubble.classList.add("ai-rich");
+            typeof window.VMPresentationSelector !== "undefined") {
+            try {
+                if (window.VMPresentationSelector.select(textWithoutMedia) !== "plain") {
+                    bubble.innerHTML = window.VMRichRender.render(textWithoutMedia);
+                    bubble.classList.add("ai-rich");
+                } else {
+                    var txtSpan = document.createElement("span");
+                    txtSpan.textContent = textWithoutMedia;
+                    bubble.appendChild(txtSpan);
+                }
+            } catch (e) {
+                console.warn("[VMRichRender] addMessage enrichment failed, keeping plain text:", e);
+                var txtSpan = document.createElement("span");
+                txtSpan.textContent = textWithoutMedia;
+                bubble.appendChild(txtSpan);
+            }
         } else {
             var txtSpan = document.createElement("span");
             txtSpan.textContent = textWithoutMedia;
@@ -11731,12 +11743,23 @@ window.send = async function () {
         }
 
         /* Enrich a completed streamed assistant reply with intelligent formatting
-           (headings, lists, tables, code, ...). Plain/simple answers stay as
-           plain text, so existing behavior is unchanged for simple replies. */
+           (headings, lists, tables, code, ...). Runs asynchronously (next frame)
+           AFTER the reply is shown, so enrichment can never turn a successful
+           reply into an error bubble. Plain/simple answers stay plain text. */
         if (bubbleEl && !streamError && fullReply) {
             var _bub = bubbleEl.querySelector(".bubble");
             if (_bub && typeof window.VMEnrichAssistantReply === "function") {
-                window.VMEnrichAssistantReply(_bub, fullReply);
+                try {
+                    requestAnimationFrame(function () {
+                        try {
+                            window.VMEnrichAssistantReply(_bub, fullReply);
+                        } catch (e) {
+                            console.warn("[VMEnrichAssistantReply] stream enrichment failed, keeping plain text:", e);
+                        }
+                    });
+                } catch (e) {
+                    console.warn("[VMEnrichAssistantReply] stream enrichment failed, keeping plain text:", e);
+                }
             }
         }
 
