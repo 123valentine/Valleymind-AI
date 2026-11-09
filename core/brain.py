@@ -321,7 +321,7 @@ def _log_groq_failure(label: str, status_code: int | None = None, detail: str = 
     print(f"[GROQ ERROR] {category}: HTTP {status_code} - {_short_error_detail(detail)}")
 
 
-def _call_groq(messages: list, model_name: str, timeout: int = 40, timeout_retries: int = 1) -> str:
+def _call_groq(messages: list, model_name: str, timeout: int = 40, timeout_retries: int = 1, fallback_key: str = "") -> str:
     config = get_config()
     api_key = config.groq_api_key
     if not api_key:
@@ -342,6 +342,7 @@ def _call_groq(messages: list, model_name: str, timeout: int = 40, timeout_retri
 
     response = None
     attempts = max(1, timeout_retries + 1)
+    fallback_used = False
     for attempt in range(1, attempts + 1):
         try:
             url = f"{config.groq_base_url.rstrip('/')}/openai/v1/chat/completions" if "openai/v1" not in config.groq_base_url else f"{config.groq_base_url.rstrip('/')}/chat/completions"
@@ -353,10 +354,15 @@ def _call_groq(messages: list, model_name: str, timeout: int = 40, timeout_retri
             )
             if response.status_code == 200:
                 break
-            # Immediate rotation on fatal errors — no retry
-            if response.status_code in {401, 403, 404, 410}:
+            # On 401/403, try fallback key once, then rotate
+            if response.status_code in {401, 403}:
                 detail = response.text[:500]
-                _log_groq_failure("Groq API request failed (fatal, rotating)", response.status_code, detail)
+                _log_groq_failure("Groq API request failed (fatal)", response.status_code, detail)
+                if fallback_key and not fallback_used:
+                    fallback_used = True
+                    print("[GROQ ERROR] 401/403 — retrying once with fallback key")
+                    headers["Authorization"] = f"Bearer {fallback_key}"
+                    continue
                 raise RuntimeError(f"Groq API HTTP {response.status_code}: {_short_error_detail(detail)}")
             # 429: honor Retry-After (cap 25s), then rotate
             if response.status_code == 429:
@@ -426,6 +432,61 @@ def _parse_retry_after(response, cap: int = 25) -> int:
                 return 0
     except Exception:
         return 0
+
+
+def _estimate_tokens(text: str) -> int:
+    """Rough token estimate: ~4 chars per token for English text."""
+    if not text:
+        return 0
+    return max(1, len(text) // 4)
+
+
+def _estimate_messages_tokens(messages: list) -> int:
+    """Estimate total tokens for a list of messages."""
+    total = 0
+    for m in messages:
+        content = m.get("content", "")
+        if isinstance(content, str):
+            total += _estimate_tokens(content)
+        elif isinstance(content, list):
+            for part in content:
+                if isinstance(part, dict) and part.get("type") == "text":
+                    total += _estimate_tokens(part.get("text", ""))
+    return total
+
+
+def _has_image_in_messages(messages: list) -> bool:
+    """Return True if any message contains image data."""
+    for m in messages:
+        content = m.get("content", "")
+        if isinstance(content, list):
+            for part in content:
+                if isinstance(part, dict) and part.get("type") == "image_url":
+                    return True
+    return False
+
+
+def _detect_capability(messages: list) -> str:
+    """Detect the required capability from messages.
+
+    Returns one of: "image", "vision", "coding", "large", "text".
+    Priority: image > vision > coding > large > text.
+    """
+    if _has_image_in_messages(messages):
+        return "image"
+    total_tokens = _estimate_messages_tokens(messages)
+    if total_tokens > 5000:
+        return "large"
+    # Check for coding keywords in the last user message
+    for m in reversed(messages):
+        if m.get("role") == "user":
+            content = m.get("content", "")
+            if isinstance(content, str):
+                lowered = content.lower()
+                if any(kw in lowered for kw in ("code", "function", "class ", "import ", "def ", "```", "python", "javascript", "typescript", "html", "css", "sql", "api", "script", "program", "algorithm", "regex", "bug", "error:", "traceback", "compile", "runtime")):
+                    return "coding"
+            break
+    return "text"
 
 
 # ── vm-fix22: startup model discovery & health check ────────────────────────
@@ -583,7 +644,7 @@ def get_discovered_model(provider: str) -> str | None:
     return _DISCOVERED_MODELS.get(provider)
 
 
-def _call_groq_stream(messages: list, model_name: str = "", timeout: int = 40, max_completion_tokens: int = 2048):
+def _call_groq_stream(messages: list, model_name: str = "", timeout: int = 40, max_completion_tokens: int = 2048, fallback_key: str = ""):
     """Stream Groq tokens. Yields str content chunks and may yield a final
     control dict {"__vm_control":"finish","finish_reason": "..."} so callers can
     detect truncation (finish_reason == "length") and continue."""
@@ -601,12 +662,13 @@ def _call_groq_stream(messages: list, model_name: str = "", timeout: int = 40, m
     payload = {
         "model": resolved_model,
         "messages": messages,
-        "max_completion_tokens": max(256, int(max_completion_tokens or 4096)),
+        "max_completion_tokens": max(256, int(max_completion_tokens or 2048)),
         "include_reasoning": False,
         "stream": True,
     }
 
     finish_reason = None
+    fallback_used = False
     try:
         url = f"{config.groq_base_url.rstrip('/')}/openai/v1/chat/completions" if "openai/v1" not in config.groq_base_url else f"{config.groq_base_url.rstrip('/')}/chat/completions"
         response = requests.post(
@@ -616,6 +678,22 @@ def _call_groq_stream(messages: list, model_name: str = "", timeout: int = 40, m
             timeout=timeout,
             stream=True,
         )
+        if response.status_code in {401, 403}:
+            detail = response.text[:500]
+            print(f"[GROQ STREAM ERROR] fatal: HTTP {response.status_code} - {_short_error_detail(detail)}")
+            if fallback_key and not fallback_used:
+                fallback_used = True
+                print("[GROQ STREAM ERROR] 401/403 — retrying once with fallback key")
+                headers["Authorization"] = f"Bearer {fallback_key}"
+                response = requests.post(
+                    url,
+                    headers=headers,
+                    json=payload,
+                    timeout=timeout,
+                    stream=True,
+                )
+            else:
+                raise RuntimeError(f"Groq API HTTP {response.status_code}: {_short_error_detail(detail)}")
         response.raise_for_status()
 
         for line in response.iter_lines():
@@ -648,25 +726,159 @@ def _call_groq_stream(messages: list, model_name: str = "", timeout: int = 40, m
         yield {"__vm_control": "finish", "finish_reason": finish_reason}
 
 
-def _call_llm_cluster_stream(messages: list, timeout: int = 40, max_completion_tokens: int = 2048):
+def _call_openai_compat_stream(
+    messages: list,
+    model: str,
+    api_key: str,
+    base_url: str,
+    provider_label: str,
+    timeout: int = 40,
+    max_completion_tokens: int = 2048,
+    fallback_key: str = "",
+):
+    """Stream tokens from an OpenAI-compatible provider (NVIDIA, OpenRouter, etc.)."""
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": model,
+        "messages": messages,
+        "max_tokens": max_completion_tokens,
+        "stream": True,
+    }
+
+    print(f"[API] Streaming {provider_label} chat completions with model: {model}")
+
+    fallback_used = False
+    try:
+        response = requests.post(
+            f"{base_url}/chat/completions",
+            headers=headers,
+            json=payload,
+            timeout=timeout,
+            stream=True,
+        )
+        if response.status_code in {401, 403}:
+            detail = response.text[:500]
+            print(f"[{provider_label.upper()} STREAM ERROR] fatal: HTTP {response.status_code} - {_short_error_detail(detail)}")
+            if fallback_key and not fallback_used:
+                fallback_used = True
+                print(f"[{provider_label.upper()} STREAM ERROR] 401/403 — retrying once with fallback key")
+                headers["Authorization"] = f"Bearer {fallback_key}"
+                response = requests.post(
+                    f"{base_url}/chat/completions",
+                    headers=headers,
+                    json=payload,
+                    timeout=timeout,
+                    stream=True,
+                )
+            else:
+                raise RuntimeError(f"{provider_label} API HTTP {response.status_code}: {_short_error_detail(detail)}")
+        response.raise_for_status()
+
+        finish_reason = None
+        for line in response.iter_lines():
+            if not line:
+                continue
+            decoded = line.decode("utf-8")
+            if not decoded.startswith("data: "):
+                continue
+            data_str = decoded[6:]
+            if data_str.strip() == "[DONE]":
+                break
+            try:
+                data = json.loads(data_str)
+                choices = data.get("choices", [])
+                if choices:
+                    choice = choices[0]
+                    fr = choice.get("finish_reason")
+                    if fr:
+                        finish_reason = str(fr)
+                    delta = choice.get("delta", {})
+                    content = delta.get("content", "")
+                    if content:
+                        yield content
+            except json.JSONDecodeError:
+                continue
+        if finish_reason:
+            yield {"__vm_control": "finish", "finish_reason": finish_reason}
+    except Exception as exc:
+        print(f"[{provider_label.upper()} STREAM ERROR] {exc}")
+        raise
+
+
+def _call_llm_cluster_stream(
+    messages: list,
+    timeout: int = 40,
+    max_completion_tokens: int = 2048,
+    capability: str = "text",
+):
     """Stream tokens with full provider failover, invisible to the user.
 
-    Yields str content chunks and may yield control dicts (e.g. finish_reason)
-    from providers that report them. Groq streams natively token-by-token. If
-    Groq fails at any point BEFORE emitting output, we fall through to the
-    non-streaming cluster and yield its full result as one chunk. Raises only
-    if literally every provider fails.
+    Capability-based routing:
+      - image/vision/coding/large (>5000 tokens): NVIDIA Nemotron 3.5 Super VL
+        first, then Gemini, then OpenRouter free. Groq is skipped for large
+        prompts and never receives images.
+      - quick plain chat: Groq first, then normal fallback chain.
+
+    Yields str content chunks and may yield control dicts (e.g. finish_reason).
+    Raises only if literally every provider fails.
     """
     config = get_config()
+    from core.cost_control import provider_blocked
 
-    # Primary: Groq streaming
+    # ── Capability-based routing ────────────────────────────────────────
+    if capability in ("image", "vision", "coding", "large"):
+        # Non-text tasks: NVIDIA first (Nemotron VL is multimodal), then
+        # Gemini, then OpenRouter free. Groq is skipped for these.
+        if capability in ("image", "vision") and not _has_image_in_messages(messages):
+            print(f"[LLM CLUSTER STREAM] Capability '{capability}' but no image in messages; treating as text.")
+        else:
+            # Try NVIDIA streaming first
+            nvidia_key = config.nvidia_api_key
+            nvidia_model = config.nvidia_model or "nvidia/nemotron-3.5-super-vl-120b-a12b"
+            nvidia_url = config.nvidia_base_url or "https://integrate.api.nvidia.com/v1"
+            if nvidia_key and not provider_blocked("nvidia"):
+                try:
+                    emitted = False
+                    for item in _call_openai_compat_stream(
+                        messages, nvidia_model, nvidia_key, nvidia_url, "Nvidia",
+                        timeout=timeout, max_completion_tokens=max_completion_tokens,
+                        fallback_key=config.nvidia_api_key_fallback or "",
+                    ):
+                        if isinstance(item, dict):
+                            yield item
+                            continue
+                        if item:
+                            emitted = True
+                            yield item
+                    if emitted:
+                        print("[LLM CLUSTER STREAM] Response served by: Nvidia")
+                        return
+                    print("[LLM CLUSTER STREAM] Nvidia streamed no content. Rotating to Gemini.")
+                except Exception as exc:
+                    print(f"[LLM CLUSTER STREAM] Nvidia failed before output: {_short_error_detail(str(exc))}. Rotating to Gemini.")
+            else:
+                print("[LLM CLUSTER STREAM] Nvidia unavailable: no API key.")
+
+            # Fall through to non-streaming cluster which handles Gemini/OpenRouter
+            print(f"[LLM CLUSTER STREAM] Capability '{capability}': falling through to non-streaming cluster.")
+            response, meta = _call_llm_cluster_impl(messages, timeout=timeout, capability=capability)
+            print(f"[LLM CLUSTER STREAM] Response served by: {_served_by(meta)} (non-streamed fallback)")
+            yield response
+            return
+
+    # ── Quick plain chat: Groq first ─────────────────────────────────────
     if config.groq_api_key:
         try:
             model = get_latest_groq_model()
             if model:
                 emitted = False
                 try:
-                    for item in _call_groq_stream(messages, model, timeout=timeout, max_completion_tokens=max_completion_tokens):
+                    for item in _call_groq_stream(
+                        messages, model, timeout=timeout, max_completion_tokens=max_completion_tokens,
+                    ):
                         if isinstance(item, dict):
                             yield item
                             continue
@@ -691,7 +903,7 @@ def _call_llm_cluster_stream(messages: list, timeout: int = 40, max_completion_t
         print("[LLM CLUSTER STREAM] Groq unavailable: no API key. Rotating to fallback cluster.")
 
     # Fallbacks: reuse the non-streaming rotation, emit as one chunk
-    response, meta = _call_llm_cluster_impl(messages, timeout=timeout)
+    response, meta = _call_llm_cluster_impl(messages, timeout=timeout, capability=capability)
     print(f"[LLM CLUSTER STREAM] Response served by: {_served_by(meta)} (non-streamed fallback)")
     yield response
 
@@ -703,6 +915,7 @@ def _call_openai_compat(
     base_url: str,
     provider_label: str,
     timeout: int = 40,
+    fallback_key: str = "",
 ) -> str:
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -734,10 +947,27 @@ def _call_openai_compat(
         print(f"[API] {provider_label} chat completions success")
         return content.strip()
 
-    # Immediate rotation on fatal errors — no retry
-    if response.status_code in {401, 403, 404, 410}:
+    # On 401/403, try fallback key once, then rotate
+    if response.status_code in {401, 403}:
         detail = response.text[:500]
         print(f"[{provider_label.upper()} ERROR] fatal: HTTP {response.status_code} - {_short_error_detail(detail)}")
+        if fallback_key:
+            print(f"[{provider_label.upper()} ERROR] 401/403 — retrying once with fallback key")
+            headers["Authorization"] = f"Bearer {fallback_key}"
+            response = requests.post(
+                f"{base_url}/chat/completions",
+                headers=headers,
+                json=payload,
+                timeout=timeout,
+            )
+            if response.status_code == 200:
+                data = response.json()
+                choices = data.get("choices") or []
+                if choices:
+                    content = (choices[0].get("message") or {}).get("content", "")
+                    if isinstance(content, str) and content.strip():
+                        print(f"[API] {provider_label} chat completions success (via fallback key)")
+                        return content.strip()
         raise RuntimeError(f"{provider_label} API HTTP {response.status_code}: {_short_error_detail(detail)}")
 
     # 429: honor Retry-After (cap 25s), then rotate
@@ -762,6 +992,7 @@ def _call_gemini(
     api_key: str,
     base_url: str = "",
     timeout: int = 40,
+    fallback_key: str = "",
 ) -> str:
     if not base_url:
         base_url = "https://generativelanguage.googleapis.com/v1beta"
@@ -787,11 +1018,14 @@ def _call_gemini(
     if system_instruction:
         payload["system_instruction"] = system_instruction
 
-    response = requests.post(
-        f"{base_url}/models/{model}:generateContent?key={api_key}",
-        json=payload,
-        timeout=timeout,
-    )
+    def _do_gemini_request(key: str):
+        return requests.post(
+            f"{base_url}/models/{model}:generateContent?key={key}",
+            json=payload,
+            timeout=timeout,
+        )
+
+    response = _do_gemini_request(api_key)
 
     if response.status_code == 200:
         data = response.json()
@@ -807,10 +1041,23 @@ def _call_gemini(
         print("[API] Gemini chat completions success")
         return text.strip()
 
-    # Immediate rotation on fatal errors — no retry
-    if response.status_code in {401, 403, 404, 410}:
+    # On 401/403, try fallback key once, then rotate
+    if response.status_code in {401, 403}:
         detail = response.text[:500]
         print(f"[GEMINI ERROR] fatal: HTTP {response.status_code} - {_short_error_detail(detail)}")
+        if fallback_key:
+            print(f"[GEMINI ERROR] 401/403 — retrying once with fallback key")
+            response = _do_gemini_request(fallback_key)
+            if response.status_code == 200:
+                data = response.json()
+                candidates = data.get("candidates") or []
+                if candidates:
+                    parts = (candidates[0].get("content") or {}).get("parts") or []
+                    if parts:
+                        text = parts[0].get("text", "")
+                        if isinstance(text, str) and text.strip():
+                            print("[API] Gemini chat completions success (via fallback key)")
+                            return text.strip()
         raise RuntimeError(f"Gemini API HTTP {response.status_code}: {_short_error_detail(detail)}")
 
     # 429: honor Retry-After (cap 25s), then rotate
@@ -873,7 +1120,10 @@ def _provider_call(name: str, messages: list, timeout: int) -> str:
         if provider_blocked("openrouter", model):
             raise RuntimeError("OpenRouter: free quota unavailable")
         url = config.openrouter_base_url or "https://openrouter.ai/api/v1"
-        return _call_openai_compat(messages, model, config.openrouter_api_key, url, "OpenRouter", timeout)
+        return _call_openai_compat(
+            messages, model, config.openrouter_api_key, url, "OpenRouter", timeout,
+            fallback_key=config.openrouter_api_key_fallback or "",
+        )
     if name == "nvidia":
         if not config.nvidia_api_key:
             raise RuntimeError("Nvidia: no API key")
@@ -881,14 +1131,20 @@ def _provider_call(name: str, messages: list, timeout: int) -> str:
             raise RuntimeError("Nvidia: free quota unavailable")
         model = config.nvidia_model or NVIDIA_DEFAULT_MODEL
         url = config.nvidia_base_url or "https://integrate.api.nvidia.com/v1"
-        return _call_openai_compat(messages, model, config.nvidia_api_key, url, "Nvidia", timeout)
+        return _call_openai_compat(
+            messages, model, config.nvidia_api_key, url, "Nvidia", timeout,
+            fallback_key=config.nvidia_api_key_fallback or "",
+        )
     if name == "gemini":
         if not config.gemini_api_key:
             raise RuntimeError("Gemini: no API key")
         if provider_blocked("gemini"):
             raise RuntimeError("Gemini: free quota unavailable")
         model = config.gemini_model or "gemini-2.0-flash"
-        return _call_gemini(messages, model, config.gemini_api_key, config.gemini_base_url or "", timeout)
+        return _call_gemini(
+            messages, model, config.gemini_api_key, config.gemini_base_url or "", timeout,
+            fallback_key="",
+        )
     raise RuntimeError(f"unknown provider: {name}")
 
 
@@ -930,6 +1186,7 @@ def call_cluster_preferred(messages: list, preferred: str = "", timeout: int = 3
 def _call_llm_cluster_impl(
     messages: list,
     timeout: int = 40,
+    capability: str = "text",
 ) -> tuple[str, dict]:
     """
     Multi-provider, robust LLM routing with fallbacks:
@@ -2103,7 +2360,7 @@ class MarcusBrain:
             self.last_response_meta = self._metadata(False, True, "local")
             return FALLBACK_RESPONSE
 
-    def stream_respond(self, message: str, chat_id: str = "", image_data: str = "", mongo_history: list = None, persist_image_data: bool = True, dedup_id: str = ""):
+    def stream_respond(self, message: str, chat_id: str = "", image_data: str = "", mongo_history: list = None, persist_image_data: bool = True, dedup_id: str = "", capability: str = "text"):
         try:
             self.memory.reload()
             message = (message or "").strip()
@@ -2339,10 +2596,13 @@ class MarcusBrain:
                 print(f"[CONV RECOVERY] Recovery failed (non-fatal): {exc}")
 
             msgs = self._groq_messages(cid, message, image_data, live_context=live_ctx, mongo_history=mongo_history, global_memories=global_memories, knowledge_data=knowledge_data, recovered_context=recovered_context, search_note=search_note)
+            if capability == "text":
+                capability = _detect_capability(msgs)
+                print(f"[STREAM] Detected capability: {capability} ({_estimate_messages_tokens(msgs)} estimated tokens)")
             full_reply = ""
 
             def _stream_once(_msgs, _finish_box, _max_tokens=2048):
-                for item in _call_llm_cluster_stream(_msgs, max_completion_tokens=_max_tokens):
+                for item in _call_llm_cluster_stream(_msgs, max_completion_tokens=_max_tokens, capability=capability):
                     if isinstance(item, dict):
                         if item.get("__vm_control") == "finish":
                             _finish_box[0] = str(item.get("finish_reason") or "")
