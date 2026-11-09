@@ -9,7 +9,7 @@ let ok = 0, fail = 0;
 function t(name, cond) { if (cond) { ok++; } else { fail++; console.log('FAIL: ' + name); } }
 
 // 2.1 table not truncated / continue path
-t('groq stream higher limit', /max_completion_tokens"\s*:\s*4096/.test(brain));
+t('groq stream token budget 2048', /max_completion_tokens"\s*:\s*2048/.test(brain));
 t('finish_reason detected in groq stream', /finish_reason/.test(brain) && /__vm_control/.test(brain));
 t('auto-continue on length', /finish_reason["']?\s*==\s*["']length["']/.test(brain) && /auto-continu|Continue exactly where you left off/.test(brain));
 t('client handles truncated/continue', /evt\.truncated/.test(html) && /evt\.stream_continue/.test(html) && /Continue response/.test(html));

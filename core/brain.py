@@ -321,7 +321,7 @@ def _log_groq_failure(label: str, status_code: int | None = None, detail: str = 
     print(f"[GROQ ERROR] {category}: HTTP {status_code} - {_short_error_detail(detail)}")
 
 
-def _call_groq(messages: list, model_name: str, timeout: int = 30, timeout_retries: int = 1) -> str:
+def _call_groq(messages: list, model_name: str, timeout: int = 40, timeout_retries: int = 1) -> str:
     config = get_config()
     api_key = config.groq_api_key
     if not api_key:
@@ -336,7 +336,7 @@ def _call_groq(messages: list, model_name: str, timeout: int = 30, timeout_retri
     payload = {
         "model": model_name,
         "messages": messages,
-        "max_completion_tokens": 4096,
+        "max_completion_tokens": 2048,
         "include_reasoning": False,
     }
 
@@ -353,6 +353,22 @@ def _call_groq(messages: list, model_name: str, timeout: int = 30, timeout_retri
             )
             if response.status_code == 200:
                 break
+            # Immediate rotation on fatal errors — no retry
+            if response.status_code in {401, 403, 404, 410}:
+                detail = response.text[:500]
+                _log_groq_failure("Groq API request failed (fatal, rotating)", response.status_code, detail)
+                raise RuntimeError(f"Groq API HTTP {response.status_code}: {_short_error_detail(detail)}")
+            # 429: honor Retry-After (cap 25s), then rotate
+            if response.status_code == 429:
+                retry_after = _parse_retry_after(response, cap=25)
+                detail = response.text[:500]
+                if attempt < attempts and retry_after > 0:
+                    print(f"[GROQ ERROR] rate limit: HTTP 429 - waiting {retry_after}s before retry: {_short_error_detail(detail)}")
+                    import time as _time
+                    _time.sleep(retry_after)
+                    continue
+                _log_groq_failure("Groq API rate limit (rotating)", response.status_code, detail)
+                raise RuntimeError(f"Groq API HTTP 429: {_short_error_detail(detail)}")
             if attempt < attempts:
                 _log_groq_failure("Groq API request failed; retrying once", response.status_code, response.text[:500])
                 continue
@@ -387,7 +403,187 @@ def _call_groq(messages: list, model_name: str, timeout: int = 30, timeout_retri
     return content.strip()
 
 
-def _call_groq_stream(messages: list, model_name: str = "", timeout: int = 30, max_completion_tokens: int = 4096):
+def _parse_retry_after(response, cap: int = 25) -> int:
+    """Parse Retry-After header from a 429 response, capped at ``cap`` seconds."""
+    try:
+        import time as _time
+        raw = response.headers.get("Retry-After", "")
+        if not raw:
+            return 0
+        # Retry-After can be an HTTP-date or a delta-seconds value
+        try:
+            delta = int(raw.strip())
+            return max(0, min(delta, cap))
+        except ValueError:
+            # HTTP-date: parse and compute delta
+            try:
+                from email.utils import parsedate_to_datetime
+                retry_dt = parsedate_to_datetime(raw)
+                now = _time.time()
+                delta = int((retry_dt.timestamp() - now))
+                return max(0, min(delta, cap))
+            except Exception:
+                return 0
+    except Exception:
+        return 0
+
+
+# ── vm-fix22: startup model discovery & health check ────────────────────────
+_DISCOVERED_MODELS = {}
+
+def _discover_openrouter_models(api_key: str) -> list[str]:
+    """Fetch the OpenRouter models list and return available model ids."""
+    import urllib.request, json as _json
+    if not api_key:
+        return []
+    try:
+        req = urllib.request.Request(
+            "https://openrouter.ai/api/v1/models",
+            headers={"Authorization": f"Bearer {api_key}"},
+        )
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = _json.loads(resp.read().decode("utf-8", errors="replace"))
+        return [m.get("id", "") for m in data.get("data", []) if m.get("id")]
+    except Exception as exc:
+        print(f"[STARTUP] OpenRouter model discovery failed: {exc}")
+        return []
+
+
+def _discover_nvidia_models(api_key: str) -> list[str]:
+    """Fetch the NVIDIA NIM models list and return available model ids."""
+    import urllib.request, json as _json
+    if not api_key:
+        return []
+    try:
+        req = urllib.request.Request(
+            "https://integrate.api.nvidia.com/v1/models",
+            headers={"Authorization": f"Bearer {api_key}"},
+        )
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = _json.loads(resp.read().decode("utf-8", errors="replace"))
+        return [m.get("id", "") for m in data.get("data", []) if m.get("id")]
+    except Exception as exc:
+        print(f"[STARTUP] NVIDIA model discovery failed: {exc}")
+        return []
+
+
+def _resolve_openrouter_model(configured: str, api_key: str) -> str:
+    """Ensure the OpenRouter model is a ':free' model discovered from the endpoint.
+
+    Never guess an id; if the configured model isn't ':free' or isn't listed,
+    fall back to the first ':free' model found on the endpoint.
+    """
+    if not configured or ":free" not in configured:
+        discovered = _discover_openrouter_models(api_key)
+        free_models = [m for m in discovered if ":free" in m]
+        if free_models:
+            pick = free_models[0]
+            _DISCOVERED_MODELS["openrouter"] = pick
+            print(f"[STARTUP] OpenRouter: configured model '{configured}' not ':free'; "
+                  f"discovered '{pick}' from /models")
+            return pick
+        print(f"[STARTUP] OpenRouter: no ':free' models discovered; keeping '{configured}'")
+        _DISCOVERED_MODELS["openrouter"] = configured
+        return configured
+    discovered = _discover_openrouter_models(api_key)
+    if configured not in discovered:
+        free_models = [m for m in discovered if ":free" in m]
+        if free_models:
+            _DISCOVERED_MODELS["openrouter"] = free_models[0]
+            print(f"[STARTUP] OpenRouter: '{configured}' not on /models; falling back to '{free_models[0]}'")
+            return free_models[0]
+        print(f"[STARTUP] OpenRouter: '{configured}' not on /models; keeping configured")
+        _DISCOVERED_MODELS["openrouter"] = configured
+    else:
+        _DISCOVERED_MODELS["openrouter"] = configured
+    return configured
+
+
+def _resolve_nvidia_model(configured: str, api_key: str) -> str:
+    """Ensure the NVIDIA model exists on the /models endpoint.
+
+    Never guess an id; if the configured model isn't listed, keep it but warn.
+    """
+    if not configured:
+        return configured
+    discovered = _discover_nvidia_models(api_key)
+    if discovered and configured not in discovered:
+        print(f"[STARTUP] NVIDIA: '{configured}' not found on /models endpoint "
+              f"({len(discovered)} models available). Will attempt anyway.")
+        _DISCOVERED_MODELS["nvidia"] = configured
+    elif discovered:
+        print(f"[STARTUP] NVIDIA: '{configured}' confirmed on /models endpoint")
+        _DISCOVERED_MODELS["nvidia"] = configured
+    else:
+        _DISCOVERED_MODELS["nvidia"] = configured
+    return configured
+
+
+def _startup_health_check() -> None:
+    """Log provider health at startup. Discovers models for NVIDIA/OpenRouter."""
+    config = get_config()
+    print("=" * 60)
+    print("[STARTUP] LLM Provider Health Check")
+    print("=" * 60)
+
+    # Groq
+    if config.groq_api_key:
+        try:
+            import requests as _r
+            url = f"{config.groq_base_url.rstrip('/')}/openai/v1/models" if "openai/v1" not in config.groq_base_url else f"{config.groq_base_url.rstrip('/')}/models"
+            resp = _r.get(url, headers={"Authorization": f"Bearer {config.groq_api_key}"}, timeout=10)
+            if resp.status_code == 200:
+                print(f"[STARTUP] Groq: healthy (key present, /models OK)")
+            else:
+                print(f"[STARTUP] Groq: key present but /models returned HTTP {resp.status_code}")
+        except Exception as exc:
+            print(f"[STARTUP] Groq: key present but health check failed: {exc}")
+    else:
+        print("[STARTUP] Groq: no API key configured")
+
+    # OpenRouter — discover ':free' model
+    if config.openrouter_api_key:
+        resolved = _resolve_openrouter_model(config.openrouter_model, config.openrouter_api_key)
+        _DISCOVERED_MODELS["openrouter"] = resolved
+        print(f"[STARTUP] OpenRouter: key present, model={resolved}")
+    else:
+        print("[STARTUP] OpenRouter: no API key configured")
+
+    # NVIDIA — discover model on /models
+    if config.nvidia_api_key:
+        resolved = _resolve_nvidia_model(config.nvidia_model, config.nvidia_api_key)
+        _DISCOVERED_MODELS["nvidia"] = resolved
+        print(f"[STARTUP] NVIDIA: key present, model={resolved}")
+    else:
+        print("[STARTUP] NVIDIA: no API key configured")
+
+    # Gemini
+    if config.gemini_api_key:
+        print(f"[STARTUP] Gemini: key present (via GEMINI_API_KEY or GOOGLE_GENERATIVE_AI_API_KEY), model={config.gemini_model}")
+    else:
+        print("[STARTUP] Gemini: no API key configured")
+
+    # TinyFish — verify free quota so search can use it
+    _tf_key = os.getenv("TINYFISH_API_KEY", "").strip()
+    if _tf_key:
+        try:
+            from core.cost_control import record_success
+            record_success("tinyfish")
+            print("[STARTUP] TinyFish: free quota verified (key present)")
+        except Exception as exc:
+            print(f"[STARTUP] TinyFish: key present but quota verification failed: {exc}")
+    else:
+        print("[STARTUP] TinyFish: no API key configured")
+
+    print("=" * 60)
+
+
+def get_discovered_model(provider: str) -> str | None:
+    """Return the discovered model for a provider, or None if not discovered."""
+    return _DISCOVERED_MODELS.get(provider)
+
+
+def _call_groq_stream(messages: list, model_name: str = "", timeout: int = 40, max_completion_tokens: int = 2048):
     """Stream Groq tokens. Yields str content chunks and may yield a final
     control dict {"__vm_control":"finish","finish_reason": "..."} so callers can
     detect truncation (finish_reason == "length") and continue."""
@@ -452,7 +648,7 @@ def _call_groq_stream(messages: list, model_name: str = "", timeout: int = 30, m
         yield {"__vm_control": "finish", "finish_reason": finish_reason}
 
 
-def _call_llm_cluster_stream(messages: list, timeout: int = 30, max_completion_tokens: int = 4096):
+def _call_llm_cluster_stream(messages: list, timeout: int = 40, max_completion_tokens: int = 2048):
     """Stream tokens with full provider failover, invisible to the user.
 
     Yields str content chunks and may yield control dicts (e.g. finish_reason)
@@ -506,7 +702,7 @@ def _call_openai_compat(
     api_key: str,
     base_url: str,
     provider_label: str,
-    timeout: int = 30,
+    timeout: int = 40,
 ) -> str:
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -515,7 +711,7 @@ def _call_openai_compat(
     payload = {
         "model": model,
         "messages": messages,
-        "max_tokens": 4096,
+        "max_tokens": 2048,
     }
 
     print(f"[API] Calling {provider_label} chat completions with model: {model}")
@@ -527,23 +723,37 @@ def _call_openai_compat(
         timeout=timeout,
     )
 
-    if response.status_code != 200:
-        raise RuntimeError(
-            f"{provider_label} API HTTP {response.status_code}: "
-            f"{_short_error_detail(response.text[:500])}"
-        )
+    if response.status_code == 200:
+        data = response.json()
+        choices = data.get("choices") or []
+        if not choices:
+            raise RuntimeError(f"{provider_label} returned 200 but choices list was empty.")
+        content = (choices[0].get("message") or {}).get("content", "")
+        if not isinstance(content, str) or not content.strip():
+            raise RuntimeError(f"{provider_label} returned 200 but content was empty.")
+        print(f"[API] {provider_label} chat completions success")
+        return content.strip()
 
-    data = response.json()
-    choices = data.get("choices") or []
-    if not choices:
-        raise RuntimeError(f"{provider_label} returned 200 but choices list was empty.")
+    # Immediate rotation on fatal errors — no retry
+    if response.status_code in {401, 403, 404, 410}:
+        detail = response.text[:500]
+        print(f"[{provider_label.upper()} ERROR] fatal: HTTP {response.status_code} - {_short_error_detail(detail)}")
+        raise RuntimeError(f"{provider_label} API HTTP {response.status_code}: {_short_error_detail(detail)}")
 
-    content = (choices[0].get("message") or {}).get("content", "")
-    if not isinstance(content, str) or not content.strip():
-        raise RuntimeError(f"{provider_label} returned 200 but content was empty.")
+    # 429: honor Retry-After (cap 25s), then rotate
+    if response.status_code == 429:
+        retry_after = _parse_retry_after(response, cap=25)
+        detail = response.text[:500]
+        if retry_after > 0:
+            print(f"[{provider_label.upper()} ERROR] rate limit: HTTP 429 - waiting {retry_after}s before rotating: {_short_error_detail(detail)}")
+            import time as _time
+            _time.sleep(retry_after)
+        raise RuntimeError(f"{provider_label} API HTTP 429: {_short_error_detail(detail)}")
 
-    print(f"[API] {provider_label} chat completions success")
-    return content.strip()
+    raise RuntimeError(
+        f"{provider_label} API HTTP {response.status_code}: "
+        f"{_short_error_detail(response.text[:500])}"
+    )
 
 
 def _call_gemini(
@@ -551,7 +761,7 @@ def _call_gemini(
     model: str,
     api_key: str,
     base_url: str = "",
-    timeout: int = 30,
+    timeout: int = 40,
 ) -> str:
     if not base_url:
         base_url = "https://generativelanguage.googleapis.com/v1beta"
@@ -583,27 +793,40 @@ def _call_gemini(
         timeout=timeout,
     )
 
-    if response.status_code != 200:
-        raise RuntimeError(
-            f"Gemini API HTTP {response.status_code}: "
-            f"{_short_error_detail(response.text[:500])}"
-        )
+    if response.status_code == 200:
+        data = response.json()
+        candidates = data.get("candidates") or []
+        if not candidates:
+            raise RuntimeError("Gemini returned 200 but candidates list was empty.")
+        parts = (candidates[0].get("content") or {}).get("parts") or []
+        if not parts:
+            raise RuntimeError("Gemini returned 200 but parts list was empty.")
+        text = parts[0].get("text", "")
+        if not isinstance(text, str) or not text.strip():
+            raise RuntimeError("Gemini returned 200 but text was empty.")
+        print("[API] Gemini chat completions success")
+        return text.strip()
 
-    data = response.json()
-    candidates = data.get("candidates") or []
-    if not candidates:
-        raise RuntimeError("Gemini returned 200 but candidates list was empty.")
+    # Immediate rotation on fatal errors — no retry
+    if response.status_code in {401, 403, 404, 410}:
+        detail = response.text[:500]
+        print(f"[GEMINI ERROR] fatal: HTTP {response.status_code} - {_short_error_detail(detail)}")
+        raise RuntimeError(f"Gemini API HTTP {response.status_code}: {_short_error_detail(detail)}")
 
-    parts = (candidates[0].get("content") or {}).get("parts") or []
-    if not parts:
-        raise RuntimeError("Gemini returned 200 but parts list was empty.")
+    # 429: honor Retry-After (cap 25s), then rotate
+    if response.status_code == 429:
+        retry_after = _parse_retry_after(response, cap=25)
+        detail = response.text[:500]
+        if retry_after > 0:
+            print(f"[GEMINI ERROR] rate limit: HTTP 429 - waiting {retry_after}s before rotating: {_short_error_detail(detail)}")
+            import time as _time
+            _time.sleep(retry_after)
+        raise RuntimeError(f"Gemini API HTTP 429: {_short_error_detail(detail)}")
 
-    text = parts[0].get("text", "")
-    if not isinstance(text, str) or not text.strip():
-        raise RuntimeError("Gemini returned 200 but text was empty.")
-
-    print("[API] Gemini chat completions success")
-    return text.strip()
+    raise RuntimeError(
+        f"Gemini API HTTP {response.status_code}: "
+        f"{_short_error_detail(response.text[:500])}"
+    )
 
 
 def _served_by(meta: dict) -> str:
@@ -706,7 +929,7 @@ def call_cluster_preferred(messages: list, preferred: str = "", timeout: int = 3
 
 def _call_llm_cluster_impl(
     messages: list,
-    timeout: int = 30,
+    timeout: int = 40,
 ) -> tuple[str, dict]:
     """
     Multi-provider, robust LLM routing with fallbacks:
@@ -1059,6 +1282,7 @@ class MarcusBrain:
             return
         healthy = _groq_health_check(model)
         print(f"[BRAIN] Groq health: {'ok' if healthy else 'failed'}")
+        _startup_health_check()
         print("[BRAIN] All systems ready. Pure semantic LLM cluster online.")
 
     def _get_model(self) -> str:
@@ -1390,6 +1614,13 @@ class MarcusBrain:
         messages = [{"role": "system", "content": system_with_context}]
 
         if live_context and str(live_context).strip() and str(live_context).strip() != str(LIVE_DATA_UNAVAILABLE):
+            # ── Token budget: trim live_context to stay under ~8K TPM ──
+            # Groq free tier ≈ 8000 TPM input. Reserve ~3K for system prompt
+            # and history, ~2K for reply, leaving ~3K for live context.
+            _MAX_LIVE_CTX = 3000  # ≈ 750 tokens
+            if len(live_context) > _MAX_LIVE_CTX:
+                live_context = live_context[:_MAX_LIVE_CTX] + "\n...[truncated for token budget]..."
+                print(f"[TOKEN BUDGET] live_context trimmed to {_MAX_LIVE_CTX} chars")
             print(f"[GROQ MESSAGES] Prepending live data to user message")
             context_header = (
                 f"[SYSTEM DIRECTIVE: LIVE SEARCH ENGAGED]\n"
@@ -1872,7 +2103,7 @@ class MarcusBrain:
             self.last_response_meta = self._metadata(False, True, "local")
             return FALLBACK_RESPONSE
 
-    def stream_respond(self, message: str, chat_id: str = "", image_data: str = "", mongo_history: list = None, persist_image_data: bool = True):
+    def stream_respond(self, message: str, chat_id: str = "", image_data: str = "", mongo_history: list = None, persist_image_data: bool = True, dedup_id: str = ""):
         try:
             self.memory.reload()
             message = (message or "").strip()
@@ -2110,7 +2341,7 @@ class MarcusBrain:
             msgs = self._groq_messages(cid, message, image_data, live_context=live_ctx, mongo_history=mongo_history, global_memories=global_memories, knowledge_data=knowledge_data, recovered_context=recovered_context, search_note=search_note)
             full_reply = ""
 
-            def _stream_once(_msgs, _finish_box, _max_tokens=4096):
+            def _stream_once(_msgs, _finish_box, _max_tokens=2048):
                 for item in _call_llm_cluster_stream(_msgs, max_completion_tokens=_max_tokens):
                     if isinstance(item, dict):
                         if item.get("__vm_control") == "finish":
@@ -2179,7 +2410,7 @@ class MarcusBrain:
                             "source": src.get("domain", ""),
                             "credit": src.get("image_credit", ""),
                         })
-                self.memory.add_message(cid, "assistant", full_reply or "No response", timestamp, images=_assistant_images)
+                self.memory.add_message(cid, "assistant", full_reply or "No response", timestamp, images=_assistant_images, dedup_id=dedup_id)
             except Exception as exc:
                 print(f"[ERROR] Memory add_message (assistant) failed: {exc}")
 

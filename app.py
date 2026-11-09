@@ -2443,6 +2443,19 @@ def chat():
         persona = normalize_persona(data.get("persona"))
         dedup_id = str(data.get("_vm_dedup_id", "")).strip()
 
+        # ── vm-fix22 dedup: match on _vm_dedup_id + chat_id, not message text ──
+        if dedup_id and chat_id:
+            try:
+                from core.memory import MemorySystem
+                _mem = MemorySystem(memory_file="")
+                recent = _mem.get_chat(chat_id) or []
+                for m in recent[-5:]:
+                    if m.get("dedup_id") == dedup_id:
+                        print(f"[DEDUP] Skipping duplicate _vm_dedup_id={dedup_id} chat_id={chat_id}")
+                        return jsonify({"status": "ok", "dedup": True, "chat_id": chat_id}), 200
+            except Exception as exc:
+                print(f"[DEDUP] Dedup check failed (non-fatal): {exc}")
+
         # ── Route ─────────────────────────────────────────────────────
         router = get_router()
         decision = router.classify(message, has_image=bool(image_data), source=source)
@@ -3341,6 +3354,19 @@ def chat_stream():
         source = str(data.get("source") or "").strip() or None
         persona = normalize_persona(data.get("persona"))
         dedup_id = str(data.get("_vm_dedup_id", "")).strip()
+
+        # ── vm-fix22 dedup: match on _vm_dedup_id + chat_id, not message text ──
+        if dedup_id and chat_id:
+            try:
+                from core.memory import MemorySystem
+                _mem = MemorySystem(memory_file="")
+                recent = _mem.get_chat(chat_id) or []
+                for m in recent[-5:]:
+                    if m.get("dedup_id") == dedup_id:
+                        print(f"[DEDUP] Skipping duplicate _vm_dedup_id={dedup_id} chat_id={chat_id}")
+                        return jsonify({"status": "ok", "dedup": True, "chat_id": chat_id}), 200
+            except Exception as exc:
+                print(f"[DEDUP] Dedup check failed (non-fatal): {exc}")
 
         # ── Route ─────────────────────────────────────────────────────
         router = get_router()

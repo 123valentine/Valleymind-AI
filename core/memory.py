@@ -516,7 +516,7 @@ class MemorySystem:
             self._cache[chat_id] = self.load_chat(chat_id)
         return self._cache[chat_id]
 
-    def add_message(self, chat_id: str, role: str, content: str, timestamp=None, image_data: str = "", image_url: str = "", video_url: str = "", images: list = None):
+    def add_message(self, chat_id: str, role: str, content: str, timestamp=None, image_data: str = "", image_url: str = "", video_url: str = "", images: list = None, dedup_id: str = ""):
         role = str(role or "user").strip()
         content = str(content or "").strip()
         if not content and not image_data and not image_url and not video_url and not images:
@@ -552,6 +552,8 @@ class MemorySystem:
                     })
                 if clean_images:
                     msg["images"] = clean_images
+            if dedup_id:
+                msg["dedup_id"] = dedup_id
             messages.append(msg)
             self.save_chat(chat_id, messages)
 
