@@ -2171,7 +2171,15 @@ class MarcusBrain:
                     print("[STREAM ERROR] Partial output was emitted before failure; not replacing with apology.")
 
             try:
-                self.memory.add_message(cid, "assistant", full_reply or "No response", timestamp)
+                _assistant_images = []
+                for src in (self._pending_sources or []):
+                    if src and src.get("image"):
+                        _assistant_images.append({
+                            "url": src.get("image", ""),
+                            "source": src.get("domain", ""),
+                            "credit": src.get("image_credit", ""),
+                        })
+                self.memory.add_message(cid, "assistant", full_reply or "No response", timestamp, images=_assistant_images)
             except Exception as exc:
                 print(f"[ERROR] Memory add_message (assistant) failed: {exc}")
 

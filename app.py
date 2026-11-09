@@ -2441,6 +2441,7 @@ def chat():
         image_data = str(data.get("image") or "").strip()
         source = str(data.get("source") or "").strip() or None
         persona = normalize_persona(data.get("persona"))
+        dedup_id = str(data.get("_vm_dedup_id", "")).strip()
 
         # ── Route ─────────────────────────────────────────────────────
         router = get_router()
@@ -3339,6 +3340,7 @@ def chat_stream():
         image_data = str(data.get("image") or "").strip()
         source = str(data.get("source") or "").strip() or None
         persona = normalize_persona(data.get("persona"))
+        dedup_id = str(data.get("_vm_dedup_id", "")).strip()
 
         # ── Route ─────────────────────────────────────────────────────
         router = get_router()

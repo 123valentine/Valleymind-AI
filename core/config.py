@@ -28,9 +28,11 @@ class APIConfig:
     api_sports_key: str
     mongodb_uri: str
     openrouter_api_key: str
+    openrouter_api_key_fallback: str
     openrouter_base_url: str
     openrouter_model: str
     nvidia_api_key: str
+    nvidia_api_key_fallback: str
     nvidia_base_url: str
     nvidia_model: str
     gemini_api_key: str
@@ -58,23 +60,25 @@ def get_config() -> APIConfig:
         api_sports_key=os.getenv("API_SPORTS_KEY", "").strip(),
         mongodb_uri=os.getenv("MONGODB_URI", "").strip(),
         openrouter_api_key=os.getenv("OPENROUTER_API_KEY", "").strip(),
+        openrouter_api_key_fallback=os.getenv("OPENROUTER_API_KEY_FALLBACK", "").strip(),
         openrouter_base_url=os.getenv(
             "OPENROUTER_BASE_URL",
             "https://openrouter.ai/api/v1",
         ).rstrip("/"),
-        openrouter_model=os.getenv("OPENROUTER_MODEL", "openai/gpt-4o-mini").strip(),
+        openrouter_model=os.getenv("OPENROUTER_MODEL", "nvidia/nemotron-3.5-super-vl:free").strip(),
         nvidia_api_key=os.getenv("NVIDIA_API_KEY", "").strip(),
+        nvidia_api_key_fallback=os.getenv("NVIDIA_API_KEY_FALLBACK", "").strip(),
         nvidia_base_url=os.getenv(
             "NVIDIA_BASE_URL",
             "https://integrate.api.nvidia.com/v1",
         ).rstrip("/"),
-        nvidia_model=os.getenv("NVIDIA_MODEL", "nvidia/llama-3.1-nv-8b-instruct").strip(),
+        nvidia_model=os.getenv("NVIDIA_MODEL", "nvidia/nemotron-3.5-super-vl-120b-a12b").strip(),
         gemini_api_key=(os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_GENERATIVE_AI_API_KEY") or "").strip(),
         gemini_base_url=os.getenv(
             "GEMINI_BASE_URL",
             "https://generativelanguage.googleapis.com/v1beta",
         ).rstrip("/"),
-        gemini_model=os.getenv("GEMINI_MODEL", "gemini-2.0-flash").strip(),
+        gemini_model=os.getenv("GEMINI_MODEL", "gemini-3.8-flash").strip(),
         alibaba_api_key=os.getenv("ALIBABA_MODEL_STUDIO_API_KEY", "").strip(),
     )
 
