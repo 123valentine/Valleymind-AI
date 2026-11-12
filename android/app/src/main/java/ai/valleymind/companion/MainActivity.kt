@@ -16,6 +16,7 @@ import android.view.View
 import android.webkit.PermissionRequest
 import android.webkit.RenderProcessGoneDetail
 import android.webkit.SslErrorHandler
+import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
@@ -23,6 +24,14 @@ import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.Button
+import android.widget.EditText
+import android.widget.LinearLayout
+import android.widget.TextView
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
+import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
@@ -74,6 +83,9 @@ class MainActivity : AppCompatActivity(), CompanionBridge.Host {
     /** The origin the WebView loads; production default, runtime-overridable. */
     private var baseUrl: String = BuildConfig.VALLEY_BASE_URL
 
+    private const val REQUEST_CODE_FILE_CHOOSER = 1002
+    private const val REQUEST_CODE_FILE_CHOOSER = 1002
+    private var filePathCallback: ValueCallback<Array<Uri>>? = null
     private val loadMonitor = LoadMonitor(LoadMonitor.DEFAULT_TIMEOUT_MS)
     private val mainHandler = Handler(Looper.getMainLooper())
     private val loadTimeoutRunnable = Runnable {
@@ -130,6 +142,22 @@ class MainActivity : AppCompatActivity(), CompanionBridge.Host {
         maybeRequestRecordAudio()
     }
 
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQUEST_CODE_FILE_CHOOSER) {
+            val result = if (resultCode == Activity.RESULT_OK) data?.data else null
+            val callback = filePathCallback
+            filePathCallback = null
+            if (callback != null) {
+                if (result != null) {
+                    callback.onReceiveValue(arrayOf(result))
+                } else {
+                    callback.onReceiveValue(null)
+                }
+            }
+        }
+    }
+
     /** Creates and wires the WebView. Called again after a renderer crash. */
     @SuppressLint("SetJavaScriptEnabled")
     private fun setupWebView() {
@@ -158,6 +186,19 @@ class MainActivity : AppCompatActivity(), CompanionBridge.Host {
                 ) == PackageManager.PERMISSION_GRANTED
                 if (wantsAudio && granted) request.grant(arrayOf(PermissionRequest.RESOURCE_AUDIO_CAPTURE))
                 else request.deny()
+            }
+
+            override fun onShowFileChooser(
+                webView: WebView,
+                filePathCallback: ValueCallback<Array<Uri>>,
+                fileChooserParams: FileChooserParams
+            ): Boolean {
+                filePathCallback = filePathCallback
+                val intent = Intent(Intent.ACTION_GET_CONTENT)
+                intent.addCategory(Intent.CATEGORY_OPENABLE)
+                intent.type = "*/*"
+                startActivityForResult(Intent.createChooser(intent, "Select file"), REQUEST_CODE_FILE_CHOOSER)
+                return true
             }
         }
         webView.webViewClient = object : WebViewClient() {

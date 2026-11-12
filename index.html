@@ -3171,6 +3171,7 @@ body[data-vm-companion="cloud"] #vmVrmCompanion { display: none !important; }
       <div style="max-width:1100px;margin:0 auto;">
 
         <!-- HIDDEN FILE INPUTS -->
+        <input type="file" id="chatCameraInput" accept="image/*" capture="environment" style="display:none;">
         <input type="file" id="chatImageInput" accept="image/*" style="display:none;">
         <input type="file" id="chatVideoInput" accept="video/*" style="display:none;">
         <input type="file" id="chatFileInput" style="display:none;">
@@ -3205,11 +3206,17 @@ body[data-vm-companion="cloud"] #vmVrmCompanion { display: none !important; }
                 </button>
                 <!-- Floating vertical menu -->
                 <div id="plusMenu" style="display:none;position:absolute;bottom:calc(100% + 8px);left:0;background:#0f172a;border:1px solid rgba(0,212,255,0.2);border-radius:12px;padding:6px;min-width:170px;box-shadow:0 12px 40px rgba(0,0,0,0.7);z-index:100;">
-                  <div class="plus-menu-item" onclick="document.getElementById('chatImageInput').click();closePlusMenu();" style="display:flex;align-items:center;gap:10px;padding:9px 14px;border-radius:8px;font-size:13px;color:#bbc9cf;cursor:pointer;transition:all 0.12s;" onmouseover="this.style.background='rgba(0,212,255,0.08)';this.style.color='#00d4ff'" onmouseout="this.style.background='transparent';this.style.color='#bbc9cf'">
+                  <div class="plus-menu-item" onclick="document.getElementById('chatCameraInput').click();closePlusMenu();" style="display:flex;align-items:center;gap:10px;padding:9px 14px;border-radius:8px;font-size:13px;color:#bbc9cf;cursor:pointer;transition:all 0.12s;" onmouseover="this.style.background='rgba(0,212,255,0.08)';this.style.color='#00d4ff'" onmouseout="this.style.background='transparent';this.style.color='#bbc9cf'">
                     <i data-lucide="camera" style="width:18px;height:18px;"></i> Camera
                   </div>
+                  <div class="plus-menu-item" onclick="document.getElementById('chatCameraInput').click();closePlusMenu();" style="display:flex;align-items:center;gap:10px;padding:9px 14px;border-radius:8px;font-size:13px;color:#bbc9cf;cursor:pointer;transition:all 0.12s;" onmouseover="this.style.background='rgba(0,212,255,0.08)';this.style.color='#00d4ff'" onmouseout="this.style.background='transparent';this.style.color='#bbc9cf'">
+                    <i data-lucide="image" style="width:18px;height:18px;"></i> Upload
+                  </div>
                   <div class="plus-menu-item" onclick="document.getElementById('chatVideoInput').click();closePlusMenu();" style="display:flex;align-items:center;gap:10px;padding:9px 14px;border-radius:8px;font-size:13px;color:#bbc9cf;cursor:pointer;transition:all 0.12s;" onmouseover="this.style.background='rgba(0,212,255,0.08)';this.style.color='#00d4ff'" onmouseout="this.style.background='transparent';this.style.color='#bbc9cf'">
-                    <i data-lucide="video" style="width:18px;height:18px;"></i> Video to analyse
+                    <i data-lucide="image" style="width:18px;height:18px;"></i> Upload
+                  </div>
+                  <div class="plus-menu-item" onclick="document.getElementById('chatImageInput').click();closePlusMenu();" style="display:flex;align-items:center;gap:10px;padding:9px 14px;border-radius:8px;font-size:13px;color:#bbc9cf;cursor:pointer;transition:all 0.12s;" onmouseover="this.style.background='rgba(0,212,255,0.08)';this.style.color='#00d4ff'" onmouseout="this.style.background='transparent';this.style.color='#bbc9cf'">
+                    i data-lucide="video" style="width:18px;height:18px;"></i> Video to analyse
                   </div>
                   <div class="plus-menu-item" onclick="document.getElementById('chatFileInput').click();closePlusMenu();" style="display:flex;align-items:center;gap:10px;padding:9px 14px;border-radius:8px;font-size:13px;color:#bbc9cf;cursor:pointer;transition:all 0.12s;" onmouseover="this.style.background='rgba(0,212,255,0.08)';this.style.color='#00d4ff'" onmouseout="this.style.background='transparent';this.style.color='#bbc9cf'">
                     <i data-lucide="file-text" style="width:18px;height:18px;"></i> Local File
@@ -4421,7 +4428,18 @@ document.getElementById('chatImageInput').addEventListener('change', function (e
         pendingImageData = e.target.result;
         renderComposerChips();
     };
+    reader.readAsDataURL(file);reader.readAsDataURL(file);
+
+document.getElementById('chatCameraInput').addEventListener('change', function (event) {
+    var file = event.target.files[0];
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function (e) {
+        pendingImageData = e.target.result;
+        renderComposerChips();
+    };
     reader.readAsDataURL(file);
+});
 });
 
 /* â”€â”€ Video upload + analysis (Qwen3-VL) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
@@ -13249,9 +13267,18 @@ document.addEventListener("DOMContentLoaded", () => {
     const input = document.getElementById("chatInput");
     if (input) {
         input.addEventListener("keydown", event => {
-            if (event.key === "Enter" && !event.shiftKey && !isThinking) {
-                event.preventDefault();
-                send();
+            if (event.key === "Enter" && !isThinking) {
+                var isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+                if (isMobile) {
+                    // Mobile: Enter inserts newline; Send button submits
+                    // Do not preventDefault - allow natural newline insertion
+                } else {
+                    // Desktop: Enter sends, Shift+Enter inserts newline
+                    if (!event.shiftKey) {
+                        event.preventDefault();
+                        send();
+                    }
+                }
             }
         });
         input.addEventListener("input", function () {

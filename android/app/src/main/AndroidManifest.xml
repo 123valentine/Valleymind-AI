@@ -13,6 +13,8 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Voice conversation reuses the existing site voice pipeline. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- Camera access for image capture via file input -->
+    <uses-permission android:name="android.permission.CAMERA" />
 
     <application
         android:allowBackup="true"
