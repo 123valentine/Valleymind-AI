@@ -3172,9 +3172,8 @@ body[data-vm-companion="cloud"] #vmVrmCompanion { display: none !important; }
 
         <!-- HIDDEN FILE INPUTS -->
         <input type="file" id="chatCameraInput" accept="image/*" capture="environment" style="display:none;">
-        <input type="file" id="chatImageInput" accept="image/*" style="display:none;">
+        <input type="file" id="chatImageInput" accept="image/*" multiple style="display:none;">
         <input type="file" id="chatVideoInput" accept="video/*" style="display:none;">
-        <input type="file" id="chatFileInput" style="display:none;">
 
         <!-- UNIFIED COMPOSER (chips row on top, input row below) -->
         <div id="composer">
@@ -3209,17 +3208,11 @@ body[data-vm-companion="cloud"] #vmVrmCompanion { display: none !important; }
                   <div class="plus-menu-item" onclick="document.getElementById('chatCameraInput').click();closePlusMenu();" style="display:flex;align-items:center;gap:10px;padding:9px 14px;border-radius:8px;font-size:13px;color:#bbc9cf;cursor:pointer;transition:all 0.12s;" onmouseover="this.style.background='rgba(0,212,255,0.08)';this.style.color='#00d4ff'" onmouseout="this.style.background='transparent';this.style.color='#bbc9cf'">
                     <i data-lucide="camera" style="width:18px;height:18px;"></i> Camera
                   </div>
-                  <div class="plus-menu-item" onclick="document.getElementById('chatCameraInput').click();closePlusMenu();" style="display:flex;align-items:center;gap:10px;padding:9px 14px;border-radius:8px;font-size:13px;color:#bbc9cf;cursor:pointer;transition:all 0.12s;" onmouseover="this.style.background='rgba(0,212,255,0.08)';this.style.color='#00d4ff'" onmouseout="this.style.background='transparent';this.style.color='#bbc9cf'">
+                  <div class="plus-menu-item" onclick="document.getElementById('chatImageInput').click();closePlusMenu();" style="display:flex;align-items:center;gap:10px;padding:9px 14px;border-radius:8px;font-size:13px;color:#bbc9cf;cursor:pointer;transition:all 0.12s;" onmouseover="this.style.background='rgba(0,212,255,0.08)';this.style.color='#00d4ff'" onmouseout="this.style.background='transparent';this.style.color='#bbc9cf'">
                     <i data-lucide="image" style="width:18px;height:18px;"></i> Upload
                   </div>
                   <div class="plus-menu-item" onclick="document.getElementById('chatVideoInput').click();closePlusMenu();" style="display:flex;align-items:center;gap:10px;padding:9px 14px;border-radius:8px;font-size:13px;color:#bbc9cf;cursor:pointer;transition:all 0.12s;" onmouseover="this.style.background='rgba(0,212,255,0.08)';this.style.color='#00d4ff'" onmouseout="this.style.background='transparent';this.style.color='#bbc9cf'">
-                    <i data-lucide="image" style="width:18px;height:18px;"></i> Upload
-                  </div>
-                  <div class="plus-menu-item" onclick="document.getElementById('chatImageInput').click();closePlusMenu();" style="display:flex;align-items:center;gap:10px;padding:9px 14px;border-radius:8px;font-size:13px;color:#bbc9cf;cursor:pointer;transition:all 0.12s;" onmouseover="this.style.background='rgba(0,212,255,0.08)';this.style.color='#00d4ff'" onmouseout="this.style.background='transparent';this.style.color='#bbc9cf'">
-                    i data-lucide="video" style="width:18px;height:18px;"></i> Video to analyse
-                  </div>
-                  <div class="plus-menu-item" onclick="document.getElementById('chatFileInput').click();closePlusMenu();" style="display:flex;align-items:center;gap:10px;padding:9px 14px;border-radius:8px;font-size:13px;color:#bbc9cf;cursor:pointer;transition:all 0.12s;" onmouseover="this.style.background='rgba(0,212,255,0.08)';this.style.color='#00d4ff'" onmouseout="this.style.background='transparent';this.style.color='#bbc9cf'">
-                    <i data-lucide="file-text" style="width:18px;height:18px;"></i> Local File
+                    <i data-lucide="video" style="width:18px;height:18px;"></i> Video to analyse
                   </div>
                   <div class="plus-menu-item" onclick="showComingSoon('Google Drive');closePlusMenu();" style="display:flex;align-items:center;gap:10px;padding:9px 14px;border-radius:8px;font-size:13px;color:#bbc9cf;cursor:pointer;transition:all 0.12s;" onmouseover="this.style.background='rgba(0,212,255,0.08)';this.style.color='#00d4ff'" onmouseout="this.style.background='transparent';this.style.color='#bbc9cf'">
                     <i data-lucide="hard-drive" style="width:18px;height:18px;"></i> Google Drive
@@ -4413,7 +4406,7 @@ window.vmIsAuthenticated = vmIsAuthenticated;
 const messageStore = [];
 
 let isThinking = false;
-let pendingImageData = null;
+let pendingImageData = [];
 
 document.getElementById('chatFileInput').addEventListener('change', function () {
     showComingSoon('Local File Upload');
@@ -4421,25 +4414,35 @@ document.getElementById('chatFileInput').addEventListener('change', function () 
 });
 
 document.getElementById('chatImageInput').addEventListener('change', function (event) {
-    var file = event.target.files[0];
-    if (!file) return;
-    var reader = new FileReader();
-    reader.onload = function (e) {
-        pendingImageData = e.target.result;
-        renderComposerChips();
-    };
-    reader.readAsDataURL(file);reader.readAsDataURL(file);
+    var files = event.target.files;
+    if (!files || files.length === 0) return;
+    var pendingImageDataArray = [];
+    var pending = files.length;
+    for (var i = 0; i < files.length; i++) {
+        (function (file) {
+            var reader = new FileReader();
+            reader.onload = function (e) {
+                pendingImageDataArray.push(e.target.result);
+                pending--;
+                if (pending === 0) {
+                    pendingImageData = pendingImageDataArray;
+                    renderComposerChips();
+                }
+            };
+            reader.readAsDataURL(file);
+        })(file);
+    }
+});
 
 document.getElementById('chatCameraInput').addEventListener('change', function (event) {
     var file = event.target.files[0];
     if (!file) return;
     var reader = new FileReader();
     reader.onload = function (e) {
-        pendingImageData = e.target.result;
+        pendingImageData.push(e.target.result);
         renderComposerChips();
     };
     reader.readAsDataURL(file);
-});
 });
 
 /* â”€â”€ Video upload + analysis (Qwen3-VL) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
@@ -4517,27 +4520,29 @@ function renderComposerChips() {
         vchip.appendChild(vx);
         chips.appendChild(vchip);
     }
-    if (pendingImageData) {
-        var chip = document.createElement("div");
-        chip.className = "composer-chip";
-        var img = document.createElement("img");
-        img.src = pendingImageData;
-        img.alt = "attachment";
-        var x = document.createElement("button");
-        x.className = "chip-x";
-        x.type = "button";
-        x.title = "Remove image";
-        x.textContent = "âœ•";
-        x.onclick = function (ev) { ev.stopPropagation(); clearImageUpload(); };
-        chip.appendChild(img);
-        chip.appendChild(x);
-        chips.appendChild(chip);
+    if (pendingImageData && pendingImageData.length) {
+        pendingImageData.forEach(function(imgData) {
+            var chip = document.createElement("div");
+            chip.className = "composer-chip";
+            var img = document.createElement("img");
+            img.src = imgData;
+            img.alt = "attachment";
+            var x = document.createElement("button");
+            x.className = "chip-x";
+            x.type = "button";
+            x.title = "Remove image";
+            x.textContent = "âœ•";
+            x.onclick = function (ev) { ev.stopPropagation(); clearImageUpload(imgData); };
+            chip.appendChild(img);
+            chip.appendChild(x);
+            chips.appendChild(chip);
+        });
     }
-    chips.classList.toggle("has-items", !!(pendingImageData || pendingVideoFile));
+    chips.classList.toggle("has-items", !!(pendingImageData && pendingImageData.length || pendingVideoFile));
 }
 
 function clearImageUpload() {
-    pendingImageData = null;
+    pendingImageData = [];
     var uploader = document.getElementById("chatImageInput");
     if (uploader) uploader.value = "";
     renderComposerChips();
@@ -11631,7 +11636,7 @@ window.send = async function () {
         return;
     }
 
-    if (!text && !pendingImageData) { if (_regenCtx) window._regenCtx = null; return; }
+    if (!text && (!pendingImageData || pendingImageData.length === 0)) { if (_regenCtx) window._regenCtx = null; return; }
 
     // Lock thinking state
     setThinkingState(true);
@@ -11664,7 +11669,7 @@ window.send = async function () {
         if (text) window._lastUserText = text;
         try { var _rw = _regenCtx.wrapper; if (_rw) { var _rb = _rw.querySelector(".bubble"); if (_rb) { _rb.innerHTML = ""; _rb.textContent = ""; } } } catch (e) {}
     } else {
-        if (text) { addMessage(text, "user", sentImage || null); } else if (sentImage) { addMessage("Image attached", "user", sentImage); }
+            if (text) { addMessage(text, "user", sentImage); } else if (sentImage && sentImage.length > 0) { addMessage("Image attached", "user", sentImage); }
         input.value = ""; clearImageUpload(); resetComposerHeight(); updateSendButtonDim();
         if (currentChatId) clearChatDraft(currentChatId);
     }
@@ -11716,7 +11721,7 @@ window.send = async function () {
     try {
         var body = { message: text || "(image attached)", persona: currentPersona };
         if (currentChatId) body.chat_id = currentChatId;
-        if (sentImage) body.image = sentImage;
+        if (sentImage && sentImage.length > 0) body.image = sentImage;
 
         var streamRes = await fetch(apiUrl("/chat/stream"), {
             method: "POST",

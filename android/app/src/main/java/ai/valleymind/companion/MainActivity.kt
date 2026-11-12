@@ -84,7 +84,6 @@ class MainActivity : AppCompatActivity(), CompanionBridge.Host {
     private var baseUrl: String = BuildConfig.VALLEY_BASE_URL
 
     private const val REQUEST_CODE_FILE_CHOOSER = 1002
-    private const val REQUEST_CODE_FILE_CHOOSER = 1002
     private var filePathCallback: ValueCallback<Array<Uri>>? = null
     private val loadMonitor = LoadMonitor(LoadMonitor.DEFAULT_TIMEOUT_MS)
     private val mainHandler = Handler(Looper.getMainLooper())
