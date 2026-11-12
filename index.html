@@ -4408,10 +4408,10 @@ const messageStore = [];
 let isThinking = false;
 let pendingImageData = [];
 
-document.getElementById('chatFileInput').addEventListener('change', function () {
+(function(){ var _cf = document.getElementById('chatFileInput'); if (_cf) _cf.addEventListener('change', function () {
     showComingSoon('Local File Upload');
     this.value = "";
-});
+}); })();
 
 document.getElementById('chatImageInput').addEventListener('change', function (event) {
     var files = event.target.files;
