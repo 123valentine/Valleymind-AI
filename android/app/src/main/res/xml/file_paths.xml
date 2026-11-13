@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Paths exposed through androidx FileProvider. Only the private camera
+     capture directory is shared, and only for the duration of a granted URI
+     permission passed to the system camera app. -->
+<paths>
+    <cache-path
+        name="camera"
+        path="camera/" />
+</paths>

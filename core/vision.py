@@ -39,6 +39,9 @@ class VisionResult:
     provider: str = ""
     error: str = ""
     raw: Dict[str, Any] = None
+    images_analyzed: int = 0
+    videos_analyzed: int = 0
+    video_analyzed: bool = False
 
     def __post_init__(self):
         if self.objects is None:
@@ -53,12 +56,49 @@ class VisionService:
     MAX_IMAGE_SIZE_BYTES = 4 * 1024 * 1024  # 4MB
     MAX_IMAGE_DIMENSION = 2048
     ALLOWED_MIME_TYPES = {"image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif"}
-    
+
+    # ── NVIDIA Nemotron 3.5 Super VL specific limits ───────────────────
+    # Nemotron 3.5 Super VL supports native images and video via the
+    # OpenAI-compatible chat/completions endpoint.  There is no published
+    # hard cap on image count; 16 is a conservative default that leaves
+    # ample headroom for text + reasoning tokens within the 1M-token
+    # context window.  Override via NVIDIA_MAX_IMAGES_PER_REQUEST.
+    NVIDIA_MAX_IMAGES_PER_REQUEST = int(
+        os.getenv("NVIDIA_MAX_IMAGES_PER_REQUEST", "16")
+    )
+    NVIDIA_MAX_IMAGE_SIZE_BYTES = int(
+        os.getenv("NVIDIA_MAX_IMAGE_SIZE_MB", "10")
+    ) * 1024 * 1024  # 10 MB per image (decoded, before base64)
+    NVIDIA_MAX_VIDEO_SIZE_BYTES = int(
+        os.getenv("NVIDIA_MAX_VIDEO_SIZE_MB", "100")
+    ) * 1024 * 1024  # 100 MB per video
+    NVIDIA_MAX_VIDEO_SECONDS = int(
+        os.getenv("NVIDIA_MAX_VIDEO_SECONDS", "120")
+    )  # 2 minutes
+    NVIDIA_ALLOWED_VIDEO_MIME_TYPES = {
+        "video/mp4", "video/webm", "video/mov", "video/ogg",
+    }
+    # Nemotron 3.5 Super VL is the configured NVIDIA vision model.
+    NVIDIA_NEMOTRON_MODEL = os.getenv(
+        "NVIDIA_MODEL", "nvidia/nemotron-3.5-super-vl-120b-a12b"
+    ).strip()
+
     def __init__(self):
         self.config = get_config()
         self._last_cost = 0.0
+        self.activity_events: list = []
     
-    def validate_image(self, image_data: str) -> Tuple[bool, str]:
+    def _emit_activity(self, category: str, key: str, label: Optional[str] = None, detail: str = ""):
+        """Record a vision activity event (non-yielding, stored for inspection)."""
+        ev = {
+            "category": category,
+            "key": key,
+            "label": label or f"{key.replace('_', ' ').title()}…",
+            "detail": detail,
+            "timestamp": time.time(),
+        }
+        self.activity_events.append(ev)
+        return ev
         """Validate image data URI. Returns (valid, error_message)."""
         if not image_data or not isinstance(image_data, str):
             return False, "No image data provided"
@@ -145,6 +185,29 @@ class VisionService:
         
         return (None, None)
     
+    def validate_image(self, image_data: str) -> Tuple[bool, str]:
+        """Validate a single image data URI. Returns (valid, error_message)."""
+        if not image_data or not isinstance(image_data, str):
+            return False, "No image data provided"
+        
+        text = image_data.strip()
+        if not text.lower().startswith("data:image/"):
+            return False, "Invalid image format - must be data URI"
+        if ";base64," not in text:
+            return False, "Invalid image format - missing base64"
+        if len(text) > self.MAX_IMAGE_SIZE_BYTES:
+            return False, f"Image too large (max {self.MAX_IMAGE_SIZE_BYTES // 1024 // 1024}MB)"
+        
+        try:
+            header, b64_data = text.split(",", 1)
+            mime = header.split(";")[0].replace("data:", "").lower()
+            # Be lenient but log
+            base64.b64decode(b64_data, validate=True)
+            return True, ""
+        except Exception as e:
+            return False, f"Invalid image data: {str(e)[:100]}"
+
+    # ── Multi-image validation ─────────────────────────────────────────
     def analyze_image(self, image_data: str, question: str = "", context: str = "") -> VisionResult:
         """Analyze image with vision-capable model. Returns structured result."""
         valid, err = self.validate_image(image_data)
@@ -185,7 +248,599 @@ class VisionService:
         except Exception as e:
             print(f"[VISION] Analysis failed: {e}")
             return VisionResult(success=False, error=f"Vision analysis failed: {str(e)[:200]}")
-    
+
+    # ── Multi-image validation ─────────────────────────────────────────
+    def validate_images(self, image_data_list: List[str]) -> Tuple[bool, str, List[str]]:
+        """Validate multiple image data URIs before sending.
+
+        Returns (all_valid, error_message, validated_list).
+        """
+        if not image_data_list or not isinstance(image_data_list, list):
+            return False, "No images provided.", []
+
+        if len(image_data_list) > self.NVIDIA_MAX_IMAGES_PER_REQUEST:
+            return False, (
+                f"Too many images ({len(image_data_list)}). "
+                f"Maximum is {self.NVIDIA_MAX_IMAGES_PER_REQUEST} per request."
+            ), []
+
+        validated: List[str] = []
+        for idx, image_data in enumerate(image_data_list, start=1):
+            valid, err = self.validate_image(image_data)
+            if not valid:
+                return False, f"Image {idx}: {err}", []
+            # Strict MIME-type check for NVIDIA pipeline.
+            try:
+                header = image_data.split(",", 1)[0]
+                mime = header.split(";")[0].replace("data:", "").lower()
+                if mime not in self.ALLOWED_MIME_TYPES and mime != "image/*":
+                    return False, f"Image {idx}: unsupported image format '{mime}'.", []
+            except Exception:
+                return False, f"Image {idx}: malformed image URI.", []
+            validated.append(image_data)
+
+        return True, "", validated
+
+    # ── Multi-image analysis via NVIDIA Nemotron ───────────────────────
+    def analyze_images(
+        self,
+        image_data_list: List[str],
+        question: str = "",
+        context: str = "",
+    ) -> VisionResult:
+        """Analyze multiple images in a single Nemotron request.
+
+        All images are sent together as image_url content parts, preserving
+        ordering. The model can describe, compare, and cross-reference them.
+        """
+        provider_name, provider_config = self._get_vision_provider()
+        if not provider_name or not provider_config:
+            return VisionResult(
+                success=False,
+                error="No vision-capable provider configured. Please configure a vision-capable API key (Groq, OpenRouter, Gemini, or NVIDIA).",
+            )
+
+        if provider_name != "nvidia":
+            return VisionResult(
+                success=False,
+                error=(
+                    f"Multi-image analysis requires NVIDIA provider, "
+                    f"but active provider is '{provider_name}'. "
+                    "Configure NVIDIA_API_KEY to enable multi-image analysis."
+                ),
+            )
+
+        valid, err, validated = self.validate_images(image_data_list)
+        if not valid:
+            return VisionResult(success=False, error=err)
+
+        # Emit activity for image analysis.
+        if len(validated) == 1:
+            self._emit_activity("image_video", "examining_image", detail=f"1 image")
+        else:
+            self._emit_activity("image_video", "processing_images", detail=f"{len(validated)} images")
+
+        # Build content array: images first (preserving order), then text.
+        content: List[Dict[str, Any]] = []
+        for image_data in validated:
+            content.append({"type": "image_url", "image_url": {"url": image_data}})
+        if context:
+            content.append({"type": "text", "text": context})
+        if question:
+            content.append({"type": "text", "text": question})
+        else:
+            content.append({
+                "type": "text",
+                "text": (
+                    "Analyze these images in the order provided. Describe what "
+                    "you see in each image, including objects, people, scenes, "
+                    "text, and actions. If multiple images show related content, "
+                    "compare them and identify differences, similarities, and "
+                    "changes between views. Be specific and accurate."
+                ),
+            })
+
+        result = self._call_nvidia_nemotron(content, question or "", max_tokens=4096)
+        result.images_analyzed = len(validated)
+        if len(validated) > 1:
+            self._emit_activity("image_video", "comparing_videos", detail=f"{len(validated)} images compared")
+        return result
+
+    # ── Native video analysis via NVIDIA Nemotron ──────────────────────
+    def analyze_video(
+        self,
+        video_data_uri: str,
+        question: str = "",
+        context: str = "",
+    ) -> VisionResult:
+        """Analyze a video using Nemotron's native video input.
+
+        Nemotron 3.5 Super VL accepts video natively via video_url — no
+        frame extraction is required.
+        """
+        provider_name, provider_config = self._get_vision_provider()
+        if not provider_name or not provider_config:
+            return VisionResult(
+                success=False,
+                error="No vision-capable provider configured. Please configure NVIDIA_API_KEY.",
+            )
+
+        if provider_name != "nvidia":
+            return VisionResult(
+                success=False,
+                error=(
+                    f"Video analysis requires NVIDIA provider, "
+                    f"but active provider is '{provider_name}'. "
+                    "Configure NVIDIA_API_KEY to enable video analysis."
+                ),
+            )
+
+        if not video_data_uri or not isinstance(video_data_uri, str):
+            return VisionResult(success=False, error="No video data provided.")
+
+        text = video_data_uri.strip()
+        if not text.lower().startswith("data:video/"):
+            return VisionResult(
+                success=False,
+                error="Invalid video format - must be a data:video/ URI.",
+            )
+        if ";base64," not in text:
+            return VisionResult(
+                success=False,
+                error="Invalid video format - missing base64 encoding.",
+            )
+
+        header, b64_data = text.split(",", 1)
+        mime = header.split(";")[0].replace("data:", "").lower()
+        if mime not in self.NVIDIA_ALLOWED_VIDEO_MIME_TYPES:
+            return VisionResult(
+                success=False, error=f"Unsupported video format: {mime}",
+            )
+
+        try:
+            decoded = base64.b64decode(b64_data, validate=True)
+        except Exception as exc:
+            return VisionResult(
+                success=False, error=f"Invalid base64 data: {str(exc)[:100]}",
+            )
+
+        if len(decoded) > self.NVIDIA_MAX_VIDEO_SIZE_BYTES:
+            return VisionResult(
+                success=False,
+                error=(
+                    f"Video too large ({len(decoded) / 1024 / 1024:.1f}MB). "
+                    f"Maximum is {self.NVIDIA_MAX_VIDEO_SIZE_BYTES // 1024 // 1024}MB."
+                ),
+            )
+
+        content: List[Dict[str, Any]] = [
+            {"type": "video_url", "video_url": {"url": video_data_uri}},
+        ]
+        if context:
+            content.append({"type": "text", "text": context})
+        if question:
+            content.append({"type": "text", "text": question})
+        else:
+            content.append({
+                "type": "text",
+                "text": (
+                    "Watch this video and describe what happens. Be specific "
+                    "about actions, objects, people, scenes, and notable events "
+                    "over time."
+                ),
+            })
+
+        result = self._call_nvidia_nemotron(content, question or "", max_tokens=8192)
+        result.video_analyzed = True
+        self._emit_activity("image_video", "analyzing_video", detail="Native video decoding")
+        return result
+
+    # ── Multi-video analysis via NVIDIA Nemotron ───────────────────────
+    def analyze_videos(
+        self,
+        video_data_uri_list: List[str],
+        question: str = "",
+        context: str = "",
+    ) -> VisionResult:
+        """Analyze multiple videos through controlled sequential processing.
+
+        Nemotron 3.5 Super VL accepts one ``video_url`` per request, so each
+        video is processed individually and the findings are consolidated into
+        a single structured result. Order is preserved and each observation is
+        attributed to its source video so the conversational model can compare
+        and cross-reference them.
+
+        Partial failures are handled gracefully: one failed video does not
+        invalidate successful analyses of the others.
+        """
+        provider_name, provider_config = self._get_vision_provider()
+        if not provider_name or not provider_config:
+            return VisionResult(
+                success=False,
+                error="No vision-capable provider configured. Please configure NVIDIA_API_KEY.",
+            )
+
+        if provider_name != "nvidia":
+            return VisionResult(
+                success=False,
+                error=(
+                    f"Multi-video analysis requires NVIDIA provider, "
+                    f"but active provider is '{provider_name}'. "
+                    "Configure NVIDIA_API_KEY to enable multi-video analysis."
+                ),
+            )
+
+        if not video_data_uri_list or not isinstance(video_data_uri_list, list):
+            return VisionResult(success=False, error="No videos provided.")
+
+        if len(video_data_uri_list) > self.NVIDIA_MAX_IMAGES_PER_REQUEST:
+            return VisionResult(
+                success=False,
+                error=(
+                    f"Too many videos ({len(video_data_uri_list)}). "
+                    f"Maximum is {self.NVIDIA_MAX_IMAGES_PER_REQUEST} per request."
+                ),
+            )
+
+        per_video_results: List[Dict[str, Any]] = []
+        errors: List[str] = []
+
+        # Emit activity for multi-video analysis.
+        if len(video_data_uri_list) == 1:
+            self._emit_activity("image_video", "analyzing_video", detail="1 video")
+        else:
+            self._emit_activity("image_video", "comparing_videos", detail=f"{len(video_data_uri_list)} videos")
+
+        for idx, video_data_uri in enumerate(video_data_uri_list, start=1):
+            # Validate each video before sending.
+            text = (video_data_uri or "").strip()
+            if not text:
+                errors.append(f"Video {idx}: no video data provided.")
+                per_video_results.append({
+                    "index": idx,
+                    "success": False,
+                    "error": "No video data provided.",
+                })
+                continue
+            if not text.lower().startswith("data:video/"):
+                errors.append(f"Video {idx}: invalid format — must be data:video/ URI.")
+                per_video_results.append({
+                    "index": idx,
+                    "success": False,
+                    "error": "Invalid video format — must be data:video/ URI.",
+                })
+                continue
+            if ";base64," not in text:
+                errors.append(f"Video {idx}: missing base64 encoding.")
+                per_video_results.append({
+                    "index": idx,
+                    "success": False,
+                    "error": "Missing base64 encoding.",
+                })
+                continue
+
+            header, b64_data = text.split(",", 1)
+            mime = header.split(";")[0].replace("data:", "").lower()
+            if mime not in self.NVIDIA_ALLOWED_VIDEO_MIME_TYPES:
+                errors.append(f"Video {idx}: unsupported format '{mime}'.")
+                per_video_results.append({
+                    "index": idx,
+                    "success": False,
+                    "error": f"Unsupported video format: {mime}",
+                })
+                continue
+
+            try:
+                decoded = base64.b64decode(b64_data, validate=True)
+            except Exception as exc:
+                errors.append(f"Video {idx}: invalid base64 data.")
+                per_video_results.append({
+                    "index": idx,
+                    "success": False,
+                    "error": "Invalid base64 data.",
+                })
+                continue
+
+            if len(decoded) > self.NVIDIA_MAX_VIDEO_SIZE_BYTES:
+                errors.append(
+                    f"Video {idx}: too large "
+                    f"({len(decoded) / 1024 / 1024:.1f}MB)."
+                )
+                per_video_results.append({
+                    "index": idx,
+                    "success": False,
+                    "error": "Video too large.",
+                })
+                continue
+
+            # Analyze this video individually via Nemotron.
+            content: List[Dict[str, Any]] = [
+                {"type": "video_url", "video_url": {"url": video_data_uri}},
+            ]
+            vid_context = (
+                f"[Video {idx} of {len(video_data_uri_list)}]\n"
+                f"{context if context else ''}"
+            ).strip()
+            if question:
+                vid_prompt = (
+                    f"Analyze this video (video {idx} of {len(video_data_uri_list)}). "
+                    f"{question}"
+                )
+            else:
+                vid_prompt = (
+                    f"Watch this video (video {idx} of {len(video_data_uri_list)}) "
+                    f"and describe what happens. Be specific about actions, objects, "
+                    f"people, scenes, and notable events over time."
+                )
+            content.append({"type": "text", "text": vid_prompt})
+
+            vid_result = self._call_nvidia_nemotron(
+                content, question or "", max_tokens=8192
+            )
+
+            if vid_result.success:
+                per_video_results.append({
+                    "index": idx,
+                    "success": True,
+                    "description": vid_result.description,
+                })
+            else:
+                errors.append(f"Video {idx}: {vid_result.error}")
+                per_video_results.append({
+                    "index": idx,
+                    "success": False,
+                    "error": vid_result.error,
+                })
+
+        # Consolidate findings.
+        successful = [r for r in per_video_results if r["success"]]
+        failed = [r for r in per_video_results if not r["success"]]
+
+        if not successful and not failed:
+            return VisionResult(success=False, error="No videos to analyze.")
+
+        if not successful:
+            return VisionResult(
+                success=False,
+                error="; ".join(errors) if errors else "All video analyses failed.",
+            )
+
+        # Build consolidated description preserving per-video attribution.
+        parts: List[str] = []
+        if context:
+            parts.append(context)
+        if question:
+            parts.append(f"Question: {question}")
+        parts.append("")
+        parts.append(
+            "The following videos were analyzed sequentially through Nemotron "
+            f"3.5 Super VL. Each video's findings are labeled by its upload "
+            f"order (video {successful[0]['index']} of "
+            f"{len(video_data_uri_list)}). "
+            "Use these observations to answer the user's question, comparing "
+            "and contrasting videos where relevant."
+        )
+        parts.append("")
+
+        for r in per_video_results:
+            if r["success"]:
+                parts.append(
+                    f"=== Video {r['index']} ===\n{r['description']}"
+                )
+            else:
+                parts.append(
+                    f"=== Video {r['index']} (analysis failed) ===\n"
+                    f"Error: {r['error']}"
+                )
+
+        if failed:
+            parts.append("")
+            parts.append(
+                "Note: Some videos could not be analyzed. "
+                f"Successful analyses: {len(successful)}/{len(per_video_results)}. "
+                f"Failed: {len(failed)}."
+            )
+
+        consolidated = "\n".join(parts)
+
+        self._emit_activity("image_video", "combining_findings", detail=f"{len(successful)}/{len(per_video_results)} videos analyzed")
+
+        overall_error = ""
+        if failed:
+            overall_error = (
+                f"Partial failure: {len(failed)} of {len(per_video_results)} "
+                f"video(s) could not be analyzed."
+            )
+
+        return VisionResult(
+            success=True,
+            description=consolidated,
+            provider=f"nvidia/{self.NVIDIA_NEMOTRON_MODEL}",
+            videos_analyzed=len(successful),
+            video_analyzed=True,
+            raw={
+                "per_video_results": per_video_results,
+                "successful_count": len(successful),
+                "failed_count": len(failed),
+                "total_count": len(per_video_results),
+                "error": overall_error,
+            },
+        )
+
+    # ── Combined media description for conversational pipeline ───────────
+    def describe_media_for_brain(
+        self,
+        image_data_list: Optional[List[str]] = None,
+        video_data_uri_list: Optional[List[str]] = None,
+        image_result: Optional[VisionResult] = None,
+        video_result: Optional[VisionResult] = None,
+        question: str = "",
+        context: str = "",
+    ) -> VisionResult:
+        """Build a single textual summary from media analysis results for the
+        conversational pipeline.
+
+        Reuses already-computed analysis results (image_result / video_result)
+        so media is analyzed exactly once per request. If a pre-computed result
+        is not supplied for a media type, that type is analyzed on demand
+        (single-image or multi-image via analyze_images, sequential video via
+        analyze_videos).
+
+        The result preserves per-media attribution so the conversational model
+        can answer questions comparing images and videos.
+        """
+        image_data_list = image_data_list or []
+        video_data_uri_list = video_data_uri_list or []
+
+        if not image_data_list and not video_data_uri_list:
+            return VisionResult(
+                success=False,
+                error="No media provided for conversational analysis.",
+            )
+
+        provider_name, provider_config = self._get_vision_provider()
+        if not provider_name or not provider_config:
+            return VisionResult(
+                success=False,
+                error="No vision-capable provider configured.",
+            )
+
+        parts: List[str] = []
+        if context:
+            parts.append(context)
+        if question:
+            parts.append(f"Question: {question}")
+        parts.append("")
+
+        all_success = True
+
+        # Use pre-computed image analysis if available; otherwise analyze once.
+        if image_data_list:
+            if image_result is not None:
+                img_result = image_result
+            elif provider_name == "nvidia":
+                img_result = self.analyze_images(
+                    image_data_list, question=question, context=context
+                )
+            else:
+                # Fall back to single-image analysis for non-Nvidia providers.
+                img_result = self.analyze_image(
+                    image_data_list[0], question=question, context=context
+                )
+            if img_result.success:
+                parts.append("[Image Analysis]")
+                parts.append(img_result.description)
+            else:
+                all_success = False
+                parts.append(
+                    f"[Image Analysis failed: {img_result.error}]"
+                )
+            parts.append("")
+
+        # Use pre-computed video analysis if available; otherwise analyze once.
+        if video_data_uri_list:
+            if video_result is not None:
+                vid_result = video_result
+            else:
+                vid_result = self.analyze_videos(
+                    video_data_uri_list, question=question, context=context
+                )
+            if vid_result.success:
+                parts.append("[Video Analysis]")
+                parts.append(vid_result.description)
+            else:
+                all_success = False
+                parts.append(
+                    f"[Video Analysis failed: {vid_result.error}]"
+                )
+            parts.append("")
+
+        consolidated = "\n".join(parts).strip()
+
+        self._emit_activity("image_video", "combining_findings", detail="Media findings consolidated for chat")
+
+        return VisionResult(
+            success=all_success,
+            description=consolidated,
+            provider=f"nvidia/{self.NVIDIA_NEMOTRON_MODEL}"
+            if provider_name == "nvidia"
+            else provider_name or "",
+            raw=None,
+        )
+
+    # ── Internal NVIDIA Nemotron call ──────────────────────────────────
+    def _call_nvidia_nemotron(
+        self,
+        content: List[Dict[str, Any]],
+        question: str,
+        max_tokens: int,
+    ) -> VisionResult:
+        """Send a multimodal content array to NVIDIA Nemotron 3.5 Super VL."""
+        provider_name, provider_config = self._get_vision_provider()
+        if not provider_name or not provider_config:
+            return VisionResult(success=False, error="NVIDIA provider not configured.")
+
+        api_key = provider_config["api_key"]
+        base_url = provider_config.get(
+            "base_url", "https://integrate.api.nvidia.com/v1"
+        ).rstrip("/").removesuffix("/openai/v1")
+        url = f"{base_url}/chat/completions"
+
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+
+        payload = {
+            "model": self.NVIDIA_NEMOTRON_MODEL,
+            "messages": [{"role": "user", "content": content}],
+            "max_tokens": max_tokens,
+            "temperature": 0.6,
+            "top_p": 0.95,
+            "chat_template_kwargs": {"enable_thinking": False},
+        }
+
+        import requests
+        try:
+            resp = requests.post(url, headers=headers, json=payload, timeout=120)
+            if resp.status_code != 200:
+                return VisionResult(
+                    success=False,
+                    error=f"NVIDIA HTTP {resp.status_code}: {resp.text[:200]}",
+                )
+
+            data = resp.json()
+            choices = data.get("choices", [])
+            if choices:
+                msg = choices[0].get("message", {})
+                content_text = msg.get("content", "") or ""
+                reasoning = msg.get("reasoning", "") or ""
+                full = content_text
+                if reasoning:
+                    full = f"{reasoning}\n\n{content_text}"
+                return VisionResult(
+                    success=True,
+                    description=full.strip(),
+                    provider=f"nvidia/{self.NVIDIA_NEMOTRON_MODEL}",
+                    raw=data,
+                )
+
+            return VisionResult(
+                success=False,
+                error="NVIDIA returned no response choices.",
+            )
+
+        except requests.exceptions.Timeout:
+            return VisionResult(
+                success=False,
+                error="NVIDIA request timed out. Try with fewer or smaller attachments.",
+            )
+        except Exception as exc:
+            return VisionResult(
+                success=False,
+                error=f"NVIDIA request failed: {exc}",
+            )
+
     def _analyze_groq(self, image_data: str, prompt: str, config: Dict) -> VisionResult:
         """Analyze with Groq vision model."""
         # Try current vision models on Groq
@@ -355,54 +1010,25 @@ class VisionService:
         return VisionResult(success=False, error="No compatible Gemini vision model available")
     
     def _analyze_nvidia(self, image_data: str, prompt: str, config: Dict) -> VisionResult:
-        """Analyze with NVIDIA vision model."""
-        api_key = config["api_key"]
-        base_url = config["base_url"] or "https://integrate.api.nvidia.com/v1"
-        url = f"{base_url}/chat/completions"
-        
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        }
-        
-        models = ["microsoft/phi-3.5-vision-instruct", "nvidia/neva-22b"]
-        
-        for model in models:
-            try:
-                payload = {
-                    "model": model,
-                    "messages": [
-                        {
-                            "role": "user",
-                            "content": [
-                                {"type": "text", "text": prompt},
-                                {"type": "image_url", "image_url": {"url": image_data}}
-                            ]
-                        }
-                    ],
-                    "max_tokens": 1024,
-                    "temperature": 0.3,
-                }
-                resp = requests.post(url, headers=headers, json=payload, timeout=60)
-                if resp.status_code == 200:
-                    data = resp.json()
-                    content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
-                    if content:
-                        return VisionResult(
-                            success=True,
-                            description=content.strip(),
-                            provider=f"nvidia/{model}",
-                            raw=data
-                        )
-                elif resp.status_code in (404, 400):
-                    continue
-                else:
-                    print(f"[VISION] NVIDIA {model} failed: {resp.status_code}")
-            except Exception as e:
-                print(f"[VISION] NVIDIA {model} error: {e}")
-                continue
-        
-        return VisionResult(success=False, error="No compatible NVIDIA vision model available")
+        """Analyze a single image with NVIDIA Nemotron 3.5 Super VL.
+
+        Delegates to the shared _call_nvidia_nemotron so that single-image
+        and multi-image paths use the same model, endpoint, and request
+        structure.
+        """
+        provider_name, provider_config = self._get_vision_provider()
+        if not provider_name or not provider_config:
+            return VisionResult(
+                success=False,
+                error="NVIDIA provider not configured.",
+            )
+
+        content = [
+            {"type": "image_url", "image_url": {"url": image_data}},
+            {"type": "text", "text": prompt},
+        ]
+
+        return self._call_nvidia_nemotron(content, prompt, max_tokens=4096)
     
     def describe_for_brain(self, image_data: str, user_question: str = "") -> str:
         """Get a grounded description suitable for passing to the brain."""

@@ -2842,6 +2842,9 @@ def _dispatch_chat_json(user_id, message, chat_id, image_data, persona="marcus")
         else speak_marcus(reply, voice=getattr(marcus.profile, "voice", "") or "en-US-GuyNeural")
     )
 
+    # Collect activity events from non-streaming respond() for frontend display.
+    activity_events = getattr(marcus, "activity_events", []) or []
+
     updated_title = None
     if message and chat_id:
         try:
@@ -2872,6 +2875,7 @@ def _dispatch_chat_json(user_id, message, chat_id, image_data, persona="marcus")
         "live_routing_used": bool(meta.get("live_routing_used")),
         "fallback_used": bool(meta.get("fallback_used")),
         "fallback_source": str(meta.get("fallback_source") or ""),
+        "activity_events": activity_events,
     })
 
 
@@ -4618,54 +4622,151 @@ def dev_routing_log():
 
 @app.route("/api/vision/analyze", methods=["POST"])
 def api_vision_analyze():
-    """Analyze an image with the unified vision service."""
+    """Analyze one or more images (and optionally a video) via the unified vision service.
+
+    This is the single visual-analysis endpoint for ValleyMind-AI. It supports
+    single-image, multi-image, video, and mixed image/video requests. When the
+    active provider is NVIDIA, all images are sent together in one request
+    (preserving order) so Nemotron 3.5 Super VL can describe, compare, and
+    cross-reference them. Other providers are handled one image at a time via
+    the existing VisionService pipeline.
+
+    Body (JSON):
+      - image:         single data:image/...;base64,... string (backward compat)
+      - images:        array of data:image/...;base64,... strings (multi-image)
+      - video:         optional single data:video/...;base64,... string
+      - videos:        optional array of data:video/...;base64,... strings (multi-video)
+      - question:      optional text question
+      - context:       optional additional context text
+      - route_to_brain: if true and chat_id given, also run through Marcus brain
+      - persona:       optional persona
+      - chat_id:       optional chat id
+    """
     user_id, error = _require_login()
     if error:
         return error
     try:
         data = request.get_json(silent=True) or {}
-        image_data = str(data.get("image") or data.get("image_data") or data.get("image_data_uri") or "").strip()
         question = str(data.get("question") or data.get("message") or "").strip()
+        context = str(data.get("context") or "").strip()
         persona = normalize_persona(data.get("persona"))
         chat_id = str(data.get("chat_id") or "").strip()
-        
-        if not image_data:
-            return jsonify({"status": "error", "message": "image is required"}), 400
-        
+
+        # Collect images: accept either "images" array or legacy "image" string.
+        images = data.get("images")
+        if images is None:
+            single = str(data.get("image") or data.get("image_data") or data.get("image_data_uri") or "").strip()
+            images = [single] if single else []
+        if not isinstance(images, list):
+            images = []
+
+        # Collect videos: accept "videos" array or legacy single "video" string.
+        videos = data.get("videos")
+        if videos is None:
+            single_video = str(data.get("video") or "").strip()
+            videos = [single_video] if single_video else []
+        if not isinstance(videos, list):
+            videos = []
+
+        if not images and not videos:
+            return jsonify({"status": "error", "message": "image or video is required"}), 400
+
         vs = get_vision_service()
-        valid, err = vs.validate_image(image_data)
-        if not valid:
-            return jsonify({"status": "error", "message": err}), 400
-        
-        result = vs.analyze_image(image_data, question)
-        if not result.success:
-            return jsonify({"status": "error", "message": result.error}), 503
-        
-        # Optionally route through brain if requested
+
+        results = {
+            "status": "success",
+            "provider": "nvidia" if _is_nvidia_active(vs) else "vision-service",
+            "images_analyzed": 0,
+            "videos_analyzed": 0,
+            "video_analyzed": False,
+        }
+
+        img_result = None
+        vid_result = None
+
+        # Multi-image analysis (all together, order preserved).
+        validated = []
+        if images:
+            valid, err, validated = vs.validate_images(images)
+            if not valid:
+                return jsonify({"status": "error", "message": err}), 400
+            img_result = vs.analyze_images(validated, question=question, context=context)
+            results["images_analyzed"] = img_result.images_analyzed
+            if not img_result.success:
+                return jsonify({"status": "error", "message": img_result.error}), 503
+            results["description"] = img_result.description
+            results["raw"] = img_result.raw
+
+        # Multi-video analysis (controlled sequential processing).
+        validated_videos = []
+        if videos:
+            vid_result = vs.analyze_videos(videos, question=question, context=context)
+            results["videos_analyzed"] = (
+                vid_result.raw.get("successful_count", 0) if vid_result.raw else 0
+            )
+            results["video_analyzed"] = bool(vid_result.raw)
+            if not vid_result.success:
+                return jsonify({"status": "error", "message": vid_result.error}), 503
+            if validated:
+                results["description"] = (
+                    f"[Video Analysis]\n{vid_result.description}\n\n"
+                    f"[Image Analysis]\n{results.get('description', '')}"
+                ).strip()
+            else:
+                results["description"] = vid_result.description
+            if vid_result.raw:
+                results["video_raw"] = vid_result.raw
+                validated_videos = videos
+
+        # Optionally route through brain for conversational integration.
+        # Reuse already-computed image/video analysis results so media is
+        # analyzed exactly once per request (no duplicate NVIDIA API calls).
         if data.get("route_to_brain") and chat_id:
             marcus = load_persona_brain(user_id, persona)
             if marcus:
                 _initialize_user_memory(marcus, str(_current_auth().get("email", "")).strip())
-                augmented = question or "What do you see in this image? Describe it and answer any relevant questions."
-                reply = marcus.respond(augmented, chat_id=chat_id, image_data=image_data, persist_image_data=False)
-                return jsonify({
-                    "status": "success",
-                    "description": result.description,
-                    "reply": reply,
-                    "provider": result.provider,
-                })
-        
-        return jsonify({
-            "status": "success",
-            "description": result.description,
-            "provider": result.provider,
-            "objects": result.objects,
-            "text_content": result.text_content,
-            "scene": result.scene,
-        })
+                # Pass the already-computed analysis results (img_result /
+                # vid_result) so describe_media_for_brain does NOT re-analyze
+                # the media. It only formats existing findings into text.
+                combined = vs.describe_media_for_brain(
+                    image_data_list=validated,
+                    video_data_uri_list=validated_videos,
+                    image_result=img_result if validated else None,
+                    video_result=vid_result if videos else None,
+                    question=question,
+                    context=context,
+                )
+                augmented = (
+                    f"{question}\n\n[Visual Analysis Findings]\n{combined.description}"
+                    if combined.description
+                    else (question or "Describe the attached media.")
+                )
+                # Pass the first image's data URI (if any) so the model can still
+                # see the primary image directly; remaining context is in text.
+                primary_image = validated[0] if validated else ""
+                reply = marcus.respond(
+                    augmented, chat_id=chat_id,
+                    image_data=primary_image,
+                    persist_image_data=False,
+                )
+                results["reply"] = reply
+
+        # Include vision activity events for frontend display.
+        results["activity_events"] = getattr(vs, "activity_events", []) or []
+
+        return jsonify(results)
     except Exception as exc:
         print(f"[CRITICAL] /api/vision/analyze crashed: {exc}")
         return jsonify({"status": "error", "message": "Internal server error"}), 500
+
+
+def _is_nvidia_active(vs) -> bool:
+    """Return True if the active vision provider is NVIDIA."""
+    try:
+        provider_name, _ = vs._get_vision_provider()
+        return provider_name == "nvidia"
+    except Exception:
+        return False
 
 
 @app.route("/api/vision/capabilities", methods=["GET"])
@@ -4677,16 +4778,72 @@ def api_vision_capabilities():
     try:
         vs = get_vision_service()
         provider_name, provider_config = vs._get_vision_provider()
-        return jsonify({
+        caps = {
             "status": "success",
             "available": provider_name is not None,
             "provider": provider_name,
             "max_image_size_mb": vs.MAX_IMAGE_SIZE_BYTES // (1024 * 1024),
             "supported_formats": list(vs.ALLOWED_MIME_TYPES),
-        })
+            "supports_multi_image": True,
+            "supports_native_video": False,
+        }
+        # NVIDIA Nemotron specific capabilities.
+        if provider_name == "nvidia":
+            caps.update({
+                "supports_multi_image": True,
+                "supports_native_video": True,
+                "max_images_per_request": vs.NVIDIA_MAX_IMAGES_PER_REQUEST,
+                "max_image_size_mb": vs.NVIDIA_MAX_IMAGE_SIZE_BYTES // (1024 * 1024),
+                "max_image_dimension": vs.MAX_IMAGE_DIMENSION,
+                "supported_image_formats": sorted(vs.ALLOWED_MIME_TYPES),
+                "max_video_size_mb": vs.NVIDIA_MAX_VIDEO_SIZE_BYTES // (1024 * 1024),
+                "max_video_seconds": vs.NVIDIA_MAX_VIDEO_SECONDS,
+                "supported_video_formats": sorted(vs.NVIDIA_ALLOWED_VIDEO_MIME_TYPES),
+                "context_window_tokens": 1_048_576,
+                "model": vs.NVIDIA_NEMOTRON_MODEL,
+            })
+        return jsonify(caps)
     except Exception as exc:
         print(f"[CRITICAL] /api/vision/capabilities crashed: {exc}")
         return jsonify({"status": "error", "message": "Internal server error"}), 500
+
+
+# ── NVIDIA Nemotron supporting metadata endpoint (no analysis pipeline) ────
+# This endpoint reports NVIDIA-specific capability metadata only. The actual
+# visual-analysis pipeline lives at /api/vision/analyze (single endpoint for
+# all providers). The NVIDIA endpoint here is metadata-only and does not
+# create a second analysis pipeline.
+
+@app.route("/api/nvidia/vision/capabilities", methods=["GET"])
+def api_nvidia_vision_capabilities():
+    """Report NVIDIA Nemotron visual-analysis capabilities (metadata only)."""
+    user_id, error = _require_login()
+    if error:
+        return error
+    try:
+        vs = get_vision_service()
+        return jsonify({
+            "status": "success",
+            "available": vs is not None and bool(vs.config.nvidia_api_key),
+            "provider": "nvidia",
+            "model": vs.NVIDIA_NEMOTRON_MODEL,
+            "endpoint": f"{vs.config.nvidia_base_url or 'https://integrate.api.nvidia.com/v1'}/chat/completions",
+            "max_images_per_request": vs.NVIDIA_MAX_IMAGES_PER_REQUEST,
+            "max_image_size_mb": vs.NVIDIA_MAX_IMAGE_SIZE_BYTES // (1024 * 1024),
+            "max_image_dimension": vs.MAX_IMAGE_DIMENSION,
+            "supported_image_formats": sorted(vs.ALLOWED_MIME_TYPES),
+            "supports_native_video": True,
+            "max_video_size_mb": vs.NVIDIA_MAX_VIDEO_SIZE_BYTES // (1024 * 1024),
+            "max_video_seconds": vs.NVIDIA_MAX_VIDEO_SECONDS,
+            "supported_video_formats": sorted(vs.NVIDIA_ALLOWED_VIDEO_MIME_TYPES),
+            "context_window_tokens": 1_048_576,
+            "native_video": True,
+        })
+    except Exception as exc:
+        print(f"[CRITICAL] /api/nvidia/vision/capabilities crashed: {exc}")
+        return jsonify({"status": "error", "message": "Internal server error"}), 500
+
+
 
 
 # ── Media Library API ────────────────────────────────────────────────────────
@@ -7060,6 +7217,301 @@ def desktop_companion_asset(filename):
     """The desktop surface's own css/js. (Electron's main.js/preload.js are NOT
     under web/ and are therefore never served over HTTP.)"""
     return send_from_directory(str(_DESKTOP_WEB_DIR), filename)
+
+
+
+# ── Chat document upload/extraction (real file content for AI conversation) ──
+
+def _extract_chat_document_text(file_storage, filename: str):
+    """Extract text from an uploaded document for chat. Returns (text, warning, fmt).
+    Treat extracted content as untrusted reference material (never instructions)."""
+    name = (filename or '').strip()
+    ext = os.path.splitext(name)[1].lower()
+    max_bytes = 15 * 1024 * 1024  # 15 MB safety cap (explicit limit)
+    try:
+        file_storage.stream.seek(0, os.SEEK_END)
+        size = file_storage.stream.tell()
+        file_storage.stream.seek(0)
+    except Exception:
+        size = None
+    if size is not None and size > max_bytes:
+        raise ValueError(f"File is too large ({round(size/1024/1024,1)} MB). Maximum supported size is 15 MB.")
+
+    data = file_storage.read()
+    if not data:
+        raise ValueError("The uploaded file is empty.")
+    if len(data) > max_bytes:
+        raise ValueError(f"File is too large ({round(len(data)/1024/1024,1)} MB). Maximum supported size is 15 MB.")
+
+    warning = ""
+    text = ""
+    fmt = ext.lstrip('.') or 'unknown'
+
+    # ── Text-like formats ──
+    if ext in ('.txt', '.md', '.markdown', '.csv', '.json', '.xml', '.rtf', '.log', '.yaml', '.yml', '.html', '.htm'):
+        try:
+            text = data.decode('utf-8')
+        except Exception:
+            try:
+                text = data.decode('utf-8', errors='replace')
+                warning = "Some characters could not be decoded perfectly; text was read with replacements."
+            except Exception:
+                raise ValueError("Could not read this text file.")
+        if ext in ('.html', '.htm'):
+            # lightweight tag stripping for readable text (best-effort, no extra deps)
+            try:
+                import re as _re
+                text = _re.sub(r'<script[\s\S]*?</script>', ' ', text, flags=_re.I)
+                text = _re.sub(r'<style[\s\S]*?</style>', ' ', text, flags=_re.I)
+                text = _re.sub(r'<br\s*/?>', '\n', text, flags=_re.I)
+                text = _re.sub(r'</p>|</div>|</li>|</tr>|</h[1-6]>', '\n', text, flags=_re.I)
+                text = _re.sub(r'<[^>]+>', ' ', text)
+                text = _re.sub(r'[ \t]+', ' ', text)
+                text = _re.sub(r'\n{3,}', '\n\n', text).strip()
+            except Exception:
+                pass
+        if ext == '.csv':
+            fmt = 'csv'
+
+    # ── PDF (page-aware extraction when libraries available) ──
+    elif ext == '.pdf':
+        def _pdf_err_message(exc: Exception, lib_name: str = "") -> str:
+            msg = str(exc or "").lower()
+            if 'encrypt' in msg or 'password' in msg:
+                return "This PDF is encrypted or password-protected. Please provide an unlocked copy."
+            if 'eof' in msg or 'stream has ended' in msg or 'malformed' in msg or 'corrupt' in msg or 'invalid' in msg:
+                return "This PDF appears to be corrupted or malformed and could not be read."
+            return ""
+        try:
+            import pypdf  # type: ignore
+            try:
+                reader = pypdf.PdfReader(io.BytesIO(data))
+                if getattr(reader, 'is_encrypted', False):
+                    try:
+                        ok = reader.decrypt("")
+                    except Exception:
+                        ok = 0
+                    if not ok:
+                        raise ValueError("This PDF is encrypted or password-protected. Please provide an unlocked copy.")
+                parts = []
+                total_pages = len(getattr(reader, 'pages', []) or [])
+                for idx, page in enumerate(reader.pages, start=1):
+                    try:
+                        page_text = (page.extract_text() or '').strip()
+                    except Exception:
+                        page_text = ""
+                    if page_text:
+                        parts.append(f"--- Page {idx}{' of ' + str(total_pages) if total_pages else ''} ---\n{page_text}")
+                    else:
+                        parts.append(f"--- Page {idx}{' of ' + str(total_pages) if total_pages else ''} ---\n[No extractable text on this page]")
+                text = "\n\n".join(parts).strip()
+                if not any((p and '[No extractable text on this page]' not in p) for p in parts):
+                    warning = "No extractable text was found. This PDF may be scanned or image-based. OCR is not available in the current environment."
+                elif any('[No extractable text on this page]' in p for p in parts):
+                    warning = "Some pages had no extractable text (possibly scanned/image content). OCR is not available in the current environment."
+            except ValueError:
+                raise
+            except Exception as e:
+                em = _pdf_err_message(e)
+                if em:
+                    raise ValueError(em)
+                raise
+        except Exception as e1:
+            if isinstance(e1, ValueError) and ("encrypted" in str(e1).lower() or "password-protected" in str(e1).lower() or "corrupted" in str(e1).lower() or "malformed" in str(e1).lower()):
+                raise
+            try:
+                import PyPDF2  # type: ignore
+                try:
+                    reader = PyPDF2.PdfReader(io.BytesIO(data))
+                    if getattr(reader, 'is_encrypted', False):
+                        try:
+                            ok = reader.decrypt("")
+                        except Exception:
+                            ok = 0
+                        if not ok:
+                            raise ValueError("This PDF is encrypted or password-protected. Please provide an unlocked copy.")
+                    parts = []
+                    total_pages = len(getattr(reader, 'pages', []) or [])
+                    for idx, page in enumerate(reader.pages, start=1):
+                        try:
+                            page_text = (page.extract_text() or '').strip()
+                        except Exception:
+                            page_text = ""
+                        if page_text:
+                            parts.append(f"--- Page {idx}{' of ' + str(total_pages) if total_pages else ''} ---\n{page_text}")
+                        else:
+                            parts.append(f"--- Page {idx}{' of ' + str(total_pages) if total_pages else ''} ---\n[No extractable text on this page]")
+                    text = "\n\n".join(parts).strip()
+                    if not any((p and '[No extractable text on this page]' not in p) for p in parts):
+                        warning = "No extractable text was found. This PDF may be scanned or image-based. OCR is not available in the current environment."
+                    elif any('[No extractable text on this page]' in p for p in parts):
+                        warning = "Some pages had no extractable text (possibly scanned/image content). OCR is not available in the current environment."
+                except ValueError:
+                    raise
+                except Exception as e:
+                    msg = str(e or "").lower()
+                    if 'encrypt' in msg or 'password' in msg:
+                        raise ValueError("This PDF is encrypted or password-protected. Please provide an unlocked copy.")
+                    if 'eof' in msg or 'stream has ended' in msg or 'malformed' in msg or 'corrupt' in msg or 'invalid' in msg:
+                        raise ValueError("This PDF appears to be corrupted or malformed and could not be read.")
+                    raise
+            except Exception as e2:
+                if isinstance(e2, ValueError) and ("encrypted" in str(e2).lower() or "password-protected" in str(e2).lower() or "corrupted" in str(e2).lower() or "malformed" in str(e2).lower()):
+                    raise
+                raise ValueError("PDF extraction is not available in the current server environment. Please upload TXT/MD/CSV/JSON for now, or install a PDF extraction library (e.g. pypdf) on the server.")
+
+    # ── DOCX (paragraphs + basic table structure) ──
+    elif ext == '.docx':
+        try:
+            import docx  # type: ignore
+            d = docx.Document(io.BytesIO(data))
+            paras = []
+            for p in getattr(d, 'paragraphs', []) or []:
+                txt = (p.text or '').strip()
+                if not txt:
+                    continue
+                style_name = ""
+                try:
+                    style_name = (p.style.name or "") if getattr(p, 'style', None) else ""
+                except Exception:
+                    style_name = ""
+                if style_name and style_name.lower().startswith('heading'):
+                    paras.append(f"## {txt}")
+                else:
+                    paras.append(txt)
+            # include simple table text with row markers
+            for ti, table in enumerate(getattr(d, 'tables', []) or [], start=1):
+                paras.append(f"\n[Table {ti}]")
+                for row in table.rows:
+                    cells = [c.text.strip() for c in row.cells if c.text is not None]
+                    if any(c for c in cells):
+                        paras.append(' | '.join([c if c else '' for c in cells]))
+            text = "\n".join(paras).strip()
+        except Exception as e:
+            msg = str(e or "").lower()
+            if 'corrupt' in msg or 'not a zip' in msg or 'bad zip' in msg or 'package' in msg:
+                raise ValueError("This DOCX file appears to be corrupted or unreadable.")
+            raise ValueError("DOCX extraction is not available in the current server environment. Please upload TXT/MD/CSV/JSON for now, or install python-docx on the server.")
+
+    # ── XLSX (sheet-aware, bounded) ──
+    elif ext == '.xlsx':
+        try:
+            import openpyxl  # type: ignore
+            wb = openpyxl.load_workbook(io.BytesIO(data), data_only=True, read_only=True)
+            parts = []
+            for ws in wb.worksheets:
+                parts.append(f"# Sheet: {ws.title}")
+                rows = 0
+                for row in ws.iter_rows(values_only=True):
+                    vals = ["" if v is None else str(v) for v in row]
+                    if any(v.strip() for v in vals):
+                        parts.append("\t".join(vals))
+                    rows += 1
+                    if rows > 2000:
+                        parts.append("[...sheet truncated at 2000 rows...]")
+                        break
+            text = "\n".join(parts).strip()
+        except Exception as e:
+            msg = str(e or "").lower()
+            if 'encrypt' in msg or 'password' in msg:
+                raise ValueError("This XLSX file is encrypted or password-protected and cannot be read.")
+            if 'corrupt' in msg or 'not a zip' in msg or 'bad zip' in msg:
+                raise ValueError("This XLSX file appears to be corrupted or unreadable.")
+            raise ValueError("XLSX extraction is not available in the current server environment. Please upload CSV/TXT for now, or install openpyxl on the server.")
+
+    # ── PPTX (slide-aware) ──
+    elif ext == '.pptx':
+        try:
+            from pptx import Presentation  # type: ignore
+            prs = Presentation(io.BytesIO(data))
+            parts = []
+            for i, slide in enumerate(prs.slides, start=1):
+                parts.append(f"# Slide {i}")
+                # title first if available
+                try:
+                    if getattr(slide.shapes, 'title', None) and getattr(slide.shapes.title, 'text', ''):
+                        ttitle = slide.shapes.title.text.strip()
+                        if ttitle:
+                            parts.append(f"## {ttitle}")
+                except Exception:
+                    pass
+                for shape in slide.shapes:
+                    if hasattr(shape, 'text') and shape.text:
+                        t = shape.text.strip()
+                        if t:
+                            parts.append(t)
+                    # basic table extraction
+                    try:
+                        if getattr(shape, 'has_table', False) and getattr(shape, 'table', None):
+                            tbl = shape.table
+                            parts.append("[Table]")
+                            for row in tbl.rows:
+                                cells = []
+                                for cell in row.cells:
+                                    cells.append((cell.text or '').strip())
+                                if any(c for c in cells):
+                                    parts.append(' | '.join(cells))
+                    except Exception:
+                        pass
+            text = "\n".join(parts).strip()
+        except Exception as e:
+            msg = str(e or "").lower()
+            if 'corrupt' in msg or 'not a zip' in msg or 'bad zip' in msg or 'package' in msg:
+                raise ValueError("This PPTX file appears to be corrupted or unreadable.")
+            raise ValueError("PPTX extraction is not available in the current server environment. Please upload TXT/MD for now, or install python-pptx on the server.")
+
+    elif ext == '.doc':
+        raise ValueError("DOC (legacy Word) extraction is not available in the current server environment. Please convert to DOCX, PDF, or TXT and try again.")
+    else:
+        raise ValueError(f"Unsupported document format: {ext or 'unknown'}. Supported formats: TXT, MD, CSV, JSON, XML, HTML and other text formats; PDF, DOCX, XLSX, PPTX when server extraction libraries are installed.")
+
+    text = (text or '').strip()
+    if not text:
+        if not warning:
+            warning = "No readable text could be extracted from this document. If it is a scanned/image-only file, OCR is not available in the current environment."
+
+    # Bounded context with page-aware preservation where possible (lightweight chunking/truncation).
+    max_chars = 120000
+    if len(text) > max_chars:
+        # Prefer keeping page/slide/sheet markers by truncating at a boundary near limit
+        cut = text.rfind('\n--- Page ', 0, max_chars)
+        if cut < int(max_chars * 0.6):
+            cut = text.rfind('\n# Slide ', 0, max_chars)
+        if cut < int(max_chars * 0.6):
+            cut = text.rfind('\n# Sheet: ', 0, max_chars)
+        if cut < int(max_chars * 0.6):
+            cut = max_chars
+        kept = text[:cut].rstrip()
+        text = kept + "\n\n[Document truncated for chat context due to size. Ask specific questions or refer to sections/pages for best results.]"
+        warning = (warning + " " if warning else "") + "Large document was truncated for this chat message (page/section-aware when possible)."
+
+    return text, warning, fmt
+
+
+@app.route('/api/chat/document/extract', methods=['POST'])
+def api_chat_document_extract():
+    user_id, error = _require_login()
+    if error:
+        return error
+    try:
+        f = request.files.get('file') or request.files.get('document')
+        if not f:
+            return jsonify({"status": "error", "message": "No file uploaded."}), 400
+        filename = (f.filename or 'document').strip()
+        text, warning, fmt = _extract_chat_document_text(f, filename)
+        return jsonify({
+            "status": "success",
+            "filename": filename,
+            "format": fmt,
+            "text": text,
+            "warning": warning,
+            "chars": len(text or ""),
+        })
+    except ValueError as e:
+        return jsonify({"status": "error", "message": str(e)}), 400
+    except Exception as e:
+        print(f"[CHAT_DOC_EXTRACT] failed: {e}")
+        return jsonify({"status": "error", "message": "Failed to process the document. Please try again."}), 500
 
 
 if __name__ == "__main__":

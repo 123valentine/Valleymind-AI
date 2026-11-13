@@ -19,3 +19,8 @@ Pillow
 boto3
 psutil
 edge-tts
+# Document extraction (optional at runtime if unavailable, but declared for deployment)
+pypdf
+python-docx
+openpyxl
+python-pptx

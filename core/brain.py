@@ -7,6 +7,7 @@ from datetime import datetime
 import requests
 
 from core.auto_model import get_latest_groq_model
+from core.activity import activity_manager, activity_event, activity_complete, activity_fail
 from core.character import load_character_profile
 from core.config import PROJECT_ROOT, get_config
 from core.external_apis import (
@@ -2173,6 +2174,14 @@ class MarcusBrain:
     def respond(self, message: str, chat_id: str = "", image_data: str = "", mongo_history: list = None, persist_image_data: bool = True) -> str:
         try:
             self.memory.reload()
+            # Initialize activity event tracking for non-streaming responses.
+            self.activity_events: list = []
+
+            def _emit_activity(category: str, key: str, label: Optional[str] = None, detail: str = ""):
+                """Record an activity event (non-streaming equivalent of yield)."""
+                ev = activity_event(cid, category, key, label=label, detail=detail)
+                if ev:
+                    self.activity_events.append(ev["activity"])
 
             message = (message or "").strip()
             if not message and not image_data:
@@ -2211,7 +2220,11 @@ class MarcusBrain:
                 except Exception as exc:
                     print(f"[ERROR] Auto-title failed: {exc}")
 
+            # ── Shared activity indicator: begin processing ─────────────
+            _emit_activity("general", "processing", detail="Starting request")
+
             live_ctx = ""
+            search_note = ""
             self._pending_sources = []
             self._pending_source_metadata = []
             directed_site, directed_query = parse_directed_search(message)
@@ -2231,6 +2244,8 @@ class MarcusBrain:
                     expanded = self._expand_continuation_query(cid, message)
                     if expanded and expanded != message:
                         search_message = expanded
+
+                _emit_activity("web_research", "searching_web", detail=f"domain={research_domain}")
 
                 try:
                     _reset_search_sources()
@@ -2263,6 +2278,10 @@ class MarcusBrain:
                                 })
                         print(f"[SOURCE INTEL] Non-stream research: {len(evidence_package.evidence)} evidence items, "
                               f"confidence={evidence_package.confidence}")
+                        _emit_activity("web_research", "reading_pages", detail=f"{len(self._pending_sources)} sources")
+                        _emit_activity("web_research", "checking_info")
+                        if evidence_package.conflicts:
+                            _emit_activity("web_research", "comparing_sources", detail="Conflicting information detected")
                     else:
                         # Fallback to single search
                         live_ctx = _fetch_live_context_force(search_message, site=directed_site or "")
@@ -2280,6 +2299,7 @@ class MarcusBrain:
             km = _get_knowledge_mgr()
             if mm:
                 try:
+                    _emit_activity("memory", "recalling", detail="Cross-session memory recall")
                     recent_texts = [m.get("content", "") for m in self.memory.get_chat(cid)[-8:]]
                     fact_texts = [
                         f"{f.get('summary', '')} {f.get('value', '')}"
@@ -2325,6 +2345,7 @@ class MarcusBrain:
             except Exception as exc:
                 print(f"[CONV RECOVERY] Recovery failed (non-fatal): {exc}")
 
+            _emit_activity("summarization", "compiling", detail="Preparing your response")
             envelope = self._think(cid, message, image_data, live_context=live_ctx, mongo_history=mongo_history, global_memories=global_memories, knowledge_data=knowledge_data, recovered_context=recovered_context)
             self.last_response_meta = envelope.get("meta") or self._metadata(False, True, "local")
             self.last_response_meta["sources"] = list(getattr(self, "_pending_sources", []) or [])
@@ -2336,6 +2357,8 @@ class MarcusBrain:
             except Exception as exc:
                 print(f"[ERROR] Memory extraction/storage skipped: {exc}")
 
+            # ── Update long-term memory ───────────────────────────────
+            _emit_activity("memory", "updating", detail="Saving conversation to memory")
             try:
                 self.memory.save_memory()
             except Exception as exc:
@@ -2353,11 +2376,19 @@ class MarcusBrain:
             except Exception as exc:
                 print(f"[ERROR] Memory add_message (assistant) failed: {exc}")
 
+            # ── Complete the activity indicator ───────────────────────
+            _emit_activity("general", "preparing_response", detail="Response ready")
+
             return reply
 
         except Exception as exc:
             print(f"[CRITICAL] Unhandled error in respond(): {exc}")
             self.last_response_meta = self._metadata(False, True, "local")
+            try:
+                tracker = activity_manager.get_tracker(cid)
+                tracker.fail(detail=str(exc)[:200])
+            except Exception:
+                pass
             return FALLBACK_RESPONSE
 
     def stream_respond(self, message: str, chat_id: str = "", image_data: str = "", mongo_history: list = None, persist_image_data: bool = True, dedup_id: str = "", capability: str = "text"):
@@ -2397,6 +2428,12 @@ class MarcusBrain:
                         self.memory.set_title(cid, title)
                 except Exception as exc:
                     print(f"[ERROR] Auto-title failed: {exc}")
+
+            # ── Shared activity indicator: begin processing ─────────────
+            # One centralized activity for the whole request; updated as
+            # real operations begin/end. Never invented progress.
+            yield activity_event(cid, "general", "processing",
+                                 detail="Starting request")
 
             # ── Early recovery detection for UI status ──────────────
             _recovery_detected = False
@@ -2440,6 +2477,8 @@ class MarcusBrain:
                         search_message = expanded
 
                 yield {"intent": "searching_web", "query": message, "domain": research_domain}
+                yield activity_event(cid, "web_research", "searching_web",
+                                     detail=f"domain={research_domain}")
                 yield {"thinking_process": {"step": "searching", "label": "Searching the web..."}}
 
                 # ── Full research pipeline with multi-query + page fetch ──
@@ -2498,9 +2537,17 @@ class MarcusBrain:
                     print(f"[STREAM RESEARCH] {len(evidence_package.evidence)} evidence items, "
                           f"confidence={evidence_package.confidence}, "
                           f"searched={evidence_package.total_searched}")
+                    activity_manager.get_tracker(cid).update(
+                        "Reading webpages…",
+                        detail=f"{len(self._pending_sources)} sources")
                     yield {"thinking_process": {"step": "reviewing", "label": f"Reviewing {len(self._pending_sources)} sources..."}}
+                    activity_manager.get_tracker(cid).update(
+                        "Checking timestamps & freshness…")
                     yield {"thinking_process": {"step": "checking", "label": "Checking timestamps & freshness..."}}
                     if evidence_package.conflicts:
+                        activity_manager.get_tracker(cid).update(
+                            "Comparing sources…",
+                            detail="Conflicting information detected")
                         yield {"thinking_process": {"step": "comparing", "label": "Comparing conflicting information..."}}
                 else:
                     # Fallback: try single search if research pipeline returned nothing
@@ -2532,6 +2579,8 @@ class MarcusBrain:
                     if live_ctx and str(live_ctx).strip() == str(LIVE_DATA_UNAVAILABLE):
                         live_ctx = ""
 
+            yield activity_event(cid, "summarization", "compiling",
+                                 detail="Preparing your response")
             yield {"thinking_process": {"step": "synthesizing", "label": "Synthesizing answer..."}}
 
             # ── Pinecone cross-session recall and knowledge fetch ─────
@@ -2541,6 +2590,9 @@ class MarcusBrain:
             km = _get_knowledge_mgr()
             if mm:
                 try:
+                    activity_manager.get_tracker(cid).update(
+                        "Recalling relevant memories…",
+                        detail="Cross-session memory recall")
                     recent_texts = [m.get("content", "") for m in self.memory.get_chat(cid)[-8:]]
                     fact_texts = [
                         f"{f.get('summary', '')} {f.get('value', '')}"
@@ -2599,6 +2651,14 @@ class MarcusBrain:
             if capability == "text":
                 capability = _detect_capability(msgs)
                 print(f"[STREAM] Detected capability: {capability} ({_estimate_messages_tokens(msgs)} estimated tokens)")
+
+            # ── Activity indicators for detected capabilities ─────────────
+            if capability == "coding":
+                yield activity_event(cid, "coding", "inspecting_code", detail="Analyzing code structure")
+            elif capability in ("image", "vision"):
+                yield activity_event(cid, "image_video", "examining_image", detail="Analyzing attached image")
+            elif capability == "large":
+                yield activity_event(cid, "summarization", "summarizing", detail="Processing long context")
             full_reply = ""
 
             def _stream_once(_msgs, _finish_box, _max_tokens=2048):
@@ -2674,6 +2734,10 @@ class MarcusBrain:
             except Exception as exc:
                 print(f"[ERROR] Memory add_message (assistant) failed: {exc}")
 
+            # ── Update long-term memory ───────────────────────────────
+            activity_manager.get_tracker(cid).update(
+                "Updating long-term memory…",
+                detail="Saving conversation to memory")
             try:
                 self.memory.save_memory()
             except Exception as exc:
@@ -2691,6 +2755,10 @@ class MarcusBrain:
             except Exception as exc:
                 print(f"[STREAM MEMORY] Extraction skipped: {exc}")
 
+            # ── Complete the activity indicator ───────────────────────
+            yield activity_complete(cid)
+
         except Exception as exc:
             print(f"[CRITICAL] Unhandled error in stream_respond(): {exc}")
+            yield activity_fail(cid, detail=str(exc)[:200])
             return

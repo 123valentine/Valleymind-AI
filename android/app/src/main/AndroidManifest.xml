@@ -13,8 +13,18 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Voice conversation reuses the existing site voice pipeline. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
-    <!-- Camera access for image capture via file input -->
-    <uses-permission android:name="android.permission.CAMERA" />
+    <!-- No CAMERA permission on purpose: image capture is delegated to the
+         user's camera app via ACTION_IMAGE_CAPTURE, which handles its own
+         permission. Declaring CAMERA here would make that intent require a
+         runtime grant this app never asks for and the capture would fail. -->
+
+    <!-- Package visibility (Android 11+): without this, resolveActivity() for
+         the capture intent returns null even when a camera app is installed. -->
+    <queries>
+        <intent>
+            <action android:name="android.media.action.IMAGE_CAPTURE" />
+        </intent>
+    </queries>
 
     <application
         android:allowBackup="true"
@@ -36,6 +46,18 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Hands the camera app a private, write-only-by-grant URI for the photo
+             it captures; the file stays inside this app's cache directory. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
 
         <!-- The system-wide floating companion. Not exported: only this app can
              start it. The specialUse type is required on Android 14+ and is

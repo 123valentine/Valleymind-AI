@@ -2,6 +2,7 @@ package ai.valleymind.companion
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
@@ -10,6 +11,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.provider.MediaStore
 import android.provider.Settings
 import android.text.InputType
 import android.view.View
@@ -28,19 +30,14 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.appcompat.app.AlertDialog
-import androidx.appcompat.app.AppCompatActivity
-import androidx.core.content.ContextCompat
-import android.widget.Button
-import android.widget.EditText
-import android.widget.LinearLayout
-import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
+import java.io.File
+import java.io.FileOutputStream
 
 /**
  * MainActivity — the ValleyMind Android shell.
@@ -83,8 +80,10 @@ class MainActivity : AppCompatActivity(), CompanionBridge.Host {
     /** The origin the WebView loads; production default, runtime-overridable. */
     private var baseUrl: String = BuildConfig.VALLEY_BASE_URL
 
-    private const val REQUEST_CODE_FILE_CHOOSER = 1002
+    private val REQUEST_CODE_FILE_CHOOSER = 1002
+    private val REQUEST_CODE_CAMERA_CAPTURE = 1003
     private var filePathCallback: ValueCallback<Array<Uri>>? = null
+    private var cameraImageUri: Uri? = null
     private val loadMonitor = LoadMonitor(LoadMonitor.DEFAULT_TIMEOUT_MS)
     private val mainHandler = Handler(Looper.getMainLooper())
     private val loadTimeoutRunnable = Runnable {
@@ -143,17 +142,133 @@ class MainActivity : AppCompatActivity(), CompanionBridge.Host {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == REQUEST_CODE_FILE_CHOOSER) {
-            val result = if (resultCode == Activity.RESULT_OK) data?.data else null
-            val callback = filePathCallback
-            filePathCallback = null
-            if (callback != null) {
-                if (result != null) {
-                    callback.onReceiveValue(arrayOf(result))
-                } else {
-                    callback.onReceiveValue(null)
+        when (requestCode) {
+            REQUEST_CODE_FILE_CHOOSER -> handleFileChooserResult(resultCode, data)
+            REQUEST_CODE_CAMERA_CAPTURE -> handleCameraCaptureResult(resultCode, data)
+        }
+    }
+
+    /**
+     * Result of the system file/media picker. A cancelled chooser must still
+     * answer the WebView callback, otherwise the page's file input stays "open"
+     * and the composer never recovers.
+     */
+    private fun handleFileChooserResult(resultCode: Int, data: Intent?) {
+        val callback = filePathCallback
+        filePathCallback = null
+        if (callback == null) return
+
+        if (resultCode != Activity.RESULT_OK) {
+            callback.onReceiveValue(null)
+            return
+        }
+
+        val results: Array<Uri>? = try {
+            val clip = data?.clipData
+            when {
+                clip != null && clip.itemCount > 0 -> {
+                    val uris = mutableListOf<Uri>()
+                    for (i in 0 until clip.itemCount) {
+                        clip.getItemAt(i)?.uri?.let { uris.add(it) }
+                    }
+                    if (uris.isNotEmpty()) uris.toTypedArray() else null
                 }
+                data?.data != null -> arrayOf(data.data!!)
+                else -> null
             }
+        } catch (_: Exception) {
+            null
+        }
+        callback.onReceiveValue(results)
+    }
+
+    /**
+     * Result of the native camera capture (ACTION_IMAGE_CAPTURE). The photo is
+     * normally written to the FileProvider URI passed via EXTRA_OUTPUT; a few
+     * camera apps ignore it and return a thumbnail bitmap instead, so both
+     * shapes are handled. Cancelling always answers the callback.
+     */
+    @Suppress("DEPRECATION")
+    private fun handleCameraCaptureResult(resultCode: Int, data: Intent?) {
+        val callback = filePathCallback
+        filePathCallback = null
+        val outputUri = cameraImageUri
+        cameraImageUri = null
+
+        if (callback == null) {
+            deleteCameraFile(outputUri)
+            return
+        }
+        if (resultCode != Activity.RESULT_OK) {
+            callback.onReceiveValue(null)
+            deleteCameraFile(outputUri)
+            return
+        }
+
+        var result: Uri? = null
+        if (outputUri != null && contentHasBytes(outputUri)) {
+            result = outputUri
+        } else {
+            // Bundle.get(String) is deprecated but is the only shape older
+            // camera apps use for the thumbnail fallback.
+            val bitmap = try {
+                data?.extras?.get("data") as? Bitmap
+            } catch (_: Exception) {
+                null
+            }
+            if (bitmap != null) result = writeCameraBitmap(bitmap)
+        }
+
+        if (result == null) {
+            deleteCameraFile(outputUri)
+            callback.onReceiveValue(null)
+        } else {
+            callback.onReceiveValue(arrayOf(result))
+        }
+    }
+
+    /** Private cache directory shared with res/xml/file_paths.xml. */
+    private fun cameraOutputDir(): File = File(cacheDir, "camera").apply { if (!exists()) mkdirs() }
+
+    private fun newCameraOutputUri(): Uri? {
+        return try {
+            val dir = cameraOutputDir()
+            // Captures whose URI the page never consumed would otherwise pile up.
+            val cutoff = System.currentTimeMillis() - 24L * 60L * 60L * 1000L
+            dir.listFiles()?.forEach { f -> if (f.lastModified() < cutoff) f.delete() }
+            val file = File.createTempFile("capture_", ".jpg", dir)
+            FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun contentHasBytes(uri: Uri): Boolean {
+        return try {
+            contentResolver.openAssetFileDescriptor(uri, "r")?.use { it.length > 0 } ?: false
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun writeCameraBitmap(bitmap: Bitmap): Uri? {
+        return try {
+            val file = File.createTempFile("capture_", ".jpg", cameraOutputDir())
+            FileOutputStream(file).use { out -> bitmap.compress(Bitmap.CompressFormat.JPEG, 92, out) }
+            FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun deleteCameraFile(uri: Uri?) {
+        if (uri == null) return
+        try {
+            val name = uri.lastPathSegment ?: return
+            val file = File(cameraOutputDir(), name)
+            if (file.exists()) file.delete()
+        } catch (_: Exception) {
+            /* best effort */
         }
     }
 
@@ -189,15 +304,74 @@ class MainActivity : AppCompatActivity(), CompanionBridge.Host {
 
             override fun onShowFileChooser(
                 webView: WebView,
-                filePathCallback: ValueCallback<Array<Uri>>,
+                newFilePathCallback: ValueCallback<Array<Uri>>,
                 fileChooserParams: FileChooserParams
             ): Boolean {
-                filePathCallback = filePathCallback
-                val intent = Intent(Intent.ACTION_GET_CONTENT)
-                intent.addCategory(Intent.CATEGORY_OPENABLE)
-                intent.type = "*/*"
-                startActivityForResult(Intent.createChooser(intent, "Select file"), REQUEST_CODE_FILE_CHOOSER)
-                return true
+                // Cancel any pending callback before starting a new chooser: a
+                // WebView input can only have one picker request open at a time.
+                filePathCallback?.onReceiveValue(null)
+                filePathCallback = newFilePathCallback
+                deleteCameraFile(cameraImageUri)
+                cameraImageUri = null
+
+                val accepts = fileChooserParams.acceptTypes?.filter { it.isNotBlank() } ?: emptyList()
+                val imageOnly = accepts.isNotEmpty() && accepts.all { it.startsWith("image/") }
+                val captureRequested = try { fileChooserParams.isCaptureEnabled } catch (_: Exception) { false }
+
+                // "Camera" (accept="image/*" capture) opens the system camera with a
+                // FileProvider output URI. If no camera app is installed, fall through
+                // to the normal chooser so the callback is always answered.
+                if (captureRequested && imageOnly) {
+                    val outputUri = newCameraOutputUri()
+                    if (outputUri != null) {
+                        val captureIntent = Intent(MediaStore.ACTION_IMAGE_CAPTURE).apply {
+                            putExtra(MediaStore.EXTRA_OUTPUT, outputUri)
+                            addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        }
+                        if (captureIntent.resolveActivity(packageManager) != null) {
+                            cameraImageUri = outputUri
+                            return try {
+                                startActivityForResult(captureIntent, REQUEST_CODE_CAMERA_CAPTURE)
+                                true
+                            } catch (_: Exception) {
+                                deleteCameraFile(outputUri)
+                                cameraImageUri = null
+                                val cb = filePathCallback
+                                filePathCallback = null
+                                cb?.onReceiveValue(null)
+                                false
+                            }
+                        }
+                    }
+                    deleteCameraFile(outputUri)
+                }
+
+                return try {
+                    // createIntent() already targets ACTION_GET_CONTENT with
+                    // CATEGORY_OPENABLE; adding more categories here would hide
+                    // gallery/camera apps that return non-openable URIs.
+                    val intent = fileChooserParams.createIntent().apply {
+                        if (fileChooserParams.mode == FileChooserParams.MODE_OPEN_MULTIPLE) {
+                            putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+                        }
+                        // Respect the accept attribute when it is a single MIME type.
+                        val only = accepts.singleOrNull()
+                        if (type.isNullOrBlank() || type == "*/*") {
+                            type = when {
+                                accepts.isEmpty() -> "*/*"
+                                only != null && only.contains("/") -> only
+                                else -> "*/*"
+                            }
+                        }
+                    }
+                    startActivityForResult(Intent.createChooser(intent, "Select file"), REQUEST_CODE_FILE_CHOOSER)
+                    true
+                } catch (e: Exception) {
+                    val cb = filePathCallback
+                    filePathCallback = null
+                    cb?.onReceiveValue(null)
+                    false
+                }
             }
         }
         webView.webViewClient = object : WebViewClient() {
@@ -446,6 +620,10 @@ class MainActivity : AppCompatActivity(), CompanionBridge.Host {
 
     override fun onDestroy() {
         cancelLoadTimeout()
+        // Never leave the WebView waiting on a callback that can no longer fire.
+        filePathCallback?.onReceiveValue(null)
+        filePathCallback = null
+        cameraImageUri = null
         if (::systemTts.isInitialized) systemTts.shutdown()
         NativeTtsRegistry.install(null)
         super.onDestroy()

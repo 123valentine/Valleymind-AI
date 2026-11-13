@@ -28,7 +28,7 @@ const ACCESS_KEY = "valleymind.companion_access";
 const DEFAULTS = {
   mode: "vrm",       // "vrm" (default companion) | "cloud" (legacy character)
   visible: true,     // keep the VRM overlay visible across sessions (recoverable in Settings)
-  sizePct: 16,       // overlay height as % of viewport height (12-18 recommended)
+  sizePct: 100,      // overlay height as % of viewport height (increased per request)
   skin: null,        // SKIN_PRESETS name, or null = original VRM colors
   dock: "br",        // "br" | "bl" | "tr" | "tl" (used until the avatar is moved)
   x: null,           // manual position (px) once placed
@@ -1418,7 +1418,7 @@ function isVisible() {
 }
 
 function setSize(pct) {
-  const v = Math.max(10, Math.min(24, Number(pct) || DEFAULTS.sizePct));
+  const v = Math.max(10, Math.min(100, Number(pct) || DEFAULTS.sizePct));
   prefs.sizePct = v;
   savePrefs();
   applySize();
