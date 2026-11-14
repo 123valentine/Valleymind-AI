@@ -72,6 +72,12 @@ class VisionService:
     NVIDIA_MAX_VIDEO_SIZE_BYTES = int(
         os.getenv("NVIDIA_MAX_VIDEO_SIZE_MB", "100")
     ) * 1024 * 1024  # 100 MB per video
+    # Above this size a phone video is downscaled before being inlined as
+    # base64: a 100MB clip becomes a ~133MB JSON body that upstream rejects.
+    # Override with NVIDIA_MAX_INLINE_VIDEO_MB when running with a live key.
+    NVIDIA_MAX_INLINE_VIDEO_BYTES = int(
+        os.getenv("NVIDIA_MAX_INLINE_VIDEO_MB", "24")
+    ) * 1024 * 1024
     NVIDIA_MAX_VIDEO_SECONDS = int(
         os.getenv("NVIDIA_MAX_VIDEO_SECONDS", "120")
     )  # 2 minutes
@@ -184,7 +190,137 @@ class VisionService:
             return ("groq", {"api_key": self.config.groq_api_key, "base_url": self.config.groq_base_url})
         
         return (None, None)
+
+    def _get_nvidia_config(self) -> Optional[Dict]:
+        """Resolve NVIDIA credentials explicitly.
+
+        Video (and every Nemotron-specific call) must never inherit whichever
+        provider happens to come first in the image preference order: sending
+        an OpenRouter/Gemini key to NVIDIA's endpoint can only fail. When no
+        NVIDIA key is configured we still accept an already-NVIDIA provider
+        selection, which keeps existing callers and tests working.
+        """
+        key = str(getattr(self.config, "nvidia_api_key", "") or "").strip()
+        if key:
+            return {
+                "api_key": key,
+                "base_url": self.config.nvidia_base_url or "https://integrate.api.nvidia.com/v1",
+            }
+        try:
+            provider_name, provider_config = self._get_vision_provider()
+        except Exception:
+            return None
+        if provider_name == "nvidia" and provider_config:
+            return provider_config
+        return None
     
+    # ── Server-side video preparation (multipart uploads) ──────────────
+    VIDEO_EXT_MIME = {
+        ".mp4": "video/mp4",
+        ".m4v": "video/mp4",
+        ".webm": "video/webm",
+        ".ogv": "video/ogg",
+        ".ogg": "video/ogg",
+        ".mov": "video/quicktime",
+        ".3gp": "video/3gpp",
+        ".mkv": "video/x-matroska",
+    }
+
+    def video_mime_for(self, filename: str = "", mimetype: str = "") -> str:
+        """Best-effort video MIME for an upload.
+
+        Android/WebView uploads often arrive as application/octet-stream, so
+        the filename extension is authoritative when the declared type is not
+        a video type.
+        """
+        mime = str(mimetype or "").split(";")[0].strip().lower()
+        if mime.startswith("video/"):
+            return mime
+        ext = os.path.splitext(str(filename or ""))[1].lower()
+        return self.VIDEO_EXT_MIME.get(ext, "")
+
+    def prepare_video_data_uri(
+        self, video_path: str, filename: str = "", mimetype: str = ""
+    ) -> Tuple[Optional[str], str]:
+        """Build a ``data:video/...;base64,`` URI that Nemotron accepts.
+
+        Containers NVIDIA does not accept (MOV/3GP/MKV) and clips too large to
+        inline are converted to an H.264 MP4 analysis copy with the same
+        ffmpeg the Alibaba path already uses. Never raises: returns
+        ``(data_uri, error)``.
+        """
+        if not video_path or not os.path.exists(video_path):
+            return None, "No video data provided."
+        size = os.path.getsize(video_path)
+        if size <= 0:
+            return None, "The uploaded video is empty."
+        if size > self.NVIDIA_MAX_VIDEO_SIZE_BYTES:
+            return None, (
+                f"Video too large ({size / 1024 / 1024:.1f}MB). "
+                f"Maximum is {self.NVIDIA_MAX_VIDEO_SIZE_BYTES // 1024 // 1024}MB."
+            )
+
+        mime = self.video_mime_for(filename, mimetype)
+        needs_conversion = mime not in self.NVIDIA_ALLOWED_VIDEO_MIME_TYPES
+        needs_slimming = size > self.NVIDIA_MAX_INLINE_VIDEO_BYTES
+        source = video_path
+        scratch = ""
+        try:
+            if needs_conversion or needs_slimming:
+                import subprocess
+                import tempfile
+                from core.video_assembly import ffmpeg_exe
+
+                exe = ffmpeg_exe()
+                if not exe:
+                    if needs_conversion:
+                        return None, (
+                            f"Unsupported video format: {mime or 'unknown'}. "
+                            "This server cannot convert it for analysis."
+                        )
+                    # Valid container, no converter: send the original bytes and
+                    # let the provider decide.
+                    source = video_path
+                else:
+                    # Unique per request: two conversions started in the same
+                    # millisecond must never share (and truncate/remove) one
+                    # scratch file. ffmpeg -y overwrites the empty placeholder.
+                    _fd, scratch = tempfile.mkstemp(
+                        prefix=f"nvidia_video_{os.getpid()}_", suffix=".mp4"
+                    )
+                    os.close(_fd)
+                    cmd = [
+                        exe, "-y", "-i", video_path,
+                        "-t", str(self.NVIDIA_MAX_VIDEO_SECONDS),
+                        "-vf", "fps=8,scale=-2:720", "-an",
+                        "-c:v", "libx264", "-preset", "veryfast", "-crf", "28",
+                        "-pix_fmt", "yuv420p", scratch,
+                    ]
+                    proc = subprocess.run(cmd, capture_output=True, timeout=300)
+                    if (proc.returncode != 0 or not os.path.exists(scratch)
+                            or os.path.getsize(scratch) <= 0):
+                        if needs_conversion:
+                            return None, "This video could not be prepared for analysis."
+                    else:
+                        source = scratch
+                        mime = "video/mp4"
+                        if os.path.getsize(source) > self.NVIDIA_MAX_VIDEO_SIZE_BYTES:
+                            return None, "Video is still too large after preparation for analysis."
+
+            with open(source, "rb") as fh:
+                data = fh.read()
+            if not data:
+                return None, "The uploaded video is empty."
+            return "data:" + mime + ";base64," + base64.b64encode(data).decode("ascii"), ""
+        except Exception as exc:
+            return None, f"Video preparation failed: {str(exc)[:150]}"
+        finally:
+            if scratch:
+                try:
+                    os.remove(scratch)
+                except OSError:
+                    pass
+
     def validate_image(self, image_data: str) -> Tuple[bool, str]:
         """Validate a single image data URI. Returns (valid, error_message)."""
         if not image_data or not isinstance(image_data, str):
@@ -358,21 +494,11 @@ class VisionService:
         Nemotron 3.5 Super VL accepts video natively via video_url — no
         frame extraction is required.
         """
-        provider_name, provider_config = self._get_vision_provider()
-        if not provider_name or not provider_config:
+        provider_config = self._get_nvidia_config()
+        if not provider_config:
             return VisionResult(
                 success=False,
-                error="No vision-capable provider configured. Please configure NVIDIA_API_KEY.",
-            )
-
-        if provider_name != "nvidia":
-            return VisionResult(
-                success=False,
-                error=(
-                    f"Video analysis requires NVIDIA provider, "
-                    f"but active provider is '{provider_name}'. "
-                    "Configure NVIDIA_API_KEY to enable video analysis."
-                ),
+                error="No NVIDIA vision provider configured. Please configure NVIDIA_API_KEY.",
             )
 
         if not video_data_uri or not isinstance(video_data_uri, str):
@@ -453,21 +579,11 @@ class VisionService:
         Partial failures are handled gracefully: one failed video does not
         invalidate successful analyses of the others.
         """
-        provider_name, provider_config = self._get_vision_provider()
-        if not provider_name or not provider_config:
+        provider_config = self._get_nvidia_config()
+        if not provider_config:
             return VisionResult(
                 success=False,
-                error="No vision-capable provider configured. Please configure NVIDIA_API_KEY.",
-            )
-
-        if provider_name != "nvidia":
-            return VisionResult(
-                success=False,
-                error=(
-                    f"Multi-video analysis requires NVIDIA provider, "
-                    f"but active provider is '{provider_name}'. "
-                    "Configure NVIDIA_API_KEY to enable multi-video analysis."
-                ),
+                error="No NVIDIA vision provider configured. Please configure NVIDIA_API_KEY.",
             )
 
         if not video_data_uri_list or not isinstance(video_data_uri_list, list):
@@ -776,9 +892,12 @@ class VisionService:
         max_tokens: int,
     ) -> VisionResult:
         """Send a multimodal content array to NVIDIA Nemotron 3.5 Super VL."""
-        provider_name, provider_config = self._get_vision_provider()
-        if not provider_name or not provider_config:
-            return VisionResult(success=False, error="NVIDIA provider not configured.")
+        provider_config = self._get_nvidia_config()
+        if not provider_config:
+            return VisionResult(
+                success=False,
+                error="NVIDIA provider not configured. Please configure NVIDIA_API_KEY.",
+            )
 
         api_key = provider_config["api_key"]
         base_url = provider_config.get(

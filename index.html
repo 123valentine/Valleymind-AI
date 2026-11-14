@@ -2084,9 +2084,9 @@
   .ai-content ul,.ai-content ol{padding-left:20px;margin:8px 0}
   .ai-content li{margin-bottom:4px}
   .ai-content h1,.ai-content h2,.ai-content h3{color:#00d4ff;font-family:'Space Grotesk',sans-serif;margin-bottom:8px}
-  .user-message{align-self:flex-end;max-width:780px;display:flex;flex-direction:column;align-items:flex-end}
+  .user-message{align-self:flex-end;margin-left:auto;max-width:780px;display:flex;flex-direction:column;align-items:flex-end}
   .user-message .bubble{background:rgba(0,212,255,0.16);border:1px solid rgba(255,255,255,0.1);border-radius:14px 14px 4px 14px;padding:12px 16px;color:#dde3e7;white-space:pre-wrap;word-break:break-word;width:100%}
-  .assistant-message{align-self:flex-start;max-width:780px;display:flex;flex-direction:column;align-items:flex-start}
+  .assistant-message{align-self:flex-start;margin-right:auto;max-width:780px;display:flex;flex-direction:column;align-items:flex-start}
   .assistant-message .bubble{background:none;border:none;box-shadow:none;padding:12px 16px;color:#dde3e7;white-space:pre-wrap;word-break:break-word;width:100%}
   .msg-toolbar{display:flex;align-items:center;gap:4px;margin-top:4px;padding-left:4px}
   .msg-toolbar button{background:none;border:none;cursor:pointer;padding:4px;border-radius:6px;display:flex;align-items:center;color:#64748b;transition:all 0.15s}
@@ -2109,6 +2109,20 @@
   .assistant-message, .user-message{ min-width:0; max-width:100%; }
   .user-message .bubble{ background:rgba(0,212,255,0.10); border-color:rgba(255,255,255,0.06); }
   .assistant-message .bubble{ padding:12px 20px; background:rgba(255,255,255,0.035); border-radius:12px; }
+  /* Alignment guard: side placement must not depend on #messages being a flex
+     column (a single display override used to drop align-self and leave both
+     sides full-width). align-self covers flex, fit-content + auto margins keep
+     the same right/left split in ordinary block flow. */
+  #messages > .user-message{ align-self:flex-end; margin-left:auto; width:fit-content; max-width:100%; }
+  #messages > .assistant-message{ align-self:flex-start; margin-right:auto; width:fit-content; max-width:100%; }
+  /* Assistant-side indicators (thinking dots, activity pill) are left-aligned
+     even when they are appended as standalone children of #messages. */
+  .self-start{ align-self:flex-start; margin-right:auto; }
+  /* Native file inputs are kept rendered (never display:none) so a
+     programmatic .click() reliably opens the Android WebView / mobile system
+     picker. They stay invisible, 1px, and untappable. */
+  .vm-file-input{ position:fixed; left:0; top:0; width:1px; height:1px; padding:0;
+    margin:0; border:0; opacity:0; overflow:hidden; pointer-events:none; }
   /* Richly formatted assistant replies: let HTML flow naturally instead of pre-wrap. */
   .bubble.ai-rich{ white-space:normal; }
   /* Tables in rich replies: scroll horizontally on narrow screens instead of
@@ -3208,12 +3222,12 @@ body[data-vm-companion="cloud"] #vmVrmCompanion { display: none !important; }
       <div style="max-width:1100px;margin:0 auto;">
 
         <!-- HIDDEN FILE INPUTS -->
-        <input type="file" id="chatCameraInput" accept="image/*" capture="environment" style="display:none;">
-        <input type="file" id="chatMediaInput" accept="image/*,video/*" multiple style="display:none;">
-        <input type="file" id="chatDocumentInput" accept=".pdf,.doc,.docx,.txt,.rtf,.csv,.md,.json,.xml,.xls,.xlsx,.ppt,.pptx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain" multiple style="display:none;">
+        <input type="file" id="chatCameraInput" class="vm-file-input" accept="image/*" capture="environment">
+        <input type="file" id="chatMediaInput" class="vm-file-input" accept="image/*,video/*" multiple>
+        <input type="file" id="chatDocumentInput" class="vm-file-input" accept=".pdf,.doc,.docx,.txt,.rtf,.csv,.md,.json,.xml,.xls,.xlsx,.ppt,.pptx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain" multiple>
         <!-- Legacy inputs kept for existing pipeline compatibility -->
-        <input type="file" id="chatImageInput" accept="image/*" multiple style="display:none;">
-        <input type="file" id="chatVideoInput" accept="video/*" style="display:none;">
+        <input type="file" id="chatImageInput" class="vm-file-input" accept="image/*" multiple>
+        <input type="file" id="chatVideoInput" class="vm-file-input" accept="video/*">
 
         <!-- UNIFIED COMPOSER (chips row on top, input row below) -->
         <div id="composer">
@@ -3245,13 +3259,13 @@ body[data-vm-companion="cloud"] #vmVrmCompanion { display: none !important; }
                 </button>
                 <!-- Floating vertical menu -->
                 <div id="plusMenu" style="display:none;position:absolute;bottom:calc(100% + 8px);left:0;background:#0f172a;border:1px solid rgba(0,212,255,0.2);border-radius:12px;padding:6px;min-width:170px;box-shadow:0 12px 40px rgba(0,0,0,0.7);z-index:100;">
-                  <div class="plus-menu-item" onclick="closePlusMenu();vmOpenCameraCapture();" style="display:flex;align-items:center;gap:10px;padding:9px 14px;border-radius:8px;font-size:13px;color:#bbc9cf;cursor:pointer;transition:all 0.12s;" onmouseover="this.style.background='rgba(0,212,255,0.08)';this.style.color='#00d4ff'" onmouseout="this.style.background='transparent';this.style.color='#bbc9cf'">
+                  <div class="plus-menu-item" onclick="vmPlusMenuCamera();" style="display:flex;align-items:center;gap:10px;padding:9px 14px;border-radius:8px;font-size:13px;color:#bbc9cf;cursor:pointer;transition:all 0.12s;" onmouseover="this.style.background='rgba(0,212,255,0.08)';this.style.color='#00d4ff'" onmouseout="this.style.background='transparent';this.style.color='#bbc9cf'">
                     <i data-lucide="camera" style="width:18px;height:18px;"></i> Camera
                   </div>
-                  <div class="plus-menu-item" onclick="document.getElementById('chatMediaInput').click();closePlusMenu();" style="display:flex;align-items:center;gap:10px;padding:9px 14px;border-radius:8px;font-size:13px;color:#bbc9cf;cursor:pointer;transition:all 0.12s;" onmouseover="this.style.background='rgba(0,212,255,0.08)';this.style.color='#00d4ff'" onmouseout="this.style.background='transparent';this.style.color='#bbc9cf'">
+                  <div class="plus-menu-item" onclick="vmPlusMenuPick('chatMediaInput');" style="display:flex;align-items:center;gap:10px;padding:9px 14px;border-radius:8px;font-size:13px;color:#bbc9cf;cursor:pointer;transition:all 0.12s;" onmouseover="this.style.background='rgba(0,212,255,0.08)';this.style.color='#00d4ff'" onmouseout="this.style.background='transparent';this.style.color='#bbc9cf'">
                     <i data-lucide="image-plus" style="width:18px;height:18px;"></i> Upload Media
                   </div>
-                  <div class="plus-menu-item" onclick="document.getElementById('chatDocumentInput').click();closePlusMenu();" style="display:flex;align-items:center;gap:10px;padding:9px 14px;border-radius:8px;font-size:13px;color:#bbc9cf;cursor:pointer;transition:all 0.12s;" onmouseover="this.style.background='rgba(0,212,255,0.08)';this.style.color='#00d4ff'" onmouseout="this.style.background='transparent';this.style.color='#bbc9cf'">
+                  <div class="plus-menu-item" onclick="vmPlusMenuPick('chatDocumentInput');" style="display:flex;align-items:center;gap:10px;padding:9px 14px;border-radius:8px;font-size:13px;color:#bbc9cf;cursor:pointer;transition:all 0.12s;" onmouseover="this.style.background='rgba(0,212,255,0.08)';this.style.color='#00d4ff'" onmouseout="this.style.background='transparent';this.style.color='#bbc9cf'">
                     <i data-lucide="file-text" style="width:18px;height:18px;"></i> File
                   </div>
                 </div>
@@ -4100,11 +4114,13 @@ function vmStopCameraStream() {
 async function vmOpenCameraCapture() {
   // On Android/mobile WebView, prefer native camera via file input capture attribute.
   if (_vmIsLikelyMobileWebView()) {
+    if (typeof vmOpenFilePicker === 'function' && vmOpenFilePicker('chatCameraInput')) return;
     var inp = document.getElementById('chatCameraInput');
     if (inp) inp.click();
     return;
   }
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    if (typeof vmOpenFilePicker === 'function' && vmOpenFilePicker('chatCameraInput')) return;
     var inp2 = document.getElementById('chatCameraInput');
     if (inp2) inp2.click();
     return;
@@ -4926,9 +4942,10 @@ function vmRetryAttachment(id){
   } else if (a.kind === 'image' && a.file) {
     _vmReadImageAttachment(a);
   } else if (a.kind === 'video' && a.file) {
-    // Retrying a failed video re-runs the one existing video pipeline; it does
-    // not touch images or documents that are already attached.
-    sendVideoForAnalysis(a.question || '');
+    // Retrying a failed video re-runs the one existing video pipeline, reusing
+    // the SAME attachment and the SAME already-sent user message: no duplicate
+    // message, no re-picking, no second object URL.
+    sendVideoForAnalysis(a.question || '', { retry: true });
   }
 }
 
@@ -5014,19 +5031,45 @@ function vmRemoveAttachment(id){
 }
 
 /* Send the attached video for analysis and render the reply in the chat.
-   The attachment card stays visible while the upload runs, so a failure leaves
-   a retryable card with the real error instead of silently dropping the video. */
-async function sendVideoForAnalysis(question) {
+   The video is attached to the user message that was actually sent, so a failed
+   analysis never loses it. The composer card stays visible while the upload
+   runs; a Retry reuses this attachment and that message instead of posting the
+   same prompt twice. */
+async function sendVideoForAnalysis(question, opts) {
+    opts = opts || {};
+    var isRetry = !!opts.retry;
     var vatt = vmChatAttachments.find(function(a){return a.kind==='video' && a.status!=='removed';});
     var file = vatt ? vatt.file : pendingVideoFile;
     if (!file) return;
+    // A double tap / double retry must not run two uploads for one attachment.
+    if (vatt && vatt.busy) return;
+    // A retry replaces the previous failure notice instead of stacking another
+    // identical one under the same user message.
+    if (isRetry && vatt && vatt.errBubble) {
+        try { vatt.errBubble.remove(); } catch (e) {}
+        vatt.errBubble = null;
+    }
     if (vatt) {
         vatt.question = question || '';
+        vatt.busy = true;
         _vmSetAttachStatus(vatt, 'uploading', {progress:0, indeterminate:true, error:''});
-    } else {
+    } else if (!isRetry) {
         clearVideoUpload();
     }
-    addMessage(question ? question + "\n\n🎬 " + file.name : "🎬 " + file.name, "user");
+    // Create the user message exactly once. On retry the video stays on the
+    // message that was already sent (and is NOT re-added).
+    if (!isRetry || !vatt || !vatt.sent) {
+        var msgVideoUrl = '';
+        try { msgVideoUrl = URL.createObjectURL(file); } catch (e) { msgVideoUrl = ''; }
+        addMessage(question ? question + "\n\n🎬 " + file.name : "🎬 " + file.name, "user",
+                   null, null, msgVideoUrl || null);
+        if (vatt) {
+            vatt.sent = true;
+            // Separate from the composer preview: removing the card must not
+            // revoke the URL the sent message is still playing from.
+            vatt.msgVideoUrl = msgVideoUrl;
+        }
+    }
     var thinking = addThinkingIndicator ? addThinkingIndicator() : null;
     // A hung upload must not leave the card stuck on "Uploading" forever.
     var vctl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
@@ -5037,6 +5080,14 @@ async function sendVideoForAnalysis(question) {
         } else {
             renderComposerChips();
         }
+    };
+    // Remember the one failure bubble this attempt adds, so the next Retry can
+    // clear it instead of leaving a pile of identical "couldn't watch" notices.
+    var _rememberErrBubble = function(){
+        try {
+            var msgs = document.getElementById("messages");
+            if (vatt && msgs && msgs.lastElementChild) vatt.errBubble = msgs.lastElementChild;
+        } catch (e) {}
     };
     try {
         var fd = new FormData();
@@ -5052,6 +5103,7 @@ async function sendVideoForAnalysis(question) {
         if (!d || d.status !== "success") {
             _failVideo((d && d.message) || 'Video analysis failed. Tap Retry to try again.');
             addMessage((d && d.message) || "I couldn't watch that video.", "ai");
+            _rememberErrBubble();
             return;
         }
         if (vatt) vmRemoveAttachment(vatt.id);
@@ -5068,8 +5120,10 @@ async function sendVideoForAnalysis(question) {
         _failVideo(msg);
         addMessage(aborted ? "I couldn't watch that video — the upload timed out."
                            : "I couldn't watch that video — the upload failed.", "ai");
+        _rememberErrBubble();
     } finally {
         clearTimeout(vtimer);
+        if (vatt) vatt.busy = false;
     }
 }
 
@@ -5326,19 +5380,57 @@ function positionMenuAbove(menuId, btnId) {
     menu.style.position = "fixed";
     menu.style.zIndex = "1000";
     var mh = menu.offsetHeight || 240;
-    // bottom = distance from bottom of viewport to button top, +8px gap
-    var bottom = window.innerHeight - rect.top + 8;
-    if (bottom < 8) bottom = 8;
-    menu.style.bottom = bottom + "px";
-    // Left clamped inside viewport with 8px margin.
-    var left = rect.left;
     var mw = menu.offsetWidth || 220;
-    if (left < 8) left = 8;
-    if (left + mw > window.innerWidth - 8) left = window.innerWidth - mw - 8;
-    if (left < 8) left = 8;
-    menu.style.left = left + "px";
-    menu.style.maxHeight = Math.max(120, rect.top - 16) + "px";
+    // Measure against the VISIBLE viewport, not the layout viewport: with the
+    // on-screen keyboard open, innerHeight can extend behind the keyboard and a
+    // bottom-anchored menu would open where the user cannot tap it.
+    var vv = window.visualViewport || null;
+    var viewTop = (vv && typeof vv.offsetTop === "number") ? vv.offsetTop : 0;
+    var viewHeight = (vv && vv.height) ? vv.height : window.innerHeight;
+    var viewBottom = viewTop + viewHeight;
+    var gap = 8;
+    // Prefer above the button; drop below only when there is no room above.
+    var top = rect.top - mh - gap;
+    if (top < viewTop + gap) {
+        top = Math.min(rect.top + rect.height + gap, viewBottom - mh - gap);
+    }
+    top = Math.max(viewTop + gap, Math.min(top, viewBottom - mh - gap));
+    menu.style.top = Math.round(top) + "px";
+    menu.style.bottom = "auto";
+    // Left clamped inside the visible viewport with 8px margin.
+    var left = rect.left;
+    if (left < gap) left = gap;
+    if (left + mw > window.innerWidth - gap) left = window.innerWidth - mw - gap;
+    if (left < gap) left = gap;
+    menu.style.left = Math.round(left) + "px";
+    menu.style.maxHeight = Math.max(120, Math.round(viewHeight - gap * 2)) + "px";
     menu.style.overflowY = "auto";
+}
+
+/* Open a native picker from a plus-menu tap.
+   The value is reset first so re-selecting the same file still fires `change`.
+   The caller closes the menu only after the picker request has been issued, so
+   a tap can never dismiss the menu without opening a chooser. */
+function vmOpenFilePicker(inputId) {
+    var input = document.getElementById(inputId);
+    if (!input) return false;
+    try { input.value = ""; } catch (e) {}
+    try { input.click(); return true; }
+    catch (e) { console.warn("[picker] could not open " + inputId + ":", e); return false; }
+}
+
+function vmPlusMenuCamera() {
+    closePlusMenu();
+    try { vmOpenCameraCapture(); }
+    catch (e) {
+        console.warn("[picker] camera capture failed, using native input:", e);
+        vmOpenFilePicker('chatCameraInput');
+    }
+}
+
+function vmPlusMenuPick(inputId) {
+    closePlusMenu();
+    vmOpenFilePicker(inputId);
 }
 function repositionMenus() {
     var pm = document.getElementById("personaMenu");
@@ -6604,7 +6696,10 @@ function addMessage(text, type = "ai", imageData, mediaUrl, videoUrl, images) {
     var finalImageUrl = mediaUrl || imageUrlFromText;
     var finalVideoUrl = videoUrl || videoUrlFromText;
 
-    if (finalImageUrl && type === "ai") {
+    // A user message owns the media it was sent with. Images that already
+    // arrived through imageData must not be rendered twice, but a video (or a
+    // history-restored image_url) belongs inside the user bubble too.
+    if (finalImageUrl && (type === "ai" || !imageData)) {
         var chatImgGrid = document.createElement("div");
         chatImgGrid.className = "vm-media-grid count-1";
         var chatImgCard = document.createElement("div");
@@ -6620,7 +6715,7 @@ function addMessage(text, type = "ai", imageData, mediaUrl, videoUrl, images) {
         bubble.appendChild(chatImgGrid);
     }
 
-    if (finalVideoUrl && type === "ai") {
+    if (finalVideoUrl) {
         var chatVidGrid = document.createElement("div");
         chatVidGrid.className = "vm-media-grid count-1";
         var chatVidCard = document.createElement("div");
@@ -7239,6 +7334,10 @@ function addThinkingIndicator() {
     const div = document.createElement("div");
     div.className = "self-start";
     div.dataset.thinking = "true";
+    // Explicit assistant-side placement: the indicator must sit left with the
+    // AI column even if the `.self-start` utility is ever renamed.
+    div.style.alignSelf = "flex-start";
+    div.style.marginRight = "auto";
     div.style.maxWidth = "120px";
     div.style.padding = "13px 16px";
     div.style.borderRadius = "14px";

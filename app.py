@@ -4778,6 +4778,9 @@ def api_vision_capabilities():
     try:
         vs = get_vision_service()
         provider_name, provider_config = vs._get_vision_provider()
+        # Native video availability is a property of the NVIDIA key, not of
+        # whichever provider wins the image preference order.
+        nvidia_video = bool(vs._get_nvidia_config())
         caps = {
             "status": "success",
             "available": provider_name is not None,
@@ -4785,7 +4788,8 @@ def api_vision_capabilities():
             "max_image_size_mb": vs.MAX_IMAGE_SIZE_BYTES // (1024 * 1024),
             "supported_formats": list(vs.ALLOWED_MIME_TYPES),
             "supports_multi_image": True,
-            "supports_native_video": False,
+            "supports_native_video": nvidia_video,
+            "native_video_provider": "nvidia" if nvidia_video else "",
         }
         # NVIDIA Nemotron specific capabilities.
         if provider_name == "nvidia":
@@ -4956,10 +4960,14 @@ def _get_analysis_count(user_id: str) -> int:
 
 @app.route("/api/video/analyze", methods=["POST"])
 def api_video_analyze():
-    """Watch an uploaded video with Qwen3-VL and describe it.
+    """Watch an uploaded video and describe it.
 
-    Used by both the chat composer and the Studio (where the description seeds
-    a production). Respects the same global video budget cap as generation.
+    The unified NVIDIA Nemotron native-video pipeline (the same VisionService
+    behind /api/vision/analyze) is the source of truth. The existing Alibaba
+    Qwen3-VL path stays as a fallback, unchanged, so a deploy without an
+    NVIDIA key keeps working exactly as before. Used by both the chat composer
+    and the Studio (where the description seeds a production). Respects the
+    same global video budget cap as generation.
     """
     user_id, error = _require_login()
     if error:
@@ -4968,7 +4976,12 @@ def api_video_analyze():
     import core.studio_jobs as sj
     import core.video_vision as vv
 
-    if not vv.available():
+    vs = get_vision_service()
+    # Do NOT gate this endpoint on Alibaba alone: that made a deploy with a
+    # working NVIDIA key answer "Video analysis isn't available right now."
+    nvidia_ready = bool(vs._get_nvidia_config())
+    alibaba_ready = vv.available()
+    if not nvidia_ready and not alibaba_ready:
         return jsonify({"status": "error",
                         "message": "Video analysis isn't available right now."}), 503
 
@@ -5014,12 +5027,42 @@ def api_video_analyze():
             system = ("You describe videos clearly and specifically for the person who uploaded "
                       "them. Say what actually happens. Under 180 words.")
 
-        result = vv.analyze_video(tmp_path, prompt, system=system)
-        if result.get("error"):
-            return jsonify({"status": "error", "message": result["error"]}), 502
+        # 1) Unified NVIDIA Nemotron native video (source of truth).
+        provider_used = ""
+        description = ""
+        tokens = 0
+        nvidia_error = ""
+        if nvidia_ready:
+            data_uri, prep_error = vs.prepare_video_data_uri(
+                tmp_path, upload.filename, upload.mimetype
+            )
+            if not data_uri:
+                nvidia_error = prep_error or "This video could not be prepared for analysis."
+            else:
+                vid = vs.analyze_video(data_uri, question=prompt, context=system)
+                if vid.success and (vid.description or "").strip():
+                    description = vid.description.strip()
+                    tokens = int(((vid.raw or {}).get("usage") or {}).get("total_tokens", 0) or 0)
+                    provider_used = "nvidia"
+                else:
+                    nvidia_error = vid.error or "NVIDIA returned an empty description."
+
+        # 2) Existing Alibaba Qwen3-VL path, unchanged, as the fallback.
+        if not provider_used and alibaba_ready:
+            result = vv.analyze_video(tmp_path, prompt, system=system)
+            if result.get("error"):
+                return jsonify({"status": "error", "message": result["error"]}), 502
+            description = result.get("text", "")
+            tokens = int(result.get("tokens", 0) or 0)
+            provider_used = "alibaba"
+
+        if not provider_used:
+            return jsonify({
+                "status": "error",
+                "message": nvidia_error or "Video analysis isn't available right now.",
+            }), 502
 
         # Charge the VL tokens against the same cap that governs generation.
-        tokens = int(result.get("tokens", 0) or 0)
         if tokens:
             sj.add_spend(round((tokens / 1000.0) * sj.vl_cost_per_1k(), 6))
         coll = usage_collection()
@@ -5042,9 +5085,10 @@ def api_video_analyze():
 
         return jsonify({
             "status": "success",
-            "description": result.get("text", ""),
+            "description": description,
             "video_url": stored,
             "tokens": tokens,
+            "provider": provider_used,
             "analyses_used": used + 1,
             "analyses_limit": limit,
             "remaining_budget_usd": sj.remaining_budget(),
