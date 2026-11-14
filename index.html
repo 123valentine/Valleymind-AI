@@ -2120,9 +2120,10 @@
   .self-start{ align-self:flex-start; margin-right:auto; }
   /* Native file inputs are kept rendered (never display:none) so a
      programmatic .click() reliably opens the Android WebView / mobile system
-     picker. They stay invisible, 1px, and untappable. */
-  .vm-file-input{ position:fixed; left:0; top:0; width:1px; height:1px; padding:0;
-    margin:0; border:0; opacity:0; overflow:hidden; pointer-events:none; }
+     picker. They stay invisible via opacity:0 and positioned off-screen so
+     they cannot be accidentally tapped, but remain focusable for .click(). */
+  .vm-file-input{ position:fixed; left:-9999px; top:0; width:auto; height:auto; padding:0;
+    margin:0; border:0; opacity:0; overflow:hidden; pointer-events:auto; }
   /* Richly formatted assistant replies: let HTML flow naturally instead of pre-wrap. */
   .bubble.ai-rich{ white-space:normal; }
   /* Tables in rich replies: scroll horizontally on narrow screens instead of

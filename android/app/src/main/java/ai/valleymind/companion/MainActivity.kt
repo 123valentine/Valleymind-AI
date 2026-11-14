@@ -326,6 +326,8 @@ class MainActivity : AppCompatActivity(), CompanionBridge.Host {
                     if (outputUri != null) {
                         val captureIntent = Intent(MediaStore.ACTION_IMAGE_CAPTURE).apply {
                             putExtra(MediaStore.EXTRA_OUTPUT, outputUri)
+                            // Request the rear (environment) camera by default, not the front selfie camera.
+                            putExtra("android.intent.extra.USE_FRONT_CAMERA", false)
                             addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_READ_URI_PERMISSION)
                         }
                         if (captureIntent.resolveActivity(packageManager) != null) {
