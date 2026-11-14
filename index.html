@@ -2084,10 +2084,10 @@
   .ai-content ul,.ai-content ol{padding-left:20px;margin:8px 0}
   .ai-content li{margin-bottom:4px}
   .ai-content h1,.ai-content h2,.ai-content h3{color:#00d4ff;font-family:'Space Grotesk',sans-serif;margin-bottom:8px}
-  .user-message{align-self:flex-end;margin-left:auto;max-width:780px;display:flex;flex-direction:column;align-items:flex-end}
+  .user-message{align-self:flex-end;margin-left:auto;margin-right:0;max-width:780px;width:-moz-fit-content;width:fit-content;display:flex;flex-direction:column;align-items:flex-end;text-align:left}
   .user-message .bubble{background:rgba(0,212,255,0.16);border:1px solid rgba(255,255,255,0.1);border-radius:14px 14px 4px 14px;padding:12px 16px;color:#dde3e7;white-space:pre-wrap;word-break:break-word;width:100%}
-  .assistant-message{align-self:flex-start;margin-right:auto;max-width:780px;display:flex;flex-direction:column;align-items:flex-start}
-  .assistant-message .bubble{background:none;border:none;box-shadow:none;padding:12px 16px;color:#dde3e7;white-space:pre-wrap;word-break:break-word;width:100%}
+  .assistant-message{align-self:flex-start;margin-left:0;margin-right:0;max-width:780px;width:-moz-fit-content;width:fit-content;display:flex;flex-direction:column;align-items:flex-start;text-align:left}
+  .assistant-message .bubble{background:none;border:none;box-shadow:none;padding:0;margin:0;color:#dde3e7;white-space:pre-wrap;word-break:break-word;width:auto;text-align:left}
   .msg-toolbar{display:flex;align-items:center;gap:4px;margin-top:4px;padding-left:4px}
   .msg-toolbar button{background:none;border:none;cursor:pointer;padding:4px;border-radius:6px;display:flex;align-items:center;color:#64748b;transition:all 0.15s}
   .msg-toolbar button:hover{background:rgba(0,212,255,0.1)}
@@ -2108,13 +2108,13 @@
      pre with overflow-x:auto) expands the bubble beyond the viewport. */
   .assistant-message, .user-message{ min-width:0; max-width:100%; }
   .user-message .bubble{ background:rgba(0,212,255,0.10); border-color:rgba(255,255,255,0.06); }
-  .assistant-message .bubble{ padding:12px 20px; background:rgba(255,255,255,0.035); border-radius:12px; }
+  .assistant-message .bubble{ padding:0; margin:0; background:none; border:none; border-radius:0; }
   /* Alignment guard: side placement must not depend on #messages being a flex
      column (a single display override used to drop align-self and leave both
      sides full-width). align-self covers flex, fit-content + auto margins keep
      the same right/left split in ordinary block flow. */
-  #messages > .user-message{ align-self:flex-end; margin-left:auto; width:fit-content; max-width:100%; }
-  #messages > .assistant-message{ align-self:flex-start; margin-right:auto; width:fit-content; max-width:100%; }
+  #messages > .user-message{ align-self:flex-end; margin-left:auto; margin-right:0; width:-moz-fit-content;width:fit-content; max-width:100%; }
+  #messages > .assistant-message{ align-self:flex-start; margin-left:0; margin-right:0; width:-moz-fit-content;width:fit-content; max-width:100%; }
   /* Assistant-side indicators (thinking dots, activity pill) are left-aligned
      even when they are appended as standalone children of #messages. */
   .self-start{ align-self:flex-start; margin-right:auto; }
