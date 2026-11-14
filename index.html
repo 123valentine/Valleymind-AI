@@ -2120,9 +2120,10 @@
   .self-start{ align-self:flex-start; margin-right:auto; }
   /* Native file inputs are kept rendered (never display:none) so a
      programmatic .click() reliably opens the Android WebView / mobile system
-     picker. They stay invisible via opacity:0 and positioned off-screen so
-     they cannot be accidentally tapped, but remain focusable for .click(). */
-  .vm-file-input{ position:fixed; left:-9999px; top:0; width:auto; height:auto; padding:0;
+     picker. They stay invisible via opacity:0 but are positioned INSIDE the
+     viewport (not off-screen) so Android WebView reliably delivers the
+     synthetic click to open the native file chooser. */
+  .vm-file-input{ position:fixed; left:0; top:0; width:1px; height:1px; padding:0;
     margin:0; border:0; opacity:0; overflow:hidden; pointer-events:auto; }
   /* Richly formatted assistant replies: let HTML flow naturally instead of pre-wrap. */
   .bubble.ai-rich{ white-space:normal; }
@@ -5413,14 +5414,16 @@ function positionMenuAbove(menuId, btnId) {
    The caller closes the menu only after the picker request has been issued, so
    a tap can never dismiss the menu without opening a chooser. */
 function vmOpenFilePicker(inputId) {
+    console.log("[picker] vmOpenFilePicker(" + inputId + ") called");
     var input = document.getElementById(inputId);
-    if (!input) return false;
+    if (!input) { console.warn("[picker] input not found: " + inputId); return false; }
     try { input.value = ""; } catch (e) {}
-    try { input.click(); return true; }
+    try { input.click(); console.log("[picker] input.click() issued for " + inputId); return true; }
     catch (e) { console.warn("[picker] could not open " + inputId + ":", e); return false; }
 }
 
 function vmPlusMenuCamera() {
+    console.log("[picker] vmPlusMenuCamera called");
     closePlusMenu();
     try { vmOpenCameraCapture(); }
     catch (e) {
@@ -5430,6 +5433,7 @@ function vmPlusMenuCamera() {
 }
 
 function vmPlusMenuPick(inputId) {
+    console.log("[picker] vmPlusMenuPick(" + inputId + ") called");
     closePlusMenu();
     vmOpenFilePicker(inputId);
 }
