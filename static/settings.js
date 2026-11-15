@@ -2539,6 +2539,13 @@ window.VMRichRender = (function () {
             // keep this specific safe handler
           } else if (name.slice(0, 2) === "on") { el.removeAttribute(name); continue; }
           if (name === "style" || name === "class") { el.removeAttribute(name); continue; }
+          // GFM column alignment arrives from marked as align="left|center|right".
+          // Keep only those values; anything else is dropped. The matching
+          // text-align is applied by CSS (style attributes are stripped above).
+          if (name === "align" && (tag === "th" || tag === "td")) {
+            if (!/^(left|center|right)$/i.test(a.value || "")) el.removeAttribute(name);
+            continue;
+          }
           var keep = false;
           if (ALLOWED_ATTRS[tag] && ALLOWED_ATTRS[tag][name]) keep = true;
           else if ((name === "href" || name === "src") && isSafeUrl(a.value)) keep = true;
@@ -2725,9 +2732,20 @@ window.VMRichRender = (function () {
     });
 
     var html = "";
-    if (typeof window !== "undefined" && typeof window.marked === "function") {
+    // marked v9's browser build exposes an OBJECT (`window.marked`) whose
+    // parser lives on `.parse`; only very old builds were callable. Accept both
+    // shapes so tables/headings/lists are actually parsed instead of silently
+    // falling through to the plain-paragraph path below.
+    var _markedParse = null;
+    if (typeof window !== "undefined" && window.marked) {
+      if (typeof window.marked === "function") _markedParse = window.marked;
+      else if (typeof window.marked.parse === "function") {
+        _markedParse = function (src, opts) { return window.marked.parse(src, opts); };
+      }
+    }
+    if (_markedParse) {
       try {
-        html = window.marked.parse(protectedText, { mangle: false, headerIds: false, gfm: true }) || "";
+        html = _markedParse(protectedText, { gfm: true }) || "";
       } catch (e) { html = ""; }
     }
     if (!html) {
@@ -2784,7 +2802,30 @@ window.VMPresentationSelector = (function () {
 })();
 
 // ---------------------------------------------------------------------
-// VMEnrichAssistantReply — enrich a completed assistant bubble
+// VMWrapReplyTables - put every rendered table inside a horizontal scroll
+// container. Keeps wide tables inside the message bubble on mobile instead
+// of widening the bubble (or the whole chat) beyond the viewport.
+// ---------------------------------------------------------------------
+window.VMWrapReplyTables = function (root) {
+  "use strict";
+  if (!root || typeof root.querySelectorAll !== "function") return;
+  try {
+    var tables = root.querySelectorAll("table");
+    if (tables.length && root.classList) root.classList.add("has-table");
+    for (var i = 0; i < tables.length; i++) {
+      var tbl = tables[i];
+      if (!tbl || !tbl.parentNode) continue;
+      if (tbl.parentNode.classList && tbl.parentNode.classList.contains("vm-table-wrap")) continue;
+      var wrap = document.createElement("div");
+      wrap.className = "vm-table-wrap";
+      tbl.parentNode.insertBefore(wrap, tbl);
+      wrap.appendChild(tbl);
+    }
+  } catch (e) {}
+};
+
+// ---------------------------------------------------------------------
+// VMEnrichAssistantReply - enrich a completed assistant bubble
 // Plain/simple answers are left as plain text (no behavior change).
 // ---------------------------------------------------------------------
 window.VMEnrichAssistantReply = function (bub, fullText) {
@@ -2808,18 +2849,7 @@ window.VMEnrichAssistantReply = function (bub, fullText) {
     if (fmt === "plain" && !hasMd) return;
     bub.innerHTML = html;
     // Wrap tables for horizontal scrolling on mobile/desktop without dropping content.
-    try {
-      var tables = bub.querySelectorAll ? bub.querySelectorAll("table") : [];
-      for (var ti = 0; ti < tables.length; ti++) {
-        var tbl = tables[ti];
-        if (!tbl || !tbl.parentNode) continue;
-        if (tbl.parentNode.classList && tbl.parentNode.classList.contains("vm-table-wrap")) continue;
-        var wrap = document.createElement("div");
-        wrap.className = "vm-table-wrap";
-        tbl.parentNode.insertBefore(wrap, tbl);
-        wrap.appendChild(tbl);
-      }
-    } catch (e2) {}
+    window.VMWrapReplyTables(bub);
     bub.classList.add("ai-rich");
   } catch (e) {
     // Keep the existing plain-text bubble on any unexpected error.

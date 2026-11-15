@@ -11,7 +11,12 @@ if errorlevel 1 exit /b 1
 rem 3) runtime test: call silence/micStop/assistantStop with uninitialised bars
 "%NODE%" -e "const fs=require('fs');const h=fs.readFileSync('index.html','utf8');const s=h.indexOf('var vmWaveform');const nl=String.fromCharCode(10);const e=h.indexOf(nl+'})();',s);let c=h.slice(s,e+5);c=c.replace('var vmWaveform','global.vmWaveform');global.window={};global.document={addEventListener:function(){},hidden:false,getElementById:function(){return null;}};global.navigator={};eval(c);try{vmWaveform.micStop();vmWaveform.assistantStop();vmWaveform.cleanup();console.log('UNINIT_OK');}catch(err){console.log('FAIL uninit: '+err.message);process.exit(1);}"
 if errorlevel 1 exit /b 1
-rem 4) STT buffer test (vm-fix15 item 1): committed finals + single replaced interim,
+rem 4) Rich markdown renderer: tables/headings/lists must render through
+rem    marked v9's object-shaped global (`window.marked.parse`), not fall back
+rem    to plain paragraphs.
+"%NODE%" tests\test_vm_richrender.js
+if errorlevel 1 exit /b 1
+rem 5) STT buffer test (vm-fix15 item 1): committed finals + single replaced interim,
 rem    no concatenated interims; restart between sentences gives each once.
 "%NODE%" test_stt_dup.js
 if errorlevel 1 exit /b 1
@@ -35,6 +40,8 @@ python tests\test_vm_fix20_part2.py
 if errorlevel 1 exit /b 1
 rem 10) vm-fix20 Part 3: image extraction helpers + TinyFish field probe (guarded by TINYFISH_API_KEY).
 python tests\test_vm_fix20_part3.py
+if errorlevel 1 exit /b 1
+python tests\test_table_rendering.py
 if errorlevel 1 exit /b 1
 python tests\test_vm_fix20_tinyfish_probe.py
 if errorlevel 1 exit /b 1

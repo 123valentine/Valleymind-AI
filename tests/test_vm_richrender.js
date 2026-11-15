@@ -187,5 +187,30 @@ assert('vm19: code block present', hCode.indexOf('<code') !== -1 || hCode.indexO
 // Code block content should preserve symbols (stub keeps code text)
 assert('vm19: code block keeps ** and # symbols', hCode.indexOf('**keep symbols**') !== -1 || hCode.indexOf('# heading') !== -1 || hCode.indexOf('keep symbols') !== -1, hCode.slice(0,200));
 
+// --- Table rendering regression: marked v9 exposes an OBJECT (`window.marked.parse`),
+// not a callable function. The old function-only guard silently fell back to plain
+// paragraphs, so Markdown tables appeared as raw pipe text. ---
+var ctxObj = {
+  window: { DOMParser: stubDOMParser, marked: { parse: stubMarked } },
+  document: stubDocument,
+  DOMParser: stubDOMParser,
+  marked: { parse: stubMarked },
+  console: console, Promise: Promise, Object: Object,
+  setTimeout: setTimeout, clearTimeout: clearTimeout, Date: Date,
+  NodeFilter: { SHOW_ELEMENT: 1, SHOW_COMMENT: 128 }
+};
+vm.createContext(ctxObj);
+vm.runInContext(settingsSrc, ctxObj);
+var objRender = ctxObj.window.VMRichRender && ctxObj.window.VMRichRender.render;
+assert('marked-object: VMRichRender.render available', typeof objRender === 'function');
+var objTable = typeof objRender === 'function'
+  ? objRender('| Feature | A | B |\n|---|---|---|\n| Speed | fast | slow |')
+  : '';
+assert('marked-object: pipe table becomes <table>', objTable.indexOf('<table') !== -1, objTable.slice(0,160));
+assert('marked-object: no raw pipe markup leaks', objTable.indexOf('|---') === -1, objTable.slice(0,160));
+var objBold = typeof objRender === 'function' ? objRender('This is **bold** text.') : '';
+assert('marked-object: bold renders as <strong>', objBold.indexOf('<strong>') !== -1, objBold.slice(0,120));
+assert('marked-object: VMWrapReplyTables helper exposed', typeof ctxObj.window.VMWrapReplyTables === 'function');
+
 console.log('RENDER_TESTS: ' + ok + ' passed, ' + fail + ' failed');
 if (fail) process.exit(1);

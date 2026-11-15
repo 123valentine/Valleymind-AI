@@ -91,7 +91,7 @@
   .vm-switch input:focus-visible + .vm-switch-track { box-shadow: 0 0 0 2px rgba(0,212,255,0.45); }
 </style>
 <script src="/static/companion_presentation.js?v=1"></script>
-<script src="/static/settings.js?v=17"></script>
+<script src="/static/settings.js?v=18"></script>
 <script src="/static/pref_setup_model.js?v=3"></script>
 <script src="/static/onboarding.js?v=3"></script>
     <script src="/static/music_studio.js?v=10"></script>
@@ -2127,8 +2127,9 @@
     margin:0; border:0; opacity:0; overflow:hidden; pointer-events:auto; }
   /* Richly formatted assistant replies: let HTML flow naturally instead of pre-wrap. */
   .bubble.ai-rich{ white-space:normal; }
-  /* Tables in rich replies: scroll horizontally on narrow screens instead of
-     overflowing or squashing the bubble. Professional borders and padding. */
+  /* Tables in rich replies: real table layout inside a scroll wrapper.
+     Cells wrap so long text stays readable; genuinely wide tables scroll
+     inside .vm-table-wrap instead of widening the bubble/page. */
   .bubble.ai-rich table{
     border-collapse:collapse;
     width:100%;
@@ -2140,7 +2141,8 @@
     border:1px solid rgba(255,255,255,0.12);
     padding:6px 10px;
     text-align:left;
-    white-space:nowrap;
+    white-space:normal;
+    overflow-wrap:break-word;
   }
   .bubble.ai-rich table th{
     background:rgba(0,212,255,0.15);
@@ -2153,11 +2155,12 @@
   .bubble.ai-rich table tr:nth-child(even) td{
     background:rgba(255,255,255,0.03);
   }
-  /* Horizontal scroll container for wide tables */
-  .bubble.ai-rich table{
-    display:block;
-    overflow-x:auto;
-  }
+  /* GFM column alignment (:---, :---:, ---:) survives the sanitizer as the
+     align attribute; re-apply it as text alignment. */
+  .bubble .vm-table-wrap th[align="center"],
+  .bubble .vm-table-wrap td[align="center"]{ text-align:center; }
+  .bubble .vm-table-wrap th[align="right"],
+  .bubble .vm-table-wrap td[align="right"]{ text-align:right; }
   .msg-toolbar{ opacity:0.72; transition:opacity .15s; }
   .msg-toolbar:hover{ opacity:1; }
   /* Comfortable reading width on desktop; center so large monitors don't
@@ -2252,11 +2255,14 @@
   .vm-media-card img,.vm-media-card video{display:block;width:100%;height:auto;max-height:420px;object-fit:contain;background:#0b1220;}
   .vm-media-card .vm-media-doc{padding:10px 12px;color:#e2e8f0;font-size:12px;font-family:'Inter',sans-serif;display:flex;gap:8px;align-items:center;}
   @media (max-width:640px){.vm-media-grid.count-2,.vm-media-grid.count-3,.vm-media-grid.count-4{grid-template-columns:1fr;}.vm-media-card img,.vm-media-card video{max-height:320px;}}
+  /* A reply that contains a table needs a definite width so the table's
+     scroll wrapper can be capped to the message width. Without this, the
+     bubble is shrink-to-fit and a wide table widens the whole message. */
+  .assistant-message .bubble.ai-rich.has-table{ width:100%; max-width:100%; min-width:0; }
   /* Rich response tables: keep complete, readable, and horizontally scrollable on narrow screens */
   .bubble .vm-table-wrap{width:100%;max-width:100%;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;margin:10px 0;border-radius:10px;}
-  .bubble .vm-table-wrap table{margin:0 !important;min-width:480px;max-width:none;width:max-content;}
-  .bubble .vm-table-wrap th,.bubble .vm-table-wrap td{white-space:normal;word-break:break-word;}
-  @media (max-width:640px){.bubble .vm-table-wrap table{min-width:420px;}}
+  .bubble .vm-table-wrap table{margin:0 !important;min-width:0;max-width:none;width:100%;display:table;}
+  .bubble .vm-table-wrap th,.bubble .vm-table-wrap td{white-space:normal;overflow-wrap:break-word;word-break:normal;}
   /* Mobile: stack the composer vertically — text input on top, persona
      selector directly underneath, then the mic/send row. The textarea keeps
      full width and is never pushed sideways by the selector. */
@@ -6782,6 +6788,11 @@ function addMessage(text, type = "ai", imageData, mediaUrl, videoUrl, images) {
                 var _hasMd = /\*\*|\*[^*]|^#{1,6}\s|^[-*+]\s|^\d+\.\s|```|~~~|\|.*\|.*\n.*\|[-: ]|^>\s|\[.+\]\(.+\)|^---+$/m.test(textWithoutMedia);
                 if (_fmt !== "plain" || _hasMd) {
                     bubble.innerHTML = window.VMRichRender.render(textWithoutMedia);
+                    // Tables rendered here (history reload / non-streamed replies)
+                    // need the same scroll wrapper as streamed ones.
+                    if (typeof window.VMWrapReplyTables === "function") {
+                        window.VMWrapReplyTables(bubble);
+                    }
                     bubble.classList.add("ai-rich");
                 } else {
                     var txtSpan = document.createElement("span");
