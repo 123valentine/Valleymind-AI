@@ -2372,7 +2372,7 @@ class MarcusBrain:
                     print(f"[MEMORY] save_sync failed: {exc}")
 
             try:
-                self.memory.add_message(cid, "assistant", reply, timestamp)
+                self.memory.add_message(cid, "assistant", reply, timestamp, source_metadata=self._pending_source_metadata)
             except Exception as exc:
                 print(f"[ERROR] Memory add_message (assistant) failed: {exc}")
 
@@ -2640,7 +2640,7 @@ class MarcusBrain:
                             full_reply = clarification
                             yield clarification
                             try:
-                                self.memory.add_message(cid, "assistant", full_reply, timestamp)
+                                self.memory.add_message(cid, "assistant", full_reply, timestamp, source_metadata=self._pending_source_metadata)
                             except Exception:
                                 pass
                             return
@@ -2730,7 +2730,7 @@ class MarcusBrain:
                             "source": src.get("domain", ""),
                             "credit": src.get("image_credit", ""),
                         })
-                self.memory.add_message(cid, "assistant", full_reply or "No response", timestamp, images=_assistant_images, dedup_id=dedup_id)
+                self.memory.add_message(cid, "assistant", full_reply or "No response", timestamp, images=_assistant_images, source_metadata=self._pending_source_metadata, dedup_id=dedup_id)
             except Exception as exc:
                 print(f"[ERROR] Memory add_message (assistant) failed: {exc}")
 

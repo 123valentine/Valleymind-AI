@@ -76,6 +76,14 @@
 <script src="https://unpkg.com/lucide@latest"></script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
+<!-- KaTeX: renders mathematical expressions (Stage 3 requirement #8). Loaded after marked;
+     auto-render runs on demand via window.VMRenderMath(bub). Graceful no-op if CDN fails. -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+<!-- highlight.js: syntax highlighting for code blocks (Stage 3 requirement #2). -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <style>
   /* Settings toggle switch. The visual state is driven ONLY by :checked, so the
@@ -2211,6 +2219,116 @@
   .bubble.ai-rich code{ font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:0.92em; }
   .bubble.ai-rich :not(pre)>code{ background:rgba(255,255,255,0.08); padding:1px 5px; border-radius:4px; }
   .bubble.ai-rich hr{ border:0; border-top:1px solid rgba(255,255,255,0.1); margin:10px 0; }
+
+  /* â”€â”€ Stage 3: rich response components â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+
+  /* Research images from live search evidence (single card / side-by-side / scroll row). */
+  .bubble.ai-rich .vm-research-images{ margin:10px 0; display:flex; flex-direction:column; gap:8px; }
+  .bubble.ai-rich .vm-research-card{ display:flex; flex-direction:column; gap:6px; background:#0b1220; border:1px solid rgba(148,163,184,0.14); border-radius:10px; padding:8px; flex:0 0 auto; min-width:150px; max-width:260px; }
+  .bubble.ai-rich .vm-research-card img{ width:100%; height:auto; aspect-ratio:4/3; object-fit:cover; display:block; border-radius:8px; }
+  .bubble.ai-rich .vm-research-credit{ font-size:10px; color:rgba(255,255,255,0.6); text-align:center; line-height:1.3; overflow-wrap:break-word; }
+  .bubble.ai-rich .vm-research-card a{ text-decoration:none; }
+  @media(max-width:640px){ .bubble.ai-rich .vm-research-card{ min-width:140px; max-width:none; } }
+
+  /* Image-left / text-right result cards from research evidence.
+     Image on the left, name + description + attribution on the right.
+     Stacks vertically on narrow screens. */
+  .bubble.ai-rich .vm-image-left-cards{ margin:10px 0; display:flex; flex-direction:column; gap:10px; }
+  .bubble.ai-rich .vm-image-left-card{ display:flex; gap:12px; align-items:flex-start; border:1px solid rgba(148,163,184,0.14); border-radius:10px; background:#0b1220; padding:10px; min-width:0; }
+  .bubble.ai-rich .vm-image-left-card img{ width:96px; height:96px; object-fit:cover; border-radius:8px; flex:0 0 96px; margin:0; }
+  .bubble.ai-rich .vm-image-left-body{ flex:1; min-width:0; display:flex; flex-direction:column; gap:4px; }
+  .bubble.ai-rich .vm-image-left-name{ font-weight:700; font-size:14px; color:#e2e8f0; margin:0 0 2px; overflow-wrap:break-word; }
+  .bubble.ai-rich .vm-image-left-credit{ font-size:10px; color:rgba(255,255,255,0.6); margin-top:auto; overflow-wrap:break-word; }
+  @media(max-width:640px){
+    .bubble.ai-rich .vm-image-left-card{ flex-direction:column; align-items:flex-start; }
+    .bubble.ai-rich .vm-image-left-card img{ width:100%; height:auto; max-height:200px; flex:none; }
+  }
+
+  /* Copyable code block button (added by VMAddCodeCopyButtons). */
+  .bubble.ai-rich .vm-code-copy:hover{ background:rgba(255,255,255,0.22); border-color:rgba(255,255,255,0.35); color:#fff; }
+  .bubble.ai-rich .vm-code-copy:active{ background:rgba(0,212,255,0.2); color:#00d4ff; }
+
+  /* Information / product card (image + details). Reuses vm-result-card shell for images. */
+  .bubble.ai-rich .vm-info-card,
+  .bubble.ai-rich vm-card{ display:flex; gap:10px; align-items:flex-start; margin:10px 0; border:1px solid rgba(148,163,184,0.14); border-radius:10px; background:rgba(15,23,42,0.4); padding:10px 12px; }
+  .bubble.ai-rich .vm-info-card > img,
+  .bubble.ai-rich vm-card > img,
+  .bubble.ai-rich vm-card vm-card-img{ width:96px; height:96px; object-fit:cover; border-radius:8px; flex:0 0 96px; margin:0; }
+  .bubble.ai-rich .vm-info-card .vm-info-body,
+  .bubble.ai-rich vm-card > *{ flex:1; min-width:0; }
+  .bubble.ai-rich .vm-info-card .vm-info-name,
+  .bubble.ai-rich vm-card vm-card-title{ font-weight:700; font-size:14px; color:#e2e8f0; margin:0 0 2px; display:block; }
+  .bubble.ai-rich .vm-info-card .vm-info-meta,
+  .bubble.ai-rich vm-card vm-card-desc{ font-size:11.5px; color:rgba(255,255,255,0.65); margin:0 0 6px; display:block; }
+  .bubble.ai-rich .vm-info-card .vm-info-desc,
+  .bubble.ai-rich vm-card vm-card-desc{ font-size:13px; color:rgba(255,255,255,0.85); line-height:1.45; margin:0; }
+  @media(max-width:640px){
+    .bubble.ai-rich .vm-info-card,
+    .bubble.ai-rich vm-card{ flex-direction:column; }
+    .bubble.ai-rich .vm-info-card > img,
+    .bubble.ai-rich vm-card > img,
+    .bubble.ai-rich vm-card vm-card-img{ width:100%; height:auto; max-height:200px; flex:none; }
+  }
+
+  /* Copyable text box (commands, prompts, keys). */
+  .bubble.ai-rich .vm-copybox,
+  .bubble.ai-rich vm-copybox{ display:flex; gap:8px; align-items:center; margin:8px 0; border:1px solid rgba(148,163,184,0.14); border-radius:8px; background:#04070f; overflow:hidden; }
+  .bubble.ai-rich .vm-copybox pre,
+  .bubble.ai-rich vm-copybox pre{ margin:0; flex:1; min-width:0; padding:10px 12px; font:13px ui-monospace,SFMono-Regular,Menlo,monospace; color:#c8d3e8; overflow:auto; white-space:pre-wrap; word-break:break-word; }
+  .bubble.ai-rich .vm-copybox button,
+  .bubble.ai-rich vm-copybox button{ flex:0 0 auto; background:rgba(0,212,255,0.15); border:1px solid rgba(0,212,255,0.3); color:#00d4ff; padding:6px 10px; border-radius:6px; font-size:12px; cursor:pointer; }
+  .bubble.ai-rich .vm-copybox button:hover,
+  .bubble.ai-rich vm-copybox button:hover{ background:rgba(0,212,255,0.25); }
+
+  /* Interactive choice chips (selectable options). */
+  .bubble.ai-rich .vm-choice,
+  .bubble.ai-rich vm-choice{ display:inline-flex; align-items:center; gap:8px; border:1px solid rgba(148,163,184,0.25); border-radius:999px; background:rgba(15,23,42,0.5); color:#e2e8f0; padding:6px 12px; font-size:13px; cursor:pointer; user-select:none; margin:2px; }
+  .bubble.ai-rich .vm-choice:hover,
+  .bubble.ai-rich vm-choice:hover{ border-color:rgba(0,212,255,0.5); color:#00d4ff; }
+  .bubble.ai-rich .vm-choice.vm-choice-selected,
+  .bubble.ai-rich .vm-choice[data-selected="true"],
+  .bubble.ai-rich vm-choice.vm-choice-selected,
+  .bubble.ai-rich vm-choice[data-selected="true"]{ border-color:#00d4ff; background:rgba(0,212,255,0.15); color:#00d4ff; }
+
+  /* Circular selection control (radio-style). */
+  .bubble.ai-rich .vm-circle,
+  .bubble.ai-rich vm-circle{ position:relative; display:inline-flex; align-items:center; justify-content:center; width:44px; height:44px; border:2px solid rgba(148,163,184,0.35); border-radius:50%; background:#0b1220; color:#e2e8f0; font-size:13px; cursor:pointer; user-select:none; margin:4px; }
+  .bubble.ai-rich .vm-circle:hover,
+  .bubble.ai-rich vm-circle:hover{ border-color:#00d4ff; color:#00d4ff; }
+  .bubble.ai-rich .vm-circle.vm-circle-selected,
+  .bubble.ai-rich .vm-circle[data-selected="true"],
+  .bubble.ai-rich vm-circle.vm-circle-selected,
+  .bubble.ai-rich vm-circle[data-selected="true"]{ border-color:#00d4ff; background:#00d4ff; color:#000; }
+  .bubble.ai-rich .vm-circle.vm-circle-selected::after,
+  .bubble.ai-rich .vm-circle[data-selected="true"]::after,
+  .bubble.ai-rich vm-circle.vm-circle-selected::after,
+  .bubble.ai-rich vm-circle[data-selected="true"]::after{ content:"\u2713"; position:absolute; font-size:16px; font-weight:700; }
+
+  /* Keeps any rich content bubble from widening the page on narrow screens. */
+  .bubble.ai-rich{ overflow-wrap:break-word; }
+
+  /* Compact media cards inside chat bubbles.
+     Square thumbnails (~120px), object-fit:cover, rounded corners, subtle border.
+     Tap to open full-resolution image via openImageViewer(). */
+  .bubble.ai-rich .vm-chat-media-card{ position:relative; display:inline-flex; align-items:center; justify-content:center; width:120px; height:120px; border-radius:10px; border:1px solid rgba(148,163,184,0.14); background:#0b1220; overflow:hidden; flex-shrink:0; margin:4px 0; cursor:pointer; }
+  .bubble.ai-rich .vm-chat-media-card img{ width:100%; height:100%; object-fit:cover; display:block; }
+  .bubble.ai-rich .vm-chat-media-card video{ width:100%; height:100%; object-fit:cover; display:block; background:#000; }
+  .bubble.ai-rich .vm-chat-media-card .vm-chat-media-play{ position:absolute; right:6px; bottom:6px; width:26px; height:26px; border-radius:50%; background:rgba(2,6,23,0.75); color:#00d4ff; display:flex; align-items:center; justify-content:center; font-size:10px; line-height:1; z-index:2; }
+  .bubble.ai-rich .vm-chat-media-card .vm-chat-media-play::before{ content:"\u25B6"; margin-left:2px; }
+  .bubble.ai-rich .vm-chat-media-card .vm-chat-media-cap{ position:absolute; left:0; right:0; bottom:0; font-size:10px; color:rgba(255,255,255,0.8); padding:4px 6px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; z-index:2; background:linear-gradient(transparent,rgba(0,0,0,0.6)); }
+  @media(max-width:640px){
+    .bubble.ai-rich .vm-chat-media-card{ width:104px; height:104px; }
+  }
+
+  /* Pasted conversation action bar. */
+  .vm-paste-action-bar{ display:flex;align-items:center;gap:8px;margin:8px 0;padding:10px 12px;border:1px solid rgba(0,212,255,0.25);border-radius:10px;background:rgba(0,212,255,0.08);font-size:13px;color:#e2e8f0;flex-wrap:wrap; }
+
+  /* Proactive suggestion chips. */
+  .vm-suggestion-chips{ display:flex;gap:6px;flex-wrap:wrap;margin:8px 0; }
+
+  /* Evidence confidence badge. */
+  .vm-confidence-badge{ display:inline-flex;align-items:center;gap:6px;margin:8px 0 0 0;padding:4px 8px;border-radius:6px;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.15);color:#e2e8f0;font-size:11px; }
+
   /* Composer bar: subtle separating line, roomier on phones. */
   .chat-composer-bar{ border-top:1px solid rgba(255,255,255,0.05); }
   @media(max-width:768px){
@@ -3037,9 +3155,9 @@ body[data-vm-companion="cloud"] #vmVrmCompanion { display: none !important; }
   .source-image-cell, .source-image { aspect-ratio:16/9; }
 }
 .source-images-strip { display:flex; gap:8px; overflow-x:auto; margin:8px 0 4px 0; padding-bottom:6px; }
-.source-image-cell { width:160px;height:160px;flex-shrink:0; border-radius:10px;background:#0f172a;overflow:hidden; }
+.source-image-cell { width:120px;height:120px;flex-shrink:0; border-radius:10px;background:#0f172a;overflow:hidden; }
 .source-image { width:100%;height:100%;object-fit:cover;display:block;background:#0f172a; }
-.source-image-credit { font-size:10px;color:rgba(255,255,255,0.6);margin-top:4px;text-align:center;display:block;width:160px; }
+.source-image-credit { font-size:10px;color:rgba(255,255,255,0.6);margin-top:4px;text-align:center;display:block;width:120px; }
 
   @media (max-width: 768px) {
     #prefBanner, #verifyBanner {
@@ -4613,6 +4731,7 @@ const messageStore = [];
 
 let isThinking = false;
 let pendingImageData = [];
+window._userPreferences = {};
 
 (function(){ var _cf = document.getElementById('chatFileInput'); if (_cf) _cf.addEventListener('change', function () {
     showComingSoon('Local File Upload');
@@ -6342,6 +6461,198 @@ function renderInlineCitations(bubbleEl, sourceMetadata) {
     });
 }
 
+/* â”€â”€ Research images: render real, relevant images from web-search evidence
+   into the assistant response, arranged intelligently based on image count,
+   source relationships, and screen width. Layouts:
+     - 1 image   : prominent single card (centered, larger)
+     - 2 images  : side-by-side comparison if from different sources;
+                   vertical stack if same source
+     - 3+ images : compact grid on wide screens, horizontal carousel on narrow
+   Broken/missing images are hidden gracefully. Never AI-generated; always
+   tied to a real source URL. ──────────────────── */
+function VMRenderResearchImages(bubbleEl, sourceMetadata) {
+    if (!bubbleEl || !Array.isArray(sourceMetadata) || !sourceMetadata.length) return;
+    var bub = bubbleEl.querySelector(".bubble") || bubbleEl;
+    if (!bub) return;
+    if (bub.querySelector(".vm-research-images")) return;
+
+    // Only sources with a usable, directly-fetched image.
+    var imgs = sourceMetadata.filter(function (s) {
+        return s && s.image && /^https?:\/\//i.test(s.image) && s.url;
+    });
+    if (!imgs.length) return;
+
+    var isNarrow = window.innerWidth <= 640;
+    var container = document.createElement("div");
+    container.className = "vm-research-images";
+    container.style.cssText = "margin:10px 0; display:flex; flex-direction:column; gap:8px;";
+
+    // Determine layout based on count and source diversity.
+    var domains = {};
+    imgs.forEach(function (s) { var d = s && s.domain ? s.domain : ""; if (d) domains[d] = true; });
+    var isComparison = imgs.length === 2 && Object.keys(domains).length === 2;
+    var useGrid = imgs.length >= 3 && !isNarrow;
+
+    if (imgs.length === 1) {
+        var s = imgs[0];
+        var card = buildResearchCard(s, true);
+        container.appendChild(card);
+    } else if (isComparison) {
+        var bar = document.createElement("div");
+        bar.style.cssText = "font-size:11px;color:rgba(255,255,255,0.6);margin-bottom:6px;font-weight:600;";
+        bar.textContent = "Side-by-side comparison";
+        container.appendChild(bar);
+
+        var wrap = document.createElement("div");
+        wrap.style.cssText = "display:flex; gap:10px; align-items:flex-start;";
+        imgs.forEach(function (s) {
+            wrap.appendChild(buildResearchCard(s, false));
+        });
+        container.appendChild(wrap);
+    } else if (useGrid) {
+        var bar = document.createElement("div");
+        bar.style.cssText = "font-size:11px;color:rgba(255,255,255,0.6);margin-bottom:6px;font-weight:600;";
+        bar.textContent = "Visual evidence from sources";
+        container.appendChild(bar);
+
+        var grid = document.createElement("div");
+        grid.style.cssText = "display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:10px;";
+        imgs.forEach(function (s) {
+            grid.appendChild(buildResearchCard(s, false));
+        });
+        container.appendChild(grid);
+    } else {
+        var bar = document.createElement("div");
+        bar.style.cssText = "font-size:11px;color:rgba(255,255,255,0.6);margin-bottom:6px;font-weight:600;";
+        bar.textContent = "Visual evidence from sources";
+        container.appendChild(bar);
+
+        var wrap = document.createElement("div");
+        wrap.style.cssText = "display:flex; gap:8px; overflowX:auto; flexDirection:row; flexWrap:nowrap; -webkit-overflow-scrolling:touch;";
+        imgs.forEach(function (s) {
+            wrap.appendChild(buildResearchCard(s, false));
+        });
+        container.appendChild(wrap);
+    }
+
+    bub.appendChild(container);
+
+    function buildResearchCard(s, featured) {
+        var card = document.createElement("div");
+        card.className = "vm-research-card";
+        card.style.cssText = "display:flex; flex-direction:column; gap:6px; background:#0b1220; border:1px solid rgba(148,163,184,0.14); border-radius:10px; padding:8px; flex:0 0 auto;" + (featured ? " min-width:260px; max-width:420px;" : " min-width:150px; max-width:260px;");
+
+        var link = document.createElement("a");
+        link.href = s.url;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        link.style.cssText = "display:block;border-radius:8px;overflow:hidden;background:#0f172a;border:1px solid rgba(148,163,184,0.12);text-decoration:none;";
+        link.onclick = function (ev) { ev.stopPropagation(); };
+
+        var img = document.createElement("img");
+        img.src = s.image;
+        img.alt = s.name || s.title || "source image";
+        img.loading = "lazy";
+        img.style.cssText = "width:100%;height:auto;" + (featured ? "aspect-ratio:16/9;" : "aspect-ratio:4/3;") + "object-fit:cover;display:block;border-radius:8px;";
+        img.onerror = function () { card.style.display = "none"; };
+        img.onload = function () { card.style.display = ""; };
+        link.appendChild(img);
+        card.appendChild(link);
+
+        var cap = document.createElement("div");
+        cap.className = "vm-research-credit";
+        var name = s.name || (s.domain ? s.domain.split(".")[0].charAt(0).toUpperCase() + s.domain.split(".")[0].slice(1) : "Source");
+        cap.textContent = s.image_credit ? s.image_credit : name;
+        cap.style.cssText = "font-size:10px;color:rgba(255,255,255,0.6);text-align:center;line-height:1.3;overflow-wrap:break-word;";
+        card.appendChild(cap);
+
+        return card;
+    }
+}
+
+/* â”€â”€ Image-left / text-right result cards from research evidence.
+   Renders each source with a retrieved image on the LEFT and name,
+   description, and source attribution on the RIGHT. Stacks vertically
+   on narrow screens. Never generates images; only uses real fetched URLs.
+   --------------------------------------------------------------------- */
+function VMRenderImageLeftTextRightCards(bubbleEl, sourceMetadata) {
+    if (!bubbleEl || !Array.isArray(sourceMetadata) || !sourceMetadata.length) return;
+    var bub = bubbleEl.querySelector(".bubble") || bubbleEl;
+    if (!bub) return;
+    if (bub.querySelector(".vm-image-left-cards")) return;
+
+    // Collect image URLs already rendered by VMRenderResearchImages to avoid duplicates.
+    var renderedImages = new Set();
+    bub.querySelectorAll(".vm-research-card img").forEach(function (img) {
+        if (img.src) renderedImages.add(img.src);
+    });
+
+    // Only sources with a usable image + name/title, not already rendered above.
+    var cards = sourceMetadata.filter(function (s) {
+        return s && s.image && /^https?:\/\//i.test(s.image) && s.url &&
+               (s.name || s.title || s.domain) &&
+               !renderedImages.has(s.image);
+    });
+    if (!cards.length) return;
+
+    var container = document.createElement("div");
+    container.className = "vm-image-left-cards";
+    container.style.cssText = "margin:10px 0; display:flex; flex-direction:column; gap:10px;";
+
+    cards.forEach(function (s) {
+        var card = document.createElement("div");
+        card.className = "vm-image-left-card";
+        card.style.cssText = "display:flex; gap:12px; align-items:flex-start; margin:0; border:1px solid rgba(148,163,184,0.14); border-radius:10px; background:#0b1220; padding:10px; min-width:0;";
+
+        var link = document.createElement("a");
+        link.href = s.url;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        link.style.cssText = "display:block;border-radius:8px;overflow:hidden;background:#0f172a;border:1px solid rgba(148,163,184,0.12);text-decoration:none;flex:0 0 auto;";
+        link.onclick = function (ev) { ev.stopPropagation(); };
+
+        var img = document.createElement("img");
+        img.src = s.image;
+        img.alt = s.name || s.title || "source image";
+        img.loading = "lazy";
+        img.style.cssText = "width:96px;height:96px;object-fit:cover;display:block;border-radius:8px;flex:0 0 96px;";
+        img.onerror = function () { card.style.display = "none"; };
+        img.onload = function () { card.style.display = ""; };
+        link.appendChild(img);
+        card.appendChild(link);
+
+        var body = document.createElement("div");
+        body.className = "vm-image-left-body";
+        body.style.cssText = "flex:1; min-width:0; display:flex; flex-direction:column; gap:4px;";
+
+        var name = document.createElement("div");
+        name.className = "vm-image-left-name";
+        name.textContent = s.name || s.title || (s.domain ? s.domain.split(".")[0].charAt(0).toUpperCase() + s.domain.split(".")[0].slice(1) : "Source");
+        name.style.cssText = "font-weight:700; font-size:14px; color:#e2e8f0; margin:0 0 2px; overflow-wrap:break-word;";
+        body.appendChild(name);
+
+        if (s.title && s.title !== (s.name || "")) {
+            var titleEl = document.createElement("div");
+            titleEl.textContent = s.title;
+            titleEl.style.cssText = "font-size:12px; color:rgba(255,255,255,0.7); margin:0 0 4px; overflow-wrap:break-word;";
+            body.appendChild(titleEl);
+        }
+
+        if (s.image_credit) {
+            var credit = document.createElement("div");
+            credit.className = "vm-image-left-credit";
+            credit.textContent = s.image_credit;
+            credit.style.cssText = "font-size:10px; color:rgba(255,255,255,0.6); margin-top:auto; overflow-wrap:break-word;";
+            body.appendChild(credit);
+        }
+
+        card.appendChild(body);
+        container.appendChild(card);
+    });
+
+    bub.appendChild(container);
+}
+
 /* â”€â”€ Thinking Process Block â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    Creates a collapsible "Thinking Process" indicator similar to Claude's
    thinking blocks. Steps are added one by one via addThinkingStep(),
@@ -6641,7 +6952,243 @@ function renderReplyCopyBar(bubbleEl) {
     bub.appendChild(bar);
 }
 
-function addMessage(text, type = "ai", imageData, mediaUrl, videoUrl, images) {
+/* â”€â”€ Stage 3: pasted conversation detection & reply assistance
+   Detects when a user pastes a multi-line conversation (WhatsApp, SMS, email, DM)
+   and offers contextual actions: explain, suggest reply, rewrite, summarise.
+   --------------------------------------------------------------------- */
+function VMDetectPastedConversation(text) {
+    if (!text || typeof text !== "string") return { isConversation: false };
+    var t = text.trim();
+    // Multi-line with speaker labels: "Alice:", "Bob:", "John:", etc.
+    var speakerLineRe = /^[\s\u200e\u200f]*[A-Z][a-zA-Z0-9 .'-]{1,25}:\s*\S/m;
+    var speakerLines = (t.match(speakerLineRe) || []).length;
+    // Timestamp patterns: "[10:32 AM]", "10:32", "2024-01-15", etc.
+    var timestampRe = /(?:\[?\d{1,2}:\d{2}(?::\d{2})?\s*(?:am|pm|AM|PM)?\]?|\d{4}-\d{2}-\d{2})/;
+    var hasTimestamps = timestampRe.test(t);
+    // Message-bubble separators or repeated line breaks with short lines
+    var lines = t.split(/\r?\n/);
+    var shortLines = 0;
+    for (var i = 0; i < lines.length; i++) {
+        if (lines[i].trim().length > 0 && lines[i].trim().length < 60) shortLines++;
+    }
+    var isConversation = speakerLines >= 2 || (hasTimestamps && shortLines >= 3) || (shortLines >= 5 && lines.length >= 5);
+    var type = "";
+    if (speakerLines >= 2) type = "chat";
+    else if (hasTimestamps) type = "log";
+    else if (shortLines >= 5) type = "messages";
+    return { isConversation: isConversation, type: type, speakerLines: speakerLines, shortLines: shortLines, hasTimestamps: hasTimestamps };
+}
+
+/* Suggest contextual actions when a pasted conversation is detected.
+   Inserts a temporary action bar near the composer. */
+var _vmPasteActionBar = null;
+function VMSuggestConversationalActions(text) {
+    var det = VMDetectPastedConversation(text);
+    if (!det.isConversation) return;
+    if (_vmPasteActionBar) _vmPasteActionBar.remove();
+    var bar = document.createElement("div");
+    bar.className = "vm-paste-action-bar";
+    bar.style.cssText = "display:flex;align-items:center;gap:8px;margin:8px 0;padding:10px 12px;border:1px solid rgba(0,212,255,0.25);border-radius:10px;background:rgba(0,212,255,0.08);font-size:13px;color:#e2e8f0;flex-wrap:wrap;";
+    var label = document.createElement("span");
+    label.style.cssText = "color:#94a3b8;font-size:11.5px;margin-right:6px;white-space:nowrap;";
+    label.textContent = "Pasted conversation detected";
+    bar.appendChild(label);
+    var actions = [
+        { label: "Explain", prompt: "Explain what this conversation means and any context I might be missing:\n\n" },
+        { label: "Suggest reply", prompt: "Suggest a good reply to this conversation:\n\n" },
+        { label: "Rewrite politely", prompt: "Rewrite this message to be more polite and clear:\n\n" },
+        { label: "Summarise", prompt: "Summarise this conversation in 2-3 bullet points:\n\n" }
+    ];
+    actions.forEach(function (a) {
+        var btn = document.createElement("button");
+        btn.type = "button";
+        btn.textContent = a.label;
+        btn.style.cssText = "background:rgba(0,212,255,0.15);border:1px solid rgba(0,212,255,0.35);color:#00d4ff;padding:4px 10px;border-radius:6px;font-size:12px;cursor:pointer;";
+        btn.onclick = function (ev) {
+            ev.preventDefault();
+            ev.stopPropagation();
+            var input = document.getElementById("chatInput");
+            if (input) {
+                input.focus();
+                input.value = a.prompt + text;
+                try { if (typeof autoGrowInput === "function") autoGrowInput(); } catch (e) {}
+                input.dispatchEvent(new Event("input", { bubbles: true }));
+            }
+            _vmPasteActionBar.remove();
+            _vmPasteActionBar = null;
+        };
+        bar.appendChild(btn);
+    });
+    var closeBtn = document.createElement("button");
+    closeBtn.type = "button";
+    closeBtn.textContent = "\u00D7";
+    closeBtn.style.cssText = "background:none;border:none;color:#94a3b8;cursor:pointer;font-size:16px;line-height:1;padding:0 4px;margin-left:8px;";
+    closeBtn.onclick = function (ev) { ev.preventDefault(); ev.stopPropagation(); _vmPasteActionBar.remove(); _vmPasteActionBar = null; };
+    bar.appendChild(closeBtn);
+
+    // Insert above composer if there is a composer container.
+    var composer = document.getElementById("composer") || document.getElementById("chat-composer") || document.getElementById("composerRow");
+    if (composer && composer.parentNode) {
+        composer.parentNode.insertBefore(bar, composer);
+        _vmPasteActionBar = bar;
+        setTimeout(function () { if (_vmPasteActionBar && _vmPasteActionBar.parentNode) { _vmPasteActionBar.remove(); _vmPasteActionBar = null; } }, 10000);
+    }
+}
+
+/* â”€â”€ Automatic copy-ready presentation
+   When an AI response looks like a message the user would copy and send
+   (WhatsApp reply, SMS, email, DM), wrap it in a copy box automatically.
+   Does not wrap ordinary conversational text or long structured answers.
+   Respects user preferences: prefer_copy_ready, communication_style,
+   and prefer_concise.  Explicit current intent (MODE B / reply_mode) always
+   takes priority over saved preferences.
+   --------------------------------------------------------------------- */
+function VMLooksLikeCopyableMessage(text, userPrefs) {
+    if (!text || typeof text !== "string") return false;
+    var t = text.trim();
+    // Too long = not a quick message
+    if (t.length > 500) return false;
+    // Already has copybox or complex formatting = skip
+    if (t.indexOf("<vm-copybox") !== -1 || t.indexOf("<pre") !== -1 || t.indexOf("<table") !== -1 || t.indexOf("<h1") !== -1) return false;
+    // If the user prefers concise/direct answers, be more willing to wrap
+    var prefs = userPrefs || window._userPreferences || {};
+    var commStyle = (prefs.communication_style || "");
+    if (Array.isArray(commStyle)) commStyle = commStyle.join(" ");
+    var wantsConcise = /concise|brief|short|direct|terse/i.test(commStyle);
+    var wantsCopyReady = prefs.prefer_copy_ready === "true" || prefs.prefer_copy_ready === true;
+    var wantsFormal = /formal|professional|business/i.test(commStyle);
+    // Looks like a message: short, conversational, may have greeting/sign-off
+    var msgMarkers = /^(hi|hello|hey|thanks|thank you|sorry|yes|no|ok|sure|i['’]m|can you|could you|would you|please)/i.test(t);
+    var hasQuestion = t.indexOf("?") !== -1;
+    var lineCount = t.split(/\r?\n/).filter(function (l) { return l.trim().length > 0; }).length;
+    var hasGreetingOrSignoff = /^(hi|hello|hey|good morning|good afternoon|good evening|dear|hi there)/i.test(t) || /(thanks|thank you|best|regards|sincerely|cheers|bye|goodbye)$/i.test(t.trim().split(/\r?\n/).pop() || "");
+    // Copy-ready signals: message-like structure, short, conversational
+    var looksLikeMessage = (msgMarkers || hasQuestion || hasGreetingOrSignoff) && lineCount <= 8;
+    // If user prefers concise/direct, lower the threshold slightly
+    var threshold = wantsConcise ? 7 : 6;
+    if (lineCount > threshold) return false;
+    // User preference override: if they explicitly want copy-ready, be more permissive
+    if (wantsCopyReady) return looksLikeMessage;
+    return looksLikeMessage;
+}
+
+function VMAutoCopyReady(bubbleEl, fullText) {
+    if (!bubbleEl || !fullText) return;
+    if (!VMLooksLikeCopyableMessage(fullText, window._userPreferences)) return;
+    var bub = bubbleEl.querySelector(".bubble") || bubbleEl;
+    if (!bub || bub.querySelector(".vm-copybox")) return;
+    // Wrap existing content in a copybox
+    var inner = bub.innerHTML;
+    bub.innerHTML = "";
+    var box = document.createElement("div");
+    box.className = "vm-copybox";
+    box.style.cssText = "display:flex;gap:8px;align-items:flex-start;margin:8px 0;border:1px solid rgba(0,212,255,0.25);border-radius:8px;background:rgba(0,212,255,0.06);overflow:hidden;";
+    var pre = document.createElement("pre");
+    pre.style.cssText = "margin:0;flex:1;min-width:0;padding:10px 12px;font:13px ui-monospace,SFMono-Regular,Menlo,monospace;color:#c8d3e8;overflow:auto;white-space:pre-wrap;word-break:break-word;";
+    pre.textContent = fullText;
+    var btn = document.createElement("button");
+    btn.textContent = "Copy";
+    btn.style.cssText = "flex:0 0 auto;background:rgba(0,212,255,0.15);border:1px solid rgba(0,212,255,0.35);color:#00d4ff;padding:6px 10px;border-radius:6px;font-size:12px;cursor:pointer;";
+    btn.onclick = function (ev) {
+        ev.stopPropagation();
+        if (!navigator || !navigator.clipboard) return;
+        navigator.clipboard.writeText(pre.textContent).then(function () {
+            btn.textContent = "Copied!";
+            setTimeout(function () { btn.textContent = "Copy"; }, 1200);
+        }, function () { btn.textContent = "Copy"; });
+    };
+    box.appendChild(pre);
+    box.appendChild(btn);
+    bub.appendChild(box);
+}
+
+/* â”€â”€ Proactive suggestion chips
+   Adds content-aware follow-up suggestions after an AI response.
+   Respects user preferences: prefer_suggestions, prefer_direct_answers,
+   communication_style.  Never shows identical generic chips after every
+   answer; only suggests genuinely useful next steps.
+   --------------------------------------------------------------------- */
+function VMAddProactiveSuggestions(bubbleEl, fullText, intent) {
+    if (!bubbleEl || !fullText) return;
+    var bub = bubbleEl.querySelector(".bubble") || bubbleEl;
+    if (!bub || bub.querySelector(".vm-suggestion-chips")) return;
+    var prefs = window._userPreferences || {};
+    var commStyle = (prefs.communication_style || "");
+    if (Array.isArray(commStyle)) commStyle = commStyle.join(" ");
+    var wantsDirect = /direct|brief|concise|straight/i.test(commStyle);
+    var wantsSuggestions = prefs.prefer_suggestions !== "false";
+    var wantsConcise = /concise|brief|short|direct|terse/i.test(commStyle);
+    // If user explicitly prefers direct answers with no suggestions, skip
+    if (wantsDirect && !wantsSuggestions) return;
+    var suggestions = [];
+    var t = fullText.toLowerCase();
+    var hasTable = intent === "table" || t.indexOf("<table") !== -1;
+    var hasSteps = t.indexOf("how to") !== -1 || t.indexOf("steps") !== -1 || /^\d+\./m.test(fullText);
+    var hasPrice = t.indexOf("price") !== -1 || t.indexOf("cost") !== -1 || t.indexOf("$") !== -1;
+    var isShort = fullText.length < 200;
+    // Contextual suggestions based on actual content
+    if (hasTable) suggestions.push({ label: "Compare with another option", prompt: "Compare this with another option side by side:\n\n" });
+    if (hasSteps && !wantsConcise) suggestions.push({ label: "Copy these steps", prompt: "Copy the steps above into a copyable box:\n\n" });
+    if (hasPrice) suggestions.push({ label: "Check current pricing", prompt: "What is the current pricing for this?\n\n" });
+    // Only add generic follow-up for genuinely short answers when user wants suggestions
+    if (isShort && suggestions.length === 0 && wantsSuggestions && !wantsDirect) {
+        suggestions.push({ label: "Ask for more details", prompt: "Can you give me more details about this?\n\n" });
+    }
+    // Cap at 2 suggestions to avoid clutter
+    if (suggestions.length === 0) return;
+    var container = document.createElement("div");
+    container.className = "vm-suggestion-chips";
+    container.style.cssText = "display:flex;gap:6px;flex-wrap:wrap;margin:8px 0;";
+    suggestions.slice(0, 2).forEach(function (s) {
+        var btn = document.createElement("button");
+        btn.type = "button";
+        btn.textContent = s.label;
+        btn.style.cssText = "background:rgba(15,23,42,0.6);border:1px solid rgba(148,163,184,0.25);color:#e2e8f0;padding:6px 10px;border-radius:999px;font-size:12px;cursor:pointer;";
+        btn.onclick = function (ev) {
+            ev.preventDefault();
+            ev.stopPropagation();
+            var input = document.getElementById("chatInput");
+            if (input) {
+                input.focus();
+                input.value = s.prompt;
+                try { if (typeof autoGrowInput === "function") autoGrowInput(); } catch (e) {}
+                input.dispatchEvent(new Event("input", { bubbles: true }));
+            }
+        };
+        container.appendChild(btn);
+    });
+    bub.appendChild(container);
+}
+
+/* â”€â”€ Evidence confidence badge
+   Adds a visual indicator showing how well the response is supported by
+   evidence.  Does not claim verification - only reports source agreement.
+   Never shows a misleading "Verified" label for high confidence alone.
+   --------------------------------------------------------------------- */
+function VMAddConfidenceBadge(bubbleEl, confidence) {
+    if (!bubbleEl || !confidence) return;
+    var bub = bubbleEl.querySelector(".bubble") || bubbleEl;
+    if (!bub || bub.querySelector(".vm-confidence-badge")) return;
+    var label = "";
+    var color = "";
+    var c = String(confidence).toLowerCase();
+    if (c === "high") { label = "Well-supported"; color = "#22c55e"; }
+    else if (c === "medium") { label = "Some sources agree"; color = "#eab308"; }
+    else if (c === "low") { label = "Limited evidence"; color = "#ef4444"; }
+    else return;
+    var badge = document.createElement("span");
+    badge.className = "vm-confidence-badge";
+    badge.title = "Based on available source evidence - not independent verification.";
+    badge.style.cssText = "display:inline-flex;align-items:center;gap:6px;margin:8px 0 0 0;padding:4px 8px;border-radius:6px;background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.15);color:#e2e8f0;font-size:11px;";
+    var dot = document.createElement("span");
+    dot.style.cssText = "width:8px;height:8px;border-radius:50%;background:" + color + ";display:inline-block;";
+    var text = document.createElement("span");
+    text.textContent = label;
+    badge.appendChild(dot);
+    badge.appendChild(text);
+    bub.appendChild(badge);
+}
+function addMessage(text, type = "ai", imageData, mediaUrl, videoUrl, images, sourceMetadata) {
     const container = document.getElementById("messages");
     const welcome = document.getElementById("welcome");
     if (!container) return;
@@ -6654,6 +7201,7 @@ function addMessage(text, type = "ai", imageData, mediaUrl, videoUrl, images) {
     if (mediaUrl) msgObj.media_url = mediaUrl;
     if (videoUrl) msgObj.video_url = videoUrl;
     if (images && images.length) msgObj.images = images;
+    if (sourceMetadata && sourceMetadata.length) msgObj.source_metadata = sourceMetadata;
     messageStore.push(msgObj);
 
     // Every assistant reply notifies when you're not looking at the app €” so a
@@ -6678,16 +7226,18 @@ function addMessage(text, type = "ai", imageData, mediaUrl, videoUrl, images) {
         var _imgs = Array.isArray(imageData) ? imageData.filter(Boolean) : [imageData];
         if (_imgs.length) {
             var grid = document.createElement("div");
-            grid.className = "vm-media-grid count-" + (Math.min(_imgs.length, 4));
+            grid.className = "vm-chat-media-grid";
+            grid.style.cssText = "display:flex; flex-wrap:wrap; gap:6px; margin:6px 0;";
             _imgs.forEach(function(src){
                 var card = document.createElement("div");
-                card.className = "vm-media-card";
+                card.className = "vm-chat-media-card";
+                card.title = "Tap to open image";
                 var img = document.createElement("img");
                 img.src = src;
                 img.alt = "Uploaded image";
                 img.loading = "lazy";
-                img.style.cursor = "pointer";
-                img.onclick = function(){ if (typeof openImageViewer === 'function') openImageViewer(src); };
+                img.onclick = function(ev){ ev.stopPropagation(); if (typeof openImageViewer === 'function') openImageViewer(src); };
+                card.onclick = function(ev){ ev.stopPropagation(); if (typeof openImageViewer === 'function') openImageViewer(src); };
                 card.appendChild(img);
                 grid.appendChild(card);
             });
@@ -6711,35 +7261,39 @@ function addMessage(text, type = "ai", imageData, mediaUrl, videoUrl, images) {
     // arrived through imageData must not be rendered twice, but a video (or a
     // history-restored image_url) belongs inside the user bubble too.
     if (finalImageUrl && (type === "ai" || !imageData)) {
-        var chatImgGrid = document.createElement("div");
-        chatImgGrid.className = "vm-media-grid count-1";
         var chatImgCard = document.createElement("div");
-        chatImgCard.className = "vm-media-card";
+        chatImgCard.className = "vm-chat-media-card";
+        chatImgCard.title = "Tap to open image";
         var chatImg = document.createElement("img");
         chatImg.src = finalImageUrl;
         chatImg.alt = "Generated image";
         chatImg.loading = "lazy";
-        chatImg.style.cursor = "pointer";
-        chatImg.onclick = function () { if (typeof openImageViewer === 'function') openImageViewer(finalImageUrl); };
+        chatImg.onclick = function(ev){ ev.stopPropagation(); if (typeof openImageViewer === 'function') openImageViewer(finalImageUrl); };
+        chatImgCard.onclick = function(ev){ ev.stopPropagation(); if (typeof openImageViewer === 'function') openImageViewer(finalImageUrl); };
         chatImgCard.appendChild(chatImg);
-        chatImgGrid.appendChild(chatImgCard);
-        bubble.appendChild(chatImgGrid);
+        bubble.appendChild(chatImgCard);
     }
 
     if (finalVideoUrl) {
-        var chatVidGrid = document.createElement("div");
-        chatVidGrid.className = "vm-media-grid count-1";
         var chatVidCard = document.createElement("div");
-        chatVidCard.className = "vm-media-card";
+        chatVidCard.className = "vm-chat-media-card";
+        chatVidCard.title = "Tap to play video";
         var chatVid = document.createElement("video");
         chatVid.src = finalVideoUrl;
-        chatVid.controls = true;
         chatVid.playsInline = true;
         chatVid.preload = "metadata";
-        chatVid.style.maxHeight = "420px";
+        chatVid.style.display = "block";
+        var playBadge = document.createElement("div");
+        playBadge.className = "vm-chat-media-play";
+        playBadge.textContent = "";
+        var cap = document.createElement("div");
+        cap.className = "vm-chat-media-cap";
+        cap.textContent = "Video";
         chatVidCard.appendChild(chatVid);
-        chatVidGrid.appendChild(chatVidCard);
-        bubble.appendChild(chatVidGrid);
+        chatVidCard.appendChild(playBadge);
+        chatVidCard.appendChild(cap);
+        chatVidCard.onclick = function(ev){ ev.stopPropagation(); if (typeof openImageViewer === 'function') openImageViewer(finalVideoUrl); };
+        bubble.appendChild(chatVidCard);
     }
 
     // Render persisted/search-sourced image entries for this message (reload-safe).
@@ -6782,23 +7336,23 @@ function addMessage(text, type = "ai", imageData, mediaUrl, videoUrl, images) {
             typeof window.VMRichRender !== "undefined" &&
             typeof window.VMPresentationSelector !== "undefined") {
             try {
-                var _fmt = window.VMPresentationSelector.select(textWithoutMedia);
-                // vm-fix19: render markdown for any AI reply with markdown syntax
-                // so raw ** * # - never appear unrendered (items 2,10)
-                var _hasMd = /\*\*|\*[^*]|^#{1,6}\s|^[-*+]\s|^\d+\.\s|```|~~~|\|.*\|.*\n.*\|[-: ]|^>\s|\[.+\]\(.+\)|^---+$/m.test(textWithoutMedia);
-                if (_fmt !== "plain" || _hasMd) {
-                    bubble.innerHTML = window.VMRichRender.render(textWithoutMedia);
-                    // Tables rendered here (history reload / non-streamed replies)
-                    // need the same scroll wrapper as streamed ones.
-                    if (typeof window.VMWrapReplyTables === "function") {
-                        window.VMWrapReplyTables(bubble);
-                    }
-                    bubble.classList.add("ai-rich");
-                } else {
-                    var txtSpan = document.createElement("span");
-                    txtSpan.textContent = textWithoutMedia;
-                    bubble.appendChild(txtSpan);
+                // Always render via VMRichRender so Stage 3 conventions
+                // ([choice:], [circle:], [card:], [copybox:], [Image:], [Video:])
+                // are processed even for plain-looking replies. VMFormatRichBubble
+                // then makes interactive elements functional. Plain text still
+                // renders readably (wrapped in <p>) and formatters are no-ops.
+                bubble.innerHTML = window.VMRichRender.render(textWithoutMedia);
+                // Tables rendered here (history reload / non-streamed replies)
+                // need the same scroll wrapper as streamed ones.
+                if (typeof window.VMWrapReplyTables === "function") {
+                    window.VMWrapReplyTables(bubble);
                 }
+                // Post-render formatting: syntax highlighting, math, copy buttons,
+                // interactive choices/circles, cards, copyboxes.
+                if (typeof window.VMFormatRichBubble === "function") {
+                    window.VMFormatRichBubble(bubble);
+                }
+                bubble.classList.add("ai-rich");
             } catch (e) {
                 console.warn("[VMRichRender] addMessage enrichment failed, keeping plain text:", e);
                 var txtSpan = document.createElement("span");
@@ -6810,6 +7364,34 @@ function addMessage(text, type = "ai", imageData, mediaUrl, videoUrl, images) {
             txtSpan.textContent = textWithoutMedia;
             bubble.appendChild(txtSpan);
         }
+    }
+
+    // Restore research images from source metadata on history reload.
+    // Runs independently of Markdown formatting so plain-text replies with
+    // valid source metadata still show their research images. Guarded
+    // against duplicates and null/empty/malformed metadata.
+    if (type === "ai" && sourceMetadata && sourceMetadata.length) {
+        if (typeof window.VMRenderResearchImages === "function") {
+            try {
+                VMRenderResearchImages(bubble, sourceMetadata);
+            } catch (e) {
+                console.warn("[addMessage] VMRenderResearchImages failed:", e);
+            }
+        }
+        // Image-left/text-right result cards for sources with images.
+        if (typeof window.VMRenderImageLeftTextRightCards === "function") {
+            try {
+                VMRenderImageLeftTextRightCards(bubble, sourceMetadata);
+            } catch (e) {
+                console.warn("[addMessage] VMRenderImageLeftTextRightCards failed:", e);
+            }
+        }
+    }
+    // Automatic copy-ready presentation for restored/history messages too.
+    if (type === "ai" && typeof window.VMAutoCopyReady === "function") {
+        try {
+            VMAutoCopyReady(bubble, textWithoutMedia);
+        } catch (e) {}
     }
 
     if (type === "user") {
@@ -6946,7 +7528,9 @@ function renderChatHistory(messages) {
         var mediaUrl = message.image_url || "";
         var videoUrl = message.video_url || "";
 
-        addMessage(content, role, imageData, mediaUrl, videoUrl, message.images || null);
+        var sourceMetadata = message.source_metadata || null;
+
+        addMessage(content, role, imageData, mediaUrl, videoUrl, message.images || null, sourceMetadata);
         if (message.reaction) {
             const idx = messageStore.length - 1;
             messageStore[idx].reaction = message.reaction;
@@ -11642,6 +12226,29 @@ function renderImageResultCard(imageUrl, prompt, revisedPrompt) {
     }, remaining);
 }
 
+/* Fetch the current user's stored preferences for frontend personalisation.
+   Reads from /api/user/preferences (same long-term memory that feeds the LLM
+   system prompt). Results are cached in window._userPreferences for use by
+   copy-ready detection, suggestion chips, and confidence badges. */
+async function vmLoadUserPreferences() {
+    try {
+        var res = await apiFetch("/api/user/preferences", {
+            credentials: "include",
+            headers: authHeaders(),
+            timeoutMs: 10000,
+        });
+        if (res.ok) {
+            var data = await res.json();
+            if (data && data.preferences && typeof data.preferences === "object") {
+                window._userPreferences = data.preferences;
+            }
+        }
+    } catch (e) {
+        // Non-fatal: personalisation degrades gracefully to defaults.
+        window._userPreferences = {};
+    }
+}
+
 async function checkSession() {
     authCheckComplete = false;
     isAuthenticated = false;
@@ -11677,6 +12284,9 @@ async function checkSession() {
             // the Video Gallery are unaffected €” this gates generation only.
             window.VIDEO_GEN_ENABLED = data.video_generation_enabled === true;
             applyVideoGenAvailability();
+
+            // Load user preferences for frontend personalisation.
+            try { await vmLoadUserPreferences(); } catch (e) {}
 
             var splash = document.getElementById("brandSplashScreen");
             var authScreen = document.getElementById("authScreen");
@@ -12489,6 +13099,32 @@ async function logout() {
     logSidebarState("logout");
 }
 
+window.onVmChoiceSelected = function (value, label, el) {
+    if (window._vmChoiceSubmitting) return;
+    if (typeof isThinking !== "undefined" && isThinking) return;
+    var input = document.getElementById("chatInput");
+    if (!input) return;
+    window._vmChoiceSubmitting = true;
+    input.value = label || value || "";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    try { if (typeof autoGrowInput === "function") autoGrowInput(); } catch (e) {}
+    window.send();
+    setTimeout(function () { window._vmChoiceSubmitting = false; }, 500);
+};
+
+window.onVmCircleSelected = function (value, label, el) {
+    if (window._vmChoiceSubmitting) return;
+    if (typeof isThinking !== "undefined" && isThinking) return;
+    var input = document.getElementById("chatInput");
+    if (!input) return;
+    window._vmChoiceSubmitting = true;
+    input.value = label || value || "";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    try { if (typeof autoGrowInput === "function") autoGrowInput(); } catch (e) {}
+    window.send();
+    setTimeout(function () { window._vmChoiceSubmitting = false; }, 500);
+};
+
 window.handleSendClick = function () {
     if (_sendAborted || _sendAbortController) {
         cancelSend();
@@ -12520,6 +13156,8 @@ window.send = async function () {
         stopListening();
     }
     var text = input.value.trim();
+    // Detect pasted conversations and offer contextual actions (explain, suggest reply, rewrite, summarise).
+    try { VMSuggestConversationalActions(text); } catch (e) {}
     // Read this reply aloud only when the turn came from voice (opt-in, never default).
     window._speakThisReply = _voiceTurn; _voiceTurn = false;
 
@@ -13137,6 +13775,35 @@ window.send = async function () {
         if (bubbleEl && streamSourceMetadata.length && streamSourceMetadata.some(function (s) { return s && s.url && s.domain; })) {
             renderSourcesPanel(bubbleEl, streamSourceMetadata, streamConfidence);
             renderInlineCitations(bubbleEl, streamSourceMetadata);
+            // Render real research images (with attribution + source links) when
+            // search evidence included them. Graceful no-op if none have images.
+            VMRenderResearchImages(bubbleEl, streamSourceMetadata);
+            // Image-left/text-right result cards for sources with images.
+            if (typeof window.VMRenderImageLeftTextRightCards === "function") {
+                try {
+                    VMRenderImageLeftTextRightCards(bubbleEl, streamSourceMetadata);
+                } catch (e) {
+                    console.warn("[stream] VMRenderImageLeftTextRightCards failed:", e);
+                }
+            }
+            // Automatic copy-ready presentation: wrap short conversational replies in a copy box.
+            if (typeof window.VMAutoCopyReady === "function") {
+                try {
+                    VMAutoCopyReady(bubbleEl, fullReply);
+                } catch (e) {}
+            }
+            // Proactive suggestion chips based on response content.
+            if (typeof window.VMAddProactiveSuggestions === "function") {
+                try {
+                    VMAddProactiveSuggestions(bubbleEl, fullReply, streamReplyMode ? "reply-writing" : "");
+                } catch (e) {}
+            }
+            // Evidence confidence badge.
+            if (typeof window.VMAddConfidenceBadge === "function") {
+                try {
+                    VMAddConfidenceBadge(bubbleEl, streamConfidence);
+                } catch (e) {}
+            }
         }
 
         /* Finish any lingering thinking process block */

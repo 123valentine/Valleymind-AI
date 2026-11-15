@@ -904,6 +904,31 @@ def auth_status():
     })
 
 
+@app.route("/api/user/preferences", methods=["GET"])
+def user_preferences():
+    """Return the current user's stored preferences for frontend personalisation.
+    Reads from the same long-term memory that feeds the LLM system prompt."""
+    try:
+        auth = _current_auth()
+        user_id = str(auth.get("user_id") or "").strip()
+        if not user_id:
+            return jsonify({"preferences": {}}), 200
+
+        marcus = load_marcus(user_id)
+        if not marcus:
+            return jsonify({"preferences": {}}), 200
+
+        _initialize_user_memory(marcus, auth.get("email", ""))
+        long_term = marcus.memory.get_full_memory() or {}
+        prefs = long_term.get("preferences") or {}
+        if not isinstance(prefs, dict):
+            prefs = {}
+        return jsonify({"preferences": prefs}), 200
+    except Exception as exc:
+        print(f"[USER_PREFS] Failed to load preferences: {exc}")
+        return jsonify({"preferences": {}}), 200
+
+
 def _new_chat_id() -> str:
     return f"marcus_{secrets.token_hex(8)}"
 

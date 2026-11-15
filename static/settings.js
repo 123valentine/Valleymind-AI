@@ -2482,7 +2482,10 @@ window.VMRichRender = (function () {
     ul:1,ol:1,li:1,blockquote:1,pre:1,code:1,
     strong:1,em:1,b:1,i:1,a:1,
     table:1,thead:1,tbody:1,tr:1,th:1,td:1,
-    img:1,input:1,div:1,span:1,sub:1,sup:1
+    img:1,input:1,div:1,span:1,sub:1,sup:1,
+    // Stage 3 interactive / rich components (custom elements, sanitized safely).
+    vm:1, "vm-choice":1, "vm-circle":1, "vm-card":1, "vm-copybox":1,
+    "vm-card-title":1, "vm-card-desc":1, "vm-card-img":1,
   };
   var ALLOWED_ATTRS = {
     a: { href:1, title:1 },
@@ -2490,7 +2493,12 @@ window.VMRichRender = (function () {
     video: { src:1, controls:1, playsinline:1, preload:1 },
     input: { type:1, checked:1, disabled:1, readonly:1 },
     th: { colspan:1, rowspan:1 },
-    td: { colspan:1, rowspan:1 }
+    td: { colspan:1, rowspan:1 },
+    // Data attributes carry labels/values for interactive components (safe, non-executable).
+    "vm-choice": { "data-value":1, "data-label":1, "data-selected":1 },
+    "vm-circle": { "data-value":1, "data-label":1, "data-selected":1 },
+    "vm-card": { "data-href":1 },
+    "vm-copybox": {},
   };
   var DROP_TAGS = { script:1,style:1,noscript:1,iframe:1,object:1,embed:1,
     form:1,button:1,textarea:1,canvas:1,svg:1,math:1 };
@@ -2724,6 +2732,52 @@ window.VMRichRender = (function () {
       return '<video src="' + escapeHtml(url) + '" controls playsInline preload="metadata" style="max-width:100%;border-radius:12px;margin:8px 0;display:block;"></video>';
     });
 
+    // --- Stage 3: interactive component conventions ---
+    // Use placeholder protection so marked does not escape the custom element tags.
+    // Extract before marked, restore after (same pattern as [Image:] / [Video:]).
+    var stage3El = [];
+    function _stage3Extract(html) {
+      return html.replace(/<(vm-choice|vm-circle|vm-card|vm-card-title|vm-card-desc|vm-copybox)[^>]*>[\s\S]*?<\/\1>|<(vm-choice|vm-circle|vm-card|vm-copybox)\s*\/?>/gi, function (m) {
+        var idx = stage3El.length;
+        stage3El.push(m);
+        return "\uFFF7S" + idx + "\uFFF7E";
+      });
+    }
+    function _stage3Restore(html) {
+      return html.replace(/\uFFF7S(\d+)\uFFF7E/g, function (m, idx) {
+        return stage3El[+idx] || "";
+      });
+    }
+
+    // Choice chips: [choice: Label] or [choice: Label | value]
+    t = t.replace(/\[choice:\s*([^|\]]+?)(?:\s*\|\s*([^\]]+?))?\]/gi, function (m, label, value) {
+      label = escapeHtml(label.trim());
+      value = (value || "").trim();
+      return '<vm-choice' + (value ? ' data-value="' + escapeHtml(value) + '"' : '') + ' data-label="' + label + '">' + label + '</vm-choice>';
+    });
+
+    // Circular controls: [circle: Label] or [circle: Label | value]
+    t = t.replace(/\[circle:\s*([^|\]]+?)(?:\s*\|\s*([^\]]+?))?\]/gi, function (m, label, value) {
+      label = escapeHtml(label.trim());
+      value = (value || "").trim();
+      return '<vm-circle' + (value ? ' data-value="' + escapeHtml(value) + '"' : '') + ' data-label="' + label + '">' + label + '</vm-circle>';
+    });
+
+    // Information cards: [card: Title | Description]
+    t = t.replace(/\[card:\s*([^|\]]+?)\s*\|\s*([^\]]+?)\]/gi, function (m, title, desc) {
+      title = escapeHtml(title.trim());
+      desc = escapeHtml(desc.trim());
+      return '<vm-card><vm-card-title>' + title + '</vm-card-title><vm-card-desc>' + desc + '</vm-card-desc></vm-card>';
+    });
+
+    // Copyable text boxes: [copybox: content]
+    t = t.replace(/\[copybox:\s*([\s\S]+?)\]/gi, function (m, content) {
+      content = escapeHtml(content.trim());
+      return '<vm-copybox>' + content + '</vm-copybox>';
+    });
+
+    // Extract stage-3 elements before marked processes the text.
+    t = _stage3Extract(t);
     var citeStore = [];
     var protectedText = t.replace(CITE_RE, function (m, inner) {
       var idx = citeStore.length;
@@ -2759,6 +2813,10 @@ window.VMRichRender = (function () {
       return "<span class=\"vm-cite\">[" + escapeHtml(citeStore[idx] || "") + "]</span>";
     });
 
+    // Restore Stage 3 custom elements before sanitization so the sanitizer
+    // can validate them against ALLOWED_TAGS / ALLOWED_ATTRS.
+    html = _stage3Restore(html);
+
     var safe = sanitizeHtml(html);
     // vm-fix19 item 10: strip stray unrendered markdown markers (not in code)
     try { safe = _stripStrayMarkdown(safe); } catch (e) {}
@@ -2778,6 +2836,15 @@ window.VMPresentationSelector = (function () {
     if (!text || !text.trim()) return "plain";
     var t = text.trim();
     var lines = t.split(/\r?\n/);
+
+    // Stage 3 interactive conventions take priority — they must render
+    // even when no other markdown is present.
+    if (/\[choice:\s/i.test(t) || /\[circle:\s/i.test(t)) return "interactive";
+
+    if (/\[card:\s/i.test(t) || /\[copybox:\s/i.test(t)) return "rich";
+
+    // Mathematical expressions ($$, $$, \\(, \\[, $...$).
+    if (/\$\$|\\\(|\\\[|\$[A-Za-z]/.test(t)) return "math";
 
     var tableLines = 0;
     for (var i = 0; i < lines.length; i++) {
@@ -2825,6 +2892,299 @@ window.VMWrapReplyTables = function (root) {
 };
 
 // ---------------------------------------------------------------------
+// VMAddCodeCopyButtons - add a working "Copy" button to every code block
+// ---------------------------------------------------------------------
+window.VMAddCodeCopyButtons = function (bub) {
+  "use strict";
+  if (!bub || typeof bub.querySelectorAll !== "function") return;
+  try {
+    var blocks = bub.querySelectorAll("pre");
+    for (var i = 0; i < blocks.length; i++) {
+      var pre = blocks[i];
+      if (pre.classList && pre.classList.contains("vm-code-formatted")) continue;
+      if (pre.classList) pre.classList.add("vm-code-formatted");
+      pre.style.position = "relative";
+      var btn = document.createElement("button");
+      btn.className = "vm-code-copy";
+      btn.title = "Copy code";
+      btn.type = "button";
+      btn.textContent = "Copy";
+      btn.style.cssText = "position:absolute;top:8px;right:8px;z-index:2;background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.2);color:#e2e8f0;padding:4px 8px;border-radius:4px;font-size:11px;cursor:pointer;";
+      (function (p, b) {
+        b.onclick = function () {
+          var code = p.querySelector("code");
+          var text = code ? (code.textContent || code.innerText || "") : (p.textContent || "");
+          if (!navigator || !navigator.clipboard) return;
+          navigator.clipboard.writeText(text).then(function () {
+            b.textContent = "Copied!";
+            setTimeout(function () { b.textContent = "Copy"; }, 1200);
+          }, function () { b.textContent = "Copy"; });
+        };
+      })(pre, btn);
+      pre.appendChild(btn);
+    }
+  } catch (e) {}
+};
+
+// ---------------------------------------------------------------------
+// VMEnrichChoices - make <vm-choice> elements selectable chips.
+// Convention: [choice: Label] or [choice: Label | value]
+// ---------------------------------------------------------------------
+window.VMEnrichChoices = function (bub) {
+  "use strict";
+  if (!bub || typeof bub.querySelectorAll !== "function") return;
+  try {
+    var choices = bub.querySelectorAll("vm-choice");
+    var selectedValue = null; // single-select within a bubble
+    for (var i = 0; i < choices.length; i++) {
+      var el = choices[i];
+      if (el.classList && el.classList.contains("vm-choice-enhanced")) continue;
+      if (el.classList) el.classList.add("vm-choice-enhanced");
+      var value = el.getAttribute("data-value") || "";
+      var label = el.getAttribute("data-label") || el.textContent || "";
+      el.style.cssText = "display:inline-flex;align-items:center;gap:8px;border:1px solid rgba(148,163,184,0.25);border-radius:999px;background:rgba(15,23,42,0.5);color:#e2e8f0;padding:6px 12px;font-size:13px;cursor:pointer;user-select:none;margin:2px;";
+      el.title = label;
+      el.setAttribute("role", "button");
+      el.setAttribute("aria-pressed", "false");
+      el.tabIndex = 0;
+      (function (el, value, label) {
+        function select() {
+          if (selectedValue !== null) {
+            var prev = bub.querySelector('vm-choice[data-selected="true"]');
+            if (prev) {
+              prev.setAttribute("data-selected", "false");
+              prev.setAttribute("aria-pressed", "false");
+              prev.style.cssText = "display:inline-flex;align-items:center;gap:8px;border:1px solid rgba(148,163,184,0.25);border-radius:999px;background:rgba(15,23,42,0.5);color:#e2e8f0;padding:6px 12px;font-size:13px;cursor:pointer;user-select:none;margin:2px;";
+            }
+          }
+          selectedValue = value;
+          el.setAttribute("data-selected", "true");
+          el.setAttribute("aria-pressed", "true");
+          el.style.cssText = "display:inline-flex;align-items:center;gap:8px;border:1px solid #00d4ff;border-radius:999px;background:rgba(0,212,255,0.15);color:#00d4ff;padding:6px 12px;font-size:13px;cursor:pointer;user-select:none;margin:2px;";
+          // Announce selection to the conversation via a lightweight callback if present.
+          if (typeof window.onVmChoiceSelected === "function") {
+            try { window.onVmChoiceSelected(value, label, el); } catch (e) {}
+          }
+        }
+        el.addEventListener("click", function (e) { e.preventDefault(); select(); }, false);
+        el.addEventListener("keydown", function (e) {
+          if (e.key === "Enter" || e.key === " ") { e.preventDefault(); select(); }
+        }, false);
+      })(el, value, label);
+    }
+  } catch (e) {}
+};
+
+// ---------------------------------------------------------------------
+// VMEnrichCircles - make <vm-circle> elements selectable radio controls.
+// Convention: [circle: Label] or [circle: Label | value]
+// ---------------------------------------------------------------------
+window.VMEnrichCircles = function (bub) {
+  "use strict";
+  if (!bub || typeof bub.querySelectorAll !== "function") return;
+  try {
+    var circles = bub.querySelectorAll("vm-circle");
+    var selectedValue = null;
+    for (var i = 0; i < circles.length; i++) {
+      var el = circles[i];
+      if (el.classList && el.classList.contains("vm-circle-enhanced")) continue;
+      if (el.classList) el.classList.add("vm-circle-enhanced");
+      var value = el.getAttribute("data-value") || "";
+      var label = el.getAttribute("data-label") || el.textContent || "";
+      el.style.cssText = "position:relative;display:inline-flex;align-items:center;justify-content:center;width:44px;height:44px;border:2px solid rgba(148,163,184,0.35);border-radius:50%;background:#0b1220;color:#e2e8f0;font-size:13px;cursor:pointer;user-select:none;margin:4px;";
+      el.title = label;
+      el.setAttribute("role", "radio");
+      el.setAttribute("aria-checked", "false");
+      el.tabIndex = 0;
+      // Inner label
+      var span = document.createElement("span");
+      span.textContent = label;
+      span.style.cssText = "font-size:11px;pointer-events:none;";
+      el.appendChild(span);
+      (function (el, value, label) {
+        function select() {
+          if (selectedValue !== null) {
+            var prev = bub.querySelector('vm-circle[data-selected="true"]');
+            if (prev) {
+              prev.setAttribute("data-selected", "false");
+              prev.setAttribute("aria-checked", "false");
+              prev.style.cssText = "position:relative;display:inline-flex;align-items:center;justify-content:center;width:44px;height:44px;border:2px solid rgba(148,163,184,0.35);border-radius:50%;background:#0b1220;color:#e2e8f0;font-size:13px;cursor:pointer;user-select:none;margin:4px;";
+            }
+          }
+          selectedValue = value;
+          el.setAttribute("data-selected", "true");
+          el.setAttribute("aria-checked", "true");
+          el.style.cssText = "position:relative;display:inline-flex;align-items:center;justify-content:center;width:44px;height:44px;border:2px solid #00d4ff;border-radius:50%;background:#00d4ff;color:#000;font-size:13px;cursor:pointer;user-select:none;margin:4px;";
+          if (typeof window.onVmCircleSelected === "function") {
+            try { window.onVmCircleSelected(value, label, el); } catch (e) {}
+          }
+        }
+        el.addEventListener("click", function (e) { e.preventDefault(); select(); }, false);
+        el.addEventListener("keydown", function (e) {
+          if (e.key === "Enter" || e.key === " ") { e.preventDefault(); select(); }
+        }, false);
+      })(el, value, label);
+    }
+  } catch (e) {}
+};
+
+// ---------------------------------------------------------------------
+// VMEnrichCards - enhance <vm-card> info cards with link support.
+// Convention: [card: Title | Description] plus optional [Image: url]
+// ---------------------------------------------------------------------
+window.VMEnrichCards = function (bub) {
+  "use strict";
+  if (!bub || typeof bub.querySelectorAll !== "function") return;
+  try {
+    var cards = bub.querySelectorAll("vm-card");
+    for (var i = 0; i < cards.length; i++) {
+      var el = cards[i];
+      if (el.classList && el.classList.contains("vm-card-enhanced")) continue;
+      if (el.classList) el.classList.add("vm-card-enhanced");
+      var titleEl = el.querySelector("vm-card-title");
+      var descEl = el.querySelector("vm-card-desc");
+      var title = titleEl ? titleEl.textContent : "";
+      var desc = descEl ? descEl.textContent : "";
+      var href = el.getAttribute("data-href") || "";
+      el.style.cssText = "display:flex;gap:10px;align-items:flex-start;margin:10px 0;border:1px solid rgba(148,163,184,0.14);border-radius:10px;background:rgba(15,23,42,0.4);padding:10px 12px;cursor:" + (href ? "pointer" : "default") + ";";
+      if (href) {
+        el.title = title;
+        el.setAttribute("role", "link");
+        el.setAttribute("aria-label", title);
+        el.tabIndex = 0;
+        (function (el, href) {
+          el.addEventListener("click", function (e) {
+            e.preventDefault();
+            try { window.open(href, "_blank", "noopener,noreferrer"); } catch (e) {}
+          }, false);
+          el.addEventListener("keydown", function (e) {
+            if (e.key === "Enter") { e.preventDefault(); try { window.open(href, "_blank", "noopener,noreferrer"); } catch (e2) {} }
+          }, false);
+        })(el, href);
+      }
+    }
+  } catch (e) {}
+};
+
+// ---------------------------------------------------------------------
+// VMEnrichCopyboxes - add working copy buttons to <vm-copybox> elements.
+// Convention: [copybox: content]
+// ---------------------------------------------------------------------
+window.VMEnrichCopyboxes = function (bub) {
+  "use strict";
+  if (!bub || typeof bub.querySelectorAll !== "function") return;
+  try {
+    var boxes = bub.querySelectorAll("vm-copybox");
+    for (var i = 0; i < boxes.length; i++) {
+      var el = boxes[i];
+      if (el.classList && el.classList.contains("vm-copybox-enhanced")) continue;
+      if (el.classList) el.classList.add("vm-copybox-enhanced");
+      var text = el.textContent || "";
+      el.style.cssText = "display:flex;gap:8px;align-items:center;margin:8px 0;border:1px solid rgba(148,163,184,0.14);border-radius:8px;background:#04070f;overflow:hidden;";
+      var pre = document.createElement("pre");
+      pre.style.cssText = "margin:0;flex:1;min-width:0;padding:10px 12px;font:13px ui-monospace,SFMono-Regular,Menlo,monospace;color:#c8d3e8;overflow:auto;white-space:pre-wrap;word-break:break-word;";
+      pre.textContent = text;
+      var btn = document.createElement("button");
+      btn.textContent = "Copy";
+      btn.style.cssText = "flex:0 0 auto;background:rgba(0,212,255,0.15);border:1px solid rgba(0,212,255,0.3);color:#00d4ff;padding:6px 10px;border-radius:6px;font-size:12px;cursor:pointer;";
+      (function (el, pre, btn) {
+        btn.addEventListener("click", function (e) {
+          e.stopPropagation();
+          if (!navigator || !navigator.clipboard) return;
+          navigator.clipboard.writeText(pre.textContent).then(function () {
+            btn.textContent = "Copied!";
+            setTimeout(function () { btn.textContent = "Copy"; }, 1200);
+          }, function () { btn.textContent = "Copy"; });
+        }, false);
+      })(el, pre, btn);
+      // Rebuild: pre + button
+      el.innerHTML = "";
+      el.appendChild(pre);
+      el.appendChild(btn);
+    }
+  } catch (e) {}
+};
+
+// ---------------------------------------------------------------------
+// VMRenderMath - render mathematical expressions in a bubble via KaTeX.
+// Runs after innerHTML is set so KaTeX output is never re-sanitized.
+// ---------------------------------------------------------------------
+window.VMRenderMath = function (bub) {
+  "use strict";
+  if (!bub || typeof bub.querySelectorAll !== "function") return;
+  try {
+    if (typeof renderMathInElement === "function") {
+      renderMathInElement(bub, {
+        delimiters: [
+          { left: "$$", right: "$$", display: true },
+          { left: "\\[", right: "\\]", display: true },
+          { left: "\\(", right: "\\)", display: false },
+          { left: "$", right: "$", display: false }
+        ],
+        throwOnError: false
+      });
+    } else if (typeof katex !== "undefined" && typeof katex.renderToString === "function") {
+      var maths = bub.querySelectorAll("span.vm-math, .math");
+      for (var i = 0; i < maths.length; i++) {
+        try {
+          var m = maths[i];
+          var src = m.textContent || m.getAttribute("data-math") || "";
+          if (src) m.innerHTML = katex.renderToString(src, { throwOnError: false });
+        } catch (e) {}
+      }
+    }
+  } catch (e) {}
+};
+
+// ---------------------------------------------------------------------
+// VMFormatRichBubble - apply post-render formatting (highlight, math,
+// copy buttons) to an enriched assistant bubble. Called once innerHTML is
+// set so formatter output is never re-sanitized. Safe no-op if CDN libs
+// fail to load; content remains readable.
+// ---------------------------------------------------------------------
+window.VMFormatRichBubble = function (bub) {
+  "use strict";
+  if (!bub || typeof bub.querySelectorAll !== "function") return;
+  if (bub.classList && bub.classList.contains("vm-fmt-done")) return;
+  try {
+    // Syntax highlighting for code blocks.
+    if (typeof hljs !== "undefined") {
+      var blocks = bub.querySelectorAll("pre code");
+      for (var i = 0; i < blocks.length; i++) {
+        try { hljs.highlightElement(blocks[i]); } catch (e) {}
+      }
+    }
+    // Mathematical expressions.
+    window.VMRenderMath(bub);
+    // Working copy buttons on code blocks.
+    window.VMAddCodeCopyButtons(bub);
+    // Interactive choice chips.
+    window.VMEnrichChoices(bub);
+    // Circular selection controls.
+    window.VMEnrichCircles(bub);
+    // Information cards.
+    window.VMEnrichCards(bub);
+    // Copyable text boxes.
+    window.VMEnrichCopyboxes(bub);
+  } catch (e) {}
+  if (bub.classList) bub.classList.add("vm-fmt-done");
+};
+
+// Once the page (and deferred CDN libs: KaTeX / highlight.js) has loaded,
+// format any rich bubbles that were enriched before the libs were ready
+// (e.g. history replay during initial page load). Idempotent via vm-fmt-done.
+if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
+  window.addEventListener("load", function () {
+    try {
+      var bubbles = document.querySelectorAll(".bubble.ai-rich");
+      for (var i = 0; i < bubbles.length; i++) {
+        window.VMFormatRichBubble(bubbles[i]);
+      }
+    } catch (e) {}
+  });
+}
+
+// ---------------------------------------------------------------------
 // VMEnrichAssistantReply - enrich a completed assistant bubble
 // Plain/simple answers are left as plain text (no behavior change).
 // ---------------------------------------------------------------------
@@ -2850,6 +3210,10 @@ window.VMEnrichAssistantReply = function (bub, fullText) {
     bub.innerHTML = html;
     // Wrap tables for horizontal scrolling on mobile/desktop without dropping content.
     window.VMWrapReplyTables(bub);
+    // Post-render formatting: syntax highlighting, math, copy buttons.
+    if (typeof window.VMFormatRichBubble === "function") {
+      window.VMFormatRichBubble(bub);
+    }
     bub.classList.add("ai-rich");
   } catch (e) {
     // Keep the existing plain-text bubble on any unexpected error.

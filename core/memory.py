@@ -516,10 +516,10 @@ class MemorySystem:
             self._cache[chat_id] = self.load_chat(chat_id)
         return self._cache[chat_id]
 
-    def add_message(self, chat_id: str, role: str, content: str, timestamp=None, image_data: str = "", image_url: str = "", video_url: str = "", images: list = None, dedup_id: str = ""):
+    def add_message(self, chat_id: str, role: str, content: str, timestamp=None, image_data: str = "", image_url: str = "", video_url: str = "", images: list = None, source_metadata: list = None, dedup_id: str = ""):
         role = str(role or "user").strip()
         content = str(content or "").strip()
-        if not content and not image_data and not image_url and not video_url and not images:
+        if not content and not image_data and not image_url and not video_url and not images and not source_metadata:
             print(f"[WARNING] add_message: empty content and no media for role '{role}'; skipping.")
             return
 
@@ -552,6 +552,28 @@ class MemorySystem:
                     })
                 if clean_images:
                     msg["images"] = clean_images
+            if source_metadata:
+                clean_meta = []
+                for sm in source_metadata or []:
+                    if not isinstance(sm, dict):
+                        continue
+                    url = str(sm.get("url", "") or "").strip()
+                    if not url:
+                        continue
+                    clean_meta.append({
+                        "name": str(sm.get("name", "") or "").strip(),
+                        "domain": str(sm.get("domain", "") or "").strip(),
+                        "url": url,
+                        "title": str(sm.get("title", "") or "").strip(),
+                        "icon": str(sm.get("icon", "") or "").strip(),
+                        "tier": sm.get("tier", 3),
+                        "published": str(sm.get("published", "") or "").strip(),
+                        "image": str(sm.get("image", "") or "").strip(),
+                        "image_credit": str(sm.get("image_credit", "") or "").strip(),
+                        "freshness_label": str(sm.get("freshness_label", "") or "").strip(),
+                    })
+                if clean_meta:
+                    msg["source_metadata"] = clean_meta
             if dedup_id:
                 msg["dedup_id"] = dedup_id
             messages.append(msg)
