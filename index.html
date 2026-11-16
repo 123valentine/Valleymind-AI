@@ -2128,11 +2128,10 @@
   .self-start{ align-self:flex-start; margin-right:auto; }
   /* Native file inputs are kept rendered (never display:none) so a
      programmatic .click() reliably opens the Android WebView / mobile system
-     picker. They stay invisible via opacity:0 but are positioned INSIDE the
-     viewport (not off-screen) so Android WebView reliably delivers the
-     synthetic click to open the native file chooser. */
-  .vm-file-input{ position:fixed; left:0; top:0; width:1px; height:1px; padding:0;
-    margin:0; border:0; opacity:0; overflow:hidden; pointer-events:auto; }
+     picker. They stay nearly invisible (opacity:0.1) but are positioned INSIDE
+     the viewport and large enough to be a valid click target for WebView. */
+  .vm-file-input{ position:fixed; left:0; top:0; width:24px; height:24px; padding:0;
+    margin:0; border:0; opacity:0.1; overflow:hidden; pointer-events:auto; }
   /* Richly formatted assistant replies: let HTML flow naturally instead of pre-wrap. */
   .bubble.ai-rich{ white-space:normal; }
   /* Tables in rich replies: real table layout inside a scroll wrapper.
@@ -5548,19 +5547,19 @@ function vmOpenFilePicker(inputId) {
 }
 
 function vmPlusMenuCamera() {
-    console.log("[picker] vmPlusMenuCamera called");
+    console.log("[picker] vmPlusMenuCamera called at t+" + Date.now());
+    // Issue the picker click BEFORE closing the menu, so the user activation
+    // gesture is still alive when Android WebView receives input.click().
+    try { vmOpenCameraCapture(); } catch (e) {}
     closePlusMenu();
-    try { vmOpenCameraCapture(); }
-    catch (e) {
-        console.warn("[picker] camera capture failed, using native input:", e);
-        vmOpenFilePicker('chatCameraInput');
-    }
 }
 
 function vmPlusMenuPick(inputId) {
-    console.log("[picker] vmPlusMenuPick(" + inputId + ") called");
+    console.log("[picker] vmPlusMenuPick(" + inputId + ") called at t+" + Date.now());
+    // Issue the picker click BEFORE closing the menu, so the user activation
+    // gesture is still alive when Android WebView receives input.click().
+    try { vmOpenFilePicker(inputId); } catch (e) {}
     closePlusMenu();
-    vmOpenFilePicker(inputId);
 }
 function repositionMenus() {
     var pm = document.getElementById("personaMenu");
@@ -7815,6 +7814,19 @@ async function switchSession(chatId) {
     // Park any unsent draft with the conversation we are leaving, then restore
     // the target conversation's own draft (if any) into the composer.
     saveChatDraft(currentChatId);
+    // Persist any in-progress assistant response before switching conversations.
+    // The backend only saves the assistant reply after the stream completes
+    // (evt.done). If the user leaves mid-stream, the rendered-but-unsaved
+    // response would be lost on return.
+    if (_vmPendingAssistantText && currentChatId && !_vmStreamDone) {
+        try {
+            await persistMessagePair(currentChatId, "", _vmPendingAssistantText);
+        } catch (e) {
+            console.warn("Failed to persist in-progress assistant response:", e);
+        }
+        _vmPendingAssistantText = "";
+        _vmStreamDone = false;
+    }
     currentChatId = chatId;
     saveLastChatId(chatId);
     await hydrateChatMessages(chatId);
@@ -8388,6 +8400,8 @@ var _sttInterim = "";        // current interim: latest non-final transcript onl
 var _sendAbortController = null; // AbortController for in-flight chat request
 var _sendAborted = false; // set when user cancels
 var _sendOriginalText = ""; // text to restore on cancel
+var _vmPendingAssistantText = ""; // assistant response text being streamed, persisted on navigate-away
+var _vmStreamDone = false; // whether the current stream has completed (backend has saved it)
 var _sttDebug = (function () {
     try {
         var db = (/[?&]debug=1/).test(window.location.search || "");
@@ -12315,6 +12329,14 @@ async function checkSession() {
             }
 
             setAppVisible(true);
+            // Restore the current conversation so that a completed assistant
+            // reply is not lost when the page is restored (e.g., after
+            // minimising/restoring the Android WebView).
+            if (currentChatId) {
+                try { await hydrateChatMessages(currentChatId); } catch (e) {
+                    console.warn("[checkSession] failed to hydrate current chat:", e);
+                }
+            }
             logSidebarState("checkSession-authed");
             if (typeof vmGuideMaybeShow === "function") {
                 // First-time onboarding: show the Chat guide once per browser.
@@ -13166,6 +13188,9 @@ window.send = async function () {
     _sendAbortController = new AbortController();
     _sendAborted = false;
     _sendOriginalText = text;
+    // Reset pending assistant response tracking for this new stream
+    _vmPendingAssistantText = "";
+    _vmStreamDone = false;
 
     // Show stop icon on send button while a request is pending.
     var sendBtn = document.getElementById("sendBtn");
@@ -13711,6 +13736,7 @@ window.send = async function () {
                         }
                     }
                     fullReply += tok;
+                    _vmPendingAssistantText = fullReply;
                     if (bubbleEl) {
                         var bub = bubbleEl.querySelector(".bubble");
                         if (bub) {
@@ -13727,6 +13753,7 @@ window.send = async function () {
                     }
                     streamMeta = evt;
                     streamDone = true;
+                    _vmStreamDone = true;
                     if (evt.reply_mode) streamReplyMode = true;
                 }
             }
