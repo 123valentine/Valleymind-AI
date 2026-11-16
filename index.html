@@ -2307,16 +2307,17 @@
   .bubble.ai-rich{ overflow-wrap:break-word; }
 
   /* Compact media cards inside chat bubbles.
-     Square thumbnails (~120px), object-fit:cover, rounded corners, subtle border.
-     Tap to open full-resolution image via openImageViewer(). */
-  .bubble.ai-rich .vm-chat-media-card{ position:relative; display:inline-flex; align-items:center; justify-content:center; width:120px; height:120px; border-radius:10px; border:1px solid rgba(148,163,184,0.14); background:#0b1220; overflow:hidden; flex-shrink:0; margin:4px 0; cursor:pointer; }
-  .bubble.ai-rich .vm-chat-media-card img{ width:100%; height:100%; object-fit:cover; display:block; }
-  .bubble.ai-rich .vm-chat-media-card video{ width:100%; height:100%; object-fit:cover; display:block; background:#000; }
-  .bubble.ai-rich .vm-chat-media-card .vm-chat-media-play{ position:absolute; right:6px; bottom:6px; width:26px; height:26px; border-radius:50%; background:rgba(2,6,23,0.75); color:#00d4ff; display:flex; align-items:center; justify-content:center; font-size:10px; line-height:1; z-index:2; }
-  .bubble.ai-rich .vm-chat-media-card .vm-chat-media-play::before{ content:"\u25B6"; margin-left:2px; }
-  .bubble.ai-rich .vm-chat-media-card .vm-chat-media-cap{ position:absolute; left:0; right:0; bottom:0; font-size:10px; color:rgba(255,255,255,0.8); padding:4px 6px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; z-index:2; background:linear-gradient(transparent,rgba(0,0,0,0.6)); }
+     Square thumbnails (~120px desktop, ~104px mobile), object-fit:contain,
+     object-position:center, rounded corners. Applies to all message types
+     (user, assistant, rich) so thumbnails never expand to original size. */
+  .vm-chat-media-card{ position:relative; display:inline-flex; align-items:center; justify-content:center; width:120px; height:120px; border-radius:10px; border:1px solid rgba(148,163,184,0.14); background:#0b1220; overflow:hidden; flex-shrink:0; margin:4px 0; cursor:pointer; }
+  .vm-chat-media-card img{ width:100%; height:100%; object-fit:contain; object-position:center; display:block; }
+  .vm-chat-media-card video{ width:100%; height:100%; object-fit:contain; object-position:center; display:block; background:#000; }
+  .vm-chat-media-card .vm-chat-media-play{ position:absolute; right:6px; bottom:6px; width:26px; height:26px; border-radius:50%; background:rgba(2,6,23,0.75); color:#00d4ff; display:flex; align-items:center; justify-content:center; font-size:10px; line-height:1; z-index:2; }
+  .vm-chat-media-card .vm-chat-media-play::before{ content:"\u25B6"; margin-left:2px; }
+  .vm-chat-media-card .vm-chat-media-cap{ position:absolute; left:0; right:0; bottom:0; font-size:10px; color:rgba(255,255,255,0.8); padding:4px 6px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; z-index:2; background:linear-gradient(transparent,rgba(0,0,0,0.6)); }
   @media(max-width:640px){
-    .bubble.ai-rich .vm-chat-media-card{ width:104px; height:104px; }
+    .vm-chat-media-card{ width:104px; height:104px; }
   }
 
   /* Pasted conversation action bar. */
@@ -7291,7 +7292,7 @@ function addMessage(text, type = "ai", imageData, mediaUrl, videoUrl, images, so
         chatVidCard.appendChild(chatVid);
         chatVidCard.appendChild(playBadge);
         chatVidCard.appendChild(cap);
-        chatVidCard.onclick = function(ev){ ev.stopPropagation(); if (typeof openImageViewer === 'function') openImageViewer(finalVideoUrl); };
+        chatVidCard.onclick = function(ev){ ev.stopPropagation(); if (typeof openVideoViewer === 'function') openVideoViewer(finalVideoUrl); };
         bubble.appendChild(chatVidCard);
     }
 
@@ -15168,13 +15169,13 @@ function renderGeneratedImage(imageUrl, revisedPrompt, altText) {
     var bubble = document.createElement("div");
     bubble.className = "bubble";
     var imgWrap = document.createElement("div");
-    imgWrap.style.cssText = "margin-bottom:8px;";
+    imgWrap.className = "vm-chat-media-card";
+    imgWrap.title = "Tap to open image";
     var img = document.createElement("img");
     img.src = imageUrl;
     img.alt = "Generated image";
     img.loading = "lazy";
-    img.style.cssText = "max-width:100%;max-height:400px;border-radius:12px;display:block;cursor:pointer;";
-    img.onclick = function () { openImageViewer(imageUrl); };
+    img.onclick = function(ev){ ev.stopPropagation(); if (typeof openImageViewer === 'function') openImageViewer(imageUrl); };
     imgWrap.appendChild(img);
     bubble.appendChild(imgWrap);
     wrapper.appendChild(bubble);
