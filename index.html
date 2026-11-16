@@ -5016,10 +5016,29 @@ function _vmAddImageAttachment(file) {
   return att;
 }
 
+/* Read a video File as a data:video/...;base64 URI on demand.
+   Called lazily at send time (not at selection time) so that large videos
+   do not block the composer UI while the user is still picking files. */
+function _vmReadVideoAsDataUrl(att) {
+  if (!att || !att.file) return Promise.reject(new Error("No video file."));
+  if (att.dataUrl) return Promise.resolve(att.dataUrl);
+  return new Promise(function(resolve, reject) {
+    var reader = new FileReader();
+    reader.onload = function(e){
+      att.dataUrl = e.target.result;
+      resolve(att.dataUrl);
+    };
+    reader.onerror = function(){
+      reject(new Error("Failed to read this video file."));
+    };
+    reader.readAsDataURL(att.file);
+  });
+}
+
 function _vmAddVideoAttachment(file) {
   var previewUrl = '';
   try { previewUrl = URL.createObjectURL(file); } catch(e) { previewUrl = ''; }
-  return _vmAddAttachment({kind:'video', name:file.name||'video', size:file.size||0, type:file.type||'', file:file, previewUrl:previewUrl, status:'ready', progress:100, indeterminate:false});
+  return _vmAddAttachment({kind:'video', name:file.name||'video', size:file.size||0, type:file.type||'', file:file, previewUrl:previewUrl, dataUrl:null, status:'ready', progress:100, indeterminate:false});
 }
 
 function _vmReleasePreviewUrl(att) {
@@ -5032,9 +5051,9 @@ function handleSelectedMediaFiles(files) {
     if (!files || files.length === 0) return;
     var unsupported = [];
     var oversized = [];
-    var extraVideos = 0;
-    var videoCount = vmChatAttachments.filter(function(a){return a.kind==='video';}).length;
     // Single pass in selection order: attachments keep the order the user picked.
+    // Multiple images and multiple videos are both supported; the unified
+    // /api/vision/analyze endpoint handles mixed image/video batches.
     for (var i = 0; i < files.length; i++) {
         var file = files[i];
         if (!file) continue;
@@ -5051,10 +5070,7 @@ function handleSelectedMediaFiles(files) {
                 oversized.push((file.name || 'video') + ' (' + _vmFmtBytes(file.size) + ')');
                 continue;
             }
-            // /api/video/analyze analyzes exactly one video, so keep the first.
-            if (videoCount > 0) { extraVideos++; continue; }
             _vmAddVideoAttachment(file);
-            videoCount++;
         }
     }
     if (unsupported.length) {
@@ -5062,9 +5078,6 @@ function handleSelectedMediaFiles(files) {
     }
     if (oversized.length) {
         try { alert('Too large: ' + oversized.join(', ') + '. Images must be 10 MB or smaller and videos 100 MB or smaller.'); } catch(e) {}
-    }
-    if (extraVideos > 0) {
-        try { alert('Only one video can be attached at a time. The first selected video was kept.'); } catch(e) {}
     }
     _vmSyncLegacyAttachments();
     renderComposerChips();
@@ -5265,9 +5278,10 @@ async function vmNvidiaCheckAvailability() {
   return { available: false };
 }
 
-async function vmNvidiaAnalyzeImages(imageDataUrls, question, videoDataUris) {
-  if (!imageDataUrls || imageDataUrls.length === 0) {
-    return { success: false, error: "No images provided." };
+async function vmNvidiaAnalyzeImages(imageDataUrls, question, videoDataUris, opts) {
+  opts = opts || {};
+  if ((!imageDataUrls || imageDataUrls.length === 0) && (!videoDataUris || videoDataUris.length === 0)) {
+    return { success: false, error: "No images or videos provided." };
   }
   try {
     var res = await apiFetch("/api/vision/analyze", {
@@ -5275,9 +5289,13 @@ async function vmNvidiaAnalyzeImages(imageDataUrls, question, videoDataUris) {
       credentials: "include",
       headers: authHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({
-        images: imageDataUrls,
+        images: imageDataUrls || [],
         videos: videoDataUris || [],
         question: question || "",
+        context: opts.context || "chat",
+        route_to_brain: !!opts.route_to_brain,
+        chat_id: opts.chat_id || "",
+        persona: opts.persona || "",
       }),
       timeoutMs: 300000,
     });
@@ -5319,6 +5337,8 @@ function vmRemoveAttachment(id){
       a.status = 'removed';
       if (a.xhr) { try { a.xhr.abort(); } catch(e){} a.xhr = null; }
       _vmReleasePreviewUrl(a);
+      // Release any lazily-read base64 video data URL to free memory.
+      if (a.kind === 'video' && a.dataUrl) { a.dataUrl = null; }
       vmChatAttachments.splice(i,1);
       break;
     }
@@ -13436,6 +13456,9 @@ window.send = async function () {
       || (typeof pendingImageData !== 'undefined' && pendingImageData && pendingImageData.length > 0)
       || (typeof pendingDocumentFiles !== 'undefined' && pendingDocumentFiles && pendingDocumentFiles.length > 0);
 
+    // Vision analysis results accumulator (images + videos), populated below.
+    var _vmVisionResults = { images: 0, videos: 0, combined: "", errors: [] };
+
     if (!text && !_hasFiles && !_hasVideo && !_failedVideoAtt) { if (_regenCtx) window._regenCtx = null; _releaseRefusedSend(); return; }
 
     // A video that failed to upload stays attached so it can be retried; it must
@@ -13447,30 +13470,74 @@ window.send = async function () {
         return;
     }
 
-    // An attached video goes to the vision model on its own. Mixing it with
-    // images/documents would silently leave those attachments unsent.
-    if (!_regenCtx && _hasVideo) {
-        if (_hasFiles) {
-            try { alert('Videos are analyzed on their own. Remove the attached video or the other attachments before sending.'); } catch(e) {}
-            _releaseRefusedSend();
-            return;
-        }
-        input.value = "";
-        autoGrowInput();
-        setThinkingState(true);
-        try {
-            await sendVideoForAnalysis(text);
-        } finally {
-            setThinkingState(false);
-            _sendAbortController = null;
-            _sendAborted = false;
-            if (sendBtn && sendIcon) {
-                sendBtn.style.background = "#00d4ff";
-                sendIcon.setAttribute("data-lucide", "send");
-                try { lucide.createIcons(); } catch (e) {}
+    // ── Mixed-media analysis: images + videos together via unified vision ──
+    // Collect all ready image data URLs and video data URLs, then send them
+    // together to /api/vision/analyze (NVIDIA Nemotron or provider fallback).
+    // Each attachment is tracked independently; a failure on one does not
+    // block the others, and successful analyses are preserved.
+    var _vmVisionQuestion = text || "";
+
+    if (_hasVideo || _fileAtts.some(function(a){return a.kind === 'image' && a.status === 'ready';})) {
+        // Build image data URL list from ready images.
+        var _vmVisionImages = _fileAtts.filter(function(a){
+            return a.kind === 'image' && a.status === 'ready' && a.dataUrl;
+        }).map(function(a){ return a.dataUrl; });
+
+        // Build video data URL list (read videos lazily as base64).
+        var _vmVisionVideos = [];
+        var _vmVisionVideoErrors = [];
+        for (var i = 0; i < _videoAtts.length; i++) {
+            var v = _videoAtts[i];
+            if (v.status !== 'ready' || !v.file) continue;
+            try {
+                var vdu = await _vmReadVideoAsDataUrl(v);
+                if (vdu) _vmVisionVideos.push(vdu);
+            } catch (e) {
+                _vmVisionVideoErrors.push({ name: v.name || 'video', error: String(e).slice(0,160) });
             }
         }
-        return;
+
+        // If we have anything to analyze, call the unified vision endpoint.
+        // (Video read errors alone are reported without calling the endpoint.)
+        if (_vmVisionImages.length > 0 || _vmVisionVideos.length > 0) {
+            setThinkingState(true);
+            try {
+                var _vmVision = await vmNvidiaAnalyzeImages(
+                    _vmVisionImages,
+                    _vmVisionQuestion,
+                    _vmVisionVideos,
+                    { context: "chat", chat_id: currentChatId || "", persona: currentPersona || "" }
+                );
+                if (_vmVision && _vmVision.success) {
+                    _vmVisionResults.images = _vmVision.images_analyzed || 0;
+                    _vmVisionResults.videos = _vmVision.videos_analyzed || 0;
+                    _vmVisionResults.combined = _vmVision.description || _vmVision.reply || "";
+                } else {
+                    _vmVisionResults.errors.push(_vmVision && _vmVision.error ? _vmVision.error : "Vision analysis failed.");
+                }
+            } catch (e) {
+                _vmVisionResults.errors.push("Vision analysis error: " + String(e).slice(0,160));
+            } finally {
+                setThinkingState(false);
+                _sendAbortController = null;
+                _sendAborted = false;
+                if (sendBtn && sendIcon) {
+                    sendBtn.style.background = "#00d4ff";
+                    sendIcon.setAttribute("data-lucide", "send");
+                    try { lucide.createIcons(); } catch (e) {}
+                }
+            }
+        }
+
+        // Append per-video read errors to results.
+        if (_vmVisionVideoErrors.length > 0) {
+            _vmVisionVideoErrors.forEach(function(ve){
+                _vmVisionResults.errors.push("Video \"" + ve.name + "\": " + ve.error);
+            });
+        }
+
+        // If vision completely failed and there is no text, we still proceed
+        // so the user gets an error message rather than a silent hang.
     }
 
     // Block send while any image or document is still preparing/uploading/reading.
@@ -13532,6 +13599,16 @@ window.send = async function () {
       }).join("\n\n");
     }
     var textToSend = (text || '') + (sentDocs.length ? (docContext + "\n\nUser question/request: " + (text || "Please analyze the attached document(s).")) : '');
+
+    // Append consolidated vision analysis results (images + videos) so the
+    // conversational model can answer based on observed media content.
+    if (_vmVisionResults.combined) {
+        textToSend += "\n\n[Visual Analysis Findings]\n" + _vmVisionResults.combined;
+    }
+    if (_vmVisionResults.errors && _vmVisionResults.errors.length > 0) {
+        textToSend += "\n\n[Media Analysis Notes]\n" + _vmVisionResults.errors.join("\n") +
+            "\n(Analyzed " + _vmVisionResults.images + " image(s) and " + _vmVisionResults.videos + " video(s).)";
+    }
     // do NOT add a user message in regen mode
     if (_regenCtx) {
         if (textToSend) window._lastUserText = textToSend;
@@ -13598,10 +13675,14 @@ window.send = async function () {
     try {
         var body = { message: text || "(image attached)", persona: currentPersona };
         if (currentChatId) body.chat_id = currentChatId;
-        // The vision pipeline accepts ONE data URL per turn; sending the array
-        // would serialize as a Python list and be rejected as an invalid image.
-        // Extra images stay visible in the transcript (vm-media-grid).
-        if (sentImage && sentImage.length > 0) body.image = sentImage[0];
+        // Images/videos are pre-analyzed via /api/vision/analyze above; their
+        // findings are appended to message text. Do NOT also send raw image
+        // data to /chat/stream (which only accepts a single image anyway).
+        // If no vision analysis ran (e.g. no attachments), fall back to
+        // sending the first image for backward compatibility.
+        if (!_vmVisionResults || (_vmVisionResults.images === 0 && _vmVisionResults.videos === 0)) {
+            if (sentImage && sentImage.length > 0) body.image = sentImage[0];
+        }
 
         var streamRes = await fetch(apiUrl("/chat/stream"), {
             method: "POST",
