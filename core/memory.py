@@ -584,6 +584,44 @@ class MemorySystem:
         with lock:
             return list(self._get_cached(chat_id))
 
+    def begin_streaming_assistant(self, chat_id: str, timestamp=None, extra: dict = None) -> int:
+        """Append an assistant message and persist it before any token arrives.
+
+        ``extra`` carries the metadata the final message would have had
+        (sources, images, dedup id). Returns the message index so the stream
+        loop can checkpoint its content in place.
+        """
+        lock = self._get_lock(chat_id)
+        with lock:
+            messages = self._get_cached(chat_id)
+            msg = {
+                "role": "assistant",
+                "content": "",
+                "time": timestamp or datetime.now().isoformat(),
+            }
+            if extra:
+                msg.update({k: v for k, v in extra.items() if v not in (None, "", [], {})})
+            messages.append(msg)
+            self.save_chat(chat_id, messages)
+            return len(messages) - 1
+
+    def update_message_content(self, chat_id: str, message_index: int, content: str) -> bool:
+        """Replace the content of an existing message and persist it.
+
+        Used to checkpoint a streaming assistant reply so a partially/fully
+        generated response survives an app kill before the stream finalises.
+        """
+        lock = self._get_lock(chat_id)
+        with lock:
+            messages = self._get_cached(chat_id)
+            if not (0 <= message_index < len(messages)):
+                return False
+            msg = dict(messages[message_index])
+            msg["content"] = str(content or "")
+            messages[message_index] = msg
+            self.save_chat(chat_id, messages)
+            return True
+
     def clear_chat(self, chat_id: str):
         lock = self._get_lock(chat_id)
         with lock:

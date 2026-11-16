@@ -2,6 +2,7 @@ import json
 import os
 import re
 import threading
+import time
 from datetime import datetime
 
 import requests
@@ -32,6 +33,65 @@ from core.african_culture import (
 
 
 FALLBACK_RESPONSE = "I can't reach the reasoning model right now. Please try again shortly."
+
+# ── Streaming persistence checkpoints ──────────────────────────────
+# The client renders tokens as they arrive, but the assistant row used to be
+# written only after the stream finished. If Android killed the WebView (or the
+# connection dropped) before that write, the user message survived while the
+# completed reply was lost. Checkpoint the reply while it streams so a reply
+# that already looks finished can never disappear on reopen.
+STREAM_CHECKPOINT_INTERVAL_S = 2.0
+STREAM_CHECKPOINT_EVERY_CHARS = 200
+
+
+def _new_stream_state(memory, timestamp, extra: dict = None) -> dict:
+    return {
+        "memory": memory,
+        "idx": -1,
+        "chars": 0,
+        "last_ts": 0.0,
+        "last_chars": 0,
+        "timestamp": timestamp,
+        "extra": extra or {},
+    }
+
+
+def _stream_checkpoint(memory, chat_id: str, state: dict, text: str) -> None:
+    """Persist the in-progress assistant reply (creates the row lazily)."""
+    now = time.time()
+    if (
+        state["idx"] >= 0
+        and (now - state["last_ts"]) < STREAM_CHECKPOINT_INTERVAL_S
+        and (state["chars"] - state["last_chars"]) < STREAM_CHECKPOINT_EVERY_CHARS
+    ):
+        return
+    try:
+        if state["idx"] < 0:
+            state["idx"] = memory.begin_streaming_assistant(
+                chat_id, state["timestamp"], extra=state["extra"])
+        memory.update_message_content(chat_id, state["idx"], text)
+        state["last_ts"] = now
+        state["last_chars"] = len(text)
+    except Exception as exc:
+        print(f"[WARN] Stream checkpoint failed: {exc}")
+
+
+def _stream_finalize(memory, chat_id: str, state: dict, text: str) -> None:
+    """Guarantee the assistant reply is durable when the stream ends or aborts."""
+    final_text = text or "No response"
+    try:
+        if state["idx"] < 0:
+            state["idx"] = memory.begin_streaming_assistant(
+                chat_id, state["timestamp"], extra=state["extra"])
+        # Skip the write when the last checkpoint already stored this text.
+        rows = memory.get_chat(chat_id)
+        idx = state["idx"]
+        if 0 <= idx < len(rows) and rows[idx].get("content") == final_text:
+            return
+        memory.update_message_content(chat_id, idx, final_text)
+    except Exception as exc:
+        print(f"[ERROR] Stream finalize (assistant) failed: {exc}")
+
 
 # ── Global Pinecone-backed memory managers (singletons) ────────────
 _memory_mgr: MemoryManager | None = None
@@ -2616,123 +2676,135 @@ class MarcusBrain:
 
             # ── Cross-conversation context recovery ───────────────
             recovered_context = ""
-            try:
-                recovery = _get_recovery(self.memory.user_id)
-                current_msgs = self.memory.get_chat(cid)
-                result = recovery.resolve(
-                    message,
-                    current_chat_id=cid,
-                    current_messages=current_msgs,
-                    token_budget=800,
-                )
-                if result and result.get("needs_recovery"):
-                    recovered_context = result.get("recovered_context", "")
-                    candidates = result.get("candidates", [])
-                    if recovered_context:
-                        print(f"[CONV RECOVERY] Injected {len(recovered_context)} chars of recovered context from {len(candidates)} candidate(s)")
-                        if not _recovery_detected:
-                            yield {"recovery_status": "context_found"}
-                    if result.get("ambiguous"):
-                        clarification = result.get("clarification", "")
-                        if clarification:
-                            yield {"recovery_status": "disambiguation"}
-                            yield {"token": ""}
-                            full_reply = clarification
-                            yield clarification
-                            try:
-                                self.memory.add_message(cid, "assistant", full_reply, timestamp, source_metadata=self._pending_source_metadata)
-                            except Exception:
-                                pass
-                            return
-            except Exception as exc:
-                print(f"[CONV RECOVERY] Recovery failed (non-fatal): {exc}")
-
-            msgs = self._groq_messages(cid, message, image_data, live_context=live_ctx, mongo_history=mongo_history, global_memories=global_memories, knowledge_data=knowledge_data, recovered_context=recovered_context, search_note=search_note)
-            if capability == "text":
-                capability = _detect_capability(msgs)
-                print(f"[STREAM] Detected capability: {capability} ({_estimate_messages_tokens(msgs)} estimated tokens)")
-
-            # ── Activity indicators for detected capabilities ─────────────
-            if capability == "coding":
-                yield activity_event(cid, "coding", "inspecting_code", detail="Analyzing code structure")
-            elif capability in ("image", "vision"):
-                yield activity_event(cid, "image_video", "examining_image", detail="Analyzing attached image")
-            elif capability == "large":
-                yield activity_event(cid, "summarization", "summarizing", detail="Processing long context")
             full_reply = ""
+            # stream_respond() did not initialise these (respond() does), so the
+            # post-stream add_message() below used to raise AttributeError on a
+            # brand-new conversation and silently skip saving the assistant row.
+            if not hasattr(self, "_pending_sources") or self._pending_sources is None:
+                self._pending_sources = []
+            if not hasattr(self, "_pending_source_metadata") or self._pending_source_metadata is None:
+                self._pending_source_metadata = []
+            _assistant_images = []
+            for src in (self._pending_sources or []):
+                if src and src.get("image"):
+                    _assistant_images.append({
+                        "url": src.get("image", ""),
+                        "source": src.get("domain", ""),
+                        "credit": src.get("image_credit", ""),
+                    })
+            stream_state = _new_stream_state(self.memory, timestamp, extra={
+                "images": _assistant_images,
+                "source_metadata": self._pending_source_metadata,
+                "dedup_id": dedup_id,
+            })
+            try:
+                try:
+                    recovery = _get_recovery(self.memory.user_id)
+                    current_msgs = self.memory.get_chat(cid)
+                    result = recovery.resolve(
+                        message,
+                        current_chat_id=cid,
+                        current_messages=current_msgs,
+                        token_budget=800,
+                    )
+                    if result and result.get("needs_recovery"):
+                        recovered_context = result.get("recovered_context", "")
+                        candidates = result.get("candidates", [])
+                        if recovered_context:
+                            print(f"[CONV RECOVERY] Injected {len(recovered_context)} chars of recovered context from {len(candidates)} candidate(s)")
+                            if not _recovery_detected:
+                                yield {"recovery_status": "context_found"}
+                        if result.get("ambiguous"):
+                            clarification = result.get("clarification", "")
+                            if clarification:
+                                yield {"recovery_status": "disambiguation"}
+                                yield {"token": ""}
+                                full_reply = clarification
+                                yield clarification
+                                return  # durable write happens in finally below
+                except Exception as exc:
+                    print(f"[CONV RECOVERY] Recovery failed (non-fatal): {exc}")
 
-            def _stream_once(_msgs, _finish_box, _max_tokens=2048):
-                for item in _call_llm_cluster_stream(_msgs, max_completion_tokens=_max_tokens, capability=capability):
-                    if isinstance(item, dict):
-                        if item.get("__vm_control") == "finish":
-                            _finish_box[0] = str(item.get("finish_reason") or "")
-                        else:
+                msgs = self._groq_messages(cid, message, image_data, live_context=live_ctx, mongo_history=mongo_history, global_memories=global_memories, knowledge_data=knowledge_data, recovered_context=recovered_context, search_note=search_note)
+                if capability == "text":
+                    capability = _detect_capability(msgs)
+                    print(f"[STREAM] Detected capability: {capability} ({_estimate_messages_tokens(msgs)} estimated tokens)")
+
+                # ── Activity indicators for detected capabilities ─────────────
+                if capability == "coding":
+                    yield activity_event(cid, "coding", "inspecting_code", detail="Analyzing code structure")
+                elif capability in ("image", "vision"):
+                    yield activity_event(cid, "image_video", "examining_image", detail="Analyzing attached image")
+                elif capability == "large":
+                    yield activity_event(cid, "summarization", "summarizing", detail="Processing long context")
+
+                def _stream_once(_msgs, _finish_box, _max_tokens=2048):
+                    for item in _call_llm_cluster_stream(_msgs, max_completion_tokens=_max_tokens, capability=capability):
+                        if isinstance(item, dict):
+                            if item.get("__vm_control") == "finish":
+                                _finish_box[0] = str(item.get("finish_reason") or "")
+                            else:
+                                yield item
+                            continue
+                        if item:
                             yield item
-                        continue
-                    if item:
-                        yield item
 
-            try:
-                # Auto-continue when a provider reports finish_reason=="length" so long
-                # answers/tables are not cut off. Continuations are new LLM calls (provider
-                # fallback applies per call); we never splice providers mid-stream.
-                _cont_msgs = list(msgs)
-                _max_cont = 3
-                _cont_n = 0
-                while True:
-                    _seg = ""
-                    _finish_box = [None]
-                    for yielded in _stream_once(_cont_msgs, _finish_box):
-                        if isinstance(yielded, str):
-                            _seg += yielded
-                            full_reply += yielded
-                            yield yielded
-                        elif yielded is not None:
-                            yield yielded
-                    _finish = _finish_box[0]
-                    if _finish == "length" and _seg.strip() and _cont_n < _max_cont:
-                        _cont_n += 1
-                        print(f"[STREAM] finish_reason=length, auto-continuing ({_cont_n}/{_max_cont})")
-                        yield {"stream_continue": True, "index": _cont_n}
-                        _cont_msgs = list(msgs) + [
-                            {"role": "assistant", "content": full_reply[-12000:]},
-                            {"role": "user", "content": "Continue exactly where you left off. Do not repeat previous text, do not add a preamble. Continue the same answer/table/list."},
-                        ]
-                        continue
-                    if _finish == "length" and _seg.strip() and _cont_n >= _max_cont:
-                        yield {"truncated": True, "finish_reason": "length"}
-                    break
-            except Exception as exc:
-                print(f"[STREAM ERROR] LLM stream failed: {_short_error_detail(str(exc))}")
-                # Try next provider once with the non-streaming cluster before apologizing,
-                # but only when nothing has been emitted yet.
-                if not full_reply.strip():
-                    try:
-                        response, meta = _call_llm_cluster(msgs)
-                        print(f"[STREAM ERROR] Recovered via {_served_by(meta)} (non-stream fallback)")
-                        full_reply = response
-                        yield response
-                    except Exception as exc2:
-                        print(f"[STREAM ERROR] All LLM providers failed: {_short_error_detail(str(exc2))}")
-                        fallback = "I apologize, but I'm having trouble processing your request right now."
-                        full_reply = fallback
-                        yield fallback
-                else:
-                    # Partial output already sent - cannot safely replace; leave as-is.
-                    print("[STREAM ERROR] Partial output was emitted before failure; not replacing with apology.")
-
-            try:
-                _assistant_images = []
-                for src in (self._pending_sources or []):
-                    if src and src.get("image"):
-                        _assistant_images.append({
-                            "url": src.get("image", ""),
-                            "source": src.get("domain", ""),
-                            "credit": src.get("image_credit", ""),
-                        })
-                self.memory.add_message(cid, "assistant", full_reply or "No response", timestamp, images=_assistant_images, source_metadata=self._pending_source_metadata, dedup_id=dedup_id)
-            except Exception as exc:
-                print(f"[ERROR] Memory add_message (assistant) failed: {exc}")
+                try:
+                    # Auto-continue when a provider reports finish_reason=="length" so long
+                    # answers/tables are not cut off. Continuations are new LLM calls (provider
+                    # fallback applies per call); we never splice providers mid-stream.
+                    _cont_msgs = list(msgs)
+                    _max_cont = 3
+                    _cont_n = 0
+                    while True:
+                        _seg = ""
+                        _finish_box = [None]
+                        for yielded in _stream_once(_cont_msgs, _finish_box):
+                            if isinstance(yielded, str):
+                                _seg += yielded
+                                full_reply += yielded
+                                stream_state["chars"] = len(full_reply)
+                                # Checkpoint the growing reply so it survives an
+                                # app kill / client disconnect before the stream ends.
+                                _stream_checkpoint(self.memory, cid, stream_state, full_reply)
+                                yield yielded
+                            elif yielded is not None:
+                                yield yielded
+                        _finish = _finish_box[0]
+                        if _finish == "length" and _seg.strip() and _cont_n < _max_cont:
+                            _cont_n += 1
+                            print(f"[STREAM] finish_reason=length, auto-continuing ({_cont_n}/{_max_cont})")
+                            yield {"stream_continue": True, "index": _cont_n}
+                            _cont_msgs = list(msgs) + [
+                                {"role": "assistant", "content": full_reply[-12000:]},
+                                {"role": "user", "content": "Continue exactly where you left off. Do not repeat previous text, do not add a preamble. Continue the same answer/table/list."},
+                            ]
+                            continue
+                        if _finish == "length" and _seg.strip() and _cont_n >= _max_cont:
+                            yield {"truncated": True, "finish_reason": "length"}
+                        break
+                except Exception as exc:
+                    print(f"[STREAM ERROR] LLM stream failed: {_short_error_detail(str(exc))}")
+                    # Try next provider once with the non-streaming cluster before apologizing,
+                    # but only when nothing has been emitted yet.
+                    if not full_reply.strip():
+                        try:
+                            response, meta = _call_llm_cluster(msgs)
+                            print(f"[STREAM ERROR] Recovered via {_served_by(meta)} (non-stream fallback)")
+                            full_reply = response
+                            yield response
+                        except Exception as exc2:
+                            print(f"[STREAM ERROR] All LLM providers failed: {_short_error_detail(str(exc2))}")
+                            fallback = "I apologize, but I'm having trouble processing your request right now."
+                            full_reply = fallback
+                            yield fallback
+                    else:
+                        # Partial output already sent - cannot safely replace; leave as-is.
+                        print("[STREAM ERROR] Partial output was emitted before failure; not replacing with apology.")
+            finally:
+                # Runs even when the client disconnects mid-stream, so the
+                # assistant row is never left empty or missing in storage.
+                _stream_finalize(self.memory, cid, stream_state, full_reply)
 
             # ── Update long-term memory ───────────────────────────────
             activity_manager.get_tracker(cid).update(
