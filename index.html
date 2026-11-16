@@ -2306,18 +2306,212 @@
   /* Keeps any rich content bubble from widening the page on narrow screens. */
   .bubble.ai-rich{ overflow-wrap:break-word; }
 
-  /* Compact media cards inside chat bubbles.
-     Square thumbnails (~120px desktop, ~104px mobile), object-fit:contain,
-     object-position:center, rounded corners. Applies to all message types
-     (user, assistant, rich) so thumbnails never expand to original size. */
-  .vm-chat-media-card{ position:relative; display:inline-flex; align-items:center; justify-content:center; width:120px; height:120px; border-radius:10px; border:1px solid rgba(148,163,184,0.14); background:#0b1220; overflow:hidden; flex-shrink:0; margin:4px 0; cursor:pointer; }
-  .vm-chat-media-card img{ width:100%; height:100%; object-fit:contain; object-position:center; display:block; }
-  .vm-chat-media-card video{ width:100%; height:100%; object-fit:contain; object-position:center; display:block; background:#000; }
-  .vm-chat-media-card .vm-chat-media-play{ position:absolute; right:6px; bottom:6px; width:26px; height:26px; border-radius:50%; background:rgba(2,6,23,0.75); color:#00d4ff; display:flex; align-items:center; justify-content:center; font-size:10px; line-height:1; z-index:2; }
-  .vm-chat-media-card .vm-chat-media-play::before{ content:"\u25B6"; margin-left:2px; }
-  .vm-chat-media-card .vm-chat-media-cap{ position:absolute; left:0; right:0; bottom:0; font-size:10px; color:rgba(255,255,255,0.8); padding:4px 6px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; z-index:2; background:linear-gradient(transparent,rgba(0,0,0,0.6)); }
-  @media(max-width:640px){
-    .vm-chat-media-card{ width:104px; height:104px; }
+  /* Composer attachment row: bare 64x64 tiles, horizontal scroll, no filename text */
+  .vm-composer-attach-row{
+    display:flex;
+    overflow-x:auto;
+    gap:8px;
+    padding:6px 0 2px;
+    scrollbar-width:none;
+    -ms-overflow-style:none;
+  }
+  .vm-composer-attach-row::-webkit-scrollbar{ display:none; }
+  .vm-composer-attach-tile{
+    position:relative;
+    width:64px;
+    height:64px;
+    border-radius:12px;
+    overflow:hidden;
+    background:#0b1220;
+    border:1px solid rgba(148,163,184,0.14);
+    flex-shrink:0;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    transition:opacity 0.2s ease;
+  }
+  .vm-composer-attach-tile img,
+  .vm-composer-attach-tile video{
+    width:100%;
+    height:100%;
+    object-fit:cover;
+    display:block;
+  }
+  /* Dimmed thumbnail while uploading */
+  .vm-composer-attach-tile.uploading{
+    opacity:0.45;
+  }
+  /* X removal control at top-right */
+  .vm-composer-x{
+    position:absolute;
+    top:2px;
+    right:2px;
+    width:20px;
+    height:20px;
+    border-radius:50%;
+    background:rgba(0,0,0,0.70);
+    border:1px solid rgba(255,255,255,0.25);
+    color:#fff;
+    cursor:pointer;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-size:12px;
+    line-height:1;
+    z-index:3;
+  }
+  .vm-composer-x:hover{
+    background:rgba(255,45,70,0.90);
+  }
+  /* Small play icon on video preview */
+  .vm-composer-play{
+    position:absolute;
+    right:4px;
+    bottom:4px;
+    width:16px;
+    height:16px;
+    background:rgba(2,6,23,0.78);
+    border-radius:4px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    z-index:3;
+  }
+  .vm-composer-play svg{
+    width:10px;
+    height:10px;
+    color:#00d4ff;
+  }
+  /* Circular upload progress ring in the centre of the tile */
+  .vm-composer-progress{
+    position:absolute;
+    inset:0;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    z-index:4;
+  }
+  .vm-composer-progress svg{
+    width:36px;
+    height:36px;
+    transform:rotate(-90deg);
+  }
+  .vm-composer-progress circle{
+    fill:none;
+    stroke:#00d4ff;
+    stroke-width:3;
+    stroke-linecap:round;
+    stroke-dasharray:100.53;
+    stroke-dashoffset:100.53;
+    transition:stroke-dashoffset 0.2s ease, opacity 0.2s ease;
+  }
+  .vm-composer-progress.done circle{
+    opacity:0;
+    transition:opacity 0.2s ease;
+  }
+  /* Document tile: file-type icon + extension label */
+  .vm-composer-attach-doc{
+    width:100%;
+    height:100%;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    color:#94a3b8;
+    font-size:10px;
+    line-height:1.1;
+    text-align:center;
+    padding:2px;
+    box-sizing:border-box;
+  }
+  .vm-composer-attach-doc .doc-icon{
+    font-size:24px;
+    line-height:1;
+    margin-bottom:2px;
+  }
+  .vm-composer-attach-doc .doc-ext{
+    font-weight:600;
+    color:#e2e8f0;
+  }
+
+  /* Chat attachment row: standalone thumbnails above the caption bubble */
+  .vm-chat-attach-row{
+    display:flex;
+    overflow-x:auto;
+    gap:8px;
+    margin:0 0 8px 0;
+    scrollbar-width:none;
+    -ms-overflow-style:none;
+  }
+  .vm-chat-attach-row::-webkit-scrollbar{ display:none; }
+  .user-message .vm-chat-attach-row{
+    justify-content:flex-end;
+  }
+  .vm-chat-attach-thumb{
+    position:relative;
+    width:96px;
+    height:96px;
+    border-radius:12px;
+    overflow:hidden;
+    background:#0b1220;
+    flex-shrink:0;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    cursor:pointer;
+  }
+  .vm-chat-attach-thumb img,
+  .vm-chat-attach-thumb video{
+    width:100%;
+    height:100%;
+    object-fit:cover;
+    display:block;
+  }
+  .vm-chat-attach-thumb video{ background:#000; }
+  /* Centred play icon overlay on video thumbnails */
+  .vm-chat-attach-play{
+    position:absolute;
+    inset:0;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    z-index:2;
+  }
+  .vm-chat-attach-play svg{
+    width:30px;
+    height:30px;
+    color:#fff;
+    filter:drop-shadow(0 1px 2px rgba(0,0,0,0.6));
+  }
+  /* Duration label in corner of video thumbnails */
+  .vm-chat-attach-duration{
+    position:absolute;
+    right:4px;
+    bottom:4px;
+    font-size:10px;
+    color:#fff;
+    background:rgba(0,0,0,0.55);
+    padding:2px 6px;
+    border-radius:4px;
+    z-index:2;
+  }
+  /* Compact file chips above the caption bubble */
+  .vm-chat-file-chip{
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
+    padding:4px 8px;
+    border-radius:12px;
+    background:rgba(15,23,42,0.6);
+    border:1px solid rgba(148,163,184,0.14);
+    font-size:12px;
+    color:#e2e8f0;
+    font-family:'Inter',sans-serif;
+    margin:2px 4px 2px 0;
+    flex-shrink:0;
+  }
+  .vm-chat-file-chip .file-icon{
+    font-size:14px;
   }
 
   /* Pasted conversation action bar. */
@@ -2349,30 +2543,6 @@
   #messages { scrollbar-width: none; -ms-overflow-style: none; }
   #messages::-webkit-scrollbar { display: none; width: 0; height: 0; }
 
-  /* Unified attachment progress cards (composer) */
-  .vm-attach-list{display:flex;flex-direction:column;gap:8px;margin-bottom:8px;}
-  .vm-attach-card{display:flex;gap:10px;align-items:center;padding:8px 10px;border-radius:12px;background:rgba(15,23,42,0.72);border:1px solid rgba(0,212,255,0.18);}
-  .vm-attach-thumb{width:44px;height:44px;border-radius:10px;object-fit:cover;background:rgba(148,163,184,0.12);display:flex;align-items:center;justify-content:center;color:#7dd3fc;flex-shrink:0;overflow:hidden;}
-  .vm-attach-meta{flex:1;min-width:0;}
-  .vm-attach-name{font-size:12px;color:#e2e8f0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:'Inter',sans-serif;}
-  .vm-attach-sub{font-size:11px;color:#94a3b8;margin-top:2px;font-family:'Inter',sans-serif;}
-  .vm-attach-bar{height:6px;border-radius:999px;background:rgba(148,163,184,0.18);overflow:hidden;margin-top:6px;}
-  .vm-attach-bar > span{display:block;height:100%;width:0%;background:linear-gradient(90deg,#0ea5e9,#38bdf8);border-radius:999px;transition:width .2s ease;}
-  .vm-attach-bar.indeterminate > span{width:35%;animation:vmAttachIndet 1.2s infinite ease-in-out;}
-  @keyframes vmAttachIndet{0%{transform:translateX(-120%)}100%{transform:translateX(320%)}}
-  .vm-attach-actions{display:flex;gap:6px;align-items:center;}
-  .vm-attach-btn{border:none;background:rgba(255,255,255,0.06);color:#e2e8f0;border-radius:8px;padding:4px 8px;font-size:11px;cursor:pointer;}
-  .vm-attach-btn:hover{background:rgba(0,212,255,0.12);color:#7dd3fc;}
-  .vm-attach-btn.danger:hover{background:rgba(239,68,68,0.16);color:#fca5a5;}
-  /* Chat media containers */
-  .vm-media-grid{display:grid;gap:8px;margin:6px 0 8px;max-width:min(720px,100%);}
-  .vm-media-grid.count-1{grid-template-columns:1fr;}
-  .vm-media-grid.count-2{grid-template-columns:repeat(2,minmax(0,1fr));}
-  .vm-media-grid.count-3,.vm-media-grid.count-4{grid-template-columns:repeat(2,minmax(0,1fr));}
-  .vm-media-card{position:relative;border-radius:12px;overflow:hidden;background:#0b1220;border:1px solid rgba(148,163,184,0.14);}
-  .vm-media-card img,.vm-media-card video{display:block;width:100%;height:auto;max-height:420px;object-fit:contain;background:#0b1220;}
-  .vm-media-card .vm-media-doc{padding:10px 12px;color:#e2e8f0;font-size:12px;font-family:'Inter',sans-serif;display:flex;gap:8px;align-items:center;}
-  @media (max-width:640px){.vm-media-grid.count-2,.vm-media-grid.count-3,.vm-media-grid.count-4{grid-template-columns:1fr;}.vm-media-card img,.vm-media-card video{max-height:320px;}}
   /* A reply that contains a table needs a definite width so the table's
      scroll wrapper can be capped to the message width. Without this, the
      bubble is shrink-to-fit and a wide table widens the whole message. */
@@ -5264,93 +5434,73 @@ function renderComposerChips() {
       chips.classList.remove("has-items");
       return;
     }
-    var list = document.createElement('div');
-    list.className = 'vm-attach-list';
+    // Horizontal scrollable row of bare 64x64 tiles (no filename/size text).
+    var row = document.createElement('div');
+    row.className = 'vm-composer-attach-row';
     vmChatAttachments.forEach(function(a){
-      var card = document.createElement('div');
-      card.className = 'vm-attach-card';
+      var tile = document.createElement('div');
+      tile.className = 'vm-composer-attach-tile';
+      if (a.status === 'preparing' || a.status === 'uploading' ||
+          a.status === 'processing' || a.status === 'retrying') {
+        tile.classList.add('uploading');
+      }
 
-      var thumb = document.createElement('div');
-      thumb.className = 'vm-attach-thumb';
+      // Thumbnail content
       if (a.kind === 'image' && a.dataUrl) {
         var im = document.createElement('img');
         im.src = a.dataUrl; im.alt = a.name || 'image';
         im.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block;';
-        thumb.appendChild(im);
+        tile.appendChild(im);
       } else if (a.kind === 'video' && a.previewUrl) {
-        // A real frame beats an emoji: small muted <video> seeded at t=0.1s.
+        // First-frame preview, muted, no autoplay.
         var vd = document.createElement('video');
         vd.src = a.previewUrl + '#t=0.1';
         vd.muted = true; vd.defaultMuted = true; vd.playsInline = true; vd.preload = 'metadata';
         vd.setAttribute('muted', ''); vd.setAttribute('playsinline', '');
         vd.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block;background:#010810;';
-        vd.onerror = function(){ try { thumb.removeChild(vd); } catch(e) {} thumb.textContent = '🎬'; };
-        thumb.style.position = 'relative';
-        thumb.appendChild(vd);
-        var vbadge = document.createElement('span');
-        vbadge.textContent = '▶';
-        vbadge.style.cssText = 'position:absolute;right:2px;bottom:1px;font-size:9px;line-height:12px;color:#00d4ff;background:rgba(2,6,23,0.78);border-radius:4px;padding:0 3px;';
-        thumb.appendChild(vbadge);
+        vd.onerror = function(){ try { tile.removeChild(vd); } catch(e) {} tile.textContent = '🎬'; };
+        tile.appendChild(vd);
+        var play = document.createElement('div');
+        play.className = 'vm-composer-play';
+        play.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>';
+        tile.appendChild(play);
+      } else if (a.kind === 'document') {
+        var ext = (a.name || '').split('.').pop().toUpperCase() || 'FILE';
+        tile.innerHTML = '<div class="vm-composer-attach-doc">' +
+          '<div class="doc-icon">📄</div>' +
+          '<div class="doc-ext">' + ext + '</div>' +
+          '</div>';
       } else {
-        thumb.textContent = a.kind === 'video' ? '🎬' : (a.kind === 'document' ? '📄' : '📎');
+        tile.textContent = a.kind === 'video' ? '🎬' : '📎';
       }
 
-      var meta = document.createElement('div');
-      meta.className = 'vm-attach-meta';
-      var name = document.createElement('div');
-      name.className = 'vm-attach-name';
-      name.textContent = a.name || (a.kind + ' attachment');
-      var sub = document.createElement('div');
-      sub.className = 'vm-attach-sub';
-      var statusLabel = {
-        preparing:'Preparing', uploading:'Uploading', processing:'Processing', retrying:'Waiting to retry',
-        ready: (a.kind==='document' ? 'Ready (read)' : 'Ready'), failed:'Failed'
-      }[a.status] || a.status || '';
-      var parts = [];
-      if (statusLabel) parts.push(statusLabel);
-      if (a.size) parts.push(_vmFmtBytes(a.size));
-      if (a.kind==='document' && a.status==='uploading' && typeof a.progress==='number') parts.push(a.progress + '%');
-      if (a.kind==='document' && a.status==='processing') parts.push('Reading document');
-      if (a.warning && a.status==='ready') parts.push(a.warning);
-      if (a.error && a.status==='failed') parts.push(a.error);
-      sub.textContent = parts.join(' • ');
+      // X removal control at top-right
+      var x = document.createElement('button');
+      x.type='button';
+      x.className='vm-composer-x';
+      x.title='Remove';
+      x.textContent='✕';
+      x.onclick = function(ev){ ev.stopPropagation(); vmRemoveAttachment(a.id); };
+      tile.appendChild(x);
 
-      var bar = document.createElement('div');
-      var showBar = !(a.kind!=='document' && a.status==='ready'); // always show for docs until removed? show for active states
-      var activeBar = (a.kind==='document') ? (a.status!=='ready' || false) : (a.status!=='ready' && a.status!=='failed');
-      if (a.kind === 'document') activeBar = (a.status !== 'ready' && a.status !== 'failed') ? true : false;
-      // Show bar for uploads/processing/retry/preparing; and also show completed bar for ready docs/images/videos
-      bar.className = 'vm-attach-bar' + (((a.indeterminate && a.status!=='ready' && a.status!=='failed') || a.status==='processing' || a.status==='preparing' || a.status==='retrying') ? ' indeterminate' : '');
-      var fill = document.createElement('span');
-      var pct = 0;
-      if (a.status === 'ready') pct = 100;
-      else if (typeof a.progress === 'number') pct = Math.max(0, Math.min(100, a.progress));
-      fill.style.width = (bar.classList.contains('indeterminate') ? '35%' : (pct + '%'));
-      bar.appendChild(fill);
-
-      meta.appendChild(name);
-      meta.appendChild(sub);
-      meta.appendChild(bar);
-
-      var actions = document.createElement('div');
-      actions.className = 'vm-attach-actions';
-      if (a.status === 'failed' && (a.kind === 'document' || a.kind === 'image' || a.kind === 'video')) {
-        var retry = document.createElement('button');
-        retry.type='button'; retry.className='vm-attach-btn'; retry.textContent='Retry';
-        retry.onclick = function(ev){ ev.stopPropagation(); vmRetryAttachment(a.id); };
-        actions.appendChild(retry);
+      // Circular upload progress ring in the centre (shown while not ready/failed)
+      if (a.status !== 'ready' && a.status !== 'failed') {
+        var progress = document.createElement('div');
+        progress.className = 'vm-composer-progress';
+        var pct = typeof a.progress === 'number' ? Math.max(0, Math.min(100, a.progress)) : 0;
+        var ring = 100.53; // 2 * PI * 16
+        var offset = ring * (1 - pct / 100);
+        progress.innerHTML = '<svg viewBox="0 0 36 36">' +
+          '<circle cx="18" cy="18" r="16" stroke="#00d4ff" stroke-width="3" fill="none" stroke-linecap="round" ' +
+          'style="stroke-dasharray:' + ring + '; stroke-dashoffset:' + offset + ';"></circle>' +
+          '</svg>';
+        if (pct >= 100) progress.classList.add('done');
+        tile.appendChild(progress);
       }
-      var rm = document.createElement('button');
-      rm.type='button'; rm.className='vm-attach-btn danger'; rm.title='Remove'; rm.textContent='✕';
-      rm.onclick = function(ev){ ev.stopPropagation(); vmRemoveAttachment(a.id); };
-      actions.appendChild(rm);
 
-      card.appendChild(thumb);
-      card.appendChild(meta);
-      card.appendChild(actions);
-      list.appendChild(card);
+      row.appendChild(tile);
     });
-    chips.appendChild(list);
+    chips.appendChild(row);
     chips.classList.add("has-items");
 }
 
@@ -5465,14 +5615,40 @@ function updateSendButtonDim() {
     var sendBtn = document.getElementById("sendBtn");
     if (!input || !sendBtn) return;
     var hasText = !!String(input.value || "").trim();
+
+    // Scan attachments: any non-ready attachment blocks sending visually.
+    // Images/videos that are ready surface via pendingImageData/pendingVideoFile;
+    // documents are ready only when status === 'ready'.
+    var hasReadyAttachment = false;
+    var hasBlockedAttachment = false;
+    try {
+        if (typeof vmChatAttachments !== 'undefined') {
+            for (var i = 0; i < vmChatAttachments.length; i++) {
+                var a = vmChatAttachments[i];
+                if (a.status === 'removed') continue;
+                if (a.status === 'ready') {
+                    hasReadyAttachment = true;
+                } else {
+                    // preparing, uploading, processing, retrying, failed
+                    hasBlockedAttachment = true;
+                }
+            }
+        }
+    } catch(e) {}
+
     var hasImage = (typeof pendingImageData !== 'undefined') && pendingImageData && pendingImageData.length > 0;
-    var hasAttachment = false;
-    try { hasAttachment = (typeof vmChatAttachments !== 'undefined') && vmChatAttachments.length > 0; } catch(e) {}
     var hasVideo = false;
     try { hasVideo = !!(typeof pendingVideoFile !== 'undefined' && pendingVideoFile); } catch(e) {}
-    var empty = !hasText && !hasImage && !hasAttachment && !hasVideo;
-    sendBtn.style.opacity = empty ? "0.4" : "1";
-    sendBtn.style.cursor = empty ? "default" : "pointer";
+
+    var hasContent = hasText || hasReadyAttachment || hasImage || hasVideo;
+
+    if (!hasContent || hasBlockedAttachment) {
+        sendBtn.style.opacity = "0.4";
+        sendBtn.style.cursor = "default";
+    } else {
+        sendBtn.style.opacity = "1";
+        sendBtn.style.cursor = "pointer";
+    }
 }
 
 function setThinkingState(thinking) {
@@ -7188,7 +7364,7 @@ function VMAddConfidenceBadge(bubbleEl, confidence) {
     badge.appendChild(text);
     bub.appendChild(badge);
 }
-function addMessage(text, type = "ai", imageData, mediaUrl, videoUrl, images, sourceMetadata) {
+function addMessage(text, type = "ai", imageData, mediaUrl, videoUrl, images, sourceMetadata, files) {
     const container = document.getElementById("messages");
     const welcome = document.getElementById("welcome");
     if (!container) return;
@@ -7222,113 +7398,126 @@ function addMessage(text, type = "ai", imageData, mediaUrl, videoUrl, images, so
 
     const bubble = document.createElement("div");
     bubble.className = "bubble";
+    // Attachment row: standalone thumbnails above the caption bubble.
+    // Never inside the bubble; never positioned beside text.
+    var attachRow = document.createElement("div");
+    attachRow.className = "vm-chat-attach-row";
+    var hasAttachments = false;
+
+    // Parse [Image:] / [Video:] tags and recover URLs from text.
+    var imageMatch = displayText.match(/\[Image:\s*([^\]]+)\]/);
+    var imageUrlFromText = imageMatch ? imageMatch[1].trim() : "";
+    var textWithoutImage = displayText.replace(/\n?\n?\[Image:[^\]]*\]\s*$/, "").trim();
+    var videoMatch = textWithoutImage.match(/\[Video:\s*([^\]]+)\]/);
+    var videoUrlFromText = videoMatch ? videoMatch[1].trim() : "";
+    var textWithoutMedia = textWithoutImage.replace(/\n?\n?\[Video:[^\]]*\]\s*$/, "").trim();
+    var finalImageUrl = mediaUrl || imageUrlFromText;
+    var finalVideoUrl = videoUrl || videoUrlFromText;
+
+    // User-uploaded images (imageData: array or single data URL)
     if (imageData) {
         var _imgs = Array.isArray(imageData) ? imageData.filter(Boolean) : [imageData];
         if (_imgs.length) {
-            var grid = document.createElement("div");
-            grid.className = "vm-chat-media-grid";
-            grid.style.cssText = "display:flex; flex-wrap:wrap; gap:6px; margin:6px 0;";
             _imgs.forEach(function(src){
-                var card = document.createElement("div");
-                card.className = "vm-chat-media-card";
-                card.title = "Tap to open image";
+                var thumb = document.createElement("div");
+                thumb.className = "vm-chat-attach-thumb";
+                thumb.title = "Tap to open image";
                 var img = document.createElement("img");
                 img.src = src;
                 img.alt = "Uploaded image";
                 img.loading = "lazy";
                 img.onclick = function(ev){ ev.stopPropagation(); if (typeof openImageViewer === 'function') openImageViewer(src); };
-                card.onclick = function(ev){ ev.stopPropagation(); if (typeof openImageViewer === 'function') openImageViewer(src); };
-                card.appendChild(img);
-                grid.appendChild(card);
+                thumb.onclick = function(ev){ ev.stopPropagation(); if (typeof openImageViewer === 'function') openImageViewer(src); };
+                thumb.appendChild(img);
+                attachRow.appendChild(thumb);
+                hasAttachments = true;
             });
-            bubble.appendChild(grid);
         }
     }
 
-    var imageMatch = displayText.match(/\[Image:\s*([^\]]+)\]/);
-    var imageUrlFromText = imageMatch ? imageMatch[1].trim() : "";
-    var textWithoutImage = displayText.replace(/\n?\n?\[Image:[^\]]*\]\s*$/, "").trim();
-
-    // Strip a trailing [Video: url] tag and recover the URL if no field was passed
-    var videoMatch = textWithoutImage.match(/\[Video:\s*([^\]]+)\]/);
-    var videoUrlFromText = videoMatch ? videoMatch[1].trim() : "";
-    var textWithoutMedia = textWithoutImage.replace(/\n?\n?\[Video:[^\]]*\]\s*$/, "").trim();
-
-    var finalImageUrl = mediaUrl || imageUrlFromText;
-    var finalVideoUrl = videoUrl || videoUrlFromText;
-
-    // A user message owns the media it was sent with. Images that already
-    // arrived through imageData must not be rendered twice, but a video (or a
-    // history-restored image_url) belongs inside the user bubble too.
+    // AI-generated or history-restored image URL
     if (finalImageUrl && (type === "ai" || !imageData)) {
-        var chatImgCard = document.createElement("div");
-        chatImgCard.className = "vm-chat-media-card";
-        chatImgCard.title = "Tap to open image";
+        var chatImgThumb = document.createElement("div");
+        chatImgThumb.className = "vm-chat-attach-thumb";
+        chatImgThumb.title = "Tap to open image";
         var chatImg = document.createElement("img");
         chatImg.src = finalImageUrl;
         chatImg.alt = "Generated image";
         chatImg.loading = "lazy";
         chatImg.onclick = function(ev){ ev.stopPropagation(); if (typeof openImageViewer === 'function') openImageViewer(finalImageUrl); };
-        chatImgCard.onclick = function(ev){ ev.stopPropagation(); if (typeof openImageViewer === 'function') openImageViewer(finalImageUrl); };
-        chatImgCard.appendChild(chatImg);
-        bubble.appendChild(chatImgCard);
+        chatImgThumb.onclick = function(ev){ ev.stopPropagation(); if (typeof openImageViewer === 'function') openImageViewer(finalImageUrl); };
+        chatImgThumb.appendChild(chatImg);
+        attachRow.appendChild(chatImgThumb);
+        hasAttachments = true;
     }
 
+    // Video preview: first frame, centred play icon, duration corner label.
     if (finalVideoUrl) {
-        var chatVidCard = document.createElement("div");
-        chatVidCard.className = "vm-chat-media-card";
-        chatVidCard.title = "Tap to play video";
+        var chatVidThumb = document.createElement("div");
+        chatVidThumb.className = "vm-chat-attach-thumb";
+        chatVidThumb.title = "Tap to play video";
         var chatVid = document.createElement("video");
         chatVid.src = finalVideoUrl;
         chatVid.playsInline = true;
         chatVid.preload = "metadata";
         chatVid.style.display = "block";
-        var playBadge = document.createElement("div");
-        playBadge.className = "vm-chat-media-play";
-        playBadge.textContent = "";
-        var cap = document.createElement("div");
-        cap.className = "vm-chat-media-cap";
-        cap.textContent = "Video";
-        chatVidCard.appendChild(chatVid);
-        chatVidCard.appendChild(playBadge);
-        chatVidCard.appendChild(cap);
-        chatVidCard.onclick = function(ev){ ev.stopPropagation(); if (typeof openVideoViewer === 'function') openVideoViewer(finalVideoUrl); };
-        bubble.appendChild(chatVidCard);
+        var playOverlay = document.createElement("div");
+        playOverlay.className = "vm-chat-attach-play";
+        playOverlay.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>';
+        chatVidThumb.appendChild(chatVid);
+        chatVidThumb.appendChild(playOverlay);
+        chatVidThumb.onclick = function(ev){ ev.stopPropagation(); if (typeof openVideoViewer === 'function') openVideoViewer(finalVideoUrl); };
+        attachRow.appendChild(chatVidThumb);
+        hasAttachments = true;
     }
 
-    // Render persisted/search-sourced image entries for this message (reload-safe).
+    // Search-sourced images for AI replies (reload-safe).
     if (images && images.length && type === "ai") {
-        var imgStrip = document.createElement("div");
-        imgStrip.className = "source-images-strip";
         images.forEach(function (im) {
             if (!im || !im.url) return;
             var cell = document.createElement("div");
-            cell.className = "source-image-cell";
+            cell.className = "vm-chat-attach-thumb";
             var img = document.createElement("img");
-            img.className = "source-image";
             img.src = im.url;
             img.alt = im.source || "source image";
             img.loading = "lazy";
-            img.style.cssText = "width:160px;height:160px;object-fit:cover;border-radius:10px;display:block;background:#0f172a;";
-            img.onerror = function () {
-                img.style.display = "none";
-                cell.style.background = "rgba(148,163,184,0.10)";
-            };
+            img.style.cssText = "width:100%;height:100%;object-fit:cover;display:block;";
             img.onclick = function (ev) {
                 ev.stopPropagation();
                 openImageViewer(im.url);
             };
+            cell.onclick = function (ev) {
+                ev.stopPropagation();
+                openImageViewer(im.url);
+            };
             cell.appendChild(img);
-            if (im.source) {
-                var cr = document.createElement("div");
-                cr.className = "source-image-credit";
-                cr.textContent = im.source;
-                cr.style.cssText = "font-size:10px;color:rgba(255,255,255,0.6);margin-top:4px;text-align:center;";
-                cell.appendChild(cr);
-            }
-            imgStrip.appendChild(cell);
+            attachRow.appendChild(cell);
+            hasAttachments = true;
         });
-        if (imgStrip.children.length) bubble.appendChild(imgStrip);
+    }
+
+    // File chips: compact chips above the caption bubble (new messages only;
+    // historical messages keep doc names as text lines in the bubble).
+    if (files && files.length) {
+        files.forEach(function(f){
+            var chip = document.createElement("div");
+            chip.className = "vm-chat-file-chip";
+            chip.title = f.name || "file";
+            var icon = document.createElement("span");
+            icon.className = "file-icon";
+            icon.textContent = "📄";
+            var name = document.createElement("span");
+            name.textContent = f.name || "file";
+            chip.appendChild(icon);
+            chip.appendChild(name);
+            attachRow.appendChild(chip);
+            hasAttachments = true;
+        });
+    }
+
+    // Append attachment row above the bubble (if any attachments).
+    if (hasAttachments) {
+        wrapper.appendChild(attachRow);
     }
 
     if (textWithoutMedia) {
@@ -7366,49 +7555,49 @@ function addMessage(text, type = "ai", imageData, mediaUrl, videoUrl, images, so
         }
     }
 
-    // Restore research images from source metadata on history reload.
-    // Runs independently of Markdown formatting so plain-text replies with
-    // valid source metadata still show their research images. Guarded
-    // against duplicates and null/empty/malformed metadata.
-    if (type === "ai" && sourceMetadata && sourceMetadata.length) {
-        if (typeof window.VMRenderResearchImages === "function") {
-            try {
-                VMRenderResearchImages(bubble, sourceMetadata);
-            } catch (e) {
-                console.warn("[addMessage] VMRenderResearchImages failed:", e);
+    // Restore research images and auto-copy-ready only when a bubble exists.
+    if (textWithoutMedia) {
+        // Restore research images from source metadata on history reload.
+        if (type === "ai" && sourceMetadata && sourceMetadata.length) {
+            if (typeof window.VMRenderResearchImages === "function") {
+                try {
+                    VMRenderResearchImages(bubble, sourceMetadata);
+                } catch (e) {
+                    console.warn("[addMessage] VMRenderResearchImages failed:", e);
+                }
+            }
+            // Image-left/text-right result cards for sources with images.
+            if (typeof window.VMRenderImageLeftTextRightCards === "function") {
+                try {
+                    VMRenderImageLeftTextRightCards(bubble, sourceMetadata);
+                } catch (e) {
+                    console.warn("[addMessage] VMRenderImageLeftTextRightCards failed:", e);
+                }
             }
         }
-        // Image-left/text-right result cards for sources with images.
-        if (typeof window.VMRenderImageLeftTextRightCards === "function") {
+        // Automatic copy-ready presentation for restored/history messages too.
+        if (type === "ai" && typeof window.VMAutoCopyReady === "function") {
             try {
-                VMRenderImageLeftTextRightCards(bubble, sourceMetadata);
-            } catch (e) {
-                console.warn("[addMessage] VMRenderImageLeftTextRightCards failed:", e);
-            }
+                VMAutoCopyReady(bubble, textWithoutMedia);
+            } catch (e) {}
         }
-    }
-    // Automatic copy-ready presentation for restored/history messages too.
-    if (type === "ai" && typeof window.VMAutoCopyReady === "function") {
-        try {
-            VMAutoCopyReady(bubble, textWithoutMedia);
-        } catch (e) {}
-    }
 
-    if (type === "user") {
-        var wrapDiv = document.createElement("div");
-        wrapDiv.className = "message-wrap";
-        wrapDiv.appendChild(bubble);
+        if (type === "user") {
+            var wrapDiv = document.createElement("div");
+            wrapDiv.className = "message-wrap";
+            wrapDiv.appendChild(bubble);
 
-        var copyBtn = document.createElement("button");
-        copyBtn.className = "copy-float-btn";
-        copyBtn.title = "Copy text";
-        copyBtn.innerHTML = '<i data-lucide="copy" style="width:14px;height:14px;"></i>';
-        copyBtn.onclick = function () { copyUserMessageText(this); };
-        wrapDiv.appendChild(copyBtn);
+            var copyBtn = document.createElement("button");
+            copyBtn.className = "copy-float-btn";
+            copyBtn.title = "Copy text";
+            copyBtn.innerHTML = '<i data-lucide="copy" style="width:14px;height:14px;"></i>';
+            copyBtn.onclick = function () { copyUserMessageText(this); };
+            wrapDiv.appendChild(copyBtn);
 
-        wrapper.appendChild(wrapDiv);
-    } else {
-        wrapper.appendChild(bubble);
+            wrapper.appendChild(wrapDiv);
+        } else {
+            wrapper.appendChild(bubble);
+        }
     }
 
     if (type === "ai") {
@@ -7530,7 +7719,15 @@ function renderChatHistory(messages) {
 
         var sourceMetadata = message.source_metadata || null;
 
-        addMessage(content, role, imageData, mediaUrl, videoUrl, message.images || null, sourceMetadata);
+        // Historical documents: message.documents / message.files is not
+        // currently populated by the backend (see _persist_chat_message and
+        // memory.add_message which only store image_url/video_url). Pass it
+        // through if it ever becomes available; otherwise addMessage receives
+        // files=null and historical docs render as filename text in the bubble,
+        // preserving existing behaviour.
+        var historicalFiles = message.documents || message.files || null;
+
+        addMessage(content, role, imageData, mediaUrl, videoUrl, message.images || null, sourceMetadata, historicalFiles);
         if (message.reaction) {
             const idx = messageStore.length - 1;
             messageStore[idx].reaction = message.reaction;
@@ -13340,13 +13537,12 @@ window.send = async function () {
         if (textToSend) window._lastUserText = textToSend;
         try { var _rw = _regenCtx.wrapper; if (_rw) { var _rb = _rw.querySelector(".bubble"); if (_rb) { _rb.innerHTML = ""; _rb.textContent = ""; } } } catch (e) {}
     } else {
-        var displayText = text + (sentDocs.length ? ("\n\n📄 " + sentDocs.map(function(d){return d.name||"file";}).join("\n📄 ")) : "");
         if (text && sentDocs.length) {
-            addMessage(displayText, "user", sentImage);
+            addMessage(text, "user", sentImage, null, null, null, null, sentDocs);
         } else if (text) {
             addMessage(text, "user", sentImage);
         } else if (sentDocs.length) {
-            addMessage("📄 " + sentDocs.map(function(d){return d.name||"file";}).join("\n📄 "), "user", sentImage);
+            addMessage("", "user", sentImage, null, null, null, null, sentDocs);
         } else if (sentImage && sentImage.length > 0) {
             addMessage("Image attached", "user", sentImage);
         }
