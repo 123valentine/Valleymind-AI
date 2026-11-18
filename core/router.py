@@ -31,6 +31,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from core.provider_manager import Capability
+from core.activity_v2 import track_activity
 
 
 # ── RouteDecision — the only output of the router ────────────────────────────
@@ -149,22 +150,23 @@ class CapabilityRouter:
         """
         start = time.perf_counter()
 
-        # ── Priority 1: explicit UI hints (zero latency) ──────────────
-        decision = self._p1_ui_hints(source)
-        if decision:
+        with track_activity("request_understanding"):
+            # ── Priority 1: explicit UI hints (zero latency) ──────────────
+            decision = self._p1_ui_hints(source)
+            if decision:
+                self._log(decision, start)
+                return decision
+
+            # ── Priority 2: metadata / structural analysis (zero latency) ─
+            decision = self._p2_metadata(message, has_image)
+            if decision:
+                self._log(decision, start)
+                return decision
+
+            # ── Priority 3: semantic LLM classification ───────────────────
+            decision = self._p3_semantic(message, has_image)
             self._log(decision, start)
             return decision
-
-        # ── Priority 2: metadata / structural analysis (zero latency) ─
-        decision = self._p2_metadata(message, has_image)
-        if decision:
-            self._log(decision, start)
-            return decision
-
-        # ── Priority 3: semantic LLM classification ───────────────────
-        decision = self._p3_semantic(message, has_image)
-        self._log(decision, start)
-        return decision
 
     # ── P1: explicit UI hints ─────────────────────────────────────────
 

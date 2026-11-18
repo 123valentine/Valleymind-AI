@@ -5,6 +5,7 @@ import threading
 from datetime import datetime, timedelta, timezone
 
 from core.config import PROJECT_ROOT
+from core.activity_adapters import MemoryAdapter
 from core.db import chats_collection, user_memory_collection
 
 

@@ -1,12 +1,12 @@
-"""Tests for the Contextual Activity Indicator system and duplicate-analysis fix.
+"""Tests for the Contextual Activity Indicator system (v2).
 
 Tests:
   * ActivityTracker start/update/complete/fail/cancel
   * No stale state leakage between requests
   * ActivityRegistry message templates
-  * activity_event/activity_complete/activity_fail/activity_cancel helpers
-  * describe_media_for_brain reuses pre-computed results (no duplicate NVIDIA calls)
-  * describe_media_for_brain analyzes once when no pre-computed results given
+  * track_activity / context manager helpers
+  * describe_media_for_brain reuses pre-computed results
+  * describe_media_for_brain analyzes once when no pre-computed result
 """
 import sys
 import os
@@ -14,10 +14,9 @@ from unittest.mock import patch, MagicMock
 
 sys.path.insert(0, os.getcwd())
 
-from core.activity import (
-    ActivityTracker, ActivityRegistry, ActivityCategory,
-    activity_manager, activity_event, activity_complete, activity_fail,
-    activity_cancel,
+from core.activity_v2 import (
+    create_activity_session, track_activity, clear_current_session,
+    activity_registry, ActivityCategory,
 )
 from core.vision import VisionService, VisionResult
 
@@ -40,107 +39,125 @@ def fake_video_uri(name="test.mp4", mime="video/mp4"):
     b64 = base64.b64encode(f"fake-video-{name}".encode()).decode()
     return f"data:{mime};base64,{b64}"
 
-# ═════════════════════════════════════════════════════════════════════
-# Activity system tests
+# ══════════════════════════════════════════════════════════════════════
+# Activity tracker tests
 # ═════════════════════════════════════════════════════════════════════
 
 print("\n=== Activity: start/update/complete lifecycle ===")
-tracker = ActivityTracker("req-1")
-act = tracker.start("general", "processing", label="Processing your request…", detail="Starting")
-ok(act.status == "active", "started activity is active")
-ok(act.label == "Processing your request…", "started activity has label")
-cur = tracker.get_current()
-ok(cur is not None and cur["label"] == "Processing your request…", "get_current returns snapshot")
+session = create_activity_session(request_id="req-1")
+with track_activity("response_preparation", label="Processing your request…", detail="Starting") as act:
+    ok(act is not None, "track_activity returns handle")
+    # Activity starts as started
+    history = session.get_history()
+    ok(len(history) == 1, "started activity recorded")
+    ok(history[0]["status"] == "started", "started activity has started status")
+    ok(history[0]["label"] == "Processing your request…", "started activity has label")
 
 # Update
-updated = tracker.update("Formulating an answer…", detail="Drafting reply")
-ok(updated is not None and updated.label == "Formulating an answer…", "update changes label")
-cur = tracker.get_current()
-ok(cur["label"] == "Formulating an answer…", "current reflects update")
+with track_activity("web_research", label="Searched the web…") as act2:
+    act2.complete(label="Searched the web")
+history = session.get_history()
+# Find the web_search event
+web_events = [e for e in history if e["operation"] == "web_research"]
+ok(len(web_events) == 2, "web_search has start + complete events")
+ok(web_events[1]["status"] == "completed", "completed activity has completed status")
 
-# Complete
-completed = tracker.complete()
-ok(completed is not None and completed.status == "completed", "complete marks completed")
-ok(completed.ended_at is not None, "complete sets ended_at")
-cur = tracker.get_current()
-ok(cur is None, "get_current returns None after complete")
-
-# History
-ok(len(tracker.history) == 1, "completed activity moved to history")
-ok(tracker.history[0].status == "completed", "history entry is completed")
+# History - start+complete for first + start+complete for second = 4 events
+ok(len(history) == 4, "two events per activity, 4 total")
+ok(history[0]["status"] == "started", "first event started")
+ok(history[1]["status"] == "completed", "first event completed")
+ok(history[2]["status"] == "started", "second event started")
+ok(history[3]["status"] == "completed", "second event completed")
 
 print("\n=== Activity: fail and cancel ===")
-tracker2 = ActivityTracker("req-2")
-tracker2.start("web_research", "searching_web", label="Searching the web…")
-failed = tracker2.fail(detail="API timeout")
-ok(failed is not None and failed.status == "failed", "fail marks failed")
-ok(failed.detail == "API timeout", "fail records detail")
-cur = tracker2.get_current()
-ok(cur is None, "current cleared after fail")
+session2 = create_activity_session(request_id="req-2")
+with track_activity("web_research", label="Searching the web…") as fail_act:
+    fail_act.fail(detail="API timeout")
+history2 = session2.get_history()
+ok(len(history2) == 2, "two events recorded for video")
+ok(history2[1]["status"] == "failed", "failed activity has failed status")
+ok(history2[1]["detail"] == "API timeout", "fail records detail")
 
-tracker3 = ActivityTracker("req-3")
-tracker3.start("coding", "running_code", label="Running code…")
-cancelled = tracker3.cancel()
-ok(cancelled is not None and cancelled.status == "cancelled", "cancel marks cancelled")
-cur = tracker3.get_current()
-ok(cur is None, "current cleared after cancel")
+session3 = create_activity_session(request_id="req-3")
+with track_activity("coding", label="Running code…") as cancel_act:
+    cancel_act.fail(detail="Cancelled by user", error=Exception("cancelled"))
+history3 = session3.get_history()
+ok(len(history3) == 2, "two events recorded for cancel")
+ok(history3[1]["status"] == "failed", "cancelled activity has failed status")
 
 print("\n=== Activity: no stale state between requests ===")
 # Request 1 completes
-t1 = activity_manager.get_tracker("req-a")
-t1.start("general", "thinking", label="Thinking…")
-t1.complete()
+s1 = create_activity_session(request_id="req-a")
+with track_activity("response_preparation", label="Thinking…") as t1_act:
+    t1_act.complete()
+history1 = s1.get_history()
+ok(len(history1) == 2, "request 1 has start+complete events")
+ok(history1[0]["status"] == "started", "request 1 event started")
+ok(history1[1]["status"] == "completed", "request 1 event completed")
+
 # Request 2 starts fresh
-t2 = activity_manager.get_tracker("req-b")
-cur_b = t2.get_current()
-ok(cur_b is None, "new request has no current activity (no stale state)")
-t2.start("web_research", "searching_web", label="Searching the web…")
-cur_b2 = t2.get_current()
-ok(cur_b2 is not None and cur_b2["label"] == "Searching the web…", "new request has its own activity")
+s2 = create_activity_session(request_id="req-b")
+history2 = s2.get_history()
+ok(len(history2) == 0, "new request has no activity (no stale state)")
+with track_activity("web_research", label="Searching the web…") as t2_act:
+    pass
+history2b = s2.get_history()
+ok(len(history2b) == 2, "new request has its own activity")
+ok(history2b[0]["label"] == "Searching the web…", "new request has its own activity")
 # Request 1 still completed
-cur_a = t1.get_current()
-ok(cur_a is None, "request 1 remains completed")
+history1b = s1.get_history()
+ok(len(history1b) == 2, "request 1 still has start+complete events")
+ok(history1b[1]["status"] == "completed", "request 1 remains completed")
 
 print("\n=== Activity: registry labels ===")
-labels = ActivityRegistry.labels("web_research", "searching_web")
+labels = activity_registry.list_operations()
 ok(len(labels) > 0, "registry returns labels")
-ok("Searching the web…" in labels, "searching_web label present")
-labels2 = ActivityRegistry.labels("unknown", "nonexistent")
-ok(len(labels2) > 0, "unknown category falls back to default")
+ok("web_search" in labels, "web_search registered")
+# Registry get with unknown key returns default spec
+spec = activity_registry.get("nonexistent_op")
+ok(spec.operation == "nonexistent_op", "registry returns spec for unknown op")
 
-print("\n=== Activity: event helper functions ===")
-# activity_event starts and returns SSE-shaped dict
-evt = activity_event("req-evt", "image_video", "analyzing_video", label="Analyzing video…", detail="clip.mp4")
-ok("activity" in evt, "event has activity key")
-ok(evt["activity"]["label"] == "Analyzing video…", "event label correct")
-ok(evt["activity"]["category"] == "image_video", "event category correct")
-ok(evt["activity"]["status"] == "active", "event status active")
+print("\n=== Activity: event emission ===")
+session4 = create_activity_session(request_id="req-evt")
+evt_act = track_activity("video_analysis", label="Analyzing video…", detail="clip.mp4")
+evt_act.complete()
+history4 = session4.get_history()
+ok(len(history4) == 2, "two events recorded")
+ok(history4[0]["operation"] == "video_analysis", "event operation correct")
+ok(history4[0]["label"] == "Analyzing video…", "event label correct")
+ok(history4[0]["category"] == "vision", "event category correct")
+ok(history4[1]["status"] == "completed", "event status completed")
 
-# activity_complete
-evt_c = activity_complete("req-evt")
-ok(evt_c is not None, "complete returns event")
-ok("activity_complete" in evt_c, "complete event has activity_complete key")
-ok(evt_c["activity_complete"]["status"] == "completed", "complete status correct")
-# Current should now be None
-cur_evt = activity_manager.get_tracker("req-evt").get_current()
-ok(cur_evt is None, "current cleared after complete via helper")
+# activity_complete via track_activity
+session5 = create_activity_session(request_id="req-evt2")
+with track_activity("web_research", label="Searched the web") as comp_act:
+    comp_act.complete()
+history5 = session5.get_history()
+ok(len(history5) == 2, "two events recorded")
+ok(history5[1]["status"] == "completed", "complete status correct")
+cur = s1.get_history()
+ok(len(cur) == 2, "other session unaffected")
 
-# activity_fail
-activity_event("req-fail", "web_research", "searching_web")
-evt_f = activity_fail("req-fail", detail="Network error")
-ok(evt_f is not None, "fail returns event")
-ok("activity_failed" in evt_f, "fail event has activity_failed key")
-ok(evt_f["activity_failed"]["detail"] == "Network error", "fail detail correct")
+# activity_fail via track_activity
+session6 = create_activity_session(request_id="req-fail")
+with track_activity("web_research", label="Searching the web…") as fail_act:
+    fail_act.fail(detail="Network error")
+history6 = session6.get_history()
+ok(len(history6) == 2, "two events recorded")
+ok(history6[1]["status"] == "failed", "failed status")
+ok(history6[1]["detail"] == "Network error", "fail detail correct")
 
-# activity_cancel
-activity_event("req-cancel", "coding", "running_code")
-evt_can = activity_cancel("req-cancel")
-ok(evt_can is not None, "cancel returns event")
-ok("activity_cancelled" in evt_can, "cancel event key present")
+# activity_cancel via track_activity
+session7 = create_activity_session(request_id="req-cancel")
+with track_activity("coding", label="Running code…") as cancel_act:
+    cancel_act.fail(detail="Cancelled by user", error=Exception("cancelled"))
+history7 = session7.get_history()
+ok(len(history7) == 2, "two events recorded")
+ok(history7[1]["status"] == "failed", "cancelled activity has failed status")
 
-# ═════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════
 # Duplicate-analysis fix: describe_media_for_brain reuses pre-computed results
-# ═════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════
 
 print("\n=== Duplicate fix: describe_media_for_brain reuses pre-computed image result ===")
 svc = VisionService()
@@ -166,7 +183,7 @@ with patch.object(svc, "_get_vision_provider",
         calls_after_first = call_count["n"]
         ok(calls_after_first == 1, f"first analysis made exactly 1 API call (got {calls_after_first})")
 
-        # Now describe_media_for_brain with pre-computed result — should NOT call API again
+        # Now describe_media_for_brain with pre-computed result
         combined = svc.describe_media_for_brain(
             image_data_list=images,
             image_result=img_result,   # pre-computed, reuse
@@ -236,7 +253,7 @@ with patch.object(svc3, "_get_vision_provider",
         ok("Fresh analysis." in combined3.description, "fresh analysis performed")
         ok(call_count3["n"] == 1, "exactly 1 API call when no pre-computed result")
 
-# ═════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════
 print(f"\n{'='*50}")
 if failures == 0:
     print("ALL ACTIVITY + DUPLICATE-FIX TESTS PASSED")

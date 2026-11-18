@@ -25,6 +25,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import requests
 
 from core.config import get_config
+from core.activity_adapters import MediaAnalysisAdapter
 
 
 @dataclass
@@ -607,119 +608,121 @@ class VisionService:
         else:
             self._emit_activity("image_video", "comparing_videos", detail=f"{len(video_data_uri_list)} videos")
 
-        for idx, video_data_uri in enumerate(video_data_uri_list, start=1):
-            # Validate each video before sending.
-            text = (video_data_uri or "").strip()
-            if not text:
-                errors.append(f"Video {idx}: no video data provided.")
-                per_video_results.append({
-                    "index": idx,
-                    "success": False,
-                    "error": "No video data provided.",
-                })
-                continue
-            if not text.lower().startswith("data:video/"):
-                errors.append(f"Video {idx}: invalid format — must be data:video/ URI.")
-                per_video_results.append({
-                    "index": idx,
-                    "success": False,
-                    "error": "Invalid video format — must be data:video/ URI.",
-                })
-                continue
-            if ";base64," not in text:
-                errors.append(f"Video {idx}: missing base64 encoding.")
-                per_video_results.append({
-                    "index": idx,
-                    "success": False,
-                    "error": "Missing base64 encoding.",
-                })
-                continue
+        per_video_results: List[Dict[str, Any]] = []
+        errors: List[str] = []
 
-            header, b64_data = text.split(",", 1)
-            mime = header.split(";")[0].replace("data:", "").lower()
-            if mime not in self.NVIDIA_ALLOWED_VIDEO_MIME_TYPES:
-                errors.append(f"Video {idx}: unsupported format '{mime}'.")
-                per_video_results.append({
-                    "index": idx,
-                    "success": False,
-                    "error": f"Unsupported video format: {mime}",
-                })
-                continue
+        vid_act_cm = MediaAnalysisAdapter.track_videos(len(video_data_uri_list))
+        vid_act = vid_act_cm.__enter__()
+        try:
+            for idx, video_data_uri in enumerate(video_data_uri_list, start=1):
+                # Validate each video before sending.
+                text = (video_data_uri or "").strip()
+                if not text:
+                    errors.append(f"Video {idx}: no video data provided.")
+                    per_video_results.append({
+                        "index": idx,
+                        "success": False,
+                        "error": "No video data provided.",
+                    })
+                    continue
+                if not text.lower().startswith("data:video/"):
+                    errors.append(f"Video {idx}: invalid format - must be data:video/ URI.")
+                    per_video_results.append({
+                        "index": idx,
+                        "success": False,
+                        "error": "Invalid video format � must be data:video/ URI.",
+                    })
+                    continue
+                if ";base64," not in text:
+                    errors.append(f"Video {idx}: missing base64 encoding.")
+                    per_video_results.append({
+                        "index": idx,
+                        "success": False,
+                        "error": "Missing base64 encoding.",
+                    })
+                    continue
 
-            try:
-                decoded = base64.b64decode(b64_data, validate=True)
-            except Exception as exc:
-                errors.append(f"Video {idx}: invalid base64 data.")
-                per_video_results.append({
-                    "index": idx,
-                    "success": False,
-                    "error": "Invalid base64 data.",
-                })
-                continue
+                vid_act.progress(current=idx, total=len(video_data_uri_list), unit="videos")
+                header, b64_data = text.split(",", 1)
+                mime = header.split(";")[0].replace("data:", "").lower()
+                if mime not in self.NVIDIA_ALLOWED_VIDEO_MIME_TYPES:
+                    errors.append(f"Video {idx}: unsupported format '{mime}'.")
+                    per_video_results.append({
+                        "index": idx,
+                        "success": False,
+                        "error": f"Unsupported video format: {mime}",
+                    })
+                    continue
+                try:
+                    decoded = base64.b64decode(b64_data, validate=True)
+                except Exception as exc:
+                    errors.append(f"Video {idx}: invalid base64 data.")
+                    per_video_results.append({
+                        "index": idx,
+                        "success": False,
+                        "error": "Invalid base64 data.",
+                    })
+                    continue
 
-            if len(decoded) > self.NVIDIA_MAX_VIDEO_SIZE_BYTES:
-                errors.append(
-                    f"Video {idx}: too large "
-                    f"({len(decoded) / 1024 / 1024:.1f}MB)."
+                if len(decoded) > self.NVIDIA_MAX_VIDEO_SIZE_BYTES:
+                    errors.append(
+                        f"Video {idx}: too large "
+                        f"({len(decoded) / 1024 / 1024:.1f}MB)."
+                    )
+                    per_video_results.append({
+                        "index": idx,
+                        "success": False,
+                        "error": "Video too large.",
+                    })
+                    continue
+
+                vid_act.progress(current=idx, total=len(video_data_uri_list), unit="videos")
+                # Analyze this video individually via Nemotron.
+                content: List[Dict[str, Any]] = [
+                    {"type": "video_url", "video_url": {"url": video_data_uri}},
+                ]
+                vid_context = (
+                    f"[Video {idx} of {len(video_data_uri_list)}]\n"
+                    f"{context if context else ''}"
+                ).strip()
+                if question:
+                    vid_prompt = (
+                        f"Analyze this video (video {idx} of {len(video_data_uri_list)}). "
+                        f"{question}"
+                    )
+                else:
+                    vid_prompt = (
+                        f"Watch this video (video {idx} of {len(video_data_uri_list)}). "
+                        f"and describe what happens. Be specific about actions, objects, "
+                        f"people, scenes, and notable events over time."
+                    )
+                content.append({"type": "text", "text": vid_prompt})
+
+                vid_result = self._call_nvidia_nemotron(
+                    content, question or "", max_tokens=8192
                 )
-                per_video_results.append({
-                    "index": idx,
-                    "success": False,
-                    "error": "Video too large.",
-                })
-                continue
 
-            # Analyze this video individually via Nemotron.
-            content: List[Dict[str, Any]] = [
-                {"type": "video_url", "video_url": {"url": video_data_uri}},
-            ]
-            vid_context = (
-                f"[Video {idx} of {len(video_data_uri_list)}]\n"
-                f"{context if context else ''}"
-            ).strip()
-            if question:
-                vid_prompt = (
-                    f"Analyze this video (video {idx} of {len(video_data_uri_list)}). "
-                    f"{question}"
-                )
-            else:
-                vid_prompt = (
-                    f"Watch this video (video {idx} of {len(video_data_uri_list)}) "
-                    f"and describe what happens. Be specific about actions, objects, "
-                    f"people, scenes, and notable events over time."
-                )
-            content.append({"type": "text", "text": vid_prompt})
-
-            vid_result = self._call_nvidia_nemotron(
-                content, question or "", max_tokens=8192
-            )
-
-            if vid_result.success:
-                per_video_results.append({
-                    "index": idx,
-                    "success": True,
-                    "description": vid_result.description,
-                })
-            else:
-                errors.append(f"Video {idx}: {vid_result.error}")
-                per_video_results.append({
-                    "index": idx,
-                    "success": False,
-                    "error": vid_result.error,
-                })
+                if vid_result.success:
+                    per_video_results.append({
+                        "index": idx,
+                        "success": True,
+                        "description": vid_result.description,
+                    })
+                else:
+                    errors.append(f"Video {idx}: {vid_result.error}")
+                    per_video_results.append({
+                        "index": idx,
+                        "success": False,
+                        "error": vid_result.error,
+                    })
+        finally:
+            vid_act_cm.__exit__(None, None, None)
+            vid_act_cm.__exit__(None, None, None)
 
         # Consolidate findings.
         successful = [r for r in per_video_results if r["success"]]
         failed = [r for r in per_video_results if not r["success"]]
 
-        if not successful and not failed:
-            return VisionResult(success=False, error="No videos to analyze.")
-
-        if not successful:
-            return VisionResult(
-                success=False,
-                error="; ".join(errors) if errors else "All video analyses failed.",
-            )
 
         # Build consolidated description preserving per-video attribution.
         parts: List[str] = []

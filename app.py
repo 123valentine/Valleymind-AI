@@ -23,6 +23,12 @@ from urllib.parse import quote
 from flask import Flask, Response, jsonify, redirect, request, send_from_directory, session, stream_with_context
 from werkzeug.security import check_password_hash, generate_password_hash
 
+from core.activity_v2 import (
+    create_activity_session,
+    clear_current_session,
+    track_activity,
+)
+from core.activity_adapters import drain_sse_activities
 from core.brain import MarcusBrain, _call_llm_cluster, _CHAT_SYSTEM_PROMPT
 from core.config import PROJECT_ROOT, get_config
 from core.db import auth_tokens_collection, app_config_collection, chats_collection, get_db, studio_runs_collection, usage_collection, users_collection
@@ -2468,42 +2474,54 @@ def chat():
         persona = normalize_persona(data.get("persona"))
         dedup_id = str(data.get("_vm_dedup_id", "")).strip()
 
-        # ── vm-fix22 dedup: match on _vm_dedup_id + chat_id, not message text ──
-        if dedup_id and chat_id:
+        # ── Request-scoped activity session ──
+        activity_session = create_activity_session(user_id=user_id, persona=persona)
+
+        try:
+            # ── vm-fix22 dedup: match on _vm_dedup_id + chat_id, not message text ──
+            if dedup_id and chat_id:
+                try:
+                    from core.memory import MemorySystem
+                    _mem = MemorySystem(memory_file="")
+                    recent = _mem.get_chat(chat_id) or []
+                    for m in recent[-5:]:
+                        if m.get("dedup_id") == dedup_id:
+                            print(f"[DEDUP] Skipping duplicate _vm_dedup_id={dedup_id} chat_id={chat_id}")
+                            return jsonify({"status": "ok", "dedup": True, "chat_id": chat_id}), 200
+                except Exception as exc:
+                    print(f"[DEDUP] Dedup check failed (non-fatal): {exc}")
+
+            # ── Route ─────────────────────────────────────────────────────
+            router = get_router()
+            decision = router.classify(message, has_image=bool(image_data), source=source)
+            # vm-fix19: never generate fake images for real-world logos/products/people/places
+            _filtered_caps = _vm_filter_fake_image_gen(message, decision.capabilities)
+
+            caps_str = ", ".join(c.value for c in _filtered_caps)
+            print(f"[Router] Dispatching /chat -> [{caps_str}]")
+
+            # -- Dispatch --
+            has_text = pm.Capability.TEXT in _filtered_caps
+            has_image = pm.Capability.IMAGE in _filtered_caps
+            has_video = pm.Capability.VIDEO in _filtered_caps
+
+            if has_video and has_text:
+                return _dispatch_video_text_json(user_id, message, chat_id, image_data)
+            if has_video:
+                return _dispatch_video_json(user_id, message, chat_id, image_data)
+            if has_text and has_image:
+                return _dispatch_multi_json(user_id, message, chat_id, image_data)
+            if has_image:
+                return _dispatch_image_json(user_id, message, chat_id, image_data)
+            return _dispatch_chat_json(user_id, message, chat_id, image_data, persona=persona, activity_session=activity_session)
+
+        finally:
+            # Attach accumulated activity events to JSON response and clear session.
             try:
-                from core.memory import MemorySystem
-                _mem = MemorySystem(memory_file="")
-                recent = _mem.get_chat(chat_id) or []
-                for m in recent[-5:]:
-                    if m.get("dedup_id") == dedup_id:
-                        print(f"[DEDUP] Skipping duplicate _vm_dedup_id={dedup_id} chat_id={chat_id}")
-                        return jsonify({"status": "ok", "dedup": True, "chat_id": chat_id}), 200
-            except Exception as exc:
-                print(f"[DEDUP] Dedup check failed (non-fatal): {exc}")
-
-        # ── Route ─────────────────────────────────────────────────────
-        router = get_router()
-        decision = router.classify(message, has_image=bool(image_data), source=source)
-        # vm-fix19: never generate fake images for real-world logos/products/people/places
-        _filtered_caps = _vm_filter_fake_image_gen(message, decision.capabilities)
-
-        caps_str = ", ".join(c.value for c in _filtered_caps)
-        print(f"[Router] Dispatching /chat -> [{caps_str}]")
-
-        # -- Dispatch --
-        has_text = pm.Capability.TEXT in _filtered_caps
-        has_image = pm.Capability.IMAGE in _filtered_caps
-        has_video = pm.Capability.VIDEO in _filtered_caps
-
-        if has_video and has_text:
-            return _dispatch_video_text_json(user_id, message, chat_id, image_data)
-        if has_video:
-            return _dispatch_video_json(user_id, message, chat_id, image_data)
-        if has_text and has_image:
-            return _dispatch_multi_json(user_id, message, chat_id, image_data)
-        if has_image:
-            return _dispatch_image_json(user_id, message, chat_id, image_data)
-        return _dispatch_chat_json(user_id, message, chat_id, image_data, persona=persona)
+                activities = activity_session.get_history()
+            except Exception:
+                activities = []
+            clear_current_session()
 
     except Exception as e:
         print(f"[CRITICAL] /chat crashed: {e}")
@@ -2849,7 +2867,7 @@ def _dispatch_image_stream(user_id, message, chat_id, image_data):
     )
 
 
-def _dispatch_chat_json(user_id, message, chat_id, image_data, persona="marcus"):
+def _dispatch_chat_json(user_id, message, chat_id, image_data, persona="marcus", activity_session=None):
     """TEXT → non-streaming JSON, in the selected persona's voice."""
     marcus = load_persona_brain(user_id, persona)
     if not marcus:
@@ -2887,7 +2905,7 @@ def _dispatch_chat_json(user_id, message, chat_id, image_data, persona="marcus")
         except Exception as exc:
             print(f"[WARN] Auto-title fallback failed: {exc}")
 
-    return jsonify({
+    resp = {
         "status": "success",
         "chat_id": chat_id or f"{marcus.profile.key}_main_chat",
         "character": normalize_persona(persona),
@@ -2901,10 +2919,13 @@ def _dispatch_chat_json(user_id, message, chat_id, image_data, persona="marcus")
         "fallback_used": bool(meta.get("fallback_used")),
         "fallback_source": str(meta.get("fallback_source") or ""),
         "activity_events": activity_events,
-    })
+    }
+    if activity_session is not None:
+        resp["activities"] = activity_session.get_history()
+    return jsonify(resp)
 
 
-def _dispatch_chat_stream(user_id, message, chat_id, image_data, persona="marcus"):
+def _dispatch_chat_stream(user_id, message, chat_id, image_data, persona="marcus", activity_session=None):
     """TEXT → SSE stream, in the selected persona's voice."""
     marcus = load_persona_brain(user_id, persona)
     if not marcus:
@@ -2931,6 +2952,11 @@ def _dispatch_chat_stream(user_id, message, chat_id, image_data, persona="marcus
                         updated_title = title
             except Exception as exc:
                 print(f"[WARN] Auto-title fallback failed: {exc}")
+
+        # Yield any accumulated activity frames before streaming tokens.
+        activity_payload = drain_sse_activities(activity_session)
+        if activity_payload:
+            yield activity_payload
 
         try:
             for token in marcus.stream_respond(message, chat_id=resolved_chat_id, image_data=image_data):
@@ -3397,6 +3423,9 @@ def chat_stream():
             except Exception as exc:
                 print(f"[DEDUP] Dedup check failed (non-fatal): {exc}")
 
+        # ── Request-scoped activity session ──
+        activity_session = create_activity_session(user_id=user_id, persona=persona)
+
         # ── Route ─────────────────────────────────────────────────────
         router = get_router()
         decision = router.classify(message, has_image=bool(image_data), source=source)
@@ -3412,14 +3441,14 @@ def chat_stream():
         has_video = pm.Capability.VIDEO in _filtered_caps
 
         if has_video and has_text:
-            return _dispatch_video_text_stream(user_id, message, chat_id, image_data)
+            return _dispatch_video_text_stream(user_id, message, chat_id, image_data, activity_session=activity_session)
         if has_video:
-            return _dispatch_video_stream(user_id, message, chat_id, image_data)
+            return _dispatch_video_stream(user_id, message, chat_id, image_data, activity_session=activity_session)
         if has_text and has_image:
-            return _dispatch_multi_stream(user_id, message, chat_id, image_data)
+            return _dispatch_multi_stream(user_id, message, chat_id, image_data, activity_session=activity_session)
         if has_image:
-            return _dispatch_image_stream(user_id, message, chat_id, image_data)
-        return _dispatch_chat_stream(user_id, message, chat_id, image_data, persona=persona)
+            return _dispatch_image_stream(user_id, message, chat_id, image_data, activity_session=activity_session)
+        return _dispatch_chat_stream(user_id, message, chat_id, image_data, persona=persona, activity_session=activity_session)
 
     except Exception as e:
         print(f"[CRITICAL] /chat/stream crashed: {e}")

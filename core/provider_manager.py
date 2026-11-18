@@ -13,6 +13,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
+from core.activity_adapters import ProviderAdapter
+
 
 class Capability(str, Enum):
     TEXT = "text"
@@ -226,7 +228,8 @@ class ProviderManager:
             )
 
         last_result: ProviderResult | None = None
-        for provider in providers:
+        provider_list = list(providers)
+        for i, provider in enumerate(provider_list):
             if provider.health == "down":
                 self._log(provider, False, 0.0, "provider marked down")
                 continue
@@ -239,6 +242,15 @@ class ProviderManager:
                 return result
 
             last_result = result
+            # Notify of fallback when another provider remains
+            if i + 1 < len(provider_list):
+                next_provider = provider_list[i + 1]
+                if next_provider.health != "down":
+                    ProviderAdapter.notify_fallback(
+                        provider.name,
+                        next_provider.name,
+                        reason=(result.error or "")[:120],
+                    )
 
         return ProviderResult(
             success=False,

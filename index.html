@@ -113,6 +113,7 @@
 <script src="/static/cloud_rig.js?v=2"></script>
 <script src="/static/cloud_anim.js?v=2"></script>
 <script src="/static/vm_wave.js?v=11" defer></script>
+<script src="/static/vm_activity.js"></script>
 <script id="tailwind-config">
   tailwind.config = {
     darkMode: "class",
@@ -8168,17 +8169,19 @@ function addThinkingIndicator() {
     // AI column even if the `.self-start` utility is ever renamed.
     div.style.alignSelf = "flex-start";
     div.style.marginRight = "auto";
-    div.style.maxWidth = "120px";
-    div.style.padding = "13px 16px";
-    div.style.borderRadius = "14px";
-    div.style.background = "rgba(255,255,255,0.06)";
-    div.style.border = "1px solid rgba(0,212,255,0.18)";
+    div.style.maxWidth = "100%";
+    div.style.padding = "2px 4px";
     div.style.display = "flex";
-    div.style.gap = "7px";
+    div.style.gap = "6px";
     div.style.alignItems = "center";
-    div.innerHTML = '<span class="thinking-dot"></span><span class="thinking-dot"></span><span class="thinking-dot"></span>';
     container.appendChild(div);
     container.scrollTop = container.scrollHeight;
+
+    // Mount the new unified activity UI component into this container.
+    const tracker = new window.ValleyMindActivity.ActivityTrackerUI();
+    tracker.mount(div);
+    // Attach tracker so SSE stream can feed activity events into it.
+    div._vmActivity = tracker;
     return div;
 }
 
@@ -13748,6 +13751,13 @@ window.send = async function () {
                 if (!dataStr || dataStr === "{}" || dataStr === "null") continue;
                 try {
                     var evt = JSON.parse(dataStr);
+                    if (evt && evt.type === "activity" && evt.activity) {
+                        var activeTracker = (thinking && thinking._vmActivity) || statusIndicator;
+                        if (activeTracker && typeof activeTracker.ingest === "function") {
+                            activeTracker.ingest(evt.activity);
+                        }
+                        continue;
+                    }
                 } catch (e) { continue; }
 
                 if (evt.error) { streamError = evt.error; break; }
@@ -14035,7 +14045,14 @@ window.send = async function () {
                     if (evt.reply_mode) streamReplyMode = true;
                 }
             }
-            if (streamError) break;
+            if (streamError) {
+                if (thinking && thinking._vmActivity) thinking._vmActivity.abort("Request interrupted");
+                break;
+            }
+        }
+
+        if (_sendAborted) {
+            if (thinking && thinking._vmActivity) thinking._vmActivity.abort("Request interrupted");
         }
 
         /* Enrich a completed streamed assistant reply with intelligent formatting
@@ -14071,6 +14088,12 @@ window.send = async function () {
                     if (bub) bub.insertBefore(thinkingBlock.el, bub.firstChild);
                     thinkingBlock.finish();
                     thinkingBlock = null;
+                }
+                // Move activity row above the bubble and finish (shows compact summary header)
+                if (thinking && thinking._vmActivity && bubbleEl) {
+                    var bub = bubbleEl.querySelector(".bubble");
+                    if (bub) bub.insertBefore(thinking._vmActivity.rootEl, bub.firstChild);
+                    thinking._vmActivity.finish(true);
                 }
             }
         }
@@ -14179,6 +14202,10 @@ window.send = async function () {
                 timeoutMs: 120000
             });
             var fallbackData = await fallbackRes.json();
+            // Ingest activity events from JSON response
+            if (fallbackData && fallbackData.activities && Array.isArray(fallbackData.activities)) {
+                if (thinking && thinking._vmActivity) thinking._vmActivity.ingestBatch(fallbackData.activities);
+            }
             removeThinkingIndicator(thinking);
             if (fallbackRes.status === 401) {
                 clearAuthToken(); setAppVisible(false);
