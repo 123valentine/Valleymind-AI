@@ -1008,6 +1008,175 @@ def _fetch_url_content(url: str, max_chars: int = 4000) -> str:
     return _fetch_url_with_metadata(url, max_chars)[0]
 
 
+def _google_search_env() -> dict:
+    """Resolve Google web-search credentials from common env var names."""
+    serper_key = (os.getenv("SERPER_API_KEY") or os.getenv("SERPER_KEY") or "").strip()
+    cse_key = (
+        os.getenv("GOOGLE_SEARCH_API_KEY")
+        or os.getenv("GOOGLE_API_KEY")
+        or os.getenv("GOOGLE_CSE_API_KEY")
+        or ""
+    ).strip()
+    cse_id = (
+        os.getenv("GOOGLE_CSE_ID")
+        or os.getenv("GOOGLE_CX")
+        or os.getenv("GOOGLE_SEARCH_ENGINE_ID")
+        or os.getenv("GOOGLE_PROGRAMMABLE_SEARCH_ENGINE_ID")
+        or ""
+    ).strip()
+    return {"serper_key": serper_key, "cse_key": cse_key, "cse_id": cse_id}
+
+
+def _search_google(query: str, site: str = "") -> str:
+    """Google web search (Serper or Programmable Search/CSE), optional first provider."""
+    if provider_blocked("google"):
+        _log("Google search skipped: quota unavailable")
+        return ""
+
+    creds = _google_search_env()
+    effective_query = clean_search_query(query) or str(query or "").strip()
+    execution_query = f"site:{site} {effective_query}" if site else effective_query
+
+    # 1) Serper.dev (Google SERP API) — simple key-based integration.
+    if creds["serper_key"]:
+        try:
+            _log(f"Google/Serper query: {execution_query[:100]!r}")
+            resp = requests.post(
+                "https://google.serper.dev/search",
+                json={"q": execution_query, "num": 5},
+                headers={
+                    "X-API-KEY": creds["serper_key"],
+                    "Content-Type": "application/json",
+                },
+                timeout=12,
+            )
+            if resp.status_code != 200:
+                record_error("google", status_code=resp.status_code, body=resp.text[:200])
+                _log(f"Serper HTTP {resp.status_code}")
+            else:
+                data = resp.json() if isinstance(resp.json(), dict) else {}
+                organic = data.get("organic") or []
+                if organic:
+                    items = []
+                    structured = []
+                    for r in organic[:5]:
+                        url = str(r.get("link") or r.get("url") or "")
+                        meta = _extract_result_metadata(r, url)
+                        domain = ""
+                        try:
+                            domain = urlparse(url).netloc.replace("www.", "")
+                        except Exception:
+                            pass
+                        item = {
+                            "title": r.get("title", ""),
+                            "summary": r.get("snippet", "") or r.get("description", ""),
+                            "url": url,
+                            "site_name": r.get("source", "") or domain,
+                            "published": r.get("date", "") or "",
+                            "logo": r.get("logo") or meta["logo"],
+                            "icon": r.get("icon") or meta["icon"] or meta["logo"],
+                            "image": r.get("imageUrl") or r.get("image") or meta["image"],
+                        }
+                        items.append(item)
+                        structured.append({
+                            "title": item["title"],
+                            "url": url,
+                            "domain": domain,
+                            "site_name": item["site_name"],
+                            "snippet": item["summary"],
+                            "published": item["published"],
+                            "logo": item["logo"],
+                            "icon": item["icon"],
+                            "image": item["image"],
+                        })
+                    _record_search_sources(items)
+                    _record_structured_results(structured)
+                    record_success("google")
+                    _log(f"Google/Serper success: {len(items)} results")
+                    return _format_items("Live search results", items)
+                _log("Serper returned no organic results")
+        except Exception as exc:
+            record_error("google", exc=exc)
+            _log(f"Google/Serper failed: {_safe_error(exc)[:120]}")
+
+    # 2) Google Programmable Search Engine / Custom Search JSON API.
+    if creds["cse_key"] and creds["cse_id"]:
+        try:
+            _log(f"Google/CSE query: {execution_query[:100]!r}")
+            resp = requests.get(
+                "https://www.googleapis.com/customsearch/v1",
+                params={
+                    "key": creds["cse_key"],
+                    "cx": creds["cse_id"],
+                    "q": execution_query,
+                    "num": 5,
+                },
+                timeout=12,
+            )
+            if resp.status_code != 200:
+                record_error("google", status_code=resp.status_code, body=resp.text[:200])
+                _log(f"Google CSE HTTP {resp.status_code}")
+            else:
+                data = resp.json() if isinstance(resp.json(), dict) else {}
+                results = data.get("items") or []
+                if results:
+                    items = []
+                    structured = []
+                    for r in results[:5]:
+                        url = str(r.get("link") or r.get("url") or "")
+                        meta = _extract_result_metadata(r, url)
+                        pagemap = r.get("pagemap") or {}
+                        cse_meta = (pagemap.get("metatags") or [{}])[0] if isinstance(pagemap.get("metatags"), list) else {}
+                        image = ""
+                        if isinstance(pagemap.get("cse_image"), list) and pagemap["cse_image"]:
+                            image = str((pagemap["cse_image"][0] or {}).get("src") or "")
+                        domain = ""
+                        try:
+                            domain = urlparse(url).netloc.replace("www.", "")
+                        except Exception:
+                            pass
+                        logo = cse_meta.get("og:logo") or meta["logo"]
+                        icon = cse_meta.get("icon") or meta["icon"] or logo
+                        item = {
+                            "title": r.get("title", ""),
+                            "summary": r.get("snippet", "") or cse_meta.get("og:description", ""),
+                            "url": url,
+                            "site_name": r.get("displayLink", "") or domain,
+                            "published": "",
+                            "logo": logo,
+                            "icon": icon,
+                            "image": image or cse_meta.get("og:image") or meta["image"],
+                        }
+                        items.append(item)
+                        structured.append({
+                            "title": item["title"],
+                            "url": url,
+                            "domain": domain,
+                            "site_name": item["site_name"],
+                            "snippet": item["summary"],
+                            "published": item["published"],
+                            "logo": item["logo"],
+                            "icon": item["icon"],
+                            "image": item["image"],
+                        })
+                    _record_search_sources(items)
+                    _record_structured_results(structured)
+                    record_success("google")
+                    _log(f"Google/CSE success: {len(items)} results")
+                    return _format_items("Live search results", items)
+                _log("Google CSE returned no items")
+        except Exception as exc:
+            record_error("google", exc=exc)
+            _log(f"Google/CSE failed: {_safe_error(exc)[:120]}")
+    else:
+        if creds["cse_key"] or creds["cse_id"]:
+            _log("Google CSE skipped: requires both API key and CSE/CX id")
+        else:
+            _log("Google search skipped: no configured Google/Serper credentials")
+
+    return ""
+
+
 def _search_tinyfish(query: str, site: str = "") -> str:
     if provider_blocked("tinyfish"):
         _log("TinyFish skipped: free quota unavailable")
@@ -1109,7 +1278,16 @@ def _search_tinyfish(query: str, site: str = "") -> str:
 
 
 def _search_general_web(query: str, site: str = "") -> str:
-    """Search the web using TinyFish with DuckDuckGo Lite and Wikipedia fallbacks."""
+    """Search the web: Google first, then TinyFish, DDG Lite, Wikipedia."""
+    # 1) Google (Serper / Programmable Search) — preferred primary provider.
+    try:
+        google_context = _search_google(query, site=site)
+        if google_context and google_context != LIVE_DATA_UNAVAILABLE:
+            return google_context
+    except Exception as exc:
+        _log(f"Google search failed: {_safe_error(exc)}")
+
+    # 2) TinyFish
     try:
         tf_context = _search_tinyfish(query, site=site)
         if tf_context and tf_context != LIVE_DATA_UNAVAILABLE:
@@ -1117,7 +1295,7 @@ def _search_general_web(query: str, site: str = "") -> str:
     except Exception as exc:
         _log(f"TinyFish failed: {_safe_error(exc)}")
 
-    # Fallback 1: DuckDuckGo Lite (no API key needed)
+    # 3) DuckDuckGo Lite (no API key needed)
     try:
         ddg_context = _search_ddg_lite(query)
         if ddg_context and ddg_context != LIVE_DATA_UNAVAILABLE:
@@ -1125,7 +1303,7 @@ def _search_general_web(query: str, site: str = "") -> str:
     except Exception as exc:
         _log(f"DDG fallback failed: {_safe_error(exc)}")
 
-    # Fallback 2: Wikipedia API
+    # 4) Wikipedia API
     try:
         wiki_context = _search_wikipedia(query)
         if wiki_context and wiki_context != LIVE_DATA_UNAVAILABLE:

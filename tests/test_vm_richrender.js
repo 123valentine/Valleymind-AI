@@ -563,5 +563,60 @@ assert('duplicate pills in a paragraph are deduplicated',
   (dupParagraphHtml.match(/data-vm-cite="sirumors"/g) || []).length === 1,
   dupParagraphHtml.slice(0, 320));
 
+// --- Entity cards must use official entity identity, not news/blog sources ----
+var newsSources = [
+  { title: 'Liverpool FC transfer news', domain: 'siliconreport.com', url: 'https://siliconreport.com/liverpool', snippet: 'Report about Liverpool.', logo: 'https://siliconreport.com/logo.png', icon: 'https://siliconreport.com/icon.png' },
+  { title: 'Liverpool FC', domain: 'liverpoolfc.com', url: 'https://www.liverpoolfc.com/', logo: 'https://cdn.test/lfc-official.png' }
+];
+var officialEntityHtml = VMRichRender.render(
+  '[[ENTITY: Liverpool FC | Club | liverpoolfc.com | https://www.liverpoolfc.com |  | Historic club [siliconreport].]]',
+  newsSources
+);
+assert('entity card keeps official domain/url, not news article source',
+  officialEntityHtml.indexOf('data-vm-entity-domain="liverpoolfc.com"') !== -1 &&
+  officialEntityHtml.indexOf('data-vm-entity-url="https://www.liverpoolfc.com"') !== -1 &&
+  /class="vm-entity-logo"[^>]*href="https:\/\/www\.liverpoolfc\.com"/.test(officialEntityHtml) &&
+  /class="vm-entity-title"[^>]*href="https:\/\/www\.liverpoolfc\.com"/.test(officialEntityHtml),
+  officialEntityHtml.slice(0, 420));
+assert('entity card logo comes from official source, not news blog favicon',
+  officialEntityHtml.indexOf('cdn.test/lfc-official.png') !== -1 &&
+  officialEntityHtml.indexOf('siliconreport.com/logo.png') === -1 &&
+  officialEntityHtml.indexOf('siliconreport.com/icon.png') === -1,
+  officialEntityHtml.slice(0, 420));
+assert('news source remains an inline citation pill, not the entity identity',
+  officialEntityHtml.indexOf('class="vm-cite-pill"') !== -1 &&
+  officialEntityHtml.indexOf('siliconreport') !== -1,
+  officialEntityHtml.slice(0, 420));
+
+var hydrateNewsLinks = { logo: null, title: null };
+var hydrateNewsImg = { src: '', style: {} };
+var hydrateNewsRow = {
+  getAttribute: function (name) {
+    return ({
+      'data-vm-entity-name': 'Real Madrid',
+      'data-vm-entity-domain': 'realmadrid.com',
+      'data-vm-entity-logo': '',
+      'data-vm-entity-url': 'https://www.realmadrid.com'
+    })[name] || '';
+  },
+  querySelector: function (sel) { return sel === '.vm-entity-logo-img' ? hydrateNewsImg : null; },
+  querySelectorAll: function (sel) {
+    if (sel === '.vm-entity-logo, .vm-entity-title') {
+      return [ { href: 'https://www.realmadrid.com' }, { href: 'https://www.realmadrid.com' } ];
+    }
+    return [];
+  }
+};
+var hydrateNewsRoot = {
+  querySelectorAll: function (sel) { return sel === '.vm-entity-row' ? [hydrateNewsRow] : []; }
+};
+VMRichRender.hydrateEntityCards(hydrateNewsRoot, [
+  { title: 'Real Madrid story', domain: 'siliconreport.com', url: 'https://siliconreport.com/madrid', logo: 'https://siliconreport.com/bad.png' }
+]);
+assert('hydrateEntityCards does not replace entity links/logo with news article source',
+  hydrateNewsImg.src.indexOf('siliconreport.com') === -1 &&
+  hydrateNewsImg.src.indexOf('domain=realmadrid.com') !== -1,
+  hydrateNewsImg.src);
+
 console.log('RENDER_TESTS: ' + ok + ' passed, ' + fail + ' failed');
 if (fail) process.exit(1);

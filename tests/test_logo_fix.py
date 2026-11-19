@@ -201,3 +201,47 @@ def test_page_fetches_use_four_workers(monkeypatch):
 
     assert workers == [4]
     assert pkg.total_opened == 5
+
+
+def test_search_general_web_prefers_google_first(monkeypatch):
+    from core import external_apis as ea
+
+    calls = []
+
+    def fake_google(query, site=""):
+        calls.append(("google", query, site))
+        return "Live search results:\n- Google: result"
+
+    def fake_tiny(query, site=""):
+        calls.append(("tinyfish", query, site))
+        return "Live search results:\n- Tiny: result"
+
+    def fake_ddg(query):
+        calls.append(("ddg", query))
+        return "Live search results:\n- DDG: result"
+
+    monkeypatch.setattr(ea, "_search_google", fake_google)
+    monkeypatch.setattr(ea, "_search_tinyfish", fake_tiny)
+    monkeypatch.setattr(ea, "_search_ddg_lite", fake_ddg)
+    monkeypatch.setattr(ea, "_search_wikipedia", lambda q: "Live search results:\n- Wiki: result")
+
+    out = ea._search_general_web("real madrid latest news")
+
+    assert out.startswith("Live search results:")
+    assert calls == [("google", "real madrid latest news", "")]
+
+
+def test_search_general_web_falls_back_when_google_unavailable(monkeypatch):
+    from core import external_apis as ea
+
+    calls = []
+
+    monkeypatch.setattr(ea, "_search_google", lambda q, site="": calls.append("google") or "")
+    monkeypatch.setattr(ea, "_search_tinyfish", lambda q, site="": calls.append("tinyfish") or "Live search results:\n- Tiny: ok")
+    monkeypatch.setattr(ea, "_search_ddg_lite", lambda q: calls.append("ddg") or "")
+    monkeypatch.setattr(ea, "_search_wikipedia", lambda q: calls.append("wiki") or "")
+
+    out = ea._search_general_web("anthropic claude")
+
+    assert "Tiny: ok" in out
+    assert calls == ["google", "tinyfish"]

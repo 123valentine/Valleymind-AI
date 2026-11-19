@@ -3000,6 +3000,94 @@ window.VMRichRender = (function () {
     return v.replace(/^www\./i, "").split(/[\/?#]/)[0].replace(/:\d+$/, "").toLowerCase();
   }
 
+  function entityNameKey(value) {
+    return decodeEntities(value || "").toLowerCase()
+      .replace(/\b(fc|cf|sc|afc|club|football|team|inc|corp|co|ltd|llc|ai|app|official|the)\b/g, " ")
+      .replace(/[^a-z0-9]+/g, "");
+  }
+
+  function entityDomainLabel(domain) {
+    var host = canonicalDomain(domain);
+    if (!host) return "";
+    var parts = host.split(".").filter(Boolean);
+    if (!parts.length) return "";
+    if (parts.length >= 3) {
+      var sld = parts[parts.length - 2];
+      if ((sld === "co" || sld === "com" || sld === "org" || sld === "ac" || sld === "gov") && parts.length >= 3) {
+        return parts[parts.length - 3];
+      }
+      return sld.length <= 3 ? parts[0] : sld;
+    }
+    return parts[0];
+  }
+
+  var OFFICIAL_ENTITY_DOMAINS = {
+    "realmadrid": "realmadrid.com",
+    "real madrid": "realmadrid.com",
+    "fcbarcelona": "fcbarcelona.com",
+    "barcelona": "fcbarcelona.com",
+    "barca": "fcbarcelona.com",
+    "arsenal": "arsenal.com",
+    "liverpool": "liverpoolfc.com",
+    "liverpoolfc": "liverpoolfc.com",
+    "manchesterunited": "manutd.com",
+    "manutd": "manutd.com",
+    "manchestercity": "mancity.com",
+    "chelsea": "chelseafc.com",
+    "chelseafc": "chelseafc.com",
+    "tottenham": "tottenhamhotspur.com",
+    "spurs": "tottenhamhotspur.com",
+    "openai": "openai.com",
+    "anthropic": "anthropic.com",
+    "google": "google.com",
+    "microsoft": "microsoft.com",
+    "apple": "apple.com",
+    "meta": "meta.com",
+    "xai": "x.ai",
+    "mistralai": "mistral.ai",
+    "mistral": "mistral.ai",
+    "deepseek": "deepseek.com",
+    "cohere": "cohere.com",
+    "perplexity": "perplexity.ai"
+  };
+
+  function inferOfficialEntityDomain(name) {
+    var raw = decodeEntities(name || "").trim().toLowerCase();
+    if (!raw) return "";
+    if (OFFICIAL_ENTITY_DOMAINS[raw]) return OFFICIAL_ENTITY_DOMAINS[raw];
+    var key = entityNameKey(name);
+    if (!key) return "";
+    if (OFFICIAL_ENTITY_DOMAINS[key]) return OFFICIAL_ENTITY_DOMAINS[key];
+    for (var alias in OFFICIAL_ENTITY_DOMAINS) {
+      if (!Object.prototype.hasOwnProperty.call(OFFICIAL_ENTITY_DOMAINS, alias)) continue;
+      var aliasKey = entityNameKey(alias);
+      if (!aliasKey || aliasKey.length < 4) continue;
+      if (key === aliasKey || key.indexOf(aliasKey) !== -1 || aliasKey.indexOf(key) !== -1) {
+        return OFFICIAL_ENTITY_DOMAINS[alias];
+      }
+    }
+    // Generic inference: "Liverpool FC" -> liverpoolfc.com, "OpenAI" -> openai.com.
+    var compact = raw.replace(/[^a-z0-9]+/g, "");
+    if (compact.length >= 4 && compact.length <= 40) return compact + ".com";
+    return "";
+  }
+
+  function sourceDomainMatchesEntity(item, source) {
+    var srcDomain = canonicalDomain(source && (source.domain || source.url || ""));
+    if (!srcDomain) return false;
+    var entityDomain = canonicalDomain(item && (item.domain || hostnameFromUrl(item.url || "") || ""));
+    if (entityDomain && (srcDomain === entityDomain || srcDomain.endsWith("." + entityDomain) || entityDomain.endsWith("." + srcDomain))) {
+      return true;
+    }
+    var label = normalizedSourceText(entityDomainLabel(srcDomain));
+    var nameKey = normalizedSourceText(entityNameKey(item && item.name));
+    var rawName = normalizedSourceText(item && item.name);
+    if (!label || label.length < 4) return false;
+    if (nameKey && (label === nameKey || nameKey.indexOf(label) !== -1 || label.indexOf(nameKey) !== -1)) return true;
+    if (rawName && rawName.length >= 4 && (label === rawName || rawName.indexOf(label) !== -1)) return true;
+    return false;
+  }
+
   function entityLogoUrl(domainOrLogo, fallbackDomain) {
     var v = decodeEntities(domainOrLogo || "").trim();
     if (isSafeUrl(v)) {
@@ -3020,36 +3108,53 @@ window.VMRichRender = (function () {
     return "https://www.google.com/s2/favicons?sz=128&domain=" + encodeURIComponent(domain);
   }
 
-  function findSourceForEntity(item, sources) {
+  function findOfficialSourceForEntity(item, sources) {
     item = item || {};
     var pool = sourcePool(sources);
     if (!pool.length) return null;
+    var wanted = canonicalDomain(item.domain || hostnameFromUrl(item.url || ""));
+    if (wanted) {
+      for (var i = 0; i < pool.length; i++) {
+        if (canonicalDomain(pool[i].domain || pool[i].url || "") === wanted) return pool[i];
+      }
+    }
+    // A news article that merely mentions the entity is a citation, not the
+    // entity's official identity. Only accept sources whose own domain matches
+    // the entity's official domain/name.
+    for (var j = 0; j < pool.length; j++) {
+      if (sourceDomainMatchesEntity(item, pool[j])) return pool[j];
+    }
+    return null;
+  }
 
-    var keys = [item.name, item.domain, item.url, hostnameFromUrl(item.url)];
+  function findSnippetSourceForEntity(item, sources) {
+    item = item || {};
+    var pool = sourcePool(sources);
+    if (!pool.length) return null;
+    var official = findOfficialSourceForEntity(item, pool);
+    if (official && (official.snippet || official.summary || official.description || official.content || official.text)) {
+      return official;
+    }
+    var keys = [item.name, item.domain, hostnameFromUrl(item.url || "")];
     for (var i = 0; i < keys.length; i++) {
       var key = String(keys[i] || "").trim();
       if (!key || normalizedSourceText(key) === "entity") continue;
       var match = findSourceForCitation(key, pool);
-      if (match) return match;
+      if (match && (match.snippet || match.summary || match.description || match.content || match.text)) return match;
     }
-
-    var wanted = canonicalDomain(item.domain || hostnameFromUrl(item.url));
-    if (wanted) {
-      for (var j = 0; j < pool.length; j++) {
-        if (canonicalDomain(pool[j].domain || pool[j].url || "") === wanted) return pool[j];
-      }
-    }
-
     var name = normalizedSourceText(item.name);
-    if (name && name !== "entity") {
+    if (name && name.length >= 4) {
       for (var k = 0; k < pool.length; k++) {
-        var hay = normalizedSourceText([
-          pool[k].name, pool[k].title, pool[k].site_name, pool[k].domain
-        ].join(" "));
+        var hay = normalizedSourceText([pool[k].title, pool[k].name, pool[k].site_name].join(" "));
         if (hay.length >= 4 && (hay.indexOf(name) !== -1 || name.indexOf(hay) !== -1)) return pool[k];
       }
     }
     return null;
+  }
+
+  // Backwards-compatible name: identity-only match for entity cards.
+  function findSourceForEntity(item, sources) {
+    return findOfficialSourceForEntity(item, sources);
   }
 
   function conciseSnippet(value) {
@@ -3072,15 +3177,17 @@ window.VMRichRender = (function () {
     if (!Array.isArray(items) || !items.length) return "";
     var html = '<div class="vm-entity-list">';
     items.forEach(function (item, i) {
-      var src = findSourceForEntity(item, sources);
-      var domain = canonicalDomain(item.domain || hostnameFromUrl(item.url) || (src && (src.domain || src.url)) || "");
-      var logoCandidate = item.logo || (src && (src.logo || src.icon || src.favicon)) || domain;
+      var src = findOfficialSourceForEntity(item, sources);
+      var domain = canonicalDomain(item.domain || hostnameFromUrl(item.url) || "")
+        || (src && canonicalDomain(src.domain || src.url))
+        || inferOfficialEntityDomain(item.name || "");
+      var logoCandidate = item.logo || (src && sourceDomainMatchesEntity({name: item.name, domain: domain, url: item.url}, src) ? (src.logo || src.icon || src.favicon) : "") || domain;
       var logo = entityLogoUrl(logoCandidate, domain);
       var fallbackLogo = entityLogoUrl(domain);
       var onerror = (fallbackLogo && fallbackLogo !== logo)
         ? ' onerror="this.onerror=null;this.src=\'' + escapeHtml(fallbackLogo) + '\'"'
         : ' onerror="this.style.display=\'none\'"';
-      var url = isSafeUrl(item.url) ? item.url : (src && isSafeUrl(src.url) ? src.url : "");
+      var url = isSafeUrl(item.url) ? item.url : (src && sourceDomainMatchesEntity({name: item.name, domain: domain, url: item.url}, src) && isSafeUrl(src.url) ? src.url : (domain ? "https://" + domain : ""));
       var monogram = escapeHtml((item.name || "?").trim().charAt(0).toUpperCase() || "?");
       var title = escapeHtml(decodeEntities(item.name || "Entity"));
       var subtitle = item.subtitle
@@ -3139,22 +3246,42 @@ window.VMRichRender = (function () {
     var item = {
       name: String(parts[0] || "Entity").trim() || "Entity",
       subtitle: String(parts[1] || "").trim(),
+      // Anchor identity to the entity's own official domain/URL (field 3/4),
+      // never to a news/blog article that merely mentions the entity.
       domain: canonicalDomain(field2) || (isHttpUrl(field2) ? hostnameFromUrl(field2) : ""),
       logo: logo,
       url: isHttpUrl(field3) ? field3 : (isHttpUrl(field2) ? field2 : ""),
       desc: desc
     };
-    var src = findSourceForEntity(item, sources);
-    if (src) {
-      if (!item.domain) item.domain = canonicalDomain(src.domain || src.url);
-      if (!item.url && isHttpUrl(src.url)) item.url = src.url;
-      if (!item.logo) item.logo = src.logo || src.icon || src.favicon || "";
-      if (!item.desc) {
+
+    var explicitDomain = item.domain;
+    var explicitUrl = item.url;
+    if (!item.domain) item.domain = inferOfficialEntityDomain(item.name);
+
+    var officialSrc = findOfficialSourceForEntity(item, sources);
+    if (officialSrc && sourceDomainMatchesEntity(item, officialSrc)) {
+      if (!explicitDomain) item.domain = canonicalDomain(officialSrc.domain || officialSrc.url) || item.domain;
+      if (!explicitUrl && isHttpUrl(officialSrc.url)) item.url = officialSrc.url;
+      if (!item.logo) item.logo = officialSrc.logo || officialSrc.icon || officialSrc.favicon || "";
+    } else if (officialSrc) {
+      if (!item.domain) item.domain = canonicalDomain(officialSrc.domain || officialSrc.url) || item.domain;
+      if (!item.url && isHttpUrl(officialSrc.url)) item.url = officialSrc.url;
+      if (!item.logo) item.logo = officialSrc.logo || officialSrc.icon || officialSrc.favicon || "";
+    }
+
+    if (!item.desc) {
+      var snippetSrc = findSnippetSourceForEntity(item, sources) || officialSrc;
+      if (snippetSrc) {
         item.desc = conciseSnippet(
-          src.snippet || src.summary || src.description || src.content || src.text || ""
+          snippetSrc.snippet || snippetSrc.summary || snippetSrc.description || snippetSrc.content || snippetSrc.text || ""
         );
       }
     }
+
+    // Always resolve logos against the subject's own official domain (high-res
+    // Google favicon), never against a news/blog citation source.
+    if (!item.domain) item.domain = inferOfficialEntityDomain(item.name);
+    if (!item.url && item.domain) item.url = "https://" + item.domain;
     if (!item.logo) item.logo = item.domain;
     return item;
   }
@@ -3199,10 +3326,20 @@ window.VMRichRender = (function () {
         logo: row.getAttribute("data-vm-entity-logo") || "",
         url: row.getAttribute("data-vm-entity-url") || ""
       };
-      var src = findSourceForEntity(seed, pool);
-      if (!src) continue;
-      var domain = canonicalDomain(seed.domain || src.domain || src.url);
-      var logo = entityLogoUrl(src.logo || src.icon || src.favicon || seed.logo || domain, domain);
+      var src = findOfficialSourceForEntity(seed, pool);
+      var domain = canonicalDomain(seed.domain || hostnameFromUrl(seed.url || ""))
+        || (src && sourceDomainMatchesEntity(seed, src) ? canonicalDomain(src.domain || src.url) : "")
+        || inferOfficialEntityDomain(seed.name || "");
+      var officialUrl = isSafeUrl(seed.url) ? seed.url : (domain ? "https://" + domain : "");
+      if (!officialUrl && src && sourceDomainMatchesEntity({name: seed.name, domain: domain, url: seed.url}, src) && isSafeUrl(src.url)) {
+        officialUrl = src.url;
+      }
+      var logo = "";
+      if (src && sourceDomainMatchesEntity({name: seed.name, domain: domain, url: officialUrl}, src)) {
+        logo = entityLogoUrl(src.logo || src.icon || src.favicon || seed.logo || domain, domain);
+      } else {
+        logo = entityLogoUrl(seed.logo || domain, domain);
+      }
       if (logo && typeof row.querySelector === "function") {
         var img = row.querySelector(".vm-entity-logo-img");
         if (!img && typeof document !== "undefined" && document.createElement) {
@@ -3222,10 +3359,12 @@ window.VMRichRender = (function () {
           if (img.style) img.style.display = "";
         }
       }
-      if (isSafeUrl(src.url) && typeof row.querySelectorAll === "function") {
+      // Keep entity links anchored to the subject's official site; never
+      // replace them with a news/blog article URL.
+      if (isSafeUrl(officialUrl) && typeof row.querySelectorAll === "function") {
         var links = row.querySelectorAll(".vm-entity-logo, .vm-entity-title");
         for (var j = 0; j < links.length; j++) {
-          if (links[j]) links[j].href = src.url;
+          if (links[j]) links[j].href = officialUrl;
         }
       }
     }
