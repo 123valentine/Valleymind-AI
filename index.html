@@ -2035,6 +2035,10 @@
   .msg-toolbar .vm-sources-bar{margin-left:auto;margin-top:0;padding-right:2px}
   .msg-toolbar button{background:none;border:none;cursor:pointer;padding:4px;border-radius:6px;display:flex;align-items:center;color:#64748b;transition:all 0.15s}
   .msg-toolbar button:hover{background:rgba(0,212,255,0.1)}
+  /* Active TTS state: the Speak button shows a Pause icon and lights up. */
+  .msg-toolbar .playback-ctrl.is-speaking,
+  .msg-toolbar .playback-ctrl.is-speaking:hover{color:#00d4ff !important;background:rgba(0,212,255,0.16) !important}
+  .msg-toolbar .playback-ctrl.is-speaking .playback-icon{color:#00d4ff}
   .msg-toolbar .up-active{color:#00ff88 !important;background:rgba(0,255,136,0.1) !important}
   .msg-toolbar .down-active{color:#ff6b7a !important;background:rgba(255,45,70,0.1) !important}
   /* â”€â”€ Conversation-focused chat workspace â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -5846,13 +5850,45 @@ function _vmMsgCtxRemoveListeners() {
     }
 }
 
+/* Anchor the three-dots menu to its trigger button, clamped inside the visible
+   viewport. If the trigger cannot be resolved, fall back to the lower-right of
+   the viewport so the menu never opens at the top-left over the sidebar. */
+function vmPositionMessageContextMenu(menu, btn) {
+    if (!menu) return;
+    menu.style.display = "block";
+    menu.style.position = "fixed";
+    menu.style.zIndex = "1000";
+    menu.style.right = "auto";
+    menu.style.bottom = "auto";
+    var rect = (btn && btn.getBoundingClientRect) ? btn.getBoundingClientRect() : null;
+    if (rect && (rect.width || rect.height)) {
+        try { positionMenuAbove("messageContextMenu", btn); return; } catch (e) {}
+    }
+    var mh = menu.offsetHeight || 240;
+    var mw = menu.offsetWidth || 190;
+    var vh = window.innerHeight || 800;
+    var vw = window.innerWidth || 1024;
+    var r = rect || { left: vw - mw - 20, top: vh - 110, height: 32 };
+    var left = Math.max(8, Math.min(r.left, vw - mw - 8));
+    var top = r.top - mh - 8;
+    if (top < 8) top = Math.min(r.top + (r.height || 32) + 8, vh - mh - 8);
+    top = Math.max(8, Math.min(top, vh - mh - 8));
+    menu.style.left = Math.round(left) + "px";
+    menu.style.top = Math.round(top) + "px";
+    menu.style.maxHeight = Math.max(120, vh - 16) + "px";
+    menu.style.overflowY = "auto";
+}
+
 function toggleMessageContextMenu(e, msgIndex) {
-    e.preventDefault();
-    const menu = document.getElementById("messageContextMenu");
+    if (e && e.preventDefault) e.preventDefault();
+    var menu = document.getElementById("messageContextMenu");
     if (!menu) return;
 
-    var btn = (e && e.currentTarget) ? e.currentTarget : ((e && e.target && e.target.closest) ? e.target.closest(".message-options-btn") : null);
-    const isSame = menu.dataset.activeMsgIndex == msgIndex && menu.classList.contains("open");
+    var sourceWrap = (e && e.target && e.target.closest) ? e.target.closest(".assistant-message") : null;
+    var rawTrigger = (e && e.currentTarget && e.currentTarget.getBoundingClientRect)
+        ? e.currentTarget
+        : ((e && e.target && e.target.closest) ? e.target.closest(".message-options-btn") : null);
+    var isSame = menu.dataset.activeMsgIndex == msgIndex && menu.classList.contains("open");
     closeMessageContextMenu();
 
     if (isSame) return;
@@ -5866,8 +5902,13 @@ function toggleMessageContextMenu(e, msgIndex) {
     menu.classList.add("open");
     // Remember which assistant message this menu was opened for, so the actions
     // (listen / email / report / details) can read that message's text.
-    menu._sourceWrap = (e.target && e.target.closest) ? e.target.closest(".assistant-message") : null;
-    try { menu.style.top = "auto"; menu.style.right = "auto"; positionMenuAbove("messageContextMenu", btn, { gap: 8, rightMargin: 14 }); } catch (e3) {}
+    menu._sourceWrap = sourceWrap
+        || (rawTrigger && rawTrigger.closest ? rawTrigger.closest(".assistant-message") : null);
+    var btn = rawTrigger;
+    if (!btn && menu._sourceWrap && menu._sourceWrap.querySelector) {
+        btn = menu._sourceWrap.querySelector(".message-options-btn");
+    }
+    vmPositionMessageContextMenu(menu, btn);
 
     // Close on outside tap/touchstart and on scroll. Listeners removed on close.
     _vmMsgCtxOutsideHandler = function(ev) {
@@ -5916,7 +5957,10 @@ function closeMessageContextMenu() {
 function handleMessageContextAction(action) {
     var menu = document.getElementById("messageContextMenu");
     var msgIndex = menu ? menu.dataset.activeMsgIndex : null;
-    var sourceWrap = menu ? menu._sourceWrap : null;
+    // Capture the source wrapper/text BEFORE closeMessageContextMenu() clears it.
+    var wrap = menu ? menu._sourceWrap : null;
+    var bubble = wrap ? (wrap.querySelector(".bubble") || wrap) : null;
+    var text = bubble ? (bubble.innerText || bubble.textContent || "").trim() : "";
     console.log(`[VMAI-CTX] ${action} clicked for message ${msgIndex}`);
     closeMessageContextMenu();
     switch (action) {
@@ -6191,9 +6235,22 @@ function copyUserMessageText(btn) {
 // browser engine if the server call fails.
 var _msgAudioBtn = null;
 
+/* Crisp inline lucide-path SVGs so the Speak button always renders (and swaps
+   instantly) even if the icon CDN is slow/unavailable. volume-2 matches the
+   "Read aloud" item in the three-dots menu; pause is the two-bar || glyph. */
+var VM_SPEAK_SVG = '<svg class="lucide lucide-volume-2 playback-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg>';
+var VM_PAUSE_SVG = '<svg class="lucide lucide-pause playback-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="4" width="4" height="16" rx="1"></rect><rect x="14" y="4" width="4" height="16" rx="1"></rect></svg>';
+
 function _voiceIcon(btn, name) {
-    var icon = btn.querySelector('i');
-    if (icon) icon.setAttribute('data-lucide', name);
+    if (!btn) return;
+    var speaking = (name === 'pause');
+    if (speaking) btn.innerHTML = VM_PAUSE_SVG;
+    else if (name === 'loader-2') {
+        btn.innerHTML = '<i data-lucide="loader-2" class="playback-icon" style="width:16px;height:16px;"></i>';
+    } else btn.innerHTML = VM_SPEAK_SVG;
+    btn.title = speaking ? 'Pause' : (name === 'loader-2' ? 'Loading voice...' : 'Read aloud');
+    if (speaking) btn.classList.add('is-speaking');
+    else btn.classList.remove('is-speaking');
     if (typeof lucide !== 'undefined' && lucide.createIcons) lucide.createIcons();
 }
 
@@ -6203,7 +6260,8 @@ function _stopMsgAudio() {
     try { if (window.speechSynthesis) window.speechSynthesis.cancel(); } catch (e) {}
     vmWaveform.assistantStop();
     try{window.vmWave&&vmWave.stop()}catch(e){}
-    if (_msgAudioBtn) _voiceIcon(_msgAudioBtn, 'play');
+    // Restore the idle speaker icon + title and drop the active accent.
+    if (_msgAudioBtn) _voiceIcon(_msgAudioBtn, 'volume-2');
     _msgAudioBtn = null;
 }
 
@@ -6239,7 +6297,8 @@ window.toggleVoicePlayback = async function (btn) {
         }
         if (_msgAudioBtn !== btn) return;
         if (played && el) {
-            _voiceIcon(btn, 'square');
+            // Speaking: swap to the two-bar Pause glyph + active accent.
+            _voiceIcon(btn, 'pause');
             try {
                 el.onended = function () { if (_msgAudioBtn === btn) _stopMsgAudio(); else _voiceIcon(btn, 'volume-2'); };
                 el.onerror = function () { if (_msgAudioBtn === btn) _stopMsgAudio(); else _voiceIcon(btn, 'volume-2'); };
@@ -6254,13 +6313,24 @@ window.toggleVoicePlayback = async function (btn) {
     }
 };
 
-document.addEventListener("click", function (e) {
-    const menu = document.getElementById("messageContextMenu");
+/* Global dismissal for the three-dots overflow menu. Any pointer/click outside
+   the menu AND its trigger button closes it immediately; Escape closes it too.
+   Capture phase keeps this reliable even when the click target is an <svg>. */
+function _vmMessageMenuOutside(ev) {
+    var menu = document.getElementById("messageContextMenu");
     if (!menu || !menu.classList.contains("open")) return;
-    if (!menu.contains(e.target)) {
-        closeMessageContextMenu();
+    var t = ev && ev.target;
+    if (t && t.closest && (t.closest("#messageContextMenu") || t.closest(".message-options-btn"))) return;
+    closeMessageContextMenu();
+}
+document.addEventListener("pointerdown", _vmMessageMenuOutside, true);
+document.addEventListener("click", _vmMessageMenuOutside, true);
+document.addEventListener("keydown", function (ev) {
+    if (ev && ev.key === "Escape") {
+        var menu = document.getElementById("messageContextMenu");
+        if (menu && menu.classList.contains("open")) closeMessageContextMenu();
     }
-});
+}, true);
 
 // Appearance €” apply the saved theme + font size across the whole app.
 // Called on load and live from Settings when the user changes either one.
@@ -7644,8 +7714,8 @@ function addMessage(text, type = "ai", imageData, mediaUrl, videoUrl, images, so
 
         const playbackBtn = document.createElement("button");
         playbackBtn.className = "util-btn playback-ctrl";
-        playbackBtn.innerHTML = '<i data-lucide="play" class="playback-icon" style="width:16px;height:16px;"></i>';
-        playbackBtn.title = "Play response aloud";
+        playbackBtn.innerHTML = VM_SPEAK_SVG;
+        playbackBtn.title = "Read aloud";
         playbackBtn.onclick = function () { toggleVoicePlayback(this); };
         toolbar.appendChild(playbackBtn);
 
@@ -7656,6 +7726,7 @@ function addMessage(text, type = "ai", imageData, mediaUrl, videoUrl, images, so
         toolbar.appendChild(copyBtn);
 
         const dotsBtn = document.createElement("button");
+        dotsBtn.className = "message-options-btn";
         dotsBtn.innerHTML = '<i data-lucide="more-horizontal" style="width:15px;height:15px;"></i>';
         dotsBtn.title = "More options";
         dotsBtn.dataset.msgIndex = msgIndex;
@@ -8244,8 +8315,8 @@ function VMEnsureAssistantToolbar(wrapper, msgIndex) {
 
     var playbackBtn = document.createElement("button");
     playbackBtn.className = "util-btn playback-ctrl";
-    playbackBtn.innerHTML = '<i data-lucide="play" class="playback-icon" style="width:16px;height:16px;"></i>';
-    playbackBtn.title = "Play response aloud";
+    playbackBtn.innerHTML = VM_SPEAK_SVG;
+    playbackBtn.title = "Read aloud";
     playbackBtn.onclick = function () { toggleVoicePlayback(this); };
     toolbar.appendChild(playbackBtn);
 
@@ -8256,6 +8327,7 @@ function VMEnsureAssistantToolbar(wrapper, msgIndex) {
     toolbar.appendChild(copyBtn);
 
     var dotsBtn = document.createElement("button");
+    dotsBtn.className = "message-options-btn";
     dotsBtn.innerHTML = '<i data-lucide="more-horizontal" style="width:15px;height:15px;"></i>';
     dotsBtn.title = "More options";
     dotsBtn.dataset.msgIndex = msgIndex;
