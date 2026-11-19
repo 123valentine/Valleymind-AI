@@ -2035,7 +2035,10 @@
   .msg-toolbar .vm-sources-bar{margin-left:auto;margin-top:0;padding-right:2px}
   .msg-toolbar button{background:none;border:none;cursor:pointer;padding:4px;border-radius:6px;display:flex;align-items:center;color:#64748b;transition:all 0.15s}
   .msg-toolbar button:hover{background:rgba(0,212,255,0.1)}
-  /* Active TTS state: the Speak button shows a Pause icon and lights up. */
+  /* Speak button lifecycle: subtle spinner while fetching, then a lit Pause icon. */
+  .msg-toolbar .playback-ctrl.is-loading{color:#94a3b8 !important}
+  .msg-toolbar .playback-ctrl.is-loading .lucide-loader-2{animation:vmVoiceSpin 0.9s linear infinite}
+  @keyframes vmVoiceSpin{to{transform:rotate(360deg)}}
   .msg-toolbar .playback-ctrl.is-speaking,
   .msg-toolbar .playback-ctrl.is-speaking:hover{color:#00d4ff !important;background:rgba(0,212,255,0.16) !important}
   .msg-toolbar .playback-ctrl.is-speaking .playback-icon{color:#00d4ff}
@@ -5834,18 +5837,13 @@ document.addEventListener("keydown", function (e) {
     }
 });
 
-var _vmMsgCtxOutsideHandler = null;
 var _vmMsgCtxScrollHandler = null;
 function _vmMsgCtxRemoveListeners() {
-    if (_vmMsgCtxOutsideHandler) {
-        document.removeEventListener("pointerdown", _vmMsgCtxOutsideHandler, true);
-        document.removeEventListener("mousedown", _vmMsgCtxOutsideHandler, true);
-        document.removeEventListener("touchstart", _vmMsgCtxOutsideHandler, true);
-        _vmMsgCtxOutsideHandler = null;
-    }
     if (_vmMsgCtxScrollHandler) {
         document.removeEventListener("scroll", _vmMsgCtxScrollHandler, true);
         window.removeEventListener("scroll", _vmMsgCtxScrollHandler, true);
+        var messages = document.getElementById("messages");
+        if (messages) messages.removeEventListener("scroll", _vmMsgCtxScrollHandler, true);
         _vmMsgCtxScrollHandler = null;
     }
 }
@@ -5910,36 +5908,22 @@ function toggleMessageContextMenu(e, msgIndex) {
     }
     vmPositionMessageContextMenu(menu, btn);
 
-    // Close on outside tap/touchstart and on scroll. Listeners removed on close.
-    _vmMsgCtxOutsideHandler = function(ev) {
-        try {
-            var m = document.getElementById("messageContextMenu");
-            if (!m || !m.classList.contains("open")) return;
-            var t = ev && ev.target;
-            if (t && m.contains(t)) return;
-            if (t && t.closest && t.closest(".message-options-btn")) return;
-            closeMessageContextMenu();
-        } catch (err) {}
-    };
+    // Close on scroll (the chat container, the page, or any ancestor).
+    // Outside taps/clicks are handled by the always-on capture listeners below;
+    // attaching immediately avoids missing a fast second tap on mobile.
     _vmMsgCtxScrollHandler = function(ev) {
         try {
             var m = document.getElementById("messageContextMenu");
             if (!m || !m.classList.contains("open")) return;
             var t = ev && ev.target;
-            if (t && m.contains(t)) return;
+            if (t && m.contains(t)) return; // let the menu itself scroll
             closeMessageContextMenu();
         } catch (err) {}
     };
-    setTimeout(function() {
-        if (!_vmMsgCtxOutsideHandler) return;
-        document.addEventListener("pointerdown", _vmMsgCtxOutsideHandler, true);
-        document.addEventListener("mousedown", _vmMsgCtxOutsideHandler, true);
-        document.addEventListener("touchstart", _vmMsgCtxOutsideHandler, { capture: true, passive: true });
-        if (_vmMsgCtxScrollHandler) {
-            document.addEventListener("scroll", _vmMsgCtxScrollHandler, true);
-            window.addEventListener("scroll", _vmMsgCtxScrollHandler, true);
-        }
-    }, 0);
+    var messagesEl = document.getElementById("messages");
+    if (messagesEl) messagesEl.addEventListener("scroll", _vmMsgCtxScrollHandler, true);
+    document.addEventListener("scroll", _vmMsgCtxScrollHandler, true);
+    window.addEventListener("scroll", _vmMsgCtxScrollHandler, true);
 }
 
 function closeMessageContextMenu() {
@@ -6241,34 +6225,57 @@ var _msgAudioBtn = null;
 var VM_SPEAK_SVG = '<svg class="lucide lucide-volume-2 playback-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg>';
 var VM_PAUSE_SVG = '<svg class="lucide lucide-pause playback-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="4" width="4" height="16" rx="1"></rect><rect x="14" y="4" width="4" height="16" rx="1"></rect></svg>';
 
-function _voiceIcon(btn, name) {
+/* Single source of truth for the Speak button: idle -> loading -> playing ->
+   idle. Both the toolbar speaker icon and the three-dots "Read aloud" action
+   drive this same button, so their visuals stay in sync. */
+function _setVoiceBtnState(btn, state) {
     if (!btn) return;
-    var speaking = (name === 'pause');
-    if (speaking) btn.innerHTML = VM_PAUSE_SVG;
-    else if (name === 'loader-2') {
-        btn.innerHTML = '<i data-lucide="loader-2" class="playback-icon" style="width:16px;height:16px;"></i>';
-    } else btn.innerHTML = VM_SPEAK_SVG;
-    btn.title = speaking ? 'Pause' : (name === 'loader-2' ? 'Loading voice...' : 'Read aloud');
-    if (speaking) btn.classList.add('is-speaking');
-    else btn.classList.remove('is-speaking');
-    if (typeof lucide !== 'undefined' && lucide.createIcons) lucide.createIcons();
+    if (state === 'playing') {
+        if (btn.dataset.voiceState !== 'playing') btn.innerHTML = VM_PAUSE_SVG;
+        btn.title = 'Pause';
+        btn.classList.add('is-speaking');
+        btn.classList.remove('is-loading');
+    } else if (state === 'loading') {
+        btn.innerHTML = '<i data-lucide="loader-2" class="playback-icon lucide-loader-2" style="width:16px;height:16px;"></i>';
+        btn.title = 'Loading voice...';
+        btn.classList.add('is-loading');
+        btn.classList.remove('is-speaking');
+    } else {
+        btn.innerHTML = VM_SPEAK_SVG;
+        btn.title = 'Read aloud';
+        btn.classList.remove('is-speaking', 'is-loading');
+    }
+    btn.dataset.voiceState = (state === 'playing' || state === 'loading') ? state : 'idle';
+    if (typeof lucide !== 'undefined' && lucide.createIcons) {
+        try { lucide.createIcons(); } catch (e) {}
+    }
+}
+
+// Backwards-compatible shim for any older call sites.
+function _voiceIcon(btn, name) {
+    _setVoiceBtnState(btn, name === 'pause' ? 'playing' : (name === 'loader-2' ? 'loading' : 'idle'));
 }
 
 function _stopMsgAudio() {
     var el = getPersonaPlayer();
-    try { if (el) { el.pause(); el.onended = null; el.onerror = null; } } catch (e) {}
+    // Drop every lifecycle handler so a delayed pause/end event cannot stamp a
+    // stale Pause icon back onto the button after we have stopped playback.
+    try { if (el) { el.pause(); el.onplay = null; el.onplaying = null; el.onpause = null; el.onended = null; el.onerror = null; } } catch (e) {}
     try { if (window.speechSynthesis) window.speechSynthesis.cancel(); } catch (e) {}
     vmWaveform.assistantStop();
     try{window.vmWave&&vmWave.stop()}catch(e){}
-    // Restore the idle speaker icon + title and drop the active accent.
-    if (_msgAudioBtn) _voiceIcon(_msgAudioBtn, 'volume-2');
+    if (_msgAudioBtn) _setVoiceBtnState(_msgAudioBtn, 'idle');
     _msgAudioBtn = null;
 }
 
 window.toggleVoicePlayback = async function (btn) {
     var el = getPersonaPlayer();
-    // Clicking the button that is currently playing stops it.
-    if (_msgAudioBtn === btn && el && !el.paused) { _stopMsgAudio(); return; }
+    // Clicking the button that is currently speaking stops it and resets cleanly
+    // to the Speaker icon (the same guard also covers a click during loading).
+    if (_msgAudioBtn === btn && (btn.dataset.voiceState === 'playing' || (el && !el.paused))) {
+        _stopMsgAudio();
+        return;
+    }
     _stopMsgAudio();
     unlockPersonaAudio();
 
@@ -6277,7 +6284,15 @@ window.toggleVoicePlayback = async function (btn) {
     var text = bubble ? bubble.textContent.trim() : '';
     if (!text) return;
 
-    _voiceIcon(btn, 'loader-2');
+    // ONE shared hooks object drives the button no matter which engine speaks:
+    // the server-generated <audio> file or the Web Speech API fallback.
+    var hooks = {
+        onstart: function () { if (_msgAudioBtn === btn) _setVoiceBtnState(btn, 'playing'); },
+        onend:   function () { if (_msgAudioBtn === btn) { _setVoiceBtnState(btn, 'idle'); _msgAudioBtn = null; } },
+        onpause: function () { if (_msgAudioBtn === btn) { _setVoiceBtnState(btn, 'idle'); _msgAudioBtn = null; } },
+        onerror: function () { if (_msgAudioBtn === btn) { _setVoiceBtnState(btn, 'idle'); _msgAudioBtn = null; } }
+    };
+    _setVoiceBtnState(btn, 'loading'); // State 1: spinner only until playback starts
     _msgAudioBtn = btn;
     // Use the persona that wrote this reply (stored on the message), not the global current persona.
     var persona = (wrapper && wrapper.dataset && wrapper.dataset.persona)
@@ -6289,48 +6304,61 @@ window.toggleVoicePlayback = async function (btn) {
         var res = await apiFetch('/api/tts', { method: 'POST', credentials: 'include', headers: authHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify(body) });
         var data = await res.json().catch(function () { return {}; });
         if (_msgAudioBtn !== btn) return;
-        var played = false;
-        if (data && data.url && el) played = await _vmPlayTtsAudio(data.url); // plays piper_local/edge/qwen
-        if (!played && _msgAudioBtn === btn) {
-            try { _vmToast("voice not available"); } catch (e) {}
-            played = await _vmEdgeFallbackPlay(text, persona);
+        var playing = false;
+        if (data && data.url && el) playing = await _vmPlayTtsAudio(data.url, hooks); // resolves the moment audio starts
+        if (!playing && _msgAudioBtn === btn) {
+            playing = await _vmEdgeFallbackPlay(text, persona, hooks);
+        }
+        if (!playing && _msgAudioBtn === btn) {
+            // Last resort: the device's own Web Speech voice (utterance hooks).
+            playing = await _vmBrowserSpeakWithHooks(text, persona, hooks);
         }
         if (_msgAudioBtn !== btn) return;
-        if (played && el) {
-            // Speaking: swap to the two-bar Pause glyph + active accent.
-            _voiceIcon(btn, 'pause');
-            try {
-                el.onended = function () { if (_msgAudioBtn === btn) _stopMsgAudio(); else _voiceIcon(btn, 'volume-2'); };
-                el.onerror = function () { if (_msgAudioBtn === btn) _stopMsgAudio(); else _voiceIcon(btn, 'volume-2'); };
-            } catch (e) {}
+        if (playing) {
+            // onplay/onplaying (or utterance.onstart) already flipped the icon to
+            // Pause; this just guarantees the final state.
+            _setVoiceBtnState(btn, 'playing');
             return;
         }
-        _voiceIcon(btn, 'volume-2'); if (_msgAudioBtn === btn) _msgAudioBtn = null;
         try { _vmToast("voice not available"); } catch (e) {}
+        _setVoiceBtnState(btn, 'idle');
+        if (_msgAudioBtn === btn) _msgAudioBtn = null;
     } catch (e) {
-        if (_msgAudioBtn === btn) { _voiceIcon(btn, 'volume-2'); _msgAudioBtn = null; }
+        if (_msgAudioBtn === btn) { _setVoiceBtnState(btn, 'idle'); _msgAudioBtn = null; }
         try { _vmToast("voice not available"); } catch (e) {}
     }
 };
 
-/* Global dismissal for the three-dots overflow menu. Any pointer/click outside
-   the menu AND its trigger button closes it immediately; Escape closes it too.
-   Capture phase keeps this reliable even when the click target is an <svg>. */
+/* Global dismissal for the three-dots overflow menu. Capture phase on document
+   reaches the event before any chat wrapper can stop propagation; passive keeps
+   mobile scrolling smooth. pointerdown + touchstart + click cover both mobile
+   taps and desktop clicks, and Escape closes the open menu too. */
 function _vmMessageMenuOutside(ev) {
     var menu = document.getElementById("messageContextMenu");
     if (!menu || !menu.classList.contains("open")) return;
     var t = ev && ev.target;
-    if (t && t.closest && (t.closest("#messageContextMenu") || t.closest(".message-options-btn"))) return;
+    if (t && t.closest) {
+        if (t.closest("#messageContextMenu")) return; // option clicks close themselves
+        if (t.closest(".message-options-btn")) return; // its own trigger toggles it
+    }
     closeMessageContextMenu();
 }
-document.addEventListener("pointerdown", _vmMessageMenuOutside, true);
-document.addEventListener("click", _vmMessageMenuOutside, true);
+var _vmMsgDismissOpts = { capture: true, passive: true };
+document.addEventListener("pointerdown", _vmMessageMenuOutside, _vmMsgDismissOpts);
+document.addEventListener("touchstart", _vmMessageMenuOutside, _vmMsgDismissOpts);
+document.addEventListener("click", _vmMessageMenuOutside, _vmMsgDismissOpts);
 document.addEventListener("keydown", function (ev) {
     if (ev && ev.key === "Escape") {
         var menu = document.getElementById("messageContextMenu");
         if (menu && menu.classList.contains("open")) closeMessageContextMenu();
     }
 }, true);
+// Any option click closes the menu. Bubble phase so handleMessageContextAction()
+// still reads the source message before the menu state is cleared.
+document.addEventListener("click", function (ev) {
+    var t = ev && ev.target;
+    if (t && t.closest && t.closest("#messageContextMenu .message-context-item")) closeMessageContextMenu();
+});
 
 // Appearance €” apply the saved theme + font size across the whole app.
 // Called on load and live from Settings when the user changes either one.
@@ -8495,6 +8523,37 @@ function browserSpeak(text) {
     window.speechSynthesis.speak(utterance);
 }
 
+/* Web Speech API fallback that reports its lifecycle to the Speak button.
+   Resolves on utterance.onstart so the spinner becomes a Pause icon the moment
+   the device voice actually begins, and restores Speaker on end/error. */
+function _vmBrowserSpeakWithHooks(text, persona, hooks) {
+    return new Promise(function (resolve) {
+        var h = hooks || {};
+        var settled = false;
+        function fire(name) { try { if (h[name]) h[name](); } catch (e) {} }
+        function done(ok) { if (!settled) { settled = true; resolve(!!ok); } }
+        try {
+            if (!window.speechSynthesis || typeof SpeechSynthesisUtterance === 'undefined') { done(false); return; }
+            window.speechSynthesis.cancel();
+            var u = new SpeechSynthesisUtterance(String(text || ''));
+            var voices = window.speechSynthesis.getVoices() || [];
+            var key = String(persona || '').toLowerCase();
+            var female = /elena|angelina|aria|jenny|female|samantha|zira/.test(key);
+            var pick = voices.find(function (v) {
+                return female ? /female|zira|samantha|jenny|aria|google us english/i.test(v.name)
+                              : /david|male|google uk english male/i.test(v.name);
+            }) || voices.find(function (v) { return /^en/i.test(v.lang || ''); });
+            if (pick) u.voice = pick;
+            u.rate = 1.0;
+            u.pitch = female ? 1.0 : 0.85;
+            u.onstart = function () { fire('onstart'); done(true); };
+            u.onend   = function () { fire('onend'); };
+            u.onerror = function () { fire('onerror'); done(false); };
+            window.speechSynthesis.speak(u);
+        } catch (e) { done(false); }
+    });
+}
+
 let isVoiceMuted = false;
 var _gsiReady = false;
 
@@ -8566,23 +8625,45 @@ function _vmTtsPayload(text, persona) {
     try { var prof = _savedVoiceProfile(p); if (prof) body.profile = prof; } catch (e) {}
     return body;
 }
-function _vmPlayTtsAudio(url) {
+/* Play a server-generated TTS url. Resolves the moment playback STARTS (not when
+   it ends) so callers can flip the Speak button to Pause immediately. Optional
+   hooks expose play/end/pause/error events for that button's icon lifecycle. */
+function _vmPlayTtsAudio(url, hooks) {
     return new Promise(function (resolve) {
+        var h = hooks || {};
+        var started = false, settled = false;
+        function fire(name) { try { if (h[name]) h[name](); } catch (e) {} }
+        function start() {
+            if (!started) { started = true; fire('onstart'); }
+            if (!settled) { settled = true; resolve(true); }
+        }
+        function end() { fire('onend'); if (!settled) { settled = true; resolve(true); } }
+        function err() { fire('onerror'); if (!settled) { settled = true; resolve(false); } }
         try {
             var el = getPersonaPlayer();
             if (el && el._voiceUrl && el._voiceUrl !== url) { try { URL.revokeObjectURL(el._voiceUrl); } catch (e) {} }
             if (el) { el._voiceUrl = url; }
             if (typeof playPersonaAudio === "function") {
-                playPersonaAudio(url, function () { resolve(true); }, function () { resolve(false); });
+                playPersonaAudio(url, start, err);
                 return;
             }
-            if (el) { el.onended = function () { resolve(true); }; el.onerror = function () { resolve(false); }; el.src = url;
-                var pr = el.play(); if (pr && pr.catch) pr.catch(function () { resolve(false); }); return; }
+            if (el) {
+                try { el.onplay = null; el.onplaying = null; el.onpause = null; el.onended = null; el.onerror = null; } catch (e) {}
+                el.onplay = start;     // fires the instant playback is requested
+                el.onplaying = start;  // fires when audio actually begins (buffered)
+                el.onended = end;
+                el.onerror = err;
+                el.onpause = function () { fire('onpause'); };
+                el.src = url;
+                var pr = el.play();
+                if (pr && pr.catch) pr.catch(err);
+                return;
+            }
         } catch (e) {}
-        resolve(false);
+        err();
     });
 }
-async function _vmEdgeFallbackPlay(text, persona) {
+async function _vmEdgeFallbackPlay(text, persona, hooks) {
     try {
         var p = String(persona || 'marcus');
         var emap = { marcus: 'guy', angelina: 'jenny', elena: 'aria', companion: 'jenny' };
@@ -8590,7 +8671,7 @@ async function _vmEdgeFallbackPlay(text, persona) {
         var edgeVid = (vid && /^(guy|aria|jenny|christopher)$/.test(vid)) ? vid : (emap[p] || (p === 'companion' ? _vmDefaultCompanionVoiceId() : 'jenny'));
         var res = await apiFetch("/api/tts", { method: "POST", credentials: "include", headers: authHeaders({ "Content-Type": "application/json" }), body: JSON.stringify({ text: String(text||"").slice(0,1500), persona: p, voice: edgeVid }) });
         var data = await res.json().catch(function () { return {}; });
-        if (data && data.url) return await _vmPlayTtsAudio(data.url);
+        if (data && data.url) return await _vmPlayTtsAudio(data.url, hooks);
     } catch (e) {}
     return false;
 }
