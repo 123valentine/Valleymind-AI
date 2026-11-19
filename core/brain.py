@@ -243,8 +243,9 @@ FORMAT RULES (choose the right format; keep these in one consistent style):
 - Simple factual question → one or two plain sentences, no headings.
 - Explanation → short intro, then headings only if the answer is long.
 - Steps/how-to → numbered list.
-- Comparison of 2+ things → a real markdown pipe table (header row, separator row like |---|---|, data rows). Never use a code fence for tables, never use dash-line "ASCII tables", never output tabular data as plain aligned text.
-- List of tools/products/places/people → one structured block per item (name as a **bold heading** line, then short labelled fields). Include an image only when a real image URL exists from search results or user uploads; never generate or invent image URLs.
+- Multi-attribute comparison (for example comparing pricing, speed and context window) → a real markdown pipe table (header row, separator row like |---|---|, data rows). Never use a code fence for tables, never use dash-line "ASCII tables", never output tabular data as plain aligned text.
+- List/name/mention/recommend/rank of brands, AI models, apps, products, movies, clubs or tools → one entity block per item using [[ENTITY: Name | Subtitle | official-domain.com | https://official-domain.com | Concise explanation]]. Do NOT use a table for a plain list.
+- If the user asks to both list and compare → entity blocks for the list, followed by one compact markdown comparison table.
 - Pros/cons → two short bullet lists or a two-column table.
 - Report/research → title, summary, sections, key points, sources.
 - Code → fenced code block with the language specified.
@@ -254,7 +255,7 @@ FORMAT RULES (choose the right format; keep these in one consistent style):
 
 IMAGES AND VISUALS (CRITICAL):
 - Never generate, invent, fabricate, or request AI-generated images for logos, products, people, places, brands, or screenshots.
-- Use image URLs only when they come from real search results or user uploads. If no real image URL exists, show a small text placeholder with the name only — no picture.
+- Use image URLs only when they come from real search results or user uploads AND the query has visual intent or depicts a tangible subject (people, films/posters, places, hardware/products, designs, charts/diagrams). For text/data/benchmark lookups, omit images entirely instead of attaching generic banners.
 - Never invent images, dates, links, or source URLs.
 
 CITATIONS: When your answer is based on research sources provided in context, include inline source-name citations like [Coinbase], [Reuters], [Wikipedia] after each factual claim. Use the exact source name from the provided source list — match it case-insensitively. Place citations immediately after the claim they support, not at the end of a paragraph. Example: "Bitcoin is currently trading around $67,000 [Coinbase] and has risen 5% this week [Reuters]." If no sources are provided, do not invent citation tags. Order multiple citations by how authoritative/fresh they are (e.g. [Coinbase] for the live market price, [Reuters] for news context).
@@ -329,22 +330,141 @@ def _is_continuation_utterance(message: str) -> bool:
     return text in _CONTINUATION_PHRASES
 
 
-_ENTITY_CARD_RE = re.compile(
-    r"\b(?:compare|comparison|list|mention|recommend|top|best|three|3|four|4|five|5|"
-    r"versus|vs\.?|alternatives?|ranking)\b",
+_MATRIX_SIGNAL_RE = re.compile(
+    r"\b(?:compare|comparison|comparing|versus|vs\.?|against|differences?|"
+    r"side[- ]by[- ]side|matrix)\b",
     re.IGNORECASE,
 )
-_ENTITY_CARD_SUBJECT_RE = re.compile(
-    r"\b(?:brands?|ai(?:s|\s+models?)?|llms?|models?|apps?|tools?|movies?|films?|"
-    r"shows?|series|animes?|games?|software|products?|companies|clubs?|teams?)\b",
+_ENTITY_LIST_SIGNAL_RE = re.compile(
+    r"\b(?:list|name|names|mention|mentions|recommend|recommends|recommendation|"
+    r"recommendations|recommended|suggest|suggestions|rank|ranking|ranked|top|best|"
+    r"greatest|popular|leading|examples?|alternatives?|three|3|four|4|five|5)\b",
     re.IGNORECASE,
 )
+_MATRIX_ATTRIBUTE_RE = re.compile(
+    r"\b(?:pric(?:e|ing)|cost|speed|latency|performance|throughput|context(?:\s+window)?|"
+    r"window|tokens?|features?|accuracy|quality|ratings?|reviews?|battery|camera|"
+    r"storage|ram|memory|size|dimensions?|weight|release(?:\s+date)?|uptime|rate|"
+    r"limits?|plans?|support|integrations?)\b",
+    re.IGNORECASE,
+)
+_ENTITY_SUBJECT_RE = re.compile(
+    r"\b(?:brands?|ai(?:s|\s+models?)?|llms?|models?|apps?|tools?|software|platforms?|"
+    r"frameworks?|libraries?|services?|products?|companies|vendors?|movies?|films?|"
+    r"shows?|series|animes?|games?|clubs?|teams?|players?|footballers?|athletes?|"
+    r"artists?|musicians?|bands?|singers?|actors?|actresses?|directors?|vehicles?|"
+    r"cars?|phones?|hardware|laptops?|restaurants?|landmarks?|destinations?|places?)\b",
+    re.IGNORECASE,
+)
+
+
+def _wants_matrix_comparison(message: str) -> bool:
+    """True for explicit multi-attribute matrix/table comparisons."""
+    text = str(message or "")
+    if not _MATRIX_SIGNAL_RE.search(text):
+        return False
+    attrs = {m.group(0).lower() for m in _MATRIX_ATTRIBUTE_RE.finditer(text)}
+    return len(attrs) >= 2 or bool(re.search(r"\b(?:table|matrix|side[- ]by[- ]side)\b", text, re.I))
+
+
+def _wants_entity_list(message: str) -> bool:
+    """True for list/name/mention/recommend/rank requests about named entities."""
+    text = str(message or "")
+    return bool(_ENTITY_LIST_SIGNAL_RE.search(text) and _ENTITY_SUBJECT_RE.search(text))
+
+
+def _wants_combined_presentation(message: str) -> bool:
+    """True when the user wants both a list of entities and a comparison."""
+    text = str(message or "")
+    return _wants_entity_list(text) and bool(_MATRIX_SIGNAL_RE.search(text))
+
+
+def _presentation_mode(message: str) -> str:
+    """Return 'matrix', 'entities', 'combined', or 'plain'."""
+    text = str(message or "")
+    if _wants_combined_presentation(text):
+        return "combined"
+    if _wants_matrix_comparison(text):
+        return "matrix"
+    if _wants_entity_list(text):
+        return "entities"
+    return "plain"
 
 
 def _wants_entity_cards(message: str) -> bool:
-    """True for list/recommend/compare requests about 3+ named entities."""
+    """Backwards-compatible gate used by routing and prompt selection."""
+    return _presentation_mode(message) in ("entities", "combined")
+
+
+_VISUAL_INTENT_RE = re.compile(
+    r"\b(?:show(?:\s+me)?|pictures?|images?|photos?|posters?|screenshots?|"
+    r"visuals?|look\s+like|appearance|renders?|rendering|previews?|gallery|"
+    r"designs?|diagrams?|charts?|graphs?|infographics?)\b",
+    re.IGNORECASE,
+)
+_VISUAL_SUBJECT_RE = re.compile(
+    r"\b(?:people?|persons?|players?|footballers?|athletes?|actors?|actresses?|"
+    r"singers?|artists?|musicians?|bands?|politicians?|coaches?|managers?|transfers?|"
+    r"movies?|films?|shows?|series|animes?|posters?|trailers?|landmarks?|places?|"
+    r"cities?|countries?|hotels?|restaurants?|museums?|beaches?|mountains?|"
+    r"monuments?|buildings?|stadiums?|venues?|hardware|phones?|laptops?|gpus?|"
+    r"cameras?|cars?|vehicles?|devices?|sneakers?|watches?|artwork|paintings?|"
+    r"animals?|food|dishes?)\b",
+    re.IGNORECASE,
+)
+_DATA_QUERY_RE = re.compile(
+    r"\b(?:prices?|pricing|cost|costs|benchmarks?|benchmarking|stats|statistics|"
+    r"numbers?|data|specs?|specifications?|context(?:\s+window)?|tokens?|"
+    r"metrics?|api|apis|docs?|documentation|rate\s+limits?|plans?|tiers?)\b",
+    re.IGNORECASE,
+)
+_GENERIC_RESEARCH_IMAGE_PATTERNS = (
+    "favicon", "icon", "logo", "banner", "og-image", "og_image", "ogimage",
+    "twitter-image", "twitter_image", "twitter-card", "twitter_card",
+    "social-preview", "socialpreview", "share-image", "share_image",
+    "preview", "header", "hero-banner", "hero_banner", "sprite",
+    "placeholder", "pixel", "1x1", "loading",
+)
+
+
+def _wants_visual_research(message: str) -> bool:
+    """Only request web images for visual intent or tangible visual subjects."""
     text = str(message or "")
-    return bool(_ENTITY_CARD_RE.search(text) and _ENTITY_CARD_SUBJECT_RE.search(text))
+    if not text.strip():
+        return False
+    if _VISUAL_INTENT_RE.search(text):
+        return True
+    # Pure text/data/benchmark lookups should never get generic og:images.
+    if _DATA_QUERY_RE.search(text):
+        return False
+    return bool(_VISUAL_SUBJECT_RE.search(text))
+
+
+def _is_generic_research_image(url: str) -> bool:
+    """Detect site banners/favicons/social cards that add no visual evidence."""
+    value = str(url or "").strip().lower()
+    if not value or value.startswith("data:"):
+        return True
+    if "google.com/s2/favicons" in value or "favicon.ico" in value:
+        return True
+    return any(pattern in value for pattern in _GENERIC_RESEARCH_IMAGE_PATTERNS)
+
+
+def _filter_query_images(items, query: str) -> list:
+    """Strip images from source dicts unless the query actually warrants them."""
+    allow_images = _wants_visual_research(query)
+    filtered = []
+    for item in (items or []):
+        if not isinstance(item, dict):
+            filtered.append(item)
+            continue
+        copy = dict(item)
+        image_url = str(copy.get("image") or "").strip()
+        if image_url and (not allow_images or _is_generic_research_image(image_url)):
+            copy["image"] = ""
+            copy["image_credit"] = ""
+        filtered.append(copy)
+    return filtered
 
 
 
@@ -1955,14 +2075,28 @@ class MarcusBrain:
                 "with a clean domain pill such as [domain.com] or 【SourceName】 (the app maps these "
                 "to source_metadata URLs). Never paste raw URLs into prose."
             )
-        if _wants_entity_cards(user_message):
+        presentation = _presentation_mode(user_message)
+        if presentation == "matrix":
             sections.append(
-                "Structured entity cards: when listing, recommending or comparing 3 or more brands, "
-                "AI models, apps, movies, tools or entities, put each item on its own line using:\n"
+                "Presentation choice: this is a multi-attribute matrix comparison. Use a real markdown "
+                "pipe table with one attribute per row or column. Do not convert it into entity cards."
+            )
+        elif presentation == "entities":
+            sections.append(
+                "Presentation choice: this is an entity list/ranking. Put each named item on its own line using:\n"
                 "[[ENTITY: Name | Maker/Subtitle | official-domain.com | https://official-domain.com | "
                 "Concise 1-2 sentence explanation]]\n"
-                "The app renders these as logo-left, clickable-title-right cards. Use the exact "
-                "official domain and target URL; do not wrap the syntax in markdown or code fences."
+                "The app renders these as 52px logo-left, clickable-title-right cards. Use the exact "
+                "official domain and target URL from the provided sources when available; never invent URLs. "
+                "Do not wrap the syntax in markdown or code fences, and do not use a table for this list."
+            )
+        elif presentation == "combined":
+            sections.append(
+                "Presentation choice: this asks to list AND compare. First put each named item on its own line using:\n"
+                "[[ENTITY: Name | Maker/Subtitle | official-domain.com | https://official-domain.com | "
+                "Concise explanation]]\n"
+                "Then add one compact markdown comparison table for the requested attributes. "
+                "Use exact official domains/URLs from the provided sources when available; never invent URLs."
             )
 
         system_with_context = "\n".join(sections)
@@ -2412,7 +2546,9 @@ class MarcusBrain:
                     )
                     if evidence_package.evidence:
                         live_ctx = evidence_package.to_context_string()
-                        self._pending_source_metadata = evidence_package.to_frontend_metadata()
+                        self._pending_source_metadata = _filter_query_images(
+                            evidence_package.to_frontend_metadata(), search_message
+                        )
                         # Build sources list from evidence
                         seen_domains = set()
                         for ev in evidence_package.evidence:
@@ -2431,6 +2567,9 @@ class MarcusBrain:
 
                                     "image_credit": ev.image_credit,
                                 })
+                        self._pending_sources = _filter_query_images(
+                            self._pending_sources, search_message
+                        )
                         print(f"[SOURCE INTEL] Non-stream research: {len(evidence_package.evidence)} evidence items, "
                               f"confidence={evidence_package.confidence}")
                         _emit_activity("web_research", "reading_pages", detail=f"{len(self._pending_sources)} sources")
@@ -2441,7 +2580,9 @@ class MarcusBrain:
                         # Fallback to single search
                         live_ctx = _fetch_live_context_force(search_message, site=directed_site or "")
                         if live_ctx:
-                            self._pending_sources = get_last_search_sources()
+                            self._pending_sources = _filter_query_images(
+                                get_last_search_sources(), search_message
+                            )
                         else:
                             print("[SEARCH] No live context found - proceeding with cached knowledge only")
                 except Exception as exc:
@@ -2674,6 +2815,9 @@ class MarcusBrain:
                 # Build live_ctx from evidence package
                 if evidence_package.evidence:
                     live_ctx = evidence_package.to_context_string()
+                    self._pending_source_metadata = _filter_query_images(
+                        evidence_package.to_frontend_metadata(), search_message
+                    )
                     self._pending_sources = []
                     # Build sources list from evidence for frontend
                     seen_domains = set()
@@ -2715,6 +2859,9 @@ class MarcusBrain:
                                     "image_credit": ev.image_credit,
                                     "freshness_label": ev.freshness_label,
                                 })
+                    self._pending_sources = _filter_query_images(
+                        self._pending_sources, search_message
+                    )
                     print(f"[STREAM RESEARCH] {len(evidence_package.evidence)} evidence items, "
                           f"confidence={evidence_package.confidence}, "
                           f"searched={evidence_package.total_searched}")
@@ -2730,7 +2877,9 @@ class MarcusBrain:
                         result = _fetch_live_context_force(search_message, site=directed_site or "")
                         if result and str(result).strip() != str(LIVE_DATA_UNAVAILABLE):
                             live_ctx = result
-                            self._pending_sources = get_last_search_sources()
+                            self._pending_sources = _filter_query_images(
+                                get_last_search_sources(), search_message
+                            )
                         elif result:
                             live_ctx = ""
                     except Exception as exc:
@@ -2741,7 +2890,7 @@ class MarcusBrain:
                 if self._pending_sources:
                     yield {"sources": self._pending_sources}
                 if evidence_package.evidence:
-                    yield {"source_metadata": evidence_package.to_frontend_metadata(),
+                    yield {"source_metadata": self._pending_source_metadata,
                            "research_confidence": evidence_package.confidence}
                 elif not live_ctx:
                     print("[STREAM SEARCH] No live context found - proceeding with cached knowledge only")

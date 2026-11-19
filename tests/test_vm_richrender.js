@@ -440,5 +440,36 @@ assert('entity logo-left and clickable title-right',
   /class="vm-entity-title"[^>]*href="https:\/\/www\.liverpoolfc\.com"/.test(entityHtml),
   entityHtml.slice(0, 260));
 
+// --- Clickable citation pills: match label against source metadata ----------
+var pillSources = [
+  { title: 'AzLabs AI', domain: 'azlabs.com', url: 'https://azlabs.com/article' },
+  { title: 'BenchLM', domain: 'benchlm.com', url: 'https://benchlm.com/benchmark' },
+  { title: 'Liverpool FC', domain: 'liverpoolfc.com', url: 'https://www.liverpoolfc.com/news' }
+];
+var pillHtml = VMRichRender.render('See [azlabs] and [benchlm], plus [liverpoolfc].', pillSources);
+assert('matched citation pill is a real source link',
+  pillHtml.indexOf('class="vm-cite-pill" href="https://azlabs.com/article"') !== -1 &&
+  pillHtml.indexOf('class="vm-cite-pill" href="https://benchlm.com/benchmark"') !== -1,
+  pillHtml.slice(0, 260));
+assert('matched citation pill has target, rel and stopPropagation click',
+  pillHtml.indexOf('target="_blank" rel="noopener noreferrer"') !== -1 &&
+  pillHtml.indexOf('onclick="event.stopPropagation()"') !== -1,
+  pillHtml.slice(0, 320));
+assert('citation labels match case-insensitively against title/domain/hostname',
+  VMRichRender.findSourceForCitation('BENCHLM', pillSources).domain === 'benchlm.com' &&
+  VMRichRender.findSourceForCitation('Liverpool FC', pillSources).domain === 'liverpoolfc.com');
+var unmatchedPillHtml = VMRichRender.render('See [unknownsource].', pillSources);
+assert('unmatched citation pill is still clickable via sources drawer fallback',
+  unmatchedPillHtml.indexOf('href="#sources"') !== -1 &&
+  unmatchedPillHtml.indexOf('onclick="event.stopPropagation()"') !== -1 &&
+  unmatchedPillHtml.indexOf('<span class="vm-cite-pill"') === -1,
+  unmatchedPillHtml.slice(0, 220));
+
+// --- Matrix comparison tables must not be converted to entity cards --------
+var matrixHtml = render('| Model | Price | Speed |\n|---|---|---|\n| A | $1 | fast |\n\n1. **[B](https://b.example.com)** — alternative');
+assert('markdown matrix comparison stays a table, not entity cards',
+  matrixHtml.indexOf('<table') !== -1 && matrixHtml.indexOf('vm-entity-row') === -1,
+  matrixHtml.slice(0, 260));
+
 console.log('RENDER_TESTS: ' + ok + ' passed, ' + fail + ' failed');
 if (fail) process.exit(1);

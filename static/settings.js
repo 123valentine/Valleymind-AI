@@ -2497,7 +2497,7 @@ window.VMRichRender = (function () {
     "vm-standalone-media":1,
   };
   var ALLOWED_ATTRS = {
-    a: { href:1, title:1, target:1, rel:1 },
+    a: { href:1, title:1, target:1, rel:1, "data-vm-cite":1 },
     span: { "data-vm-cite":1 },
     img: { src:1, alt:1, title:1, loading:1, onerror:1 },
     video: { src:1, controls:1, playsinline:1, preload:1 },
@@ -2552,9 +2552,15 @@ window.VMRichRender = (function () {
         for (var j = attrs.length - 1; j >= 0; j--) {
           var a = attrs[j];
           var name = a.name.toLowerCase();
-          // vm-fix19: allow only a safe img onerror that hides broken images (item 3,4)
+          // Allow only two narrowly-scoped inline handlers:
+          //  - img onerror that merely hides a broken image
+          //  - citation pill onclick that only stops event propagation
           if (name === "onerror" && tag === "img" && /this\.style\.display\s*=\s*['"]none['"]/.test(a.value || "")) {
             // keep this specific safe handler
+            continue;
+          } else if (name === "onclick" && tag === "a" && /^event\s*\.\s*stopPropagation\s*\(\s*\)\s*;?$/i.test(String(a.value || ""))) {
+            // keep the safe, non-navigating citation pill handler
+            continue;
           } else if (name.slice(0, 2) === "on") { el.removeAttribute(name); continue; }
           if (name === "style") { el.removeAttribute(name); continue; }
           if (name === "class") {
@@ -2751,16 +2757,141 @@ window.VMRichRender = (function () {
     return s.slice(0, 24) || "source";
   }
 
-  function citePillHtml(label) {
+  function hostnameFromUrl(url) {
+    var v = decodeEntities(url || "").trim();
+    if (!v) return "";
+    try {
+      return new URL(v).hostname.replace(/^www\./i, "").toLowerCase();
+    } catch (e) {
+      var m = v.match(/^https?:\/\/([^\/?#]+)/i);
+      return m ? m[1].replace(/^www\./i, "").toLowerCase() : "";
+    }
+  }
+
+  function normalizedSourceText(value) {
+    return decodeEntities(value || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+  }
+
+  function sourcePool(sources) {
+    return Array.isArray(sources) ? sources.filter(function (s) { return !!s; }) : [];
+  }
+
+  /* Match a pill slug (azlabs, benchlm, liverpoolfc) against title / domain /
+     name / URL hostname, case-insensitively. */
+  function findSourceForCitation(label, sources) {
     var slug = sourceSlug(label);
-    return '<span class="vm-cite-pill" data-vm-cite="' + escapeHtml(slug) + '">' + escapeHtml(slug) + '</span>';
+    if (!slug || slug === "source") return null;
+    var pool = sourcePool(sources);
+
+    for (var i = 0; i < pool.length; i++) {
+      var s = pool[i];
+      var fields = [s.domain, s.name, s.title, s.site_name, s.publisher, hostnameFromUrl(s.url)];
+      for (var j = 0; j < fields.length; j++) {
+        if (fields[j] && sourceSlug(fields[j]) === slug) return s;
+      }
+    }
+    for (var k = 0; k < pool.length; k++) {
+      var src = pool[k];
+      var hay = normalizedSourceText([
+        src.title, src.domain, src.name, src.site_name, src.publisher, hostnameFromUrl(src.url)
+      ].join(" "));
+      if (hay && hay.indexOf(slug) !== -1) return src;
+    }
+    return null;
+  }
+
+  function citationUrlFor(label, sources) {
+    var match = findSourceForCitation(label, sources);
+    return match && isSafeUrl(match.url) ? match.url : "";
+  }
+
+  function citePillHtml(label, sources) {
+    var slug = sourceSlug(label);
+    var url = citationUrlFor(label, sources);
+    var anchorAttrs = url
+      ? ' href="' + escapeHtml(url) + '" target="_blank" rel="noopener noreferrer"'
+      : ' href="#sources"';
+    return '<a class="vm-cite-pill"' + anchorAttrs +
+      ' data-vm-cite="' + escapeHtml(slug) + '" onclick="event.stopPropagation()">' +
+      escapeHtml(slug) + '</a>';
+  }
+
+  /* Re-run after async source metadata arrives: upgrade every rendered pill to
+     a real source link; unmatched pills open the shared sources drawer. */
+  function hydrateCitePills(rootEl, sources) {
+    if (!rootEl || typeof rootEl.querySelectorAll !== "function") return;
+    var pool = sourcePool(sources);
+    if (pool.length && typeof window !== "undefined") {
+      try { window.VM_LAST_SOURCES = pool; } catch (e) {}
+    }
+    var pills = rootEl.querySelectorAll(".vm-cite-pill");
+    for (var i = 0; i < pills.length; i++) {
+      var pill = pills[i];
+      var label = (pill.getAttribute && pill.getAttribute("data-vm-cite")) || pill.textContent || "";
+      var url = citationUrlFor(label, pool);
+      if (url && typeof pill.setAttribute === "function") {
+        pill.setAttribute("href", url);
+        pill.setAttribute("target", "_blank");
+        pill.setAttribute("rel", "noopener noreferrer");
+        if (pill.setAttribute) pill.setAttribute("title", label);
+        pill.onclick = function (e) { if (e && e.stopPropagation) e.stopPropagation(); };
+      } else {
+        if (pill.setAttribute) {
+          pill.setAttribute("href", "#sources");
+          pill.setAttribute("title", "View sources for " + label);
+        }
+        if (pill.removeAttribute) {
+          pill.removeAttribute("target");
+          pill.removeAttribute("rel");
+        }
+        pill.onclick = function (e) {
+          if (e) {
+            if (e.preventDefault) e.preventDefault();
+            if (e.stopPropagation) e.stopPropagation();
+          }
+          if (typeof window !== "undefined" && typeof window.VMOpenSourcesDrawer === "function") {
+            window.VMOpenSourcesDrawer(rootEl, pool);
+          }
+        };
+      }
+    }
+  }
+
+  /* Fallback for pills rendered before metadata arrives (or with no match):
+     a delegated handler keeps every pill clickable. hydrateCitePills attaches a
+     more specific handler once sources are known, which marks the event handled. */
+  if (typeof document !== "undefined" && typeof document.addEventListener === "function") {
+    document.addEventListener("click", function (ev) {
+      if (!ev || ev.defaultPrevented) return;
+      var target = ev.target;
+      if (!target || typeof target.closest !== "function") return;
+      var pill = target.closest(".vm-cite-pill");
+      if (!pill || (pill.getAttribute && pill.getAttribute("href") !== "#sources")) return;
+      if (ev.preventDefault) ev.preventDefault();
+      if (ev.stopPropagation) ev.stopPropagation();
+      if (typeof window !== "undefined" && typeof window.VMOpenSourcesDrawer === "function") {
+        var root = (typeof pill.closest === "function" && pill.closest(".assistant-message")) || pill;
+        window.VMOpenSourcesDrawer(root, window.VM_LAST_SOURCES || []);
+      }
+    });
+  }
+
+  function canonicalDomain(value) {
+    var v = decodeEntities(value || "").trim();
+    if (!v) return "";
+    if (/^https?:\/\//i.test(v)) {
+      var host = hostnameFromUrl(v);
+      return host;
+    }
+    return v.replace(/^www\./i, "").split(/[\/?#]/)[0].replace(/:\d+$/, "").toLowerCase();
   }
 
   function entityLogoUrl(domainOrLogo) {
     var v = decodeEntities(domainOrLogo || "").trim();
-    if (/^https?:\/\//i.test(v)) return v;
-    var domain = v.replace(/^www\./i, "").split("/")[0];
-    if (!domain || !/^[a-z0-9.-]+$/i.test(domain)) return "";
+    // An explicit image URL is already a verified logo asset.
+    if (/^https?:\/\//i.test(v) && /\.(?:png|jpe?g|gif|webp|svg)(?:\?|$)/i.test(v)) return v;
+    var domain = canonicalDomain(v);
+    if (!domain || !/^[a-z0-9.-]+$/.test(domain) || domain.indexOf(".") === -1) return "";
     return "https://www.google.com/s2/favicons?domain=" + encodeURIComponent(domain) + "&sz=128";
   }
 
@@ -2800,12 +2931,15 @@ window.VMRichRender = (function () {
     out = out.replace(/\[\[ENTITY:\s*([^\]\n]+)\]\]/gi, function (m, body) {
       var parts = body.split("|").map(function (p) { return String(p || "").trim(); });
       if (parts.length < 3) return m;
-      var url = isSafeUrl(parts[3]) ? parts[3] : "";
+      var url = isSafeUrl(parts[3]) ? parts[3] : (isSafeUrl(parts[2]) ? parts[2] : "");
       items.push({ name: parts[0] || "Entity", subtitle: parts[1] || "", logo: parts[2] || "", url: url, desc: parts[4] || "" });
       return "\uFFF8E" + (items.length - 1) + "\uFFF8E";
     });
-    // Fallback: numbered bold markdown links ("1. **[Name](https://...)** — Subtitle")
-    if (!items.length) {
+    // Fallback: numbered bold markdown links ("1. **[Name](https://...)** — Subtitle").
+    // Skip this fallback for multi-attribute Markdown comparison tables so a
+    // semantic matrix comparison is never converted into entity cards.
+    var hasMarkdownTable = /^\s*\|?[^\n|]+\|[^\n]*\n\s*\|?[\s:|-]+\|[^\n]*$/m.test(out);
+    if (!items.length && !hasMarkdownTable) {
       out = out.replace(/^\s*\d+\.\s*\*{0,2}\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)\*{0,2}(?:\s*[—–-]\s*([^\n]+))?/gmi,
         function (m, name, url, sub) {
           items.push({ name: name, subtitle: (sub || "").trim(), logo: url, url: url, desc: "" });
@@ -2818,7 +2952,7 @@ window.VMRichRender = (function () {
   // Named/【】 citations become pills; numeric [1] markers stay untouched.
   var CITE_RE = /【([^】]+)】|\[([A-Za-z][A-Za-z0-9 .&'\-]{1,40})\](?!\()/g;
 
-  function render(text) {
+  function render(text, sourceMetadata) {
     if (text == null) return "";
     var t = String(text);
     if (!t.trim()) return "";
@@ -2919,7 +3053,7 @@ window.VMRichRender = (function () {
     }
 
     html = html.replace(/\uFFF7C(\d+)\uFFF7C/g, function (m, idx) {
-      return citePillHtml(citeStore[idx] || "");
+      return citePillHtml(citeStore[idx] || "", sourceMetadata);
     });
 
     // Restore Stage 3 custom elements before sanitization so the sanitizer
@@ -2944,6 +3078,8 @@ window.VMRichRender = (function () {
   return {
     render: render,
     renderEntityLogoList: renderEntityLogoList,
+    hydrateCitePills: hydrateCitePills,
+    findSourceForCitation: findSourceForCitation,
     decodeEntities: decodeEntities,
     sourceSlug: sourceSlug
   };
@@ -3311,7 +3447,7 @@ if (typeof window !== "undefined" && typeof window.addEventListener === "functio
 // VMEnrichAssistantReply - enrich a completed assistant bubble
 // Plain/simple answers are left as plain text (no behavior change).
 // ---------------------------------------------------------------------
-window.VMEnrichAssistantReply = function (bub, fullText) {
+window.VMEnrichAssistantReply = function (bub, fullText, sourceMetadata, sources) {
   "use strict";
   if (!bub || !fullText || !fullText.trim()) return;
   if (typeof window.VMPresentationSelector === "undefined" ||
@@ -3325,13 +3461,21 @@ window.VMEnrichAssistantReply = function (bub, fullText) {
     // short answers with no markdown markers stay as plain text.
     var hasMd = /\*\*|\*[^*]|^#{1,6}\s|^[-*+]\s|^\d+\.\s|```|~~~|\|.*\|.*\n.*\|[-: ]|^>\s|\[.+\]\(.+\)|^---+$/m.test(t);
     var hasEntity = /\[\[ENTITY:/i.test(t);
-    if (fmt === "plain" && !hasMd && !hasEntity) return;
-    var html = window.VMRichRender.render(t);
+    var hasCitation = /【[^】]+】|\[[A-Za-z][A-Za-z0-9 .&'\-]{1,40}\](?!\()/m.test(t);
+    if (fmt === "plain" && !hasMd && !hasEntity && !hasCitation) return;
+    var pillSources = (Array.isArray(sourceMetadata) && sourceMetadata.length)
+      ? sourceMetadata
+      : (Array.isArray(sources) ? sources : []);
+    var html = window.VMRichRender.render(t, pillSources);
     if (!html || !html.trim()) return;
     // For very short pure-text that rendered to just a simple <p>, keep plain
     // to avoid unnecessary DOM churn — but only if no markdown was present.
-    if (fmt === "plain" && !hasMd && !hasEntity) return;
+    if (fmt === "plain" && !hasMd && !hasEntity && !hasCitation) return;
     bub.innerHTML = html;
+    // Re-run pill hydration now that evt.done may have delivered source metadata.
+    if (pillSources.length && typeof window.VMRichRender.hydrateCitePills === "function") {
+      window.VMRichRender.hydrateCitePills(bub, pillSources);
+    }
     // Wrap tables for horizontal scrolling on mobile/desktop without dropping content.
     window.VMWrapReplyTables(bub);
     // Post-render formatting: syntax highlighting, math, copy buttons.

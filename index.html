@@ -2152,7 +2152,7 @@
   .vm-entity-subtitle { color:#c3d4e0; font-weight:500; }
   .vm-entity-desc { display:block; color:#b8c7d4; font-size:12px; line-height:1.5; margin-top:3px; text-decoration:none; }
   a.vm-entity-desc:hover,.vm-entity-desc:hover { color:#d7e8f2; }
-  .vm-standalone-media { width:100%; max-width:420px; max-height:280px; border-radius:14px; object-fit:cover; display:block; }
+  .vm-standalone-media { width:100%; max-width:380px; max-height:240px; border-radius:12px; object-fit:cover; display:block; }
   @media(max-width:768px){ .vm-standalone-media { max-width:100%; } }
   .msg-toolbar:hover{ opacity:1; }
   /* Desktop conversation layout: full-edge chat with no centered void.
@@ -2233,10 +2233,11 @@
 
   /* Research images from live search evidence (single card / side-by-side / scroll row). */
   .bubble.ai-rich .vm-research-images{ margin:10px 0; display:flex; flex-direction:column; gap:8px; }
-  .bubble.ai-rich .vm-research-card{ display:flex; flex-direction:column; gap:6px; background:#0b1220; border:1px solid rgba(148,163,184,0.14); border-radius:10px; padding:8px; flex:0 0 auto; min-width:150px; max-width:260px; }
-  .bubble.ai-rich .vm-research-card img{ width:100%; height:auto; aspect-ratio:4/3; object-fit:cover; display:block; border-radius:8px; }
+  .bubble.ai-rich .vm-research-card{ display:flex; flex-direction:column; gap:6px; background:#0b1220; border:1px solid rgba(148,163,184,0.14); border-radius:12px; padding:8px; flex:0 0 auto; min-width:150px; max-width:380px; }
+  .bubble.ai-rich .vm-research-card img{ width:100%; height:auto; max-width:380px; max-height:240px; aspect-ratio:4/3; object-fit:cover; display:block; border-radius:12px; }
   .bubble.ai-rich .vm-research-credit{ font-size:10px; color:rgba(255,255,255,0.6); text-align:center; line-height:1.3; overflow-wrap:break-word; }
-  .bubble.ai-rich .vm-research-card a{ text-decoration:none; }
+  .bubble.ai-rich a.vm-research-credit{ color:inherit; text-decoration:underline dotted rgba(255,255,255,0.35); text-underline-offset:2px; }
+  .bubble.ai-rich .vm-research-card > a{ text-decoration:none; }
   @media(max-width:640px){ .bubble.ai-rich .vm-research-card{ min-width:140px; max-width:none; } }
 
   /* Image-left / text-right result cards from research evidence.
@@ -2244,7 +2245,7 @@
      Stacks vertically on narrow screens. */
   .bubble.ai-rich .vm-image-left-cards{ margin:10px 0; display:flex; flex-direction:column; gap:10px; }
   .bubble.ai-rich .vm-image-left-card{ display:flex; gap:12px; align-items:flex-start; border:1px solid rgba(148,163,184,0.14); border-radius:10px; background:#0b1220; padding:10px; min-width:0; }
-  .bubble.ai-rich .vm-image-left-card img{ width:96px; height:96px; object-fit:cover; border-radius:8px; flex:0 0 96px; margin:0; }
+  .bubble.ai-rich .vm-image-left-card img{ width:96px; height:96px; max-width:380px; max-height:240px; object-fit:cover; border-radius:12px; flex:0 0 96px; margin:0; }
   .bubble.ai-rich .vm-image-left-body{ flex:1; min-width:0; display:flex; flex-direction:column; gap:4px; }
   .bubble.ai-rich .vm-image-left-name{ font-weight:700; font-size:14px; color:#e2e8f0; margin:0 0 2px; overflow-wrap:break-word; }
   .bubble.ai-rich .vm-image-left-credit{ font-size:10px; color:rgba(255,255,255,0.6); margin-top:auto; overflow-wrap:break-word; }
@@ -6612,15 +6613,44 @@ function VMSourceSlug(value) {
         .replace(/[^a-z0-9]+/g, "").slice(0, 24) || "source";
 }
 
+/* Merge source_metadata (SSE) and sources (legacy SSE) into one pill lookup. */
+function VMCombinedCitationsSources(sourceMetadata, sources) {
+    var out = [], seen = {};
+    [sourceMetadata, sources].forEach(function (list) {
+        if (!Array.isArray(list)) return;
+        list.forEach(function (s) {
+            if (!s) return;
+            var key = String(s.url || s.domain || s.title || s.name || "").toLowerCase();
+            if (!key || seen[key]) return;
+            seen[key] = true;
+            out.push(s);
+        });
+    });
+    return out;
+}
+
+/* Re-run after evt.done: upgrade every rendered .vm-cite-pill to a real link.
+   Unmatched pills open the sources drawer, so none are ever dead. */
+function VMHydrateCitationPills(bubbleEl, sourceMetadata, sources) {
+    var bub = bubbleEl && bubbleEl.querySelector ? (bubbleEl.querySelector(".bubble") || bubbleEl) : bubbleEl;
+    var list = VMCombinedCitationsSources(sourceMetadata, sources);
+    if (list.length) { try { window.VM_LAST_SOURCES = list; } catch (e) {} }
+    if (bub && window.VMRichRender && typeof window.VMRichRender.hydrateCitePills === "function") {
+        window.VMRichRender.hydrateCitePills(bub, list);
+    }
+    return list;
+}
+
 /* Replace 【SourceName】 / [SourceName] markers with modern inline domain pills.
    Pills link straight to the matched source URL, or open the sources drawer. */
-function renderInlineCitations(bubbleEl, sourceMetadata) {
+function renderInlineCitations(bubbleEl, sourceMetadata, sources) {
     if (!bubbleEl) return;
     var bub = bubbleEl.querySelector(".bubble") || bubbleEl;
     if (!bub) return;
-    var sources = Array.isArray(sourceMetadata) ? sourceMetadata : [];
+    var allSources = VMCombinedCitationsSources(sourceMetadata, sources);
+    VMHydrateCitationPills(bubbleEl, allSources, null);
     var bySlug = {}, byName = {};
-    sources.forEach(function (s) {
+    allSources.forEach(function (s) {
         if (!s) return;
         var slug = VMSourceSlug(s.domain || s.name || "");
         if (!(slug in bySlug)) bySlug[slug] = s;
@@ -6643,7 +6673,10 @@ function renderInlineCitations(bubbleEl, sourceMetadata) {
             if (m.index > last) frag.appendChild(document.createTextNode(text.slice(last, m.index)));
             var raw = VMDecodeHtmlEntities((m[1] || m[2] || "").trim());
             var slug = VMSourceSlug(raw);
-            var src = bySlug[slug] || byName[raw.toLowerCase()] || null;
+            var matched = (window.VMRichRender && typeof window.VMRichRender.findSourceForCitation === "function")
+                ? window.VMRichRender.findSourceForCitation(raw, allSources)
+                : null;
+            var src = matched || bySlug[slug] || byName[raw.toLowerCase()] || null;
             var pill = document.createElement("a");
             pill.className = "vm-cite-pill";
             pill.textContent = slug;
@@ -6652,12 +6685,14 @@ function renderInlineCitations(bubbleEl, sourceMetadata) {
                 pill.target = "_blank";
                 pill.rel = "noopener noreferrer";
                 pill.title = VMDecodeHtmlEntities(src.title || src.name || raw);
+                pill.onclick = function (e) { if (e && e.stopPropagation) e.stopPropagation(); };
             } else {
                 pill.href = "#sources";
                 pill.title = raw;
                 pill.onclick = function (e) {
-                    e.preventDefault();
-                    VMOpenSourcesDrawer(bubbleEl, sources);
+                    if (e && e.stopPropagation) e.stopPropagation();
+                    if (e && e.preventDefault) e.preventDefault();
+                    VMOpenSourcesDrawer(bubbleEl, allSources);
                 };
             }
             frag.appendChild(pill);
@@ -6666,6 +6701,21 @@ function renderInlineCitations(bubbleEl, sourceMetadata) {
         if (last < text.length) frag.appendChild(document.createTextNode(text.slice(last)));
         node.parentNode.replaceChild(frag, node);
     });
+}
+
+/* Skip favicons, site banners and social-card previews — they add no visual evidence. */
+function VMIsGenericResearchImage(url) {
+    var v = String(url || "").trim().toLowerCase();
+    if (!v || v.indexOf("data:") === 0) return true;
+    if (v.indexOf("google.com/s2/favicons") !== -1 || v.indexOf("favicon.ico") !== -1) return true;
+    var generic = ["favicon", "icon", "logo", "banner", "og-image", "og_image", "ogimage",
+        "twitter-image", "twitter_image", "twitter-card", "twitter_card", "social-preview",
+        "socialpreview", "share-image", "share_image", "preview", "header", "hero-banner",
+        "hero_banner", "sprite", "placeholder", "pixel", "1x1", "loading"];
+    for (var i = 0; i < generic.length; i++) {
+        if (v.indexOf(generic[i]) !== -1) return true;
+    }
+    return false;
 }
 
 /* â”€â”€ Research images: render real, relevant images from web-search evidence
@@ -6685,7 +6735,8 @@ function VMRenderResearchImages(bubbleEl, sourceMetadata) {
 
     // Only sources with a usable, directly-fetched image.
     var imgs = sourceMetadata.filter(function (s) {
-        return s && s.image && /^https?:\/\//i.test(s.image) && s.url;
+        return s && s.image && /^https?:\/\//i.test(s.image) && s.url &&
+               !VMIsGenericResearchImage(s.image);
     });
     if (!imgs.length) return;
 
@@ -6747,28 +6798,32 @@ function VMRenderResearchImages(bubbleEl, sourceMetadata) {
     function buildResearchCard(s, featured) {
         var card = document.createElement("div");
         card.className = "vm-research-card";
-        card.style.cssText = "display:flex; flex-direction:column; gap:6px; background:#0b1220; border:1px solid rgba(148,163,184,0.14); border-radius:10px; padding:8px; flex:0 0 auto;" + (featured ? " min-width:260px; max-width:420px;" : " min-width:150px; max-width:260px;");
+        card.style.cssText = "display:flex; flex-direction:column; gap:6px; background:#0b1220; border:1px solid rgba(148,163,184,0.14); border-radius:12px; padding:8px; flex:0 0 auto;" + (featured ? " min-width:260px; max-width:380px;" : " min-width:150px; max-width:380px;");
 
         var link = document.createElement("a");
         link.href = s.url;
         link.target = "_blank";
         link.rel = "noopener noreferrer";
-        link.style.cssText = "display:block;border-radius:8px;overflow:hidden;background:#0f172a;border:1px solid rgba(148,163,184,0.12);text-decoration:none;";
+        link.style.cssText = "display:block;max-width:380px;border-radius:12px;overflow:hidden;background:#0f172a;border:1px solid rgba(148,163,184,0.12);text-decoration:none;";
         link.onclick = function (ev) { ev.stopPropagation(); };
 
         var img = document.createElement("img");
         img.src = s.image;
-        img.alt = s.name || s.title || "source image";
+        img.alt = VMDecodeHtmlEntities(s.name || s.title || "source image");
         img.loading = "lazy";
         if (featured) img.classList.add("vm-standalone-media");
-        img.style.cssText = "width:100%;height:auto;" + (featured ? "aspect-ratio:16/9;" : "aspect-ratio:4/3;") + "object-fit:cover;display:block;border-radius:8px;";
+        img.style.cssText = "width:100%;max-width:380px;max-height:240px;height:auto;" + (featured ? "aspect-ratio:16/9;" : "aspect-ratio:4/3;") + "object-fit:cover;display:block;border-radius:12px;";
         img.onerror = function () { card.style.display = "none"; };
         img.onload = function () { card.style.display = ""; };
         link.appendChild(img);
         card.appendChild(link);
 
-        var cap = document.createElement("div");
+        var cap = document.createElement("a");
         cap.className = "vm-research-credit";
+        cap.href = s.url;
+        cap.target = "_blank";
+        cap.rel = "noopener noreferrer";
+        cap.onclick = function (ev) { ev.stopPropagation(); };
         var name = s.name || (s.domain ? s.domain.split(".")[0].charAt(0).toUpperCase() + s.domain.split(".")[0].slice(1) : "Source");
         cap.textContent = VMDecodeHtmlEntities(s.image_credit ? s.image_credit : name);
         cap.style.cssText = "font-size:10px;color:rgba(255,255,255,0.6);text-align:center;line-height:1.3;overflow-wrap:break-word;";
@@ -6799,6 +6854,7 @@ function VMRenderImageLeftTextRightCards(bubbleEl, sourceMetadata) {
     var cards = sourceMetadata.filter(function (s) {
         return s && s.image && /^https?:\/\//i.test(s.image) && s.url &&
                (s.name || s.title || s.domain) &&
+               !VMIsGenericResearchImage(s.image) &&
                !renderedImages.has(s.image);
     });
     if (!cards.length) return;
@@ -6823,7 +6879,7 @@ function VMRenderImageLeftTextRightCards(bubbleEl, sourceMetadata) {
         img.src = s.image;
         img.alt = s.name || s.title || "source image";
         img.loading = "lazy";
-        img.style.cssText = "width:96px;height:96px;object-fit:cover;display:block;border-radius:8px;flex:0 0 96px;";
+        img.style.cssText = "width:96px;height:96px;max-width:380px;max-height:240px;object-fit:cover;display:block;border-radius:12px;flex:0 0 96px;";
         img.onerror = function () { card.style.display = "none"; };
         img.onload = function () { card.style.display = ""; };
         link.appendChild(img);
@@ -14039,6 +14095,12 @@ window.send = async function () {
                         _vmPendingAssistantText = fullReply;
                     }
                     if (bubbleEl && fullReply) VMSetLiveAssistantText(bubbleEl.querySelector(".bubble"), fullReply);
+                    /* Some streams attach source evidence to the completion event. */
+                    if (Array.isArray(evt.sources) && evt.sources.length) streamSources = evt.sources;
+                    if (Array.isArray(evt.source_metadata) && evt.source_metadata.length) {
+                        streamSourceMetadata = evt.source_metadata;
+                        streamConfidence = evt.research_confidence || streamConfidence;
+                    }
                     streamMeta = evt;
                     streamDone = true;
                     _vmStreamDone = true;
@@ -14073,10 +14135,14 @@ window.send = async function () {
                 if (_vmActivityRoot && _vmActivityRoot.parentNode === _bub) _bub.removeChild(_vmActivityRoot);
                 if (typeof window.VMEnrichAssistantReply === "function") {
                     try {
-                        window.VMEnrichAssistantReply(_bub, fullReply);
+                        window.VMEnrichAssistantReply(_bub, fullReply, streamSourceMetadata, streamSources);
                     } catch (e) {
                         console.warn("[VMEnrichAssistantReply] stream enrichment failed, keeping plain text:", e);
                     }
+                }
+                /* evt.done source payloads can arrive after earlier text chunks. */
+                if (typeof window.VMHydrateCitationPills === "function") {
+                    try { VMHydrateCitationPills(_bub, streamSourceMetadata, streamSources); } catch (e) {}
                 }
                 if (_vmActivityRoot) _bub.insertBefore(_vmActivityRoot, _bub.firstChild);
             }
@@ -14102,7 +14168,7 @@ window.send = async function () {
            never show empty or fake source lists. */
         if (bubbleEl && streamSourceMetadata.length && streamSourceMetadata.some(function (s) { return s && s.url && s.domain; })) {
             renderSourcesPanel(bubbleEl, streamSourceMetadata, streamConfidence);
-            renderInlineCitations(bubbleEl, streamSourceMetadata);
+            renderInlineCitations(bubbleEl, streamSourceMetadata, streamSources);
             // Render real research images (with attribution + source links) when
             // search evidence included them. Graceful no-op if none have images.
             VMRenderResearchImages(bubbleEl, streamSourceMetadata);
