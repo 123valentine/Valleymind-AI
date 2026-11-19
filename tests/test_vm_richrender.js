@@ -618,5 +618,41 @@ assert('hydrateEntityCards does not replace entity links/logo with news article 
   hydrateNewsImg.src.indexOf('domain=realmadrid.com') !== -1,
   hydrateNewsImg.src);
 
+// --- ENTITY regex must survive inline [citation] brackets + wrapped lines ----
+var inlineCiteEntityHtml = VMRichRender.render(
+  '[[ENTITY: Arsenal | Premier League contenders | arsenal.com | https://www.arsenal.com |  | Strong title push this season [espn.com].]]',
+  [{ title: 'ESPN', domain: 'espn.com', url: 'https://www.espn.com/football' }]
+);
+assert('inline [espn.com] citation does not leak raw ENTITY syntax or closing brackets',
+  inlineCiteEntityHtml.indexOf('[[ENTITY:') === -1 &&
+  inlineCiteEntityHtml.indexOf(']]') === -1 &&
+  inlineCiteEntityHtml.indexOf('| Premier League contenders | arsenal.com') === -1 &&
+  inlineCiteEntityHtml.indexOf('data-vm-entity-name="Arsenal"') !== -1,
+  inlineCiteEntityHtml.slice(0, 460));
+assert('inline [espn.com] citation becomes a real pill inside the entity description',
+  inlineCiteEntityHtml.indexOf('vm-entity-row') !== -1 &&
+  inlineCiteEntityHtml.indexOf('Strong title push this season') !== -1 &&
+  inlineCiteEntityHtml.indexOf('class="vm-cite-pill"') !== -1 &&
+  inlineCiteEntityHtml.indexOf('href="https://www.espn.com/football"') !== -1,
+  inlineCiteEntityHtml.slice(0, 460));
+
+var wrappedEntityHtml = VMRichRender.render(
+  '[[ENTITY: Paris Saint-Germain | Ligue 1 giants\n| psg.fr | https://en.psg.fr |  | Domestic dominance and a European push [espn.com].]]'
+);
+assert('multi-line entity explanation parses into a clean card',
+  wrappedEntityHtml.indexOf('[[ENTITY:') === -1 &&
+  wrappedEntityHtml.indexOf(']]') === -1 &&
+  wrappedEntityHtml.indexOf('data-vm-entity-name="Paris Saint-Germain"') !== -1 &&
+  wrappedEntityHtml.indexOf('Domestic dominance') !== -1,
+  wrappedEntityHtml.slice(0, 460));
+
+var dedupNameHtml = VMRichRender.render(
+  '[[ENTITY: Bayern MunichMunich | Bundesliga giants | fcbayern.de | https://www.fcbayern.de |  | Record champions.]]'
+);
+assert('repeated trailing word in entity name is deduplicated',
+  dedupNameHtml.indexOf('data-vm-entity-name="Bayern Munich"') !== -1 &&
+  dedupNameHtml.indexOf('MunichMunich') === -1,
+  dedupNameHtml.slice(0, 460));
+
 console.log('RENDER_TESTS: ' + ok + ' passed, ' + fail + ' failed');
 if (fail) process.exit(1);

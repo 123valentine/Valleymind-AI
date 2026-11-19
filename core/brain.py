@@ -244,7 +244,7 @@ FORMAT RULES (choose the right format; keep these in one consistent style):
 - Explanation → short intro, then headings only if the answer is long.
 - Steps/how-to → numbered list.
 - Multi-attribute comparison (for example comparing pricing, speed and context window) → a real markdown pipe table (header row, separator row like |---|---|, data rows). Never use a code fence for tables, never use dash-line "ASCII tables", never output tabular data as plain aligned text.
-- List/name/mention/recommend/rank of brands, AI models, apps, products, movies, clubs or tools → one entity block per item using exactly [[ENTITY: Name | Subtitle | official-entity-domain.com | https://official-entity-domain.com | LogoURL-or-blank | Concise 1-2 sentence explanation [source]]]. Fields 3 and 4 MUST be the entity's own official website (never a news/blog/review article URL); cite reporting sources only as inline [source] pills in the explanation. The final slot is REQUIRED: ALWAYS write a concrete 1-2 sentence explanation there, never leave it empty, and never put prose in the logo slot. Use the logo/icon URL supplied in the source context when available; leave that field blank rather than invent one. Place any citation marker at the end of that explanation sentence, not on a separate line. Do NOT use a table for a plain list.
+- List/name/mention/recommend/rank of brands, AI models, apps, products, movies, clubs or tools → one entity block per item using exactly [[ENTITY: Name | Subtitle | official-entity-domain.com | https://official-entity-domain.com | LogoURL-or-blank | 2-3 informative sentence explanation [source]]]. Fields 3 and 4 MUST be the entity's own official website (never a news/blog/review article URL); cite reporting sources only as inline [source] pills in the explanation. The final slot is REQUIRED: ALWAYS write a concrete, specific 2-3 sentence explanation there — cover a standout detail, the current context/form or why it matters right now, and a key strength — never a dry one-line blurb, never empty, and never put prose in the logo slot. Use the logo/icon URL supplied in the source context when available; leave that field blank rather than invent one. Place each citation marker immediately after the sentence it supports, not on a separate line. After the list, end with a brief, natural follow-up insight or an engaging topic-specific question (e.g. which option to compare deeper, analyze, or check schedules/pricing for) so the conversation keeps flowing. Do NOT use a table for a plain list.
 - If the user asks to both list and compare → entity blocks for the list, followed by one compact markdown comparison table.
 - Pros/cons → two short bullet lists or a two-column table.
 - Report/research → title, summary, sections, key points, sources.
@@ -2082,7 +2082,14 @@ class MarcusBrain:
                 "to source_metadata URLs). Place each citation immediately after the exact sentence "
                 "or entity explanation it supports — e.g. '...adopted in 2025 [sirumors].' Never "
                 "collect citations on their own lines after a list or at the end of the message, "
-                "never repeat the same citation twice in a row, and never paste raw URLs into prose."
+                "never repeat the same citation twice in a row, and never paste raw URLs into prose. "
+                "Depth and flow: give each finding or item 2-3 informative, specific sentences "
+                "grounded in the live results — include concrete names, figures, dates, standout "
+                "details, current context and why it matters right now rather than a generic one-line "
+                "blurb. Then close every search-grounded reply with one brief, natural follow-up "
+                "insight or an engaging topic-specific question that invites the user to go deeper "
+                "(e.g. which item to compare, analyze tactically, or check current schedules/pricing "
+                "for). Keep the follow-up short, warm and relevant to what you just said."
             )
         presentation = _presentation_mode(user_message)
         if presentation == "matrix":
@@ -2094,32 +2101,38 @@ class MarcusBrain:
             sections.append(
                 "Presentation choice: this is an entity list/ranking. Put each named item on its own line using:\n"
                 "[[ENTITY: Name | Maker/Subtitle | official-entity-domain.com | https://official-entity-domain.com | "
-                "LogoURL-or-blank | Concise 1-2 sentence explanation [source]]]\n"
+                "LogoURL-or-blank | 2-3 informative sentence explanation [source]]]\n"
                 "Fields 3 and 4 MUST be the ENTITY'S OWN official website/domain (e.g. realmadrid.com, "
                 "liverpoolfc.com, openai.com, anthropic.com) — NEVER the URL/domain of a news article, "
                 "blog, or review site that wrote about the entity. News/reporting sources belong only as "
                 "inline citation pills inside the explanation text, e.g. 'Won 15 European titles [bbc]'. "
-                "The final explanation slot is MANDATORY for every card: write a concrete 1-2 sentence "
-                "description there even when the logo is blank. Never move that explanation into the logo "
-                "slot and never leave the explanation empty. The app renders these as 52px logo-left, "
-                "clickable-title-right cards using the entity's official domain. Use the exact official "
-                "domain, target URL, and Logo/Icon URL from the provided source context when available; "
-                "leave the logo field blank instead of inventing one. Put citations inline at the end of "
-                "the explanation sentence they support, never as trailing lines below the list. Do not wrap "
-                "the syntax in markdown or code fences, and do not use a table for this list."
+                "The final explanation slot is MANDATORY for every card: write a concrete, specific "
+                "2-3 sentence description there — a standout detail, the current context/form or why "
+                "it matters right now, and a key strength — even when the logo is blank; never a dry "
+                "one-line blurb. Never move that explanation into the logo slot and never leave it empty. "
+                "The app renders these as 52px logo-left, clickable-title-right cards using the entity's "
+                "official domain. Use the exact official domain, target URL, and Logo/Icon URL from the "
+                "provided source context when available; leave the logo field blank instead of inventing "
+                "one. Put each citation inline immediately after the sentence it supports, never as "
+                "trailing lines below the list. After the entity list, close with one brief, natural "
+                "follow-up insight or engaging topic-specific question so the conversation keeps flowing "
+                "(e.g. which club/model/option to compare deeper, analyze, or check current details for). "
+                "Do not wrap the syntax in markdown or code fences, and do not use a table for this list."
             )
         elif presentation == "combined":
             sections.append(
                 "Presentation choice: this asks to list AND compare. First put each named item on its own line using:\n"
                 "[[ENTITY: Name | Maker/Subtitle | official-entity-domain.com | https://official-entity-domain.com | "
-                "LogoURL-or-blank | Concise 1-2 sentence explanation [source]]]\n"
+                "LogoURL-or-blank | 2-3 informative sentence explanation [source]]]\n"
                 "Fields 3 and 4 MUST be the ENTITY'S OWN official website/domain — NEVER a news article "
                 "or blog URL. Cite news/review sources inline in the explanation as [source]. "
                 "The final explanation slot is MANDATORY for every card; keep explanations concrete and "
-                "inline-cited at the end of the supporting sentence. Then add one compact markdown "
+                "specific (2-3 sentences covering a standout detail, current context and a key strength) "
+                "with inline citations at the end of the supporting sentence. Then add one compact markdown "
                 "comparison table for the requested attributes. Use exact official domains, target URLs, "
                 "and Logo/Icon URLs from the provided source context when available; leave the logo field "
-                "blank instead of inventing one."
+                "blank instead of inventing one. Finish with a brief, natural follow-up insight or "
+                "engaging question tailored to the topic."
             )
 
         system_with_context = "\n".join(sections)

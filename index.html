@@ -7090,7 +7090,10 @@ function renderSourcesPanel(bubbleEl, sourceMetadata, confidence) {
     bar.appendChild(stack);
     // Prefer the shared bottom action row (right side) so the favicon stack
     // stays below the reply bubble and survives rich-render innerHTML swaps.
-    var toolbar = wrapper ? wrapper.querySelector(".msg-toolbar") : null;
+    // Ensure the shared action bar exists first, so the favicon stack is always
+    // the right-aligned inline element of the same bottom toolbar as the action
+    // buttons (never floating alone inside the bubble).
+    var toolbar = wrapper ? VMEnsureAssistantToolbar(wrapper, messageStore.length) : null;
     if (toolbar) toolbar.appendChild(bar);
     else bub.appendChild(bar);
 }
@@ -8189,6 +8192,84 @@ function removeThinkingIndicator(indicator) {
     indicator.remove();
 }
 
+/* Full bottom action bar shared by EVERY assistant reply. Live streamed replies
+   are built by VMEnsureLiveAssistantBubble with only a .bubble, so they never
+   received the Copy / Speak / Share / reaction / Regenerate buttons that
+   addMessage() creates for restored replies. Build/reuse the same bar here so
+   the left-side actions and the right-side inline sources pill always sit in
+   one horizontal toolbar at the bottom of the bubble. */
+function VMEnsureAssistantToolbar(wrapper, msgIndex) {
+    if (!wrapper || typeof wrapper.querySelector !== "function") return null;
+    var toolbar = wrapper.querySelector(".msg-toolbar");
+    if (toolbar) return toolbar;
+
+    toolbar = document.createElement("div");
+    toolbar.className = "msg-toolbar";
+    if (typeof msgIndex !== "number" || isNaN(msgIndex)) msgIndex = messageStore.length;
+    // Reactions read/write messageStore[msgIndex]; live streamed replies are not
+    // pushed by addMessage(), so make sure a slot exists before wiring them up.
+    if (!messageStore[msgIndex]) {
+        messageStore[msgIndex] = { role: "assistant", content: "", reaction: null };
+    }
+    try { if (window._lastUserText) wrapper.dataset.userText = window._lastUserText; } catch (e) {}
+    try { wrapper.dataset.persona = (typeof currentPersona !== 'undefined' && currentPersona) ? String(currentPersona) : 'marcus'; } catch (e) {}
+
+    var upBtn = document.createElement("button");
+    upBtn.innerHTML = '<i data-lucide="thumbs-up" style="width:15px;height:15px;"></i>';
+    upBtn.title = "Thumbs up";
+    upBtn.dataset.reaction = "up";
+    upBtn.dataset.index = msgIndex;
+    upBtn.onclick = function () { toggleReaction(this, msgIndex, "up"); };
+    toolbar.appendChild(upBtn);
+
+    var downBtn = document.createElement("button");
+    downBtn.innerHTML = '<i data-lucide="thumbs-down" style="width:15px;height:15px;"></i>';
+    downBtn.title = "Thumbs down";
+    downBtn.dataset.reaction = "down";
+    downBtn.dataset.index = msgIndex;
+    downBtn.onclick = function () { toggleReaction(this, msgIndex, "down"); };
+    toolbar.appendChild(downBtn);
+
+    var regenBtn = document.createElement("button");
+    regenBtn.innerHTML = '<i data-lucide="refresh-cw" style="width:15px;height:15px;"></i>';
+    regenBtn.title = "Regenerate";
+    regenBtn.onclick = function () { regenerateResponse(this); };
+    toolbar.appendChild(regenBtn);
+
+    var shareBtn = document.createElement("button");
+    shareBtn.innerHTML = '<i data-lucide="share-2" style="width:15px;height:15px;"></i>';
+    shareBtn.title = "Share";
+    shareBtn.onclick = function () { shareMessageText(this); };
+    toolbar.appendChild(shareBtn);
+
+    var playbackBtn = document.createElement("button");
+    playbackBtn.className = "util-btn playback-ctrl";
+    playbackBtn.innerHTML = '<i data-lucide="play" class="playback-icon" style="width:16px;height:16px;"></i>';
+    playbackBtn.title = "Play response aloud";
+    playbackBtn.onclick = function () { toggleVoicePlayback(this); };
+    toolbar.appendChild(playbackBtn);
+
+    var copyBtn = document.createElement("button");
+    copyBtn.innerHTML = '<i data-lucide="copy" style="width:15px;height:15px;"></i>';
+    copyBtn.title = "Copy response";
+    copyBtn.onclick = function () { copyMessageText(this); };
+    toolbar.appendChild(copyBtn);
+
+    var dotsBtn = document.createElement("button");
+    dotsBtn.innerHTML = '<i data-lucide="more-horizontal" style="width:15px;height:15px;"></i>';
+    dotsBtn.title = "More options";
+    dotsBtn.dataset.msgIndex = msgIndex;
+    dotsBtn.onclick = function (e) {
+        e.stopPropagation();
+        toggleMessageContextMenu(e, msgIndex);
+    };
+    toolbar.appendChild(dotsBtn);
+
+    wrapper.appendChild(toolbar);
+    if (typeof lucide !== "undefined" && lucide.createIcons) lucide.createIcons();
+    return toolbar;
+}
+
 /* addMessage("", "ai") intentionally does not append a .bubble for empty text,
    so streamed tokens need their own live bubble. Create (or reuse) one here and
    keep the activity tracker mounted directly above the streaming text. */
@@ -8220,6 +8301,9 @@ function VMEnsureLiveAssistantBubble(thinkingEl, regenCtx) {
         bubble.className = "bubble";
         wrapper.insertBefore(bubble, wrapper.firstChild);
     }
+    // A live streamed reply must have the same full bottom action bar as a
+    // restored/history reply (Copy, Speak, Share, reactions, Regenerate).
+    try { VMEnsureAssistantToolbar(wrapper, messageStore.length); } catch (e) {}
     if (thinkingEl && thinkingEl._vmActivity && thinkingEl._vmActivity.rootEl) {
         var root = thinkingEl._vmActivity.rootEl;
         if (root.parentNode !== bubble) bubble.insertBefore(root, bubble.firstChild);
@@ -14101,6 +14185,13 @@ window.send = async function () {
             addMessage(fullReply, "ai");
             var msgsC = document.getElementById("messages");
             bubbleEl = msgsC ? msgsC.lastElementChild : null;
+        }
+
+        /* Every completed assistant reply must show the full bottom action bar
+           (Copy / Speak / Share / reactions / Regenerate). addMessage() already
+           adds it for restored replies; live streamed replies get it here. */
+        if (bubbleEl && !streamError && fullReply) {
+            try { VMEnsureAssistantToolbar(bubbleEl, messageStore.length); } catch (e) {}
         }
 
         /* Enrich the finished reply, then put the activity tracker back above it.

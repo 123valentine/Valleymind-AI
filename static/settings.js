@@ -3214,6 +3214,23 @@ window.VMRichRender = (function () {
     return html + '</div>';
   }
 
+  function dedupeTrailingEntityNameWords(value) {
+    var raw = decodeEntities(value || "").trim();
+    if (!raw) return "";
+    var out = raw;
+    // Models sometimes emit the final word of a name twice with no separator:
+    // "Bayern MunichMunich" -> "Bayern Munich". The boundary is a capital
+    // letter, so ordinary words like "coco" are never touched.
+    out = out.replace(/(^|\s)([A-Z][A-Za-z'’\-]{1,})\2$/, function (m, lead, word) {
+      return lead + word;
+    });
+    // Also collapse a repeated trailing phrase: "Real Madrid Real Madrid".
+    out = out.replace(/(^|\s)([A-Z][A-Za-z'’\-]+(?:\s+[A-Z][A-Za-z'’\-]+){0,3})\s+\2$/i, function (m, lead, phrase) {
+      return lead + phrase;
+    });
+    return out.trim();
+  }
+
   function makeEntityItem(parts, sources) {
     var field2 = String(parts[2] || "").trim();
     var field3 = String(parts[3] || "").trim();
@@ -3244,7 +3261,7 @@ window.VMRichRender = (function () {
     }
 
     var item = {
-      name: String(parts[0] || "Entity").trim() || "Entity",
+      name: dedupeTrailingEntityNameWords(parts[0] || "Entity") || "Entity",
       subtitle: String(parts[1] || "").trim(),
       // Anchor identity to the entity's own official domain/URL (field 3/4),
       // never to a news/blog article that merely mentions the entity.
@@ -3290,9 +3307,10 @@ window.VMRichRender = (function () {
     var items = [];
     var out = String(text == null ? "" : text);
     // [[ENTITY: Name | Subtitle | Domain | URL | LogoURL-or-blank | Description]]
-    // Non-greedy to the first `]]` so inline citation markers like [sirumors]
-    // inside the explanation do not terminate the entity block early.
-    out = out.replace(/\[\[ENTITY:\s*([^\n]+?)\]\]/gi, function (m, body) {
+    // Match across newlines and stop only at the real closing `]]`, so inline
+    // citation markers like [espn.com] inside the explanation and wrapped,
+    // multi-line explanations parse cleanly without leaking raw `|`/`]]` text.
+    out = out.replace(/\[\[ENTITY:\s*([\s\S]*?)\]\]/gi, function (m, body) {
       var parts = body.split("|").map(function (p) { return String(p || "").trim(); });
       if (!parts.length || !parts[0]) return m;
       items.push(makeEntityItem(parts, sources));
