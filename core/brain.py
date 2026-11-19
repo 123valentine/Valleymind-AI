@@ -24,6 +24,7 @@ from core.source_intelligence import SourceIntelligence, EvidencePackage
 from core.memory import MemorySystem
 from core.memory_manager import MemoryManager
 from core.conversation_recovery import ConversationRecovery
+from core.router import _needs_contextual_research as _router_contextual_research
 from core.african_culture import (
     cultural_request_directives,
     resolve_language,
@@ -326,6 +327,24 @@ _CONTINUATION_PHRASES = frozenset({
 def _is_continuation_utterance(message: str) -> bool:
     text = str(message or "").strip().lower().rstrip(".,!?;:")
     return text in _CONTINUATION_PHRASES
+
+
+_ENTITY_CARD_RE = re.compile(
+    r"\b(?:compare|comparison|list|mention|recommend|top|best|three|3|four|4|five|5|"
+    r"versus|vs\.?|alternatives?|ranking)\b",
+    re.IGNORECASE,
+)
+_ENTITY_CARD_SUBJECT_RE = re.compile(
+    r"\b(?:brands?|ai(?:s|\s+models?)?|llms?|models?|apps?|tools?|movies?|films?|"
+    r"shows?|series|animes?|games?|software|products?|companies|clubs?|teams?)\b",
+    re.IGNORECASE,
+)
+
+
+def _wants_entity_cards(message: str) -> bool:
+    """True for list/recommend/compare requests about 3+ named entities."""
+    text = str(message or "")
+    return bool(_ENTITY_CARD_RE.search(text) and _ENTITY_CARD_SUBJECT_RE.search(text))
 
 
 
@@ -1929,6 +1948,23 @@ class MarcusBrain:
         if creator_context:
             sections.append(f"\nCreator-authored instructions:\n{creator_context}")
 
+        # ── Search-grounded citations + structured entity cards ─────────
+        if live_context and str(live_context).strip() and str(live_context).strip() != str(LIVE_DATA_UNAVAILABLE):
+            sections.append(
+                "Citation format: when a claim comes from the live search context, cite it inline "
+                "with a clean domain pill such as [domain.com] or 【SourceName】 (the app maps these "
+                "to source_metadata URLs). Never paste raw URLs into prose."
+            )
+        if _wants_entity_cards(user_message):
+            sections.append(
+                "Structured entity cards: when listing, recommending or comparing 3 or more brands, "
+                "AI models, apps, movies, tools or entities, put each item on its own line using:\n"
+                "[[ENTITY: Name | Maker/Subtitle | official-domain.com | https://official-domain.com | "
+                "Concise 1-2 sentence explanation]]\n"
+                "The app renders these as logo-left, clickable-title-right cards. Use the exact "
+                "official domain and target URL; do not wrap the syntax in markdown or code fences."
+            )
+
         system_with_context = "\n".join(sections)
         messages = [{"role": "system", "content": system_with_context}]
 
@@ -2155,6 +2191,48 @@ class MarcusBrain:
                 lines.append(f"{role.capitalize()}: {content[:240]}")
         return "\n".join(lines)
 
+    def _contextual_search_route(self, chat_id: str, message: str, route=None) -> dict:
+        """Resolve a route dict with contextual follow-up research instructions.
+
+        ``route`` may be a ``RouteDecision`` from :mod:`core.router` (which exposes
+        ``get``) or a plain dict. When absent, the last 6 memory turns are used
+        so indirect references ("who directed it?", "compare them") become a
+        standalone search query before the assistant answers.
+        """
+        if route is not None:
+            try:
+                needs = bool(route.get("needs_search"))
+                query = str(route.get("search_query") or "").strip()
+                if needs or query:
+                    return {
+                        "needs_search": needs or bool(query),
+                        "search_query": query or str(message or "").strip(),
+                        "reason": str(route.get("reasoning") or route.get("reason") or "Router search directive"),
+                    }
+            except Exception:
+                pass
+
+        try:
+            history = self.memory.get_chat(chat_id) or []
+        except Exception:
+            history = []
+        try:
+            result = _router_contextual_research(message, history)
+        except Exception as exc:
+            print(f"[CONTEXT ROUTE] contextual research check failed: {exc}")
+            result = {}
+        if not isinstance(result, dict) or not result.get("needs_search"):
+            return {"needs_search": False, "search_query": "", "reason": ""}
+        query = str(result.get("search_query") or "").strip()
+        if not query:
+            return {"needs_search": False, "search_query": "", "reason": ""}
+        print(f"[CONTEXT ROUTE] enriched search query: {query[:160]}")
+        return {
+            "needs_search": True,
+            "search_query": query,
+            "reason": str(result.get("reason") or "Contextual entity follow-up"),
+        }
+
     def _expand_continuation_query(self, chat_id: str, user_message: str) -> str:
         try:
             history = self.memory.get_chat(chat_id) or []
@@ -2232,7 +2310,7 @@ class MarcusBrain:
             print(f"[ERROR] Title generation failed: {exc}")
             return ""
 
-    def respond(self, message: str, chat_id: str = "", image_data: str = "", mongo_history: list = None, persist_image_data: bool = True) -> str:
+    def respond(self, message: str, chat_id: str = "", image_data: str = "", mongo_history: list = None, persist_image_data: bool = True, route=None) -> str:
         try:
             self.memory.reload()
             # Initialize activity event tracking for non-streaming responses.
@@ -2298,16 +2376,26 @@ class MarcusBrain:
             research_info = classify_research_intent(message, recent_context=self._recent_context_for_routing(cid))
             intent = research_info["intent"]
             research_domain = research_info.get("domain", "general")
+            contextual_route = self._contextual_search_route(cid, message, route=route)
             if directed_site:
                 intent = "search"
                 research_domain = "general"
+            elif contextual_route.get("needs_search") or contextual_route.get("search_query"):
+                # An indirect follow-up must search with the resolved topic, not
+                # with the bare pronoun-only user message.
+                intent = "search"
+                if research_domain == "general" and _wants_entity_cards(message):
+                    research_domain = "tech"
             if intent == "none":
                 print(f"[FAST-PATH] LLM classified intent '{intent}' — conversational, no search")
             else:
                 print(f"[LIVE PATH] intent '{intent}', domain='{research_domain}' — researching"
-                      + (f" (directed: {directed_site})" if directed_site else ""))
+                      + (f" (directed: {directed_site})" if directed_site else "")
+                      + (f" (contextual: {contextual_route.get('search_query', '')[:80]})" if contextual_route.get("needs_search") else ""))
                 search_message = directed_query if directed_site else message
-                if not directed_site and _is_continuation_utterance(message) and msg_count_before > 0:
+                if not directed_site and contextual_route.get("needs_search") and contextual_route.get("search_query"):
+                    search_message = contextual_route["search_query"]
+                elif not directed_site and _is_continuation_utterance(message) and msg_count_before > 0:
                     expanded = self._expand_continuation_query(cid, message)
                     if expanded and expanded != message:
                         search_message = expanded
@@ -2460,7 +2548,7 @@ class MarcusBrain:
                 pass
             return FALLBACK_RESPONSE
 
-    def stream_respond(self, message: str, chat_id: str = "", image_data: str = "", mongo_history: list = None, persist_image_data: bool = True, dedup_id: str = "", capability: str = "text", activity_session=None):
+    def stream_respond(self, message: str, chat_id: str = "", image_data: str = "", mongo_history: list = None, persist_image_data: bool = True, dedup_id: str = "", capability: str = "text", activity_session=None, route=None):
         try:
             self.memory.reload()
             message = (message or "").strip()
@@ -2519,9 +2607,16 @@ class MarcusBrain:
             # MODE B: user wants a copy-ready reply/message rather than a normal answer
             self._reply_mode = research_info.get("reason") in ("reply-writing", "copy-box")
             reply_mode = self._reply_mode
+            contextual_route = self._contextual_search_route(cid, message, route=route)
             if directed_site:
                 intent = "search"
                 research_domain = "general"
+            elif (contextual_route.get("needs_search") or contextual_route.get("search_query")) and not reply_mode:
+                # Resolve "who directed it?" / "compare them" into a standalone
+                # query before search runs, so plot/entity answers are grounded.
+                intent = "search"
+                if research_domain == "general":
+                    research_domain = "tech" if _wants_entity_cards(message) else "media"
             if intent == "none":
                 if reply_mode:
                     print(f"[REPLY MODE] Writing reply/message — no search")
@@ -2532,14 +2627,17 @@ class MarcusBrain:
                     yield {"reply_mode": True}
             else:
                 print(f"[LIVE PATH] intent '{intent}', domain='{research_domain}' — researching"
-                      + (f" (directed: {directed_site})" if directed_site else ""))
+                      + (f" (directed: {directed_site})" if directed_site else "")
+                      + (f" (contextual: {contextual_route.get('search_query', '')[:80]})" if contextual_route.get("needs_search") else ""))
                 search_message = directed_query if directed_site else message
-                if not directed_site and _is_continuation_utterance(message) and msg_count_before > 0:
+                if not directed_site and contextual_route.get("needs_search") and contextual_route.get("search_query"):
+                    search_message = contextual_route["search_query"]
+                elif not directed_site and _is_continuation_utterance(message) and msg_count_before > 0:
                     expanded = self._expand_continuation_query(cid, message)
                     if expanded and expanded != message:
                         search_message = expanded
 
-                yield {"intent": "searching_web", "query": message, "domain": research_domain}
+                yield {"intent": "searching_web", "query": search_message, "domain": research_domain}
                 with WebSearchAdapter.track_search(search_message) as search_act:
                     yield {"thinking_process": {"step": "searching", "label": "Searching the web..."}}
 

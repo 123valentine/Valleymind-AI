@@ -85,7 +85,8 @@ assert('render returns string', typeof r === 'string');
 assert('render escapes angle brackets', /<p>|<h1>|<ul>/.test(r));
 
 var withCite = render('See [1] and [SourceName] for details.');
-assert('render citations preserved', withCite.indexOf('[1]') !== -1 && withCite.indexOf('[SourceName]') !== -1);
+assert('numeric citations preserved', withCite.indexOf('[1]') !== -1);
+assert('named citations render pills', withCite.indexOf('vm-cite-pill') !== -1 && withCite.indexOf('[SourceName]') === -1);
 assert('render no placeholder leaked', withCite.indexOf('\uFFF7C') === -1);
 
 var r2 = render('<img src=x onerror=alert(1)>');
@@ -418,6 +419,26 @@ assert('stage3: concise short text renders as paragraph', hConcise.indexOf('Got 
 // Long formal text → NOT copy-ready even with copy-ready preference
 var hFormalLong = stage3Render("Dear Sir or Madam, I am writing to formally request the documentation regarding the project specifications that we discussed during our meeting last week. Please find attached the relevant forms and submit them by the end of the month.");
 assert('stage3: long formal text is not copy-ready', hFormalLong.length > 100, hFormalLong.slice(0,120));
+
+// --- Modern citation pills + HTML entity decoding -------------------------
+var citeEntityHtml = render('See 【Football &amp; News】 for details.');
+assert('bracket citation renders vm-cite-pill',
+  citeEntityHtml.indexOf('vm-cite-pill') !== -1 && citeEntityHtml.indexOf('【') === -1,
+  citeEntityHtml.slice(0, 160));
+assert('citation entities decoded (no raw &amp;)',
+  citeEntityHtml.indexOf('&amp;') === -1 &&
+  VMRichRender.decodeEntities('Football &amp; News') === 'Football & News',
+  citeEntityHtml.slice(0, 160));
+
+// --- Structured entity cards: logo-left / clickable-title-right -----------
+var entityHtml = render('[[ENTITY: Liverpool FC | Premier League club | liverpoolfc.com | https://www.liverpoolfc.com | Historic English football club]]');
+assert('entity syntax renders vm-entity-row',
+  entityHtml.indexOf('vm-entity-row') !== -1 && entityHtml.indexOf('[[ENTITY:') === -1,
+  entityHtml.slice(0, 200));
+assert('entity logo-left and clickable title-right',
+  /class="vm-entity-logo"[^>]*href="https:\/\/www\.liverpoolfc\.com"/.test(entityHtml) &&
+  /class="vm-entity-title"[^>]*href="https:\/\/www\.liverpoolfc\.com"/.test(entityHtml),
+  entityHtml.slice(0, 260));
 
 console.log('RENDER_TESTS: ' + ok + ' passed, ' + fail + ' failed');
 if (fail) process.exit(1);

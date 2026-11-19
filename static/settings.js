@@ -2486,9 +2486,19 @@ window.VMRichRender = (function () {
     // Stage 3 interactive / rich components (custom elements, sanitized safely).
     vm:1, "vm-choice":1, "vm-circle":1, "vm-card":1, "vm-copybox":1,
     "vm-card-title":1, "vm-card-desc":1, "vm-card-img":1,
+    sub:1, sup:1, small:1,
+  };
+  // Only these presentation classes survive sanitization (never arbitrary CSS).
+  var ALLOWED_CLASSES = {
+    "vm-cite":1, "vm-cite-pill":1,
+    "vm-entity-list":1, "vm-entity-row":1, "vm-entity-logo":1,
+    "vm-entity-logo-img":1, "vm-entity-monogram":1, "vm-entity-body":1,
+    "vm-entity-title":1, "vm-entity-subtitle":1, "vm-entity-desc":1,
+    "vm-standalone-media":1,
   };
   var ALLOWED_ATTRS = {
-    a: { href:1, title:1 },
+    a: { href:1, title:1, target:1, rel:1 },
+    span: { "data-vm-cite":1 },
     img: { src:1, alt:1, title:1, loading:1, onerror:1 },
     video: { src:1, controls:1, playsinline:1, preload:1 },
     input: { type:1, checked:1, disabled:1, readonly:1 },
@@ -2546,7 +2556,16 @@ window.VMRichRender = (function () {
           if (name === "onerror" && tag === "img" && /this\.style\.display\s*=\s*['"]none['"]/.test(a.value || "")) {
             // keep this specific safe handler
           } else if (name.slice(0, 2) === "on") { el.removeAttribute(name); continue; }
-          if (name === "style" || name === "class") { el.removeAttribute(name); continue; }
+          if (name === "style") { el.removeAttribute(name); continue; }
+          if (name === "class") {
+            var cls = String(a.value || "").split(/\s+/);
+            for (var ci = 0; ci < cls.length; ci++) {
+              if (cls[ci] && !ALLOWED_CLASSES[cls[ci]]) { el.removeAttribute(name); break; }
+            }
+            continue;
+          }
+          if (name === "target" && a.value !== "_blank") { el.removeAttribute(name); continue; }
+          if (name === "rel" && !/^(noopener|noreferrer)(?:\s+(noopener|noreferrer))*$/.test(String(a.value || ""))) { el.removeAttribute(name); continue; }
           // GFM column alignment arrives from marked as align="left|center|right".
           // Keep only those values; anything else is dropped. The matching
           // text-align is applied by CSS (style attributes are stripped above).
@@ -2712,12 +2731,102 @@ window.VMRichRender = (function () {
     } catch (e) { return html; }
   }
 
-  var CITE_RE = /\[(\d+|[A-Za-z][A-Za-z0-9 .&'-]*\d*)\]/g;
+  // Modern citation + entity presentation helpers ---------------------------
+  function decodeEntities(text) {
+    return String(text == null ? "" : text)
+      .replace(/&quot;/gi, '"')
+      .replace(/&#0*39;?/gi, "'")
+      .replace(/&apos;/gi, "'")
+      .replace(/&nbsp;/gi, " ")
+      .replace(/&amp;/gi, "&")
+      .replace(/&lt;/gi, "<")
+      .replace(/&gt;/gi, ">");
+  }
+
+  function sourceSlug(name) {
+    var s = decodeEntities(name || "").toLowerCase()
+      .replace(/^[【\[]+|[】\]]+$/g, "")
+      .replace(/\.(com|org|net|io|co|uk|tv|me|ai|fm|de|fr|es|it|jp|ca|au|xyz|info|biz|edu|gov)$/i, "");
+    s = s.replace(/[^a-z0-9]+/g, "");
+    return s.slice(0, 24) || "source";
+  }
+
+  function citePillHtml(label) {
+    var slug = sourceSlug(label);
+    return '<span class="vm-cite-pill" data-vm-cite="' + escapeHtml(slug) + '">' + escapeHtml(slug) + '</span>';
+  }
+
+  function entityLogoUrl(domainOrLogo) {
+    var v = decodeEntities(domainOrLogo || "").trim();
+    if (/^https?:\/\//i.test(v)) return v;
+    var domain = v.replace(/^www\./i, "").split("/")[0];
+    if (!domain || !/^[a-z0-9.-]+$/i.test(domain)) return "";
+    return "https://www.google.com/s2/favicons?domain=" + encodeURIComponent(domain) + "&sz=128";
+  }
+
+  function renderEntityLogoList(items) {
+    if (!Array.isArray(items) || !items.length) return "";
+    var html = '<div class="vm-entity-list">';
+    items.forEach(function (item, i) {
+      var url = isSafeUrl(item.url) ? item.url : "";
+      var logo = entityLogoUrl(item.logo || item.domain || "");
+      var monogram = escapeHtml((item.name || "?").trim().charAt(0).toUpperCase() || "?");
+      var title = escapeHtml(decodeEntities(item.name || "Entity"));
+      var subtitle = item.subtitle
+        ? ' <span class="vm-entity-subtitle">— ' + escapeHtml(decodeEntities(item.subtitle)) + '</span>' : "";
+      var desc = item.desc
+        ? (url
+            ? '<a class="vm-entity-desc" href="' + escapeHtml(url) + '" target="_blank" rel="noopener noreferrer">' + escapeHtml(decodeEntities(item.desc)) + '</a>'
+            : '<span class="vm-entity-desc">' + escapeHtml(decodeEntities(item.desc)) + '</span>')
+        : "";
+      html += '<div class="vm-entity-row">' +
+        (url ? '<a class="vm-entity-logo" href="' + escapeHtml(url) + '" target="_blank" rel="noopener noreferrer">' : '<span class="vm-entity-logo">') +
+          '<span class="vm-entity-monogram">' + monogram + '</span>' +
+          (logo ? '<img class="vm-entity-logo-img" src="' + escapeHtml(logo) + '" alt="" loading="lazy" onerror="this.style.display=\'none\'">' : '') +
+        (url ? '</a>' : '</span>') +
+        '<div class="vm-entity-body">' +
+          (url ? '<a class="vm-entity-title" href="' + escapeHtml(url) + '" target="_blank" rel="noopener noreferrer">' : '<span class="vm-entity-title">') +
+            escapeHtml(String(i + 1)) + '. ' + title + subtitle +
+          (url ? '</a>' : '</span>') + desc +
+        '</div></div>';
+    });
+    return html + '</div>';
+  }
+
+  function parseEntityBlocks(text) {
+    var items = [];
+    var out = String(text == null ? "" : text);
+    // [[ENTITY: Name | Subtitle | DomainOrLogoUrl | TargetUrl | Description]]
+    out = out.replace(/\[\[ENTITY:\s*([^\]\n]+)\]\]/gi, function (m, body) {
+      var parts = body.split("|").map(function (p) { return String(p || "").trim(); });
+      if (parts.length < 3) return m;
+      var url = isSafeUrl(parts[3]) ? parts[3] : "";
+      items.push({ name: parts[0] || "Entity", subtitle: parts[1] || "", logo: parts[2] || "", url: url, desc: parts[4] || "" });
+      return "\uFFF8E" + (items.length - 1) + "\uFFF8E";
+    });
+    // Fallback: numbered bold markdown links ("1. **[Name](https://...)** — Subtitle")
+    if (!items.length) {
+      out = out.replace(/^\s*\d+\.\s*\*{0,2}\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)\*{0,2}(?:\s*[—–-]\s*([^\n]+))?/gmi,
+        function (m, name, url, sub) {
+          items.push({ name: name, subtitle: (sub || "").trim(), logo: url, url: url, desc: "" });
+          return "\uFFF8E" + (items.length - 1) + "\uFFF8E";
+        });
+    }
+    return { text: out, items: items };
+  }
+
+  // Named/【】 citations become pills; numeric [1] markers stay untouched.
+  var CITE_RE = /【([^】]+)】|\[([A-Za-z][A-Za-z0-9 .&'\-]{1,40})\](?!\()/g;
 
   function render(text) {
     if (text == null) return "";
     var t = String(text);
     if (!t.trim()) return "";
+
+    // Structured entity cards are extracted before markdown processing so the
+    // [[ENTITY: ...]] syntax never leaks into the rendered reply.
+    var entityParts = parseEntityBlocks(t);
+    t = entityParts.text;
 
     // vm-fix19: convert dash-row/ASCII/fenced tabular text to real markdown tables
     try { t = _convertTabularText(t); } catch (e) {}
@@ -2779,9 +2888,9 @@ window.VMRichRender = (function () {
     // Extract stage-3 elements before marked processes the text.
     t = _stage3Extract(t);
     var citeStore = [];
-    var protectedText = t.replace(CITE_RE, function (m, inner) {
+    var protectedText = t.replace(CITE_RE, function (m, bracket, plain) {
       var idx = citeStore.length;
-      citeStore.push(inner);
+      citeStore.push(bracket || plain || "");
       return "\uFFF7C" + idx + "\uFFF7C";
     });
 
@@ -2810,7 +2919,7 @@ window.VMRichRender = (function () {
     }
 
     html = html.replace(/\uFFF7C(\d+)\uFFF7C/g, function (m, idx) {
-      return "<span class=\"vm-cite\">[" + escapeHtml(citeStore[idx] || "") + "]</span>";
+      return citePillHtml(citeStore[idx] || "");
     });
 
     // Restore Stage 3 custom elements before sanitization so the sanitizer
@@ -2820,10 +2929,24 @@ window.VMRichRender = (function () {
     var safe = sanitizeHtml(html);
     // vm-fix19 item 10: strip stray unrendered markdown markers (not in code)
     try { safe = _stripStrayMarkdown(safe); } catch (e) {}
+    // Restore structured entity rows as one grouped logo-left card list.
+    if (entityParts.items.length) {
+      var firstEntity = true;
+      safe = safe.replace(/\uFFF8E(\d+)\uFFF8E/g, function () {
+        if (!firstEntity) return "";
+        firstEntity = false;
+        return renderEntityLogoList(entityParts.items);
+      });
+    }
     return safe;
   }
 
-  return { render: render };
+  return {
+    render: render,
+    renderEntityLogoList: renderEntityLogoList,
+    decodeEntities: decodeEntities,
+    sourceSlug: sourceSlug
+  };
 })();
 
 // ---------------------------------------------------------------------
@@ -3201,12 +3324,13 @@ window.VMEnrichAssistantReply = function (bub, fullText) {
     // so raw ** * # - symbols never appear unrendered. Only truly plain
     // short answers with no markdown markers stay as plain text.
     var hasMd = /\*\*|\*[^*]|^#{1,6}\s|^[-*+]\s|^\d+\.\s|```|~~~|\|.*\|.*\n.*\|[-: ]|^>\s|\[.+\]\(.+\)|^---+$/m.test(t);
-    if (fmt === "plain" && !hasMd) return;
+    var hasEntity = /\[\[ENTITY:/i.test(t);
+    if (fmt === "plain" && !hasMd && !hasEntity) return;
     var html = window.VMRichRender.render(t);
     if (!html || !html.trim()) return;
     // For very short pure-text that rendered to just a simple <p>, keep plain
     // to avoid unnecessary DOM churn — but only if no markdown was present.
-    if (fmt === "plain" && !hasMd) return;
+    if (fmt === "plain" && !hasMd && !hasEntity) return;
     bub.innerHTML = html;
     // Wrap tables for horizontal scrolling on mobile/desktop without dropping content.
     window.VMWrapReplyTables(bub);

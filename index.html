@@ -2032,6 +2032,7 @@
   .assistant-message{align-self:flex-start;margin-left:0;margin-right:0;max-width:780px;width:-moz-fit-content;width:fit-content;display:flex;flex-direction:column;align-items:flex-start;text-align:left}
   .assistant-message .bubble{background:none;border:none;box-shadow:none;padding:0;margin:0;color:#dde3e7;white-space:pre-wrap;word-break:break-word;width:auto;text-align:left}
   .msg-toolbar{display:flex;align-items:center;gap:4px;margin-top:4px;padding-left:4px}
+  .msg-toolbar .vm-sources-bar{margin-left:auto;margin-top:0;padding-right:2px}
   .msg-toolbar button{background:none;border:none;cursor:pointer;padding:4px;border-radius:6px;display:flex;align-items:center;color:#64748b;transition:all 0.15s}
   .msg-toolbar button:hover{background:rgba(0,212,255,0.1)}
   .msg-toolbar .up-active{color:#00ff88 !important;background:rgba(0,255,136,0.1) !important}
@@ -2104,21 +2105,90 @@
   .bubble .vm-table-wrap th[align="right"],
   .bubble .vm-table-wrap td[align="right"]{ text-align:right; }
   .msg-toolbar{ opacity:0.72; transition:opacity .15s; }
+  /* ── Modern citation pills / favicon stack / entity cards ─────────────── */
+  .vm-cite-pill {
+    display:inline-flex; align-items:center; padding:1px 8px; margin:0 3px;
+    border-radius:999px; background:rgba(255,255,255,0.08);
+    border:1px solid rgba(0,212,255,0.22); color:#9fb3c8;
+    font-size:11.5px; font-weight:500; line-height:1.5; text-decoration:none;
+    vertical-align:baseline; cursor:pointer;
+    transition:background .15s ease,color .15s ease,border-color .15s ease;
+  }
+  .vm-cite-pill:hover { background:rgba(0,212,255,0.16); border-color:rgba(0,212,255,0.45); color:#e6f4f8; }
+  .vm-sources-bar { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top:6px; flex-wrap:wrap; }
+  .vm-sources-pill-stack { display:inline-flex; align-items:center; gap:7px; cursor:pointer; padding:2px 4px; border-radius:999px; }
+  .vm-source-favicon-stack { display:inline-flex; align-items:center; padding-left:7px; }
+  .vm-source-fav { width:24px; height:24px; border-radius:50%; border:2px solid #0b1922; margin-left:-7px; background:#fff; object-fit:cover; box-sizing:content-box; }
+  .vm-source-fav-fallback { display:inline-flex; align-items:center; justify-content:center; width:24px; height:24px; margin-left:-7px; border-radius:50%; border:2px solid #0b1922; background:#122532; color:#9fd8ee; font-size:11px; font-weight:700; box-sizing:content-box; }
+  .vm-sources-count-label { color:#9fb3c8; font-size:11.5px; font-weight:500; white-space:nowrap; }
+  .vm-sources-pill-stack:hover .vm-sources-count-label { color:#e6f4f8; }
+  .vm-sources-drawer-backdrop { position:fixed; inset:0; background:rgba(0,0,0,0.55); z-index:9998; opacity:0; transition:opacity .2s ease; }
+  .vm-sources-drawer-backdrop.open { opacity:1; }
+  .vm-sources-drawer {
+    position:fixed; left:0; right:0; bottom:0; z-index:9999; max-height:72vh; overflow-y:auto;
+    background:#0b1922; border-top:1px solid rgba(0,212,255,0.22);
+    border-radius:18px 18px 0 0; padding:18px 20px 28px;
+    box-shadow:0 -12px 40px rgba(0,0,0,0.5); transform:translateY(102%); transition:transform .24s cubic-bezier(.22,1,.36,1);
+  }
+  .vm-sources-drawer.open { transform:translateY(0); }
+  .vm-sources-drawer-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
+  .vm-sources-drawer-title { font-family:'Space Grotesk',sans-serif; color:#e6f4f8; font-size:16px; font-weight:600; }
+  .vm-sources-drawer-close { background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.12); color:#9fb3c8; border-radius:8px; padding:4px 10px; cursor:pointer; }
+  .vm-sources-drawer-row { display:flex; gap:12px; align-items:flex-start; padding:10px 0; border-bottom:1px solid rgba(255,255,255,0.06); text-decoration:none; color:inherit; }
+  .vm-sources-drawer-row:hover { background:rgba(0,212,255,0.05); }
+  .vm-sources-drawer-row .vm-source-fav,.vm-sources-drawer-row .vm-source-fav-fallback { margin-left:0; flex-shrink:0; }
+  .vm-sources-drawer-info { min-width:0; }
+  .vm-sources-drawer-name { color:#e6f4f8; font-size:13px; font-weight:600; line-height:1.4; }
+  .vm-sources-drawer-domain { color:#5f8ba3; font-size:11px; margin-top:2px; }
+  .vm-sources-drawer-snippet { color:#9fb3c8; font-size:11.5px; line-height:1.45; margin-top:4px; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+  .vm-entity-list { display:flex; flex-direction:column; gap:10px; margin:10px 0 4px; }
+  .vm-entity-row { display:flex; align-items:flex-start; gap:12px; }
+  .vm-entity-logo { flex:0 0 52px; width:52px; height:52px; border-radius:12px; background:rgba(255,255,255,0.95); border:1px solid rgba(0,212,255,0.18); padding:6px; display:flex; align-items:center; justify-content:center; position:relative; overflow:hidden; box-sizing:border-box; text-decoration:none; }
+  .vm-entity-logo-img { width:100%; height:100%; object-fit:contain; position:absolute; inset:6px; width:calc(100% - 12px); height:calc(100% - 12px); }
+  .vm-entity-monogram { color:#0b1922; font-family:'Space Grotesk',sans-serif; font-size:22px; font-weight:700; line-height:1; }
+  .vm-entity-body { flex:1 1 auto; min-width:0; }
+  .vm-entity-title { display:inline; color:#f0f6fa; font-weight:600; font-size:13.5px; text-decoration:underline dotted rgba(255,255,255,0.45); text-underline-offset:3px; line-height:1.4; }
+  .vm-entity-title:hover { color:#9fe8ff; }
+  .vm-entity-subtitle { color:#c3d4e0; font-weight:500; }
+  .vm-entity-desc { display:block; color:#b8c7d4; font-size:12px; line-height:1.5; margin-top:3px; text-decoration:none; }
+  a.vm-entity-desc:hover,.vm-entity-desc:hover { color:#d7e8f2; }
+  .vm-standalone-media { width:100%; max-width:420px; max-height:280px; border-radius:14px; object-fit:cover; display:block; }
+  @media(max-width:768px){ .vm-standalone-media { max-width:100%; } }
   .msg-toolbar:hover{ opacity:1; }
-  /* Desktop conversation layout: a centered reading column with an explicit
-     flex column so user messages align right and assistant replies fill from
-     the left instead of bunching in a narrow middle column. */
-  @media(min-width:641px){
-    #messages{
-      display:flex;
-      flex-direction:column;
-      width:100%;
-      max-width:920px;
-      margin:0 auto;
-      padding:24px 32px 160px !important;
+  /* Desktop conversation layout: full-edge chat with no centered void.
+     Assistant replies sit against the left edge of the chat pane; user bubbles
+     sit against the right edge. The composer spans the same available width. */
+  @media (min-width: 641px) {
+    #messages {
+      display: flex;
+      flex-direction: column;
+      width: 100%;
+      max-width: 100%;
+      margin: 0;
+      padding: 24px 28px 160px 24px;
+      box-sizing: border-box;
     }
-    #messages > .user-message{ align-self:flex-end; margin-left:auto; margin-right:0; }
-    #messages > .assistant-message{ align-self:flex-start; width:100%; max-width:100%; }
+    #messages > .assistant-message {
+      align-self: flex-start;
+      margin-left: 0;
+      margin-right: auto;
+      width: 100%;
+      max-width: 82%;
+    }
+    #messages > .user-message {
+      align-self: flex-end;
+      margin-left: auto;
+      margin-right: 0;
+      width: fit-content;
+      max-width: 72%;
+    }
+    #input-area, .composer-wrap {
+      width: 100%;
+      max-width: 100%;
+      margin-left: 0;
+      margin-right: 0;
+      box-sizing: border-box;
+    }
   }
   /* Tablet: give the conversation more room by tightening the sidebar. */
   @media(min-width:769px) and (max-width:1199px){
@@ -2399,6 +2469,21 @@
     align-items:center;
     justify-content:center;
     cursor:pointer;
+  }
+  /* Standalone assistant image: wider and cleaner, never a cramped square. */
+  .vm-chat-attach-thumb.vm-standalone-media{
+    width:100%;
+    max-width:420px;
+    height:auto;
+    max-height:280px;
+    border-radius:14px;
+  }
+  .vm-chat-attach-thumb.vm-standalone-media img,
+  .vm-chat-attach-thumb.vm-standalone-media video{
+    width:100%;
+    height:auto;
+    max-height:280px;
+    object-fit:cover;
   }
   .vm-chat-attach-thumb img,
   .vm-chat-attach-thumb video{
@@ -6410,8 +6495,8 @@ function renderSourcePanel(bubbleEl, sourceMetadata, confidence) {
     sourceMetadata.slice(0, 8).forEach(function (s, idx) {
         if (!s || !s.url) return;
         var domain = s.domain || (function () { try { return new URL(s.url).hostname.replace(/^www\./, ""); } catch (e) { return ""; } })();
-        var publisher = s.name || s.publisher || s.site_name || (domain ? domain.split(".")[0].charAt(0).toUpperCase() + domain.split(".")[0].slice(1) : "Source");
-        var title = s.title || "";
+        var publisher = VMDecodeHtmlEntities(s.name || s.publisher || s.site_name || (domain ? domain.split(".")[0].charAt(0).toUpperCase() + domain.split(".")[0].slice(1) : "Source"));
+        var title = VMDecodeHtmlEntities(s.title || "");
         var dateText = _fmtDate(s.published || s.published_at || s.date || s.pub_date || s.publishedAt);
         var support = "";
         if (s.supports_claims && s.supports_claims.length) {
@@ -6421,6 +6506,7 @@ function renderSourcePanel(bubbleEl, sourceMetadata, confidence) {
         } else if (s.description) {
             support = String(s.description || "").trim();
         }
+        support = VMDecodeHtmlEntities(support);
         if (support.length > 180) support = support.slice(0, 177) + "...";
 
         var row = document.createElement("a");
@@ -6470,7 +6556,7 @@ function renderSourcePanel(bubbleEl, sourceMetadata, confidence) {
         if (title) {
             var titleEl = document.createElement("div");
             titleEl.className = "source-title";
-            titleEl.textContent = title;
+            titleEl.textContent = VMDecodeHtmlEntities(title);
             titleEl.style.maxWidth = "100%";
             info.appendChild(titleEl);
         }
@@ -6507,93 +6593,78 @@ function renderSourcePanel(bubbleEl, sourceMetadata, confidence) {
     bub.appendChild(panel);
 }
 
+/* Decode common HTML entities in source titles, captions and snippets. */
+function VMDecodeHtmlEntities(text) {
+    return String(text == null ? "" : text)
+        .replace(/&quot;/gi, '"')
+        .replace(/&#0*39;?/gi, "'")
+        .replace(/&apos;/gi, "'")
+        .replace(/&nbsp;/gi, " ")
+        .replace(/&amp;/gi, "&")
+        .replace(/&lt;/gi, "<")
+        .replace(/&gt;/gi, ">");
+}
+
+function VMSourceSlug(value) {
+    return VMDecodeHtmlEntities(value || "").toLowerCase()
+        .replace(/^[【\[]+|[】\]]+$/g, "")
+        .replace(/\.(com|org|net|io|co|uk|tv|me|ai|fm|de|fr|es|it|jp|ca|au|xyz|info|biz|edu|gov)$/i, "")
+        .replace(/[^a-z0-9]+/g, "").slice(0, 24) || "source";
+}
+
+/* Replace 【SourceName】 / [SourceName] markers with modern inline domain pills.
+   Pills link straight to the matched source URL, or open the sources drawer. */
 function renderInlineCitations(bubbleEl, sourceMetadata) {
-    if (!bubbleEl || !Array.isArray(sourceMetadata) || !sourceMetadata.length) return;
+    if (!bubbleEl) return;
     var bub = bubbleEl.querySelector(".bubble") || bubbleEl;
     if (!bub) return;
-    var textEl = bub.querySelector(".message-text") || bub;
-    if (!textEl) return;
-
-    // Build nameâ†’index and domainâ†’index mappings (1-indexed)
-    var nameIndex = {};
-    var domainIndex = {};
-    sourceMetadata.forEach(function (s, i) {
-        var domain = s.domain || "";
-        if (domain && !(domain in domainIndex)) {
-            domainIndex[domain] = i + 1;
-        }
-        var name = s.name || "";
-        if (name && !(name.toLowerCase() in nameIndex)) {
-            nameIndex[name.toLowerCase()] = { idx: i + 1, displayName: name };
-        }
+    var sources = Array.isArray(sourceMetadata) ? sourceMetadata : [];
+    var bySlug = {}, byName = {};
+    sources.forEach(function (s) {
+        if (!s) return;
+        var slug = VMSourceSlug(s.domain || s.name || "");
+        if (!(slug in bySlug)) bySlug[slug] = s;
+        var name = VMDecodeHtmlEntities(s.name || "").toLowerCase();
+        if (name && !(name in byName)) byName[name] = s;
     });
-    if (!Object.keys(domainIndex).length && !Object.keys(nameIndex).length) return;
 
-    // Find and replace [SourceName] and [N] citation patterns
-    var walker = document.createTreeWalker(textEl, NodeFilter.SHOW_TEXT, null, false);
+    var re = /【([^】]+)】|\[([A-Za-z][A-Za-z0-9 .&'\-]{1,40})\](?!\()/g;
+    var walker = document.createTreeWalker(bub, NodeFilter.SHOW_TEXT, null, false);
     var textNodes = [];
     while (walker.nextNode()) textNodes.push(walker.currentNode);
-
-    // Combined regex: [SourceName] or [N]
-    var citationRe = /\[([A-Za-z][A-Za-z0-9 .&'-]*\d*|\d+)\]/g;
     textNodes.forEach(function (node) {
         var text = node.textContent;
-        citationRe.lastIndex = 0;
-        if (!citationRe.test(text)) return;
-        citationRe.lastIndex = 0;
-
+        re.lastIndex = 0;
+        if (!re.test(text)) return;
+        re.lastIndex = 0;
         var frag = document.createDocumentFragment();
-        var lastIdx = 0;
-        var match;
-        while ((match = citationRe.exec(text)) !== null) {
-            if (match.index > lastIdx) {
-                frag.appendChild(document.createTextNode(text.slice(lastIdx, match.index)));
-            }
-            var inner = match[1].trim();
-            var num = null;
-            var label = inner;
-            // Try numeric first
-            if (/^\d+$/.test(inner)) {
-                num = parseInt(inner);
-                label = "[" + inner + "]";
+        var last = 0, m;
+        while ((m = re.exec(text)) !== null) {
+            if (m.index > last) frag.appendChild(document.createTextNode(text.slice(last, m.index)));
+            var raw = VMDecodeHtmlEntities((m[1] || m[2] || "").trim());
+            var slug = VMSourceSlug(raw);
+            var src = bySlug[slug] || byName[raw.toLowerCase()] || null;
+            var pill = document.createElement("a");
+            pill.className = "vm-cite-pill";
+            pill.textContent = slug;
+            if (src && src.url) {
+                pill.href = src.url;
+                pill.target = "_blank";
+                pill.rel = "noopener noreferrer";
+                pill.title = VMDecodeHtmlEntities(src.title || src.name || raw);
             } else {
-                // Try source name match (case-insensitive)
-                var lower = inner.toLowerCase();
-                if (nameIndex[lower]) {
-                    num = nameIndex[lower].idx;
-                    label = nameIndex[lower].displayName;
-                }
-            }
-            if (num) {
-                var sup = document.createElement("sup");
-                sup.className = "inline-citation";
-                sup.textContent = label;
-                sup.style.cssText = "color:#60a5fa;font-size:10px;font-weight:600;cursor:pointer;margin:0 1px;padding:0 2px;border-radius:3px;background:rgba(96,165,250,0.1);transition:background 0.15s;";
-                sup.title = "Source " + num;
-                sup.onmouseenter = function () { sup.style.background = "rgba(96,165,250,0.25)"; };
-                sup.onmouseleave = function () { sup.style.background = "rgba(96,165,250,0.1)"; };
-                sup.onclick = function (e) {
+                pill.href = "#sources";
+                pill.title = raw;
+                pill.onclick = function (e) {
                     e.preventDefault();
-                    var panel = bub.querySelector(".sources-section");
-                    if (panel) {
-                        // vm-fix19 item 11: expand panel so citation target is visible
-                        panel.classList.remove("sources-collapsed");
-                        var rows = panel.querySelectorAll(".source-row");
-                        var idx = num - 1;
-                        if (rows[idx]) rows[idx].scrollIntoView({ behavior: "smooth", block: "center" });
-                    }
+                    VMOpenSourcesDrawer(bubbleEl, sources);
                 };
-                frag.appendChild(sup);
-            } else {
-                // Unrecognized citation €” keep original text
-                frag.appendChild(document.createTextNode(match[0]));
             }
-            lastIdx = match.index + match[0].length;
+            frag.appendChild(pill);
+            last = m.index + m[0].length;
         }
-        if (lastIdx < text.length) {
-            frag.appendChild(document.createTextNode(text.slice(lastIdx)));
-        }
-        text.parentNode.replaceChild(frag, text);
+        if (last < text.length) frag.appendChild(document.createTextNode(text.slice(last)));
+        node.parentNode.replaceChild(frag, node);
     });
 }
 
@@ -6689,6 +6760,7 @@ function VMRenderResearchImages(bubbleEl, sourceMetadata) {
         img.src = s.image;
         img.alt = s.name || s.title || "source image";
         img.loading = "lazy";
+        if (featured) img.classList.add("vm-standalone-media");
         img.style.cssText = "width:100%;height:auto;" + (featured ? "aspect-ratio:16/9;" : "aspect-ratio:4/3;") + "object-fit:cover;display:block;border-radius:8px;";
         img.onerror = function () { card.style.display = "none"; };
         img.onload = function () { card.style.display = ""; };
@@ -6698,7 +6770,7 @@ function VMRenderResearchImages(bubbleEl, sourceMetadata) {
         var cap = document.createElement("div");
         cap.className = "vm-research-credit";
         var name = s.name || (s.domain ? s.domain.split(".")[0].charAt(0).toUpperCase() + s.domain.split(".")[0].slice(1) : "Source");
-        cap.textContent = s.image_credit ? s.image_credit : name;
+        cap.textContent = VMDecodeHtmlEntities(s.image_credit ? s.image_credit : name);
         cap.style.cssText = "font-size:10px;color:rgba(255,255,255,0.6);text-align:center;line-height:1.3;overflow-wrap:break-word;";
         card.appendChild(cap);
 
@@ -6763,13 +6835,13 @@ function VMRenderImageLeftTextRightCards(bubbleEl, sourceMetadata) {
 
         var name = document.createElement("div");
         name.className = "vm-image-left-name";
-        name.textContent = s.name || s.title || (s.domain ? s.domain.split(".")[0].charAt(0).toUpperCase() + s.domain.split(".")[0].slice(1) : "Source");
+        name.textContent = VMDecodeHtmlEntities(s.name || s.title || (s.domain ? s.domain.split(".")[0].charAt(0).toUpperCase() + s.domain.split(".")[0].slice(1) : "Source"));
         name.style.cssText = "font-weight:700; font-size:14px; color:#e2e8f0; margin:0 0 2px; overflow-wrap:break-word;";
         body.appendChild(name);
 
         if (s.title && s.title !== (s.name || "")) {
             var titleEl = document.createElement("div");
-            titleEl.textContent = s.title;
+            titleEl.textContent = VMDecodeHtmlEntities(s.title);
             titleEl.style.cssText = "font-size:12px; color:rgba(255,255,255,0.7); margin:0 0 4px; overflow-wrap:break-word;";
             body.appendChild(titleEl);
         }
@@ -6777,7 +6849,7 @@ function VMRenderImageLeftTextRightCards(bubbleEl, sourceMetadata) {
         if (s.image_credit) {
             var credit = document.createElement("div");
             credit.className = "vm-image-left-credit";
-            credit.textContent = s.image_credit;
+            credit.textContent = VMDecodeHtmlEntities(s.image_credit);
             credit.style.cssText = "font-size:10px; color:rgba(255,255,255,0.6); margin-top:auto; overflow-wrap:break-word;";
             body.appendChild(credit);
         }
@@ -6793,158 +6865,172 @@ function VMRenderImageLeftTextRightCards(bubbleEl, sourceMetadata) {
    Clean, modern source cards shown only when real search results exist.
    Shows favicon, name, title, domain, and tier badge. No fake/empty sources.
    --------------------------------------------------------------------- */
-function renderSourcesPanel(bubbleEl, sourceMetadata, confidence) {
-    if (!bubbleEl || !Array.isArray(sourceMetadata) || !sourceMetadata.length) return;
-    var bub = bubbleEl.querySelector(".bubble") || bubbleEl;
-    if (bub.querySelector(".sources-section")) return;
+function VMOpenSourcesDrawer(bubbleEl, sourceMetadata) {
+    var oldDrawer = document.querySelector(".vm-sources-drawer");
+    if (oldDrawer && oldDrawer.parentNode) oldDrawer.parentNode.removeChild(oldDrawer);
+    var oldBackdrop = document.querySelector(".vm-sources-drawer-backdrop");
+    if (oldBackdrop && oldBackdrop.parentNode) oldBackdrop.parentNode.removeChild(oldBackdrop);
 
-    var valid = sourceMetadata.filter(function (s) {
-        return s && s.url && s.domain && !s.domain.startsWith("example");
+    var sources = (Array.isArray(sourceMetadata) ? sourceMetadata : []).filter(function (s) {
+        return s && s.url && s.domain;
     });
-    if (!valid.length) return;
+    var backdrop = document.createElement("div");
+    backdrop.className = "vm-sources-drawer-backdrop";
+    var drawer = document.createElement("div");
+    drawer.className = "vm-sources-drawer";
+    drawer.setAttribute("role", "dialog");
+    drawer.setAttribute("aria-label", "Sources");
 
-    var section = document.createElement("div");
-    // vm-fix19 items 5,11: collapsible when more than 3; expanded when <=3
-    section.className = "sources-section" + (valid.length > 3 ? " sources-collapsed" : "");
+    var head = document.createElement("div");
+    head.className = "vm-sources-drawer-head";
+    var title = document.createElement("div");
+    title.className = "vm-sources-drawer-title";
+    title.textContent = sources.length + " sources";
+    var close = document.createElement("button");
+    close.type = "button";
+    close.className = "vm-sources-drawer-close";
+    close.textContent = "Close";
+    close.onclick = VMCloseSourcesDrawer;
+    head.appendChild(title);
+    head.appendChild(close);
+    drawer.appendChild(head);
 
-    // Collapsed header bar (always visible)
-    var header = document.createElement("div");
-    header.className = "sources-header";
-    header.innerHTML =
-        '<svg class="sources-header-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>' +
-        '<span class="sources-header-label">Sources</span>' +
-        '<span class="sources-header-count">(' + valid.length + ')</span>';
-
-    if (confidence) {
-        var badge = document.createElement("span");
-        badge.className = "sources-confidence " + confidence;
-        badge.textContent = confidence.charAt(0).toUpperCase() + confidence.slice(1);
-        header.appendChild(badge);
-    }
-
-    // Compact inline source chips (always visible)
-    var chipsRow = document.createElement("div");
-    chipsRow.className = "sources-chips";
-
-    valid.slice(0, 6).forEach(function (s, idx) {
-        var domain = s.domain || "";
-        var displayName = s.name || domain.split(".")[0].charAt(0).toUpperCase() + domain.split(".")[0].slice(1);
-        var chip = document.createElement("a");
-        chip.href = s.url;
-        chip.target = "_blank";
-        chip.rel = "noopener noreferrer";
-        chip.className = "source-chip";
-        chip.title = (s.title || displayName) + (s.published ? " (" + s.published + ")" : "");
-        var favSrc = s.icon || ("https://www.google.com/s2/favicons?sz=32&domain=" + encodeURIComponent(domain));
-        chip.innerHTML = '<img class="source-chip-fav" src="' + favSrc + '" width="14" height="14" loading="lazy" onerror="this.style.display=\'none\'">' +
-            '<span class="source-chip-name">' + displayName + '</span>';
-        if (s.tier && s.tier <= 2) {
-            var tierDot = document.createElement("span");
-            tierDot.className = "source-chip-tier" + (s.tier === 1 ? " t1" : "");
-            chip.appendChild(tierDot);
-        }
-        chipsRow.appendChild(chip);
-    });
-
-    if (valid.length > 6) {
-        var more = document.createElement("span");
-        more.className = "source-chip source-chip-more";
-        more.textContent = "+" + (valid.length - 6) + " more";
-        more.style.cursor = "pointer";
-        more.onclick = function () { section.classList.toggle("sources-collapsed"); };
-        chipsRow.appendChild(more);
-    }
-
-    section.appendChild(header);
-    section.appendChild(chipsRow);
-
-    // Expandable full details (hidden when collapsed)
-    var detailsWrap = document.createElement("div");
-    detailsWrap.className = "sources-details";
-
-    var list = document.createElement("div");
-    list.className = "sources-list";
-
-    valid.slice(0, 8).forEach(function (s, idx) {
-        var domain = s.domain || "";
-        var displayName = s.name || domain.split(".")[0].charAt(0).toUpperCase() + domain.split(".")[0].slice(1);
-
+    sources.forEach(function (s) {
+        var domain = VMDecodeHtmlEntities(s.domain || "");
+        var name = VMDecodeHtmlEntities(s.name || domain.split(".")[0] || "Source");
         var row = document.createElement("a");
+        row.className = "vm-sources-drawer-row";
         row.href = s.url;
         row.target = "_blank";
         row.rel = "noopener noreferrer";
-        row.className = "source-row";
 
-        var favSrc = s.icon || ("https://www.google.com/s2/favicons?sz=32&domain=" + encodeURIComponent(domain));
+        var favSrc = s.icon || ("https://www.google.com/s2/favicons?domain=" + encodeURIComponent(domain) + "&sz=64");
         var fav = document.createElement("img");
-        fav.className = "source-favicon";
+        fav.className = "vm-source-fav";
         fav.src = favSrc;
-        fav.width = 18; fav.height = 18;
+        fav.alt = "";
         fav.loading = "lazy";
         fav.onerror = function () {
-            fav.onerror = null;
-            fav.setAttribute("data-fallback", "1");
-            fav.removeAttribute("src");
-            fav.style.width = "18px"; fav.style.height = "18px";
-            fav.textContent = displayName.charAt(0).toUpperCase();
+            var fb = document.createElement("span");
+            fb.className = "vm-source-fav-fallback";
+            fb.textContent = name.charAt(0).toUpperCase() || "S";
+            if (fav.parentNode) fav.parentNode.replaceChild(fb, fav);
         };
 
         var info = document.createElement("div");
-        info.className = "source-info";
+        info.className = "vm-sources-drawer-info";
         var nameEl = document.createElement("div");
-        nameEl.className = "source-name";
-        nameEl.textContent = displayName;
+        nameEl.className = "vm-sources-drawer-name";
+        nameEl.textContent = name;
+        var domainEl = document.createElement("div");
+        domainEl.className = "vm-sources-drawer-domain";
+        domainEl.textContent = domain;
         info.appendChild(nameEl);
-        if (s.title && s.title !== displayName) {
+        info.appendChild(domainEl);
+        if (s.title) {
             var titleEl = document.createElement("div");
-            titleEl.className = "source-title";
-            titleEl.textContent = s.title;
-            titleEl.title = s.title;
+            titleEl.className = "vm-sources-drawer-name";
+            titleEl.style.fontWeight = "400";
+            titleEl.textContent = VMDecodeHtmlEntities(s.title);
             info.appendChild(titleEl);
         }
-        // vm-fix19 items 5,11: show snippet and date when available (real data only)
         if (s.snippet || s.content) {
             var snip = document.createElement("div");
-            snip.className = "source-snippet";
-            snip.style.cssText = "font-size:11px;color:rgba(255,255,255,0.55);margin-top:2px;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;";
-            snip.textContent = String(s.snippet || s.content || "").slice(0, 220);
+            snip.className = "vm-sources-drawer-snippet";
+            snip.textContent = VMDecodeHtmlEntities(String(s.snippet || s.content || "")).slice(0, 240);
             info.appendChild(snip);
         }
-        var domainEl = document.createElement("div");
-        domainEl.className = "source-domain";
-        var metaParts = [domain];
-        if (s.published) metaParts.push(String(s.published));
-        else if (s.freshness_label) metaParts.push(String(s.freshness_label));
-        domainEl.textContent = metaParts.join(" · ");
-        info.appendChild(domainEl);
-
         row.appendChild(fav);
         row.appendChild(info);
-
-        if (s.tier && s.tier <= 2) {
-            var tierBadge = document.createElement("span");
-            tierBadge.className = "source-tier " + (s.tier === 1 ? "t1" : "t2");
-            tierBadge.textContent = s.tier === 1 ? "Official" : "Verified";
-            row.appendChild(tierBadge);
-        }
-
-        list.appendChild(row);
+        drawer.appendChild(row);
     });
 
-    detailsWrap.appendChild(list);
-    section.appendChild(detailsWrap);
+    backdrop.onclick = VMCloseSourcesDrawer;
+    document.body.appendChild(backdrop);
+    document.body.appendChild(drawer);
+    try {
+        requestAnimationFrame(function () {
+            backdrop.classList.add("open");
+            drawer.classList.add("open");
+        });
+    } catch (e) {
+        backdrop.classList.add("open");
+        drawer.classList.add("open");
+    }
+}
 
-    // Toggle expand/collapse
-    header.onclick = function () {
-        section.classList.toggle("sources-collapsed");
-    };
-    chipsRow.onclick = function (e) {
-        if (e.target === chipsRow) {
-            section.classList.toggle("sources-collapsed");
-        }
-    };
+function VMCloseSourcesDrawer() {
+    var drawer = document.querySelector(".vm-sources-drawer");
+    var backdrop = document.querySelector(".vm-sources-drawer-backdrop");
+    if (drawer) drawer.classList.remove("open");
+    if (backdrop) backdrop.classList.remove("open");
+    setTimeout(function () {
+        if (drawer && drawer.parentNode) drawer.parentNode.removeChild(drawer);
+        if (backdrop && backdrop.parentNode) backdrop.parentNode.removeChild(backdrop);
+    }, 240);
+}
 
-    bub.appendChild(section);
+/* Compact inline favicon stack: up to 3 overlapping circular favicons plus an
+   "{N} sources" label. Tapping either opens the slide-up sources drawer. */
+function renderSourcesPanel(bubbleEl, sourceMetadata, confidence) {
+    if (!bubbleEl || !Array.isArray(sourceMetadata) || !sourceMetadata.length) return;
+    var bub = bubbleEl.querySelector(".bubble") || bubbleEl;
+    if (!bub) return;
+    var wrapper = (typeof bub.closest === "function") ? bub.closest(".assistant-message") : bub.parentNode;
+    if ((wrapper && wrapper.querySelector(".vm-sources-bar")) || bub.querySelector(".vm-sources-bar")) return;
+    var valid = sourceMetadata.filter(function (s) {
+        return s && s.url && s.domain && !String(s.domain).startsWith("example");
+    });
+    if (!valid.length) return;
+
+    var bar = document.createElement("div");
+    bar.className = "vm-sources-bar";
+    var stack = document.createElement("div");
+    stack.className = "vm-sources-pill-stack";
+    stack.setAttribute("role", "button");
+    stack.tabIndex = 0;
+    stack.title = "View all sources";
+
+    var favs = document.createElement("span");
+    favs.className = "vm-source-favicon-stack";
+    valid.slice(0, 3).forEach(function (s) {
+        var domain = VMDecodeHtmlEntities(s.domain || "");
+        var label = VMDecodeHtmlEntities(s.name || domain.split(".")[0] || "S").trim();
+        var favSrc = s.icon || ("https://www.google.com/s2/favicons?domain=" + encodeURIComponent(domain) + "&sz=64");
+        var img = document.createElement("img");
+        img.className = "vm-source-fav";
+        img.src = favSrc;
+        img.alt = "";
+        img.loading = "lazy";
+        img.onerror = function () {
+            var fb = document.createElement("span");
+            fb.className = "vm-source-fav-fallback";
+            fb.textContent = label.charAt(0).toUpperCase() || "S";
+            if (img.parentNode) img.parentNode.replaceChild(fb, img);
+        };
+        favs.appendChild(img);
+    });
+
+    var count = document.createElement("span");
+    count.className = "vm-sources-count-label";
+    count.textContent = valid.length + " sources";
+    stack.appendChild(favs);
+    stack.appendChild(count);
+
+    var open = function (e) {
+        if (e) e.preventDefault();
+        VMOpenSourcesDrawer(bubbleEl, valid);
+    };
+    stack.onclick = open;
+    stack.onkeydown = function (e) {
+        if (e && (e.key === "Enter" || e.key === " ")) open(e);
+    };
+    bar.appendChild(stack);
+    // Prefer the shared bottom action row (right side) so the favicon stack
+    // stays below the reply bubble and survives rich-render innerHTML swaps.
+    var toolbar = wrapper ? wrapper.querySelector(".msg-toolbar") : null;
+    if (toolbar) toolbar.appendChild(bar);
+    else bub.appendChild(bar);
 }
 
 /* â”€â”€ Reply Copy Bar (MODE B) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -7306,7 +7392,7 @@ function addMessage(text, type = "ai", imageData, mediaUrl, videoUrl, images, so
     // AI-generated or history-restored image URL
     if (finalImageUrl && (type === "ai" || !imageData)) {
         var chatImgThumb = document.createElement("div");
-        chatImgThumb.className = "vm-chat-attach-thumb";
+        chatImgThumb.className = "vm-chat-attach-thumb vm-standalone-media";
         chatImgThumb.title = "Tap to open image";
         var chatImg = document.createElement("img");
         chatImg.src = finalImageUrl;
@@ -7340,7 +7426,23 @@ function addMessage(text, type = "ai", imageData, mediaUrl, videoUrl, images, so
     }
 
     // Search-sourced images for AI replies (reload-safe).
-    if (images && images.length && type === "ai") {
+    if (images && images.length === 1 && type === "ai") {
+        var im = images[0];
+        if (im && im.url) {
+            var cell = document.createElement("div");
+            cell.className = "vm-chat-attach-thumb vm-standalone-media";
+            var img = document.createElement("img");
+            img.src = im.url;
+            img.alt = VMDecodeHtmlEntities(im.source || "source image");
+            img.loading = "lazy";
+            img.style.cssText = "width:100%;height:auto;object-fit:cover;display:block;";
+            img.onclick = function (ev) { ev.stopPropagation(); openImageViewer(im.url); };
+            cell.onclick = function (ev) { ev.stopPropagation(); openImageViewer(im.url); };
+            cell.appendChild(img);
+            attachRow.appendChild(cell);
+            hasAttachments = true;
+        }
+    } else if (images && images.length > 1 && type === "ai") {
         images.forEach(function (im) {
             if (!im || !im.url) return;
             var cell = document.createElement("div");
@@ -7527,6 +7629,12 @@ function addMessage(text, type = "ai", imageData, mediaUrl, videoUrl, images, so
         toolbar.appendChild(dotsBtn);
 
         wrapper.appendChild(toolbar);
+
+        // Restored/history assistant replies with evidence get the same compact
+        // favicon source stack in the bottom action row as live replies.
+        if (sourceMetadata && sourceMetadata.length) {
+            try { renderSourcesPanel(bubble, sourceMetadata, undefined); } catch (e) {}
+        }
     }
 
     container.appendChild(wrapper);
@@ -8086,6 +8194,14 @@ function VMEnsureLiveAssistantBubble(thinkingEl, regenCtx) {
     return { wrapper: wrapper, bubble: bubble };
 }
 
+/* Hide partially streamed [[ENTITY: ...]] blocks; full cards render on done. */
+function VMStreamEntitySafeText(text) {
+    var s = String(text == null ? "" : text);
+    var open = s.lastIndexOf("[[ENTITY:");
+    if (open !== -1 && s.indexOf("]]", open) === -1) s = s.slice(0, open);
+    return s.replace(/\[\[ENTITY:[^\]]*$/i, "");
+}
+
 /* Update only the text span so the activity root above it is never removed. */
 function VMSetLiveAssistantText(bubble, text) {
     if (!bubble) return;
@@ -8095,7 +8211,7 @@ function VMSetLiveAssistantText(bubble, text) {
         span.className = "vm-stream-text";
         bubble.appendChild(span);
     }
-    span.textContent = text || "";
+    span.textContent = VMStreamEntitySafeText(text);
 }
 
 /* ── Shared activity indicator ─────────────────────────────────────

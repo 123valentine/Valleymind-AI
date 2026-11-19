@@ -38,10 +38,33 @@ from core.activity_v2 import track_activity
 
 @dataclass(frozen=True)
 class RouteDecision:
-    """Immutable routing decision.  No Flask, no generation, no ProviderManager."""
+    """Immutable routing decision.  No Flask, no generation, no ProviderManager.
+
+    ``needs_search`` / ``search_query`` carry contextual follow-up research
+    instructions from :meth:`CapabilityRouter._needs_contextual_research` to the
+    response pipeline.  They default to empty/false so every existing 3-argument
+    construction (and test) keeps working unchanged.
+    """
     capabilities: tuple[Capability, ...]
     confidence: float
     reasoning: str
+    needs_search: bool = False
+    search_query: str = ""
+
+    def get(self, key: str, default=None):
+        """Dict-style access so callers can use ``route.get("needs_search")``."""
+        if hasattr(self, key):
+            return getattr(self, key)
+        return default
+
+    def to_dict(self) -> dict:
+        return {
+            "capabilities": tuple(c.value if hasattr(c, "value") else c for c in self.capabilities),
+            "confidence": self.confidence,
+            "reasoning": self.reasoning,
+            "needs_search": self.needs_search,
+            "search_query": self.search_query,
+        }
 
 
 # ── Classification prompt (used only at Priority 3) ─────────────────────────
@@ -121,6 +144,113 @@ Respond with ONLY a JSON object (no markdown fences, no explanation):
 {"capabilities": ["<cap1>", "<cap2>", ...], "confidence": <0.0-1.0>, "reasoning": "<one sentence>"}"""
 
 
+# ── Contextual entity / plot follow-up detection ────────────────────────────
+
+_FOLLOWUP_CUE_RE = re.compile(
+    r"\b(?:let'?s talk about|talk about|what happened|who directed|director|"
+    r"season\s*2|episode|plot|character|boyfriend|girlfriend|compare|compared|"
+    r"mention|list|recommend|top|best|versus|vs\.?|three\s+a\.?i\.?s?)\b",
+    re.IGNORECASE,
+)
+_ENTITY_NOUN_RE = re.compile(
+    r"\b(?:movies?|films?|tv|series|shows?|episodes?|books?|novels?|anime|manga|"
+    r"games?|songs?|albums?|artists?|singers?|actors?|actresses?|directors?|"
+    r"celebrit(?:y|ies)|club|team|football|products?|brands?|a\.?i\.?s?|llms?|"
+    r"models?|apps?|tools?|software|companies)\b",
+    re.IGNORECASE,
+)
+_CONTEXT_DEICTIC_RE = re.compile(
+    r"\b(?:this|that|it|they|them|those|these|the|same|earlier|before)\b",
+    re.IGNORECASE,
+)
+_CODE_ONLY_RE = re.compile(
+    r"\b(?:code|function|python|javascript|typescript|debug|refactor|compile|"
+    r"stack trace|error message|sql query|regex|unit test)\b",
+    re.IGNORECASE,
+)
+_MEMORY_ONLY_RE = re.compile(
+    r"(?:\b(?:my|mine|me|i)\b.*\b(?:name|birthday|job|wife|husband|address)\b)|"
+    r"(?:\b(?:remember|forget|recall)\b.*\b(?:my|me|i)\b)",
+    re.IGNORECASE,
+)
+_QUERY_STOPWORDS = frozenset({
+    "a", "an", "the", "is", "are", "was", "were", "do", "does", "did", "of",
+    "to", "in", "on", "for", "and", "or", "it", "its", "this", "that", "these",
+    "those", "them", "they", "about", "me", "my", "please", "tell", "what",
+    "who", "when", "where", "why", "how", "can", "you", "i", "let", "lets",
+    "s", "t", "just", "with", "from", "there", "happened", "talk",
+})
+
+
+def _history_text(history, limit: int = 6) -> str:
+    """Flatten the last ``limit`` turns into a compact classifier string."""
+    if not history:
+        return ""
+    if isinstance(history, str):
+        return history[-4000:]
+    turns = []
+    for turn in history[-limit:]:
+        if isinstance(turn, dict):
+            role = str(turn.get("role") or "user").capitalize()
+            content = str(turn.get("content") or turn.get("text") or "").strip()
+        else:
+            role, content = "User", str(turn).strip()
+        if content:
+            turns.append(f"{role}: {content[:400]}")
+    return "\n".join(turns)
+
+
+def _active_topic_from_history(history, limit: int = 6) -> str:
+    """Best-effort extraction of the movie/show/entity currently being discussed."""
+    if not history:
+        return ""
+    turns = list(history)[-limit:] if not isinstance(history, str) else [history]
+
+    def _content(turn):
+        if isinstance(turn, dict):
+            return str(turn.get("content") or turn.get("text") or "")
+        return str(turn or "")
+
+    def _is_user(turn):
+        if isinstance(turn, dict):
+            return str(turn.get("role") or "user").lower() != "assistant"
+        return True
+
+    invalid = {
+        "i", "you", "he", "she", "it", "they", "them", "we", "that", "this",
+        "these", "those", "the", "yes", "yh", "yeah", "ok", "okay", "what",
+        "who", "and", "but", "so", "because", "there", "here",
+    }
+    title_re = re.compile(
+        r"[《“\"']([^》”\"']{2,80})[》”\"']|"
+        r"\b((?:[A-Z][\w'&-]+\s+){1,3}[A-Z][\w'&-]*|[A-Z][\w'&-]{3,})\s*(?:\(\d{4}\))?"
+    )
+    entity_context_re = re.compile(
+        r"\b(?:movie|film|show|series|anime|book|novel|game|song|club|team|brand|"
+        r"product|a\.?i\.?|model)\b[\s:-]+(?:about\s+)?([^.,!?;\n]{2,70})",
+        re.IGNORECASE,
+    )
+    # Prefer the user's own turns; assistant phrasing ("That sounds like…") is
+    # a poor source for a search topic.
+    ordered = [t for t in reversed(turns) if _is_user(t)] + [t for t in reversed(turns) if not _is_user(t)]
+    for turn in ordered:
+        content = re.sub(
+            r"^(?:User|Assistant|Marcus|Angelina|Elena):\s*",
+            "", _content(turn).strip(), flags=re.IGNORECASE,
+        )
+        m = entity_context_re.search(content)
+        if m:
+            candidate = m.group(1).strip()
+            if candidate.lower() not in invalid:
+                return candidate[:80]
+        m = title_re.search(content)
+        if m:
+            candidate = (m.group(1) or m.group(2) or "").strip()
+            if candidate and candidate.lower() not in invalid:
+                return candidate[:80]
+    return ""
+
+
 # ── Router ───────────────────────────────────────────────────────────────────
 
 class CapabilityRouter:
@@ -135,6 +265,7 @@ class CapabilityRouter:
         *,
         has_image: bool = False,
         source: Optional[str] = None,
+        history: Optional[list] = None,
     ) -> RouteDecision:
         """Classify a user request into one or more routing capabilities.
 
@@ -143,6 +274,9 @@ class CapabilityRouter:
         message   : raw user text.
         has_image : whether the user attached an image to this message.
         source    : explicit UI hint ("image_modal", "video_tool", …).
+        history   : recent conversation turns (dicts with role/content, or strings).
+                    Used to resolve indirect entity/plot follow-ups into a
+                    standalone, searchable query.
 
         Returns
         -------
@@ -157,6 +291,21 @@ class CapabilityRouter:
                 self._log(decision, start)
                 return decision
 
+            # ── Contextual entity/plot follow-ups (zero latency) ──────────
+            # A follow-up such as "who directed it?" is meaningless on its own;
+            # resolve it against recent turns and force a grounded web search.
+            contextual = self._needs_contextual_research(message, history)
+            if contextual.get("needs_search"):
+                decision = RouteDecision(
+                    capabilities=(Capability.TEXT,),
+                    confidence=0.88,
+                    reasoning=contextual.get("reason", "Contextual entity follow-up"),
+                    needs_search=True,
+                    search_query=contextual.get("search_query", ""),
+                )
+                self._log(decision, start)
+                return decision
+
             # ── Priority 2: metadata / structural analysis (zero latency) ─
             decision = self._p2_metadata(message, has_image)
             if decision:
@@ -164,9 +313,66 @@ class CapabilityRouter:
                 return decision
 
             # ── Priority 3: semantic LLM classification ───────────────────
-            decision = self._p3_semantic(message, has_image)
+            decision = self._p3_semantic(message, has_image, history)
             self._log(decision, start)
             return decision
+
+    # ── Contextual follow-up research ─────────────────────────────────
+
+    @staticmethod
+    def _needs_contextual_research(message: str, history=None) -> dict:
+        """Detect entity/plot follow-ups and build a standalone search query.
+
+        Inspects the current turn plus the last 4–6 history turns. Returns a
+        dict with ``needs_search``, ``search_query`` and ``reason``. Pure code
+        generation and explicit memory-only questions are deliberately ignored.
+        """
+        text = str(message or "").strip()
+        if not text:
+            return {"needs_search": False, "search_query": "", "reason": "empty"}
+
+        has_code_intent = bool(_CODE_ONLY_RE.search(text))
+        has_entity = bool(_ENTITY_NOUN_RE.search(text))
+        if has_code_intent and not has_entity:
+            return {"needs_search": False, "search_query": "", "reason": "code request"}
+        if _MEMORY_ONLY_RE.search(text):
+            return {"needs_search": False, "search_query": "", "reason": "memory-only question"}
+
+        context = _history_text(history, limit=6)
+        cue = bool(_FOLLOWUP_CUE_RE.search(text))
+        deictic = bool(_CONTEXT_DEICTIC_RE.search(text))
+        list_request = bool(
+            re.search(r"\b(?:mention|list|recommend|compare|top|best|three|3)\b", text, re.IGNORECASE)
+            and has_entity
+        )
+        followup = bool(cue and (has_entity or deictic) and (context or has_entity))
+        entity_question = bool(has_entity and re.search(r"[?？]\s*$", text))
+
+        if not (list_request or followup or entity_question):
+            return {"needs_search": False, "search_query": "", "reason": "no contextual entity clue"}
+
+        topic = _active_topic_from_history(history, limit=6)
+        if topic and not _ENTITY_NOUN_RE.search(topic):
+            history_entity = _ENTITY_NOUN_RE.search(context)
+            if history_entity:
+                topic = f"{history_entity.group(0).lower()} {topic}"
+        clues = [
+            word for word in re.findall(r"[A-Za-z][A-Za-z0-9'&-]{1,}", text)
+            if word.lower() not in _QUERY_STOPWORDS
+        ]
+        parts = []
+        for part in [topic] + clues:
+            part = part.strip()
+            if part and part.lower() not in [p.lower() for p in parts]:
+                parts.append(part)
+        query = " ".join(parts) if parts else text
+        reason = "Contextual entity follow-up" if (followup or list_request) else "Entity research question"
+        return {
+            "needs_search": True,
+            "search_query": query,
+            "reason": reason,
+            "active_topic": topic,
+        }
 
     # ── P1: explicit UI hints ─────────────────────────────────────────
 
@@ -200,9 +406,15 @@ class CapabilityRouter:
 
     # ── P3: semantic LLM classification ───────────────────────────────
 
-    def _p3_semantic(self, message: str, has_image: bool) -> RouteDecision:
+    def _p3_semantic(self, message: str, has_image: bool, history=None) -> RouteDecision:
         """Use the application's LLM provider cluster to classify intent."""
         classified_message = message.strip()
+        context = _history_text(history, limit=6)
+        if context:
+            classified_message = (
+                "[Recent conversation context (use it to resolve follow-ups)]\n"
+                + context + "\n\n[Latest message]\n" + classified_message
+            )
         if has_image:
             classified_message = (
                 "[Note: The user attached an image to this message.  "
@@ -280,6 +492,11 @@ class CapabilityRouter:
         print(f"[Router]   Capabilities: [{caps_str}]")
         print(f"[Router]   Confidence:   {decision.confidence:.2f}")
         print(f"[Router]   Reasoning:    {decision.reasoning}")
+
+
+# Module-level alias used by the response pipeline (core.brain).
+def _needs_contextual_research(message: str, history=None) -> dict:
+    return CapabilityRouter._needs_contextual_research(message, history)
 
 
 # ── Module singleton ─────────────────────────────────────────────────────────
