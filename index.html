@@ -181,73 +181,7 @@
   .activity-dot { width:7px; height:7px; background:#00d4ff; border-radius:50%; display:inline-block; animation:swimDots 1.25s ease-in-out infinite; box-shadow:0 0 10px rgba(0,212,255,0.55); }
   .activity-dot:nth-child(2){animation-delay:0.16s}
   .activity-dot:nth-child(3){animation-delay:0.32s}
-  /* â”€â”€ Thinking Process Block â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-  .thinking-process {
-    margin: 0 0 8px; padding: 0; max-width: 560px;
-    font-family: 'Inter', 'Segoe UI', sans-serif;
-  }
-  .thinking-process-toggle {
-    display: inline-flex; align-items: center; gap: 7px;
-    padding: 6px 12px; border-radius: 8px; border: none; cursor: pointer;
-    background: rgba(0,212,255,0.06); color: #7dd3fc;
-    font-size: 11.5px; font-weight: 600; letter-spacing: 0.02em;
-    transition: background 0.2s, color 0.2s;
-    font-family: 'Space Grotesk', 'Segoe UI', sans-serif;
-  }
-  .thinking-process-toggle:hover {
-    background: rgba(0,212,255,0.12); color: #bae6fd;
-  }
-  .thinking-process-toggle .tp-icon {
-    width: 14px; height: 14px; flex-shrink: 0;
-    opacity: 0.7; transition: transform 0.25s ease;
-  }
-  .thinking-process.open .thinking-process-toggle .tp-icon {
-    transform: rotate(90deg);
-  }
-  .thinking-process-toggle .tp-label {
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  }
-  .thinking-process-toggle .tp-dots {
-    display: inline-flex; gap: 3px; margin-left: 4px; vertical-align: middle;
-  }
-  .thinking-process-toggle .tp-dots span {
-    width: 4px; height: 4px; border-radius: 50%; background: #0ea5e9;
-    animation: tpPulse 1.4s ease-in-out infinite;
-  }
-  .thinking-process-toggle .tp-dots span:nth-child(2) { animation-delay: 0.2s; }
-  .thinking-process-toggle .tp-dots span:nth-child(3) { animation-delay: 0.4s; }
-  @keyframes tpPulse { 0%,100%{ opacity:0.3; transform:scale(0.8); } 50%{ opacity:1; transform:scale(1); } }
-  .thinking-process-steps {
-    display: none; margin-top: 6px; padding: 8px 12px;
-    border-radius: 8px; background: rgba(0,212,255,0.03);
-    border: 1px solid rgba(0,212,255,0.08);
-  }
-  .thinking-process.open .thinking-process-steps { display: block; }
-  .thinking-process-step {
-    display: flex; align-items: flex-start; gap: 8px;
-    padding: 4px 0; font-size: 12px; color: #94a3b8; line-height: 1.5;
-  }
-  .thinking-process-step:last-child { padding-bottom: 0; }
-  .thinking-process-step .step-icon {
-    width: 16px; height: 16px; flex-shrink: 0; margin-top: 1px;
-    border-radius: 50%; display: flex; align-items: center; justify-content: center;
-    font-size: 10px; font-weight: 700;
-  }
-  .thinking-process-step .step-icon.done {
-    background: rgba(34,197,94,0.12); color: #22c55e;
-    border: 1px solid rgba(34,197,94,0.25);
-  }
-  .thinking-process-step .step-icon.active {
-    background: rgba(0,212,255,0.12); color: #00d4ff;
-    border: 1px solid rgba(0,212,255,0.3);
-    animation: stepPulse 1.2s ease-in-out infinite;
-  }
-  @keyframes stepPulse { 0%,100%{ box-shadow:0 0 0 0 rgba(0,212,255,0.3); } 50%{ box-shadow:0 0 0 4px rgba(0,212,255,0); } }
-  .thinking-process-step .step-text {
-    color: #cbd5e1; font-weight: 500;
-  }
-  .thinking-process-step.step-done .step-text { color: #94a3b8; }
-  .thinking-process-step.step-active .step-text { color: #e2e8f0; }
+  /* Legacy emoji thinking-process UI retired; static/vm_activity.js is the single activity UI. */
 
   /* â”€â”€ Improved Source Panel (replaces old source-panel) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
   .sources-section {
@@ -2171,21 +2105,26 @@
   .bubble .vm-table-wrap td[align="right"]{ text-align:right; }
   .msg-toolbar{ opacity:0.72; transition:opacity .15s; }
   .msg-toolbar:hover{ opacity:1; }
-  /* Comfortable reading width on desktop; center so large monitors don't
-     stretch the conversation edge-to-edge. Use more of the available
-     viewport while keeping a readable line length. */
-  @media(min-width:1280px){
-    #messages{ max-width:1120px; margin-left:auto; margin-right:auto; }
-  }
-  @media(min-width:1600px){
-    #messages{ max-width:1240px; }
+  /* Desktop conversation layout: a centered reading column with an explicit
+     flex column so user messages align right and assistant replies fill from
+     the left instead of bunching in a narrow middle column. */
+  @media(min-width:641px){
+    #messages{
+      display:flex;
+      flex-direction:column;
+      width:100%;
+      max-width:920px;
+      margin:0 auto;
+      padding:24px 32px 160px !important;
+    }
+    #messages > .user-message{ align-self:flex-end; margin-left:auto; margin-right:0; }
+    #messages > .assistant-message{ align-self:flex-start; width:100%; max-width:100%; }
   }
   /* Tablet: give the conversation more room by tightening the sidebar. */
   @media(min-width:769px) and (max-width:1199px){
     #sidebar{ width:240px !important; }
     #topHeader{ left:240px !important; }
     main{ margin-left:240px !important; }
-    #messages{ max-width:none; }
   }
   /* vm-fix19 item 3: image+text layout for results with real image URLs.
      Image left (fixed aspect, object-fit cover, lazy+onerror in renderer),
@@ -6850,98 +6789,6 @@ function VMRenderImageLeftTextRightCards(bubbleEl, sourceMetadata) {
     bub.appendChild(container);
 }
 
-/* â”€â”€ Thinking Process Block â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-   Creates a collapsible "Thinking Process" indicator similar to Claude's
-   thinking blocks. Steps are added one by one via addThinkingStep(),
-   and the block auto-expands while active, then collapses when done.
-   --------------------------------------------------------------------- */
-function createThinkingProcess(container) {
-    if (!container) return null;
-    var wrap = document.createElement("div");
-    wrap.className = "thinking-process";
-
-    var toggle = document.createElement("button");
-    toggle.className = "thinking-process-toggle";
-    toggle.innerHTML =
-        '<svg class="tp-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>' +
-        '<span class="tp-label">Thinking</span>' +
-        '<span class="tp-dots"><span></span><span></span><span></span></span>';
-
-    var stepsEl = document.createElement("div");
-    stepsEl.className = "thinking-process-steps";
-
-    wrap.appendChild(toggle);
-    wrap.appendChild(stepsEl);
-    container.appendChild(wrap);
-
-    // Toggle open/close
-    toggle.onclick = function () {
-        wrap.classList.toggle("open");
-    };
-
-    return {
-        el: wrap,
-        toggle: toggle,
-        stepsEl: stepsEl,
-        steps: [],
-        _activeStepIdx: -1,
-        addStep: function (label) {
-            // Mark previous step as done
-            if (this._activeStepIdx >= 0 && this._activeStepIdx < this.steps.length) {
-                var prev = this.steps[this._activeStepIdx];
-                prev.iconEl.textContent = "\u2713";
-                prev.iconEl.className = "step-icon done";
-                prev.row.className = "thinking-process-step step-done";
-            }
-            var emoji = "\uD83D\uDD0D";
-            var l = String(label || "").toLowerCase();
-            if (l.indexOf("search") !== -1) emoji = "\uD83D\uDD0E";         // ðŸ”Ž
-            else if (l.indexOf("review") !== -1) emoji = "\uD83D\uDCDA";    // ðŸ“š
-            else if (l.indexOf("timestamp") !== -1 || l.indexOf("fresh") !== -1) emoji = "\uD83D\uDDB3"; // ðŸ•’
-            else if (l.indexOf("compar") !== -1) emoji = "\u2696\uFE0F";    // âš–ï¸
-            else if (l.indexOf("synthes") !== -1) emoji = "\u270D\uFE0F";   // âœï¸
-            else if (l.indexOf("thinking") !== -1) emoji = "\uD83D\uDCAC";  // ðŸ’¬
-            var row = document.createElement("div");
-            row.className = "thinking-process-step step-active";
-            row.setAttribute("data-step", "1");
-            var iconEl = document.createElement("span");
-            iconEl.className = "step-icon active";
-            iconEl.textContent = emoji;
-            iconEl.style.fontSize = "11px";
-            var textEl = document.createElement("span");
-            textEl.className = "step-text";
-            textEl.textContent = emoji + " " + label;
-            row.appendChild(iconEl);
-            row.appendChild(textEl);
-            this.stepsEl.appendChild(row);
-            this.steps.push({ row: row, iconEl: iconEl, textEl: textEl });
-            this._activeStepIdx = this.steps.length - 1;
-            // Auto-open while active
-            this.el.classList.add("open");
-            // Update toggle label
-            this.toggle.querySelector(".tp-label").textContent = label;
-            // Scroll into view
-            try { this.el.scrollIntoView({ behavior: "smooth", block: "nearest" }); } catch (e) {}
-            return this;
-        },
-        finish: function () {
-            // Mark last step as done
-            if (this._activeStepIdx >= 0 && this._activeStepIdx < this.steps.length) {
-                var last = this.steps[this._activeStepIdx];
-                last.iconEl.textContent = "\u2713";
-                last.iconEl.className = "step-icon done";
-                last.row.className = "thinking-process-step step-done";
-            }
-            // Remove dots from toggle
-            var dots = this.toggle.querySelector(".tp-dots");
-            if (dots) dots.remove();
-            // Collapse after a brief delay
-            var self = this;
-            setTimeout(function () { self.el.classList.remove("open"); }, 600);
-        }
-    };
-}
-
 /* â”€â”€ Improved Sources Panel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    Clean, modern source cards shown only when real search results exist.
    Shows favicon, name, title, domain, and tier badge. No fake/empty sources.
@@ -8251,7 +8098,6 @@ function showActivityIndicator(label, detail) {
 function hideActivityIndicator() {
     var existing = document.querySelector('[data-activity="true"]');
     if (existing && existing.parentNode) existing.remove();
-    currentActivity = null;
 }
 
 function browserSpeak(text) {
@@ -13665,7 +13511,7 @@ window.send = async function () {
                 if (statusIndicator && statusIndicator.parentNode) statusIndicator.remove();
             } catch(e){}
             statusIndicator = null;
-            try { if (thinkingBlock) { thinkingBlock.finish(); thinkingBlock = null; } } catch(e){}
+            try { if (thinking && thinking._vmActivity) thinking._vmActivity.abort("Request interrupted"); } catch(e){}
             if (!fullReply && !bubbleEl) {
                 try { removeThinkingIndicator(thinking); } catch(e){}
             }
@@ -13709,9 +13555,7 @@ window.send = async function () {
         var streamSourceMetadata = [];
         var streamConfidence = "";
         var statusIndicator = null;
-        var thinkingBlock = null;
         var streamReplyMode = false;
-        var currentActivity = null; // {label, detail}
 
         var _vmStreamLastActivity = Date.now();
         var _vmStreamTimedOut = false;
@@ -13749,16 +13593,15 @@ window.send = async function () {
                 if (!line || !line.startsWith("data: ")) continue;
                 var dataStr = line.slice(6).trim();
                 if (!dataStr || dataStr === "{}" || dataStr === "null") continue;
+                var evt;
                 try {
-                    var evt = JSON.parse(dataStr);
-                    if (evt && evt.type === "activity" && evt.activity) {
-                        var activeTracker = (thinking && thinking._vmActivity) || statusIndicator;
-                        if (activeTracker && typeof activeTracker.ingest === "function") {
-                            activeTracker.ingest(evt.activity);
-                        }
-                        continue;
-                    }
+                    evt = JSON.parse(dataStr);
                 } catch (e) { continue; }
+
+                if (evt && evt.type === "activity" && evt.activity) {
+                    if (thinking && thinking._vmActivity) thinking._vmActivity.ingest(evt);
+                    continue;
+                }
 
                 if (evt.error) { streamError = evt.error; break; }
 
@@ -13809,36 +13652,26 @@ window.send = async function () {
                     continue;
                 }
 
-                /* ---- THINKING PROCESS €” collapsible reasoning steps ---- */
+                /* ---- THINKING PROCESS → unified activity tracker (no emoji box) ---- */
                 if (evt.thinking_process) {
                     var tp = evt.thinking_process;
-                    if (!thinkingBlock) {
-                        // Create the thinking process container in the messages area
-                        var msgsContainer = document.getElementById("messages");
-                        if (msgsContainer) {
-                            thinkingBlock = createThinkingProcess(msgsContainer);
-                        }
-                    }
-                    if (thinkingBlock) {
-                        thinkingBlock.addStep(tp.label || "Processing...");
+                    if (thinking && thinking._vmActivity) {
+                        thinking._vmActivity.ingest({
+                            event_id: "tp_" + (tp.step || "step"),
+                            operation: tp.step || "reasoning",
+                            status: "started",
+                            label: tp.label || "Thinking..."
+                        });
                     }
                     continue;
                 }
 
-                /* ---- ACTIVITY INDICATOR €” shared backend status ---- */
+                /* ---- ACTIVITY (legacy envelope without type) → same tracker ---- */
                 if (evt.activity) {
-                    var act = evt.activity;
-                    currentActivity = {
-                        label: act.label || "Processing…",
-                        detail: act.detail || "",
-                        category: act.category || "general",
-                    };
-                    showActivityIndicator(currentActivity.label, currentActivity.detail);
+                    if (thinking && thinking._vmActivity) thinking._vmActivity.ingest(evt);
                     continue;
                 }
                 if (evt.activity_complete || evt.activity_failed || evt.activity_cancelled) {
-                    hideActivityIndicator();
-                    currentActivity = null;
                     continue;
                 }
 
@@ -13958,9 +13791,6 @@ window.send = async function () {
                 }
 
                 if (evt.stream_continue) {
-                    if (thinkingBlock) {
-                        try { thinkingBlock.addStep("Continuing long response…"); } catch (e) {}
-                    }
                     continue;
                 }
                 if (evt.truncated) {
@@ -14015,12 +13845,6 @@ window.send = async function () {
                         if (bubbleEl) {
                             var bub = bubbleEl.querySelector(".bubble");
                             if (bub) bub.textContent = "";
-                            // Move thinking process block inside the bubble (above the text)
-                            if (thinkingBlock && thinkingBlock.el && bub) {
-                                bub.insertBefore(thinkingBlock.el, bub.firstChild);
-                                thinkingBlock.finish();
-                                thinkingBlock = null;
-                            }
                         }
                     }
                     fullReply += tok;
@@ -14076,26 +13900,24 @@ window.send = async function () {
             }
         }
 
-        if (!bubbleEl && !streamError) {
-            removeThinkingIndicator(thinking);
-            if (fullReply) {
-                addMessage(fullReply, "ai");
-                var msgsC = document.getElementById("messages");
-                bubbleEl = msgsC ? msgsC.lastElementChild : null;
-                // Move thinking process block if it exists
-                if (thinkingBlock && thinkingBlock.el && bubbleEl) {
-                    var bub = bubbleEl.querySelector(".bubble");
-                    if (bub) bub.insertBefore(thinkingBlock.el, bub.firstChild);
-                    thinkingBlock.finish();
-                    thinkingBlock = null;
-                }
-                // Move activity row above the bubble and finish (shows compact summary header)
-                if (thinking && thinking._vmActivity && bubbleEl) {
-                    var bub = bubbleEl.querySelector(".bubble");
-                    if (bub) bub.insertBefore(thinking._vmActivity.rootEl, bub.firstChild);
-                    thinking._vmActivity.finish(true);
-                }
+        if (!bubbleEl && !streamError && fullReply) {
+            addMessage(fullReply, "ai");
+            var msgsC = document.getElementById("messages");
+            bubbleEl = msgsC ? msgsC.lastElementChild : null;
+        }
+
+        /* Collapse the unified activity indicator into a clickable gray summary
+           directly above the assistant bubble. finish(true) stops the cyan dots
+           and enables the bottom-sheet step drawer on tap. */
+        if (bubbleEl && !streamError) {
+            var _actBub = bubbleEl.querySelector(".bubble");
+            if (thinking && thinking._vmActivity) {
+                if (_actBub) _actBub.insertBefore(thinking._vmActivity.rootEl, _actBub.firstChild);
+                thinking._vmActivity.finish(true);
             }
+            removeThinkingIndicator(thinking);
+        } else if (thinking) {
+            removeThinkingIndicator(thinking);
         }
 
         /* Only render sources when real search evidence was collected €”
@@ -14134,12 +13956,6 @@ window.send = async function () {
             }
         }
 
-        /* Finish any lingering thinking process block */
-        if (thinkingBlock) {
-            thinkingBlock.finish();
-            thinkingBlock = null;
-        }
-
         /* MODE B €” reply/copy request: render a prominent copy bar under the message */
         if (bubbleEl && streamReplyMode) {
             renderReplyCopyBar(bubbleEl);
@@ -14169,7 +13985,7 @@ window.send = async function () {
         if (_sendAborted) { streamError = streamError || "aborted"; }
         else if (_vmStreamTimedOut || (err && err.message === '__vm_stream_timeout__')) { if (!streamError) streamError = 'Stream timed out. Retrying failed - please try again.'; }
         else { if (!streamError) streamError = (err && err.message) ? err.message : "Connection error"; }
-        try { if (thinkingBlock) { thinkingBlock.finish(); thinkingBlock = null; } } catch(e){}
+        try { if (thinking && thinking._vmActivity) thinking._vmActivity.abort("Request interrupted"); } catch(e){}
         // Retry once automatically on timeout/error/visibility-abort when no answer content was shown.
         var _vmCanRetry = !_sendAborted && (_vmStreamAttempt < _vmStreamRetryMax - 1) && !fullReply && !bubbleEl;
         if (_vmCanRetry) {
@@ -14188,7 +14004,7 @@ window.send = async function () {
     if (streamError) {
         try {
             removeThinkingIndicator(thinking);
-            if (thinkingBlock) { thinkingBlock.finish(); thinkingBlock = null; }
+            if (thinking && thinking._vmActivity) thinking._vmActivity.abort("Request interrupted");
             var body2 = { message: text || "(image attached)", persona: currentPersona };
             if (currentChatId) body2.chat_id = currentChatId;
             // Use the captured send-time images: the composer (and the legacy
@@ -14202,12 +14018,13 @@ window.send = async function () {
                 timeoutMs: 120000
             });
             var fallbackData = await fallbackRes.json();
-            // Ingest activity events from JSON response
+            // Ingest activity events from the JSON response into the unified tracker.
             if (fallbackData && fallbackData.activities && Array.isArray(fallbackData.activities)) {
                 if (thinking && thinking._vmActivity) thinking._vmActivity.ingestBatch(fallbackData.activities);
             }
-            removeThinkingIndicator(thinking);
             if (fallbackRes.status === 401) {
+                if (thinking && thinking._vmActivity) thinking._vmActivity.abort("Request interrupted");
+                removeThinkingIndicator(thinking);
                 clearAuthToken(); setAppVisible(false);
                 var errorEl = document.getElementById("loginError");
                 if (errorEl) errorEl.textContent = "Please log in to continue";
@@ -14219,12 +14036,23 @@ window.send = async function () {
                 upsertLocalSession({ chat_id: currentChatId, title: fallbackData.updated_title });
                 renderSessionList();
             }
-            if (_regenCtx && _regenCtx.wrapper) {
-                var _fb = _regenCtx.wrapper.querySelector(".bubble");
+            var _fbWrapper = _regenCtx && _regenCtx.wrapper;
+            if (_fbWrapper) {
+                var _fb = _fbWrapper.querySelector(".bubble");
                 if (_fb) _fb.textContent = reply; else addMessage(reply, "ai");
             } else {
                 addMessage(reply, "ai");
             }
+
+            /* Place the activity summary above the JSON assistant bubble and finish. */
+            var _fbMsgs = document.getElementById("messages");
+            var _fbTarget = _fbWrapper || (_fbMsgs ? _fbMsgs.lastElementChild : null);
+            var _fbBubble = _fbTarget ? _fbTarget.querySelector(".bubble") : null;
+            if (thinking && thinking._vmActivity) {
+                if (_fbBubble) _fbBubble.insertBefore(thinking._vmActivity.rootEl, _fbBubble.firstChild);
+                thinking._vmActivity.finish(true);
+            }
+            removeThinkingIndicator(thinking);
 
             /* Backend already persisted messages in /chat €” no duplicate save needed */
             if (currentChatId) saveLastChatId(currentChatId);
