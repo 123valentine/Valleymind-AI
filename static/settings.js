@@ -2527,6 +2527,19 @@ window.VMRichRender = (function () {
     return v.slice(0, 7) === "http://" || v.slice(0, 8) === "https://";
   }
 
+  // Stricter than isSafeUrl: a logo field must be a real absolute http(s) URL,
+  // not prose that happens to start with "https://" in a malformed LLM row.
+  function isHttpUrl(value) {
+    var v = decodeEntities(value || "").trim();
+    if (!/^https?:\/\/\S+$/i.test(v)) return false;
+    try {
+      var parsed = new URL(v);
+      return (parsed.protocol === "http:" || parsed.protocol === "https:") && !!parsed.hostname;
+    } catch (e) {
+      return /^https?:\/\/[^/?#\s]+/i.test(v);
+    }
+  }
+
   function unwrap(el) {
     var parent = el.parentNode;
     if (!parent) { el.remove(); return; }
@@ -2817,6 +2830,93 @@ window.VMRichRender = (function () {
       escapeHtml(slug) + '</a>';
   }
 
+  /* Adjacent copies of the same citation usually mean the model emitted the
+     marker twice ([sirumors] [sirumors]). Keep one so pills never appear twice
+     in a row inside a paragraph, entity description, or message footer. */
+  function dedupeAdjacentCitePills(html) {
+    var out = String(html || "");
+    var re = /(<a\s+class="vm-cite-pill"[^>]*\bdata-vm-cite="([^"]+)"[^>]*>[^<]*<\/a>)(\s*(?:<br\s*\/?>\s*)?)(<a\s+class="vm-cite-pill"[^>]*\bdata-vm-cite="([^"]+)"[^>]*>[^<]*<\/a>)/gi;
+    for (var pass = 0; pass < 8; pass++) {
+      var changed = false;
+      out = out.replace(re, function (match, first, firstSlug, gap, second, secondSlug) {
+        if (String(firstSlug).toLowerCase() === String(secondSlug).toLowerCase()) {
+          changed = true;
+          return first + " ";
+        }
+        return match;
+      });
+      if (!changed) break;
+    }
+    return out;
+  }
+
+  /* Render citation markers inside short text such as .vm-entity-desc without
+     nesting anchors (the title/logo already link to the source). */
+  function renderInlineCitationHtml(value, sources) {
+    var text = decodeEntities(value || "").trim();
+    if (!text) return "";
+    var escaped = escapeHtml(text);
+    var html = escaped.replace(CITE_RE, function (m, bracket, plain) {
+      return citePillHtml(bracket || plain || "", sources);
+    });
+    return dedupeAdjacentCitePills(html);
+  }
+
+  /* Keep pills inline when a model dumps citation markers on their own lines. */
+  function compactCitationPills(html) {
+    var out = String(html || "");
+    out = out.replace(/(<\/a>)\s*(?:<br\s*\/?>\s*)+(?=<a\s+class="vm-cite-pill")/gi, "$1 ");
+    out = dedupeAdjacentCitePills(out);
+    var citationOnlyParagraph = /<p>(?:\s*<a\s+class="vm-cite-pill"[^>]*>[^<]*<\/a>\s*)+<\/p>/i;
+    out = out.replace(/<\/p>\s*(<p>(?:\s*<a\s+class="vm-cite-pill"[^>]*>[^<]*<\/a>\s*)+<\/p>)/gi,
+      function (match, para) {
+        if (!citationOnlyParagraph.test(para)) return match;
+        var inner = para.replace(/^<p>/i, "").replace(/<\/p>$/i, "").trim();
+        return inner + "</p>";
+      });
+    return out;
+  }
+
+  function separatorsBetween(startEl, endEl) {
+    var nodes = [];
+    var node = startEl && startEl.nextSibling;
+    while (node && node !== endEl) {
+      if (node.nodeType === 3 && !String(node.nodeValue || "").trim()) {
+        nodes.push(node);
+      } else if (node.nodeType === 1 && String(node.nodeName || "").toUpperCase() === "BR") {
+        nodes.push(node);
+      } else {
+        return null;
+      }
+      node = node.nextSibling;
+    }
+    return node === endEl ? nodes : null;
+  }
+
+  function dedupeCitePillsInRoot(rootEl) {
+    if (!rootEl || typeof rootEl.querySelectorAll !== "function") return;
+    var pills = Array.prototype.slice.call(rootEl.querySelectorAll(".vm-cite-pill"));
+    var last = null;
+    for (var i = 0; i < pills.length; i++) {
+      var pill = pills[i];
+      if (!pill || !pill.parentNode) continue;
+      var label = (pill.getAttribute && pill.getAttribute("data-vm-cite")) || pill.textContent || "";
+      var lastLabel = last && ((last.getAttribute && last.getAttribute("data-vm-cite")) || last.textContent || "");
+      if (last && last.parentNode === pill.parentNode &&
+          String(label).toLowerCase() === String(lastLabel).toLowerCase()) {
+        var separators = separatorsBetween(last, pill);
+        if (separators) {
+          separators.forEach(function (node) {
+            if (node.parentNode) node.parentNode.removeChild(node);
+          });
+          if (pill.parentNode) pill.parentNode.removeChild(pill);
+          continue;
+        }
+      }
+      last = pill;
+    }
+  }
+
   /* Re-run after async source metadata arrives: upgrade every rendered pill to
      a real source link; unmatched pills open the shared sources drawer. */
   function hydrateCitePills(rootEl, sources) {
@@ -2825,6 +2925,7 @@ window.VMRichRender = (function () {
     if (pool.length && typeof window !== "undefined") {
       try { window.VM_LAST_SOURCES = pool; } catch (e) {}
     }
+    dedupeCitePillsInRoot(rootEl);
     var pills = rootEl.querySelectorAll(".vm-cite-pill");
     for (var i = 0; i < pills.length; i++) {
       var pill = pills[i];
@@ -2951,6 +3052,22 @@ window.VMRichRender = (function () {
     return null;
   }
 
+  function conciseSnippet(value) {
+    var text = decodeEntities(value || "").replace(/\s+/g, " ").trim();
+    if (!text) return "";
+    var sentences = text.match(/[^.!?]+[.!?]+(?:\s|$)|[^.!?]+$/g) || [text];
+    var summary = sentences.slice(0, 2).join(" ").trim();
+    if (summary.length > 240) {
+      summary = summary.slice(0, 237).replace(/\s+\S*$/, "") + "…";
+    }
+    return summary;
+  }
+
+  function isDescPlaceholder(value) {
+    var v = decodeEntities(value || "").trim();
+    return !v || /^(?:-|–|—|n\/?a|none|null|blank|logo|logo\s*url|image|icon|tbd)$/i.test(v);
+  }
+
   function renderEntityLogoList(items, sources) {
     if (!Array.isArray(items) || !items.length) return "";
     var html = '<div class="vm-entity-list">';
@@ -2968,11 +3085,10 @@ window.VMRichRender = (function () {
       var title = escapeHtml(decodeEntities(item.name || "Entity"));
       var subtitle = item.subtitle
         ? ' <span class="vm-entity-subtitle">— ' + escapeHtml(decodeEntities(item.subtitle)) + '</span>' : "";
-      var desc = item.desc
-        ? (url
-            ? '<a class="vm-entity-desc" href="' + escapeHtml(url) + '" target="_blank" rel="noopener noreferrer">' + escapeHtml(decodeEntities(item.desc)) + '</a>'
-            : '<span class="vm-entity-desc">' + escapeHtml(decodeEntities(item.desc)) + '</span>')
-        : "";
+      // Use a span (not another anchor): the logo/title already link out, and
+      // citation pills inside the explanation must remain clickable anchors.
+      var descHtml = renderInlineCitationHtml(item.desc, sources);
+      var desc = descHtml ? '<span class="vm-entity-desc">' + descHtml + '</span>' : "";
       html += '<div class="vm-entity-row"' +
         ' data-vm-entity-name="' + escapeHtml(item.name || "") + '"' +
         ' data-vm-entity-domain="' + escapeHtml(domain) + '"' +
@@ -3000,28 +3116,44 @@ window.VMRichRender = (function () {
     var desc = "";
 
     // New 6-field form: Name | Subtitle | Domain | URL | LogoURL | Description.
-    // Legacy 5-field form stays valid: field2 is domain-or-logo, field4 is desc.
+    // Models sometimes omit the blank logo slot and shift the explanation into
+    // field 5, or emit five fields with a trailing empty sixth slot. Recover the
+    // explanation instead of dropping it.
     if (parts.length >= 6) {
-      logo = isSafeUrl(field4) ? field4 : "";
-      desc = field5;
+      if (isHttpUrl(field4)) {
+        logo = field4;
+        desc = field5;
+      } else if (isHttpUrl(field5)) {
+        // Fields swapped: description first, logo second.
+        logo = field5;
+        desc = field4;
+      } else {
+        desc = field5 || (isDescPlaceholder(field4) ? "" : field4);
+      }
     } else {
-      if (isSafeUrl(field2) && isSafeUrl(field3)) logo = field2;
+      // Legacy 5-field form: Name | Subtitle | Domain | URL | Description.
+      if (isHttpUrl(field2) && isHttpUrl(field3)) logo = field2;
       desc = field4;
     }
 
     var item = {
       name: String(parts[0] || "Entity").trim() || "Entity",
       subtitle: String(parts[1] || "").trim(),
-      domain: canonicalDomain(field2) || (isSafeUrl(field2) ? hostnameFromUrl(field2) : ""),
+      domain: canonicalDomain(field2) || (isHttpUrl(field2) ? hostnameFromUrl(field2) : ""),
       logo: logo,
-      url: isSafeUrl(field3) ? field3 : (isSafeUrl(field2) ? field2 : ""),
+      url: isHttpUrl(field3) ? field3 : (isHttpUrl(field2) ? field2 : ""),
       desc: desc
     };
     var src = findSourceForEntity(item, sources);
     if (src) {
       if (!item.domain) item.domain = canonicalDomain(src.domain || src.url);
-      if (!item.url && isSafeUrl(src.url)) item.url = src.url;
+      if (!item.url && isHttpUrl(src.url)) item.url = src.url;
       if (!item.logo) item.logo = src.logo || src.icon || src.favicon || "";
+      if (!item.desc) {
+        item.desc = conciseSnippet(
+          src.snippet || src.summary || src.description || src.content || src.text || ""
+        );
+      }
     }
     if (!item.logo) item.logo = item.domain;
     return item;
@@ -3031,7 +3163,9 @@ window.VMRichRender = (function () {
     var items = [];
     var out = String(text == null ? "" : text);
     // [[ENTITY: Name | Subtitle | Domain | URL | LogoURL-or-blank | Description]]
-    out = out.replace(/\[\[ENTITY:\s*([^\]\n]+)\]\]/gi, function (m, body) {
+    // Non-greedy to the first `]]` so inline citation markers like [sirumors]
+    // inside the explanation do not terminate the entity block early.
+    out = out.replace(/\[\[ENTITY:\s*([^\n]+?)\]\]/gi, function (m, body) {
       var parts = body.split("|").map(function (p) { return String(p || "").trim(); });
       if (!parts.length || !parts[0]) return m;
       items.push(makeEntityItem(parts, sources));
@@ -3203,6 +3337,7 @@ window.VMRichRender = (function () {
     html = html.replace(/\uFFF7C(\d+)\uFFF7C/g, function (m, idx) {
       return citePillHtml(citeStore[idx] || "", sourceMetadata);
     });
+    html = compactCitationPills(html);
 
     // Restore Stage 3 custom elements before sanitization so the sanitizer
     // can validate them against ALLOWED_TAGS / ALLOWED_ATTRS.

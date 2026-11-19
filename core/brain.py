@@ -244,7 +244,7 @@ FORMAT RULES (choose the right format; keep these in one consistent style):
 - Explanation → short intro, then headings only if the answer is long.
 - Steps/how-to → numbered list.
 - Multi-attribute comparison (for example comparing pricing, speed and context window) → a real markdown pipe table (header row, separator row like |---|---|, data rows). Never use a code fence for tables, never use dash-line "ASCII tables", never output tabular data as plain aligned text.
-- List/name/mention/recommend/rank of brands, AI models, apps, products, movies, clubs or tools → one entity block per item using [[ENTITY: Name | Subtitle | official-domain.com | https://official-domain.com | Logo/Icon URL or blank | Concise explanation]]. Use the logo/icon URL supplied in the source context when available; leave the field blank rather than invent one. Do NOT use a table for a plain list.
+- List/name/mention/recommend/rank of brands, AI models, apps, products, movies, clubs or tools → one entity block per item using exactly [[ENTITY: Name | Subtitle | official-domain.com | https://official-domain.com | LogoURL-or-blank | Concise 1-2 sentence explanation]]. The final slot is REQUIRED: ALWAYS write a concrete 1-2 sentence explanation there, never leave it empty, and never put prose in the logo slot. Use the logo/icon URL supplied in the source context when available; leave that field blank rather than invent one. Place any citation marker at the end of that explanation sentence, not on a separate line. Do NOT use a table for a plain list.
 - If the user asks to both list and compare → entity blocks for the list, followed by one compact markdown comparison table.
 - Pros/cons → two short bullet lists or a two-column table.
 - Report/research → title, summary, sections, key points, sources.
@@ -2079,7 +2079,10 @@ class MarcusBrain:
             sections.append(
                 "Citation format: when a claim comes from the live search context, cite it inline "
                 "with a clean domain pill such as [domain.com] or 【SourceName】 (the app maps these "
-                "to source_metadata URLs). Never paste raw URLs into prose."
+                "to source_metadata URLs). Place each citation immediately after the exact sentence "
+                "or entity explanation it supports — e.g. '...adopted in 2025 [sirumors].' Never "
+                "collect citations on their own lines after a list or at the end of the message, "
+                "never repeat the same citation twice in a row, and never paste raw URLs into prose."
             )
         presentation = _presentation_mode(user_message)
         if presentation == "matrix":
@@ -2091,20 +2094,26 @@ class MarcusBrain:
             sections.append(
                 "Presentation choice: this is an entity list/ranking. Put each named item on its own line using:\n"
                 "[[ENTITY: Name | Maker/Subtitle | official-domain.com | https://official-domain.com | "
-                "Logo/Icon URL or blank | Concise 1-2 sentence explanation]]\n"
-                "The app renders these as 52px logo-left, clickable-title-right cards. Use the exact "
-                "official domain, target URL, and Logo/Icon URL from the provided source context when available; "
-                "leave the logo field blank instead of inventing one. Never invent domains or URLs. "
-                "Do not wrap the syntax in markdown or code fences, and do not use a table for this list."
+                "LogoURL-or-blank | Concise 1-2 sentence explanation]]\n"
+                "The final explanation slot is MANDATORY for every card: write a concrete 1-2 sentence "
+                "description there even when the logo is blank. Never move that explanation into the logo "
+                "slot and never leave the explanation empty. The app renders these as 52px logo-left, "
+                "clickable-title-right cards. Use the exact official domain, target URL, and Logo/Icon URL "
+                "from the provided source context when available; leave the logo field blank instead of "
+                "inventing one. Put citations inline at the end of the explanation sentence they support, "
+                "never as trailing lines below the list. Never invent domains or URLs. Do not wrap the "
+                "syntax in markdown or code fences, and do not use a table for this list."
             )
         elif presentation == "combined":
             sections.append(
                 "Presentation choice: this asks to list AND compare. First put each named item on its own line using:\n"
                 "[[ENTITY: Name | Maker/Subtitle | official-domain.com | https://official-domain.com | "
-                "Logo/Icon URL or blank | Concise explanation]]\n"
-                "Then add one compact markdown comparison table for the requested attributes. "
-                "Use exact official domains, target URLs, and Logo/Icon URLs from the provided source context "
-                "when available; leave the logo field blank instead of inventing one."
+                "LogoURL-or-blank | Concise 1-2 sentence explanation]]\n"
+                "The final explanation slot is MANDATORY for every card; keep explanations concrete and "
+                "inline-cited at the end of the supporting sentence. Then add one compact markdown "
+                "comparison table for the requested attributes. Use exact official domains, target URLs, "
+                "and Logo/Icon URLs from the provided source context when available; leave the logo field "
+                "blank instead of inventing one."
             )
 
         system_with_context = "\n".join(sections)
@@ -2995,6 +3004,9 @@ class MarcusBrain:
                     print(f"[CONV RECOVERY] Recovery failed (non-fatal): {exc}")
 
                 msgs = self._groq_messages(cid, message, image_data, live_context=live_ctx, mongo_history=mongo_history, global_memories=global_memories, knowledge_data=knowledge_data, recovered_context=recovered_context, search_note=search_note)
+                # Time-to-first-token for this request's first real LLM chunk.
+                _llm_request_started = time.monotonic()
+                _ttft_logged = False
                 if capability == "text":
                     capability = _detect_capability(msgs)
                     print(f"[STREAM] Detected capability: {capability} ({_estimate_messages_tokens(msgs)} estimated tokens)")
@@ -3032,6 +3044,10 @@ class MarcusBrain:
                         _finish_box = [None]
                         for yielded in _stream_once(_cont_msgs, _finish_box):
                             if isinstance(yielded, str):
+                                if yielded.strip() and not _ttft_logged:
+                                    _ttft_logged = True
+                                    _ttft_ms = int((time.monotonic() - _llm_request_started) * 1000)
+                                    print(f"[TIMING] llm_ttft_ms={_ttft_ms}")
                                 _seg += yielded
                                 full_reply += yielded
                                 stream_state["chars"] = len(full_reply)

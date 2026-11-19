@@ -28,6 +28,7 @@ import math
 import re
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
 from typing import Optional
@@ -42,6 +43,8 @@ EVIDENCE_BUDGET_CHARS = 3000       # max chars of evidence sent to LLM
 EVIDENCE_BUDGET_EVIDENCES = 6      # max number of evidence items
 SEARCH_RESULT_LIMIT = 10           # max results from a single search
 FETCH_TIMEOUT = 15                 # seconds for URL fetch
+PAGE_FETCH_TIMEOUT = 7             # tight per-URL budget for parallel page reads
+MAX_PARALLEL_FETCHES = 4           # cap concurrent page fetches
 MAX_FETCH_CHARS = 4000             # max chars to extract from a fetched page
 
 # Time-sensitive keywords that trigger freshness boosting
@@ -1001,6 +1004,35 @@ def _compute_confidence(evidence: list[Evidence], total_searched: int) -> str:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# Fast-path helpers for list-style queries
+# ═══════════════════════════════════════════════════════════════════════════════
+
+_SIMPLE_LIST_QUERY_RE = re.compile(
+    r"\b(?:list|name|names|top|best|recommend(?:ed|ations?)?|examples?|brands?|"
+    r"models?|companies|tools?|apps?|products?|clubs?|teams?|ranking|rank|compare)\b",
+    re.IGNORECASE,
+)
+
+
+def _simple_list_query(message: str) -> bool:
+    """True for 'list the top N...' style queries that need summaries, not pages."""
+    text = str(message or "").strip()
+    return bool(text) and bool(_SIMPLE_LIST_QUERY_RE.search(text))
+
+
+def _snippets_are_rich(results: list[dict]) -> bool:
+    """Enough substantive snippet text to skip full-page fetches safely."""
+    usable = 0
+    for r in results or []:
+        snippet = str(
+            r.get("snippet") or r.get("summary") or r.get("description") or r.get("content") or ""
+        ).strip()
+        if len(snippet) >= 80:
+            usable += 1
+    return usable >= min(3, max(1, len(results or [])))
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # Main research orchestrator
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -1050,6 +1082,7 @@ class SourceIntelligence:
 
         log: list[str] = []
         package = EvidencePackage(research_log=log, is_research_request=True)
+        pipeline_started = time.monotonic()
 
         # Step 1: Plan multi-query search
         plan = plan_search(message, directed_site=directed_site, research_domain=research_domain)
@@ -1065,6 +1098,7 @@ class SourceIntelligence:
         # Step 2: Execute searches (up to 3 queries)
         all_results: list[dict] = []
         total_searched = 0
+        search_started = time.monotonic()
 
         for query in plan.queries[:3]:
             try:
@@ -1085,6 +1119,10 @@ class SourceIntelligence:
                 log.append(f"Search '{query[:60]}': failed ({exc})")
                 print(f"[SOURCE INTEL] Search failed: {exc}")
 
+        search_ms = int((time.monotonic() - search_started) * 1000)
+        print(f"[TIMING] search_ms={search_ms}")
+        log.append(f"search_ms={search_ms}")
+
         if not all_results:
             package.total_searched = total_searched
             package.confidence = "low"
@@ -1101,27 +1139,62 @@ class SourceIntelligence:
         except Exception as exc:
             log.append(f"Image enrichment skipped: {exc}")
 
-        # Step 4: Fetch page content from top results (up to 3)
-        fetched_urls = set()
-        for r in ranked[:5]:
-            url = r.get("url", "")
-            if not url or url in fetched_urls:
-                continue
-            fetched_urls.add(url)
-            try:
-                content, fetch_meta = _fetch_url_with_metadata(url, max_chars=MAX_FETCH_CHARS)
-                if content or fetch_meta:
-                    r["_fetched_content"] = content
-                    r["_fetch_metadata"] = fetch_meta
-                    if fetch_meta.get("logo"):
-                        r["logo"] = r.get("logo") or fetch_meta["logo"]
-                    if fetch_meta.get("icon"):
-                        r["icon"] = r.get("icon") or fetch_meta["icon"]
-                    if fetch_meta.get("image"):
-                        r["image"] = r.get("image") or fetch_meta["image"]
-                    log.append(f"Fetched {urlparse(url).netloc}: {len(content)} chars")
-            except Exception as exc:
-                log.append(f"Fetch {urlparse(url).netloc} failed: {exc}")
+        # Step 4: Fetch page content in parallel with a tight per-URL budget.
+        # Simple list queries already have enough snippet metadata for entity
+        # cards, so skip full-page reads entirely on that fast path.
+        fetched_urls: set[str] = set()
+        fetch_started = time.monotonic()
+        skip_fetch = _simple_list_query(message) and _snippets_are_rich(ranked)
+        if skip_fetch:
+            log.append("Skipped page fetches: rich snippets satisfy simple list query")
+            print("[SOURCE INTEL] Skipping page fetches (rich snippets for list query)")
+        else:
+            fetch_candidates: list[dict] = []
+            for r in ranked[:5]:
+                url = r.get("url", "")
+                if not url or url in fetched_urls:
+                    continue
+                fetched_urls.add(url)
+                fetch_candidates.append(r)
+
+            def _fetch_one(result: dict):
+                url = result.get("url", "")
+                try:
+                    content, fetch_meta = _fetch_url_with_metadata(
+                        url, max_chars=MAX_FETCH_CHARS, timeout=PAGE_FETCH_TIMEOUT
+                    )
+                    return url, content, fetch_meta, None
+                except Exception as exc:
+                    return url, "", {}, exc
+
+            if fetch_candidates:
+                workers = min(MAX_PARALLEL_FETCHES, len(fetch_candidates))
+                with ThreadPoolExecutor(max_workers=workers) as pool:
+                    futures = [pool.submit(_fetch_one, r) for r in fetch_candidates]
+                    for future in as_completed(futures):
+                        url, content, fetch_meta, error = future.result()
+                        if error is not None:
+                            log.append(f"Fetch {urlparse(url).netloc} failed: {error}")
+                            continue
+                        if content or fetch_meta:
+                            result = next(
+                                (r for r in fetch_candidates if r.get("url") == url), None
+                            )
+                            if result is None:
+                                continue
+                            result["_fetched_content"] = content
+                            result["_fetch_metadata"] = fetch_meta
+                            if fetch_meta.get("logo"):
+                                result["logo"] = result.get("logo") or fetch_meta["logo"]
+                            if fetch_meta.get("icon"):
+                                result["icon"] = result.get("icon") or fetch_meta["icon"]
+                            if fetch_meta.get("image"):
+                                result["image"] = result.get("image") or fetch_meta["image"]
+                            log.append(f"Fetched {urlparse(url).netloc}: {len(content)} chars")
+
+        fetch_ms = int((time.monotonic() - fetch_started) * 1000)
+        print(f"[TIMING] fetch_ms={fetch_ms}")
+        log.append(f"fetch_ms={fetch_ms}")
 
         # Step 5: Build evidence (prefer fetched content over snippets)
         evidence = []
@@ -1187,6 +1260,8 @@ class SourceIntelligence:
         print(f"[SOURCE INTEL] Research complete: {len(evidence)} evidence items, "
               f"confidence={confidence}, searched={total_searched}, "
               f"fetched={len(fetched_urls)}, conflicts={len(conflicts)}")
+        research_ms = int((time.monotonic() - pipeline_started) * 1000)
+        print(f"[TIMING] research_ms={research_ms}")
 
         return package
 

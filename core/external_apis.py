@@ -887,7 +887,7 @@ def _tinyfish_api_key() -> str:
     return os.getenv("TINYFISH_API_KEY", "").strip() or os.getenv("TF_API_KEY", "").strip()
 
 
-def _fetch_url_with_metadata(url: str, max_chars: int = 4000) -> tuple[str, dict]:
+def _fetch_url_with_metadata(url: str, max_chars: int = 4000, timeout: int = 8) -> tuple[str, dict]:
     """Fetch a URL and return ``(cleaned_text, metadata)``.
 
     TinyFish Fetch expects ``{"urls": [...]}`` and answers with a top-level
@@ -940,7 +940,7 @@ def _fetch_url_with_metadata(url: str, max_chars: int = 4000) -> tuple[str, dict
             "https://api.fetch.tinyfish.ai",
             json={"urls": [url]},
             headers={"X-API-Key": api_key},
-            timeout=20,
+            timeout=timeout,
         )
         if resp.status_code != 200:
             record_error("tinyfish", status_code=resp.status_code, body=resp.text[:200])
@@ -1396,6 +1396,36 @@ def _source_visual_metadata_from_page(url: str):
         return None, None
 
 
+_IMAGE_INTENT_RE = re.compile(
+    r"\b(?:show|picture|pictures|image|images|photo|photos|poster|posters|"
+    r"screenshot|screenshots|visual|visuals|gallery|preview|previews|"
+    r"look\s+like|appearance)\b",
+    re.IGNORECASE,
+)
+_TEXT_LIST_QUERY_RE = re.compile(
+    r"\b(?:list|lists|name|names|top|best|rank|ranking|rankings|recommend|"
+    r"recommended|recommendations?|compare|comparison|versus|vs|benchmark|"
+    r"benchmarks|price|prices|pricing|cost|costs|spec|specs|statistics|stats|"
+    r"data|api|apis|docs|documentation|rate\s+limits?|plans?|tiers?|"
+    r"context(?:\s+window)?|tokens?|companies|brands|models|tools|apps)\b",
+    re.IGNORECASE,
+)
+
+
+def _query_allows_images(query: str) -> bool:
+    """Cheap gate: skip network image scraping for text/list/data queries.
+
+    Favicons are generated locally from the source domain, so list answers get
+    instant 128px logos without an HTML <head> round-trip per source.
+    """
+    text = str(query or "").strip()
+    if not text:
+        return True
+    if _IMAGE_INTENT_RE.search(text):
+        return True
+    return not _TEXT_LIST_QUERY_RE.search(text)
+
+
 def _wikimedia_image(query: str):
     """Wikipedia/Wikimedia pageimage for a public entity, with attribution.
 
@@ -1430,6 +1460,7 @@ def _enrich_results_with_images(results, query: str = ""):
     """Attach image/image_credit to top search results (server-side, capped)."""
     if not results:
         return
+    allow_page_scrape = _query_allows_images(query)
     tried = 0
     for r in results:
         if tried >= 3:
@@ -1440,15 +1471,16 @@ def _enrich_results_with_images(results, query: str = ""):
         tried += 1
         img = None
         logo = None
-        try:
-            img, logo = _source_visual_metadata_from_page(url)
-        except Exception:
-            img, logo = None, None
+        if allow_page_scrape:
+            try:
+                img, logo = _source_visual_metadata_from_page(url)
+            except Exception:
+                img, logo = None, None
         # A source's real favicon/og:logo is a logo field, not a generic research image.
         if logo and not r.get("logo"):
             r["logo"] = logo.get("logo_url", "")
             r["logo_credit"] = logo.get("image_credit", "")
-        if not img:
+        if not img and allow_page_scrape:
             host = ""
             try:
                 from urllib.parse import urlparse

@@ -516,5 +516,52 @@ assert('markdown matrix comparison stays a table, not entity cards',
   matrixHtml.indexOf('<table') !== -1 && matrixHtml.indexOf('vm-entity-row') === -1,
   matrixHtml.slice(0, 260));
 
+// --- Live-test fixes: entity explanations, snippet fallback, inline citations ----
+var shiftedDescHtml = VMRichRender.render(
+  '[[ENTITY: Sirumors | Rumor tracker | sirumors.com | https://sirumors.com | Covers celebrity rumors daily | ]]',
+  [{ title: 'Sirumors', domain: 'sirumors.com', url: 'https://sirumors.com' }]
+);
+assert('prose in blank-logo slot is preserved as entity description',
+  shiftedDescHtml.indexOf('Covers celebrity rumors daily') !== -1 &&
+  shiftedDescHtml.indexOf('vm-entity-desc') !== -1,
+  shiftedDescHtml.slice(0, 360));
+
+var fiveFieldHtml = render('[[ENTITY: Acme | Startup | acme.test | https://acme.test | Builds useful tools]]');
+assert('legacy five-field entity description is never wiped out',
+  fiveFieldHtml.indexOf('Builds useful tools') !== -1 && fiveFieldHtml.indexOf('vm-entity-desc') !== -1,
+  fiveFieldHtml.slice(0, 320));
+
+var snippetFallbackHtml = VMRichRender.render(
+  '[[ENTITY: Nova | AI lab | nova.test | https://nova.test |  | ]]',
+  [{ title: 'Nova', domain: 'nova.test', url: 'https://nova.test',
+     snippet: 'Nova is an AI research lab. It publishes open models for developers.' }]
+);
+assert('empty entity description falls back to source snippet',
+  snippetFallbackHtml.indexOf('Nova is an AI research lab.') !== -1,
+  snippetFallbackHtml.slice(0, 360));
+
+var inlineCiteSources = [
+  { title: 'Sirumors', domain: 'sirumors.com', url: 'https://sirumors.com/story' }
+];
+var inlineCiteHtml = VMRichRender.render(
+  '[[ENTITY: Sirumors | Rumor tracker | sirumors.com | https://sirumors.com |  | Rumor site launched in 2024 [sirumors] [sirumors].]]',
+  inlineCiteSources
+);
+assert('citations inside entity descriptions become inline pills',
+  inlineCiteHtml.indexOf('class="vm-entity-desc"') !== -1 &&
+  inlineCiteHtml.indexOf('class="vm-cite-pill"') !== -1 &&
+  inlineCiteHtml.indexOf('href="https://sirumors.com/story"') !== -1,
+  inlineCiteHtml.slice(0, 420));
+assert('adjacent duplicate citation pills collapse to one',
+  (inlineCiteHtml.match(/data-vm-cite="sirumors"/g) || []).length === 1,
+  inlineCiteHtml.slice(0, 420));
+
+var dupParagraphHtml = VMRichRender.render(
+  'The site launched in 2024 [sirumors] [sirumors].', inlineCiteSources
+);
+assert('duplicate pills in a paragraph are deduplicated',
+  (dupParagraphHtml.match(/data-vm-cite="sirumors"/g) || []).length === 1,
+  dupParagraphHtml.slice(0, 320));
+
 console.log('RENDER_TESTS: ' + ok + ' passed, ' + fail + ' failed');
 if (fail) process.exit(1);
