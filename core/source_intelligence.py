@@ -31,7 +31,7 @@ import time
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
 from typing import Optional
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -97,6 +97,7 @@ class Evidence:
     source_name: str = ""
     source_domain: str = ""
     source_icon: str = ""
+    logo: str = ""            # official logo/favicon URL for entity cards
     source_type: str = "web"
     url: str = ""
     title: str = ""
@@ -159,7 +160,9 @@ class EvidencePackage:
             block = (
                 f"Source: {ev.source_name} ({ev.source_domain}) "
                 f"[Tier {ev.tier}]\n"
+                f"Official domain: {ev.source_domain}\n"
                 f"URL: {ev.url}\n"
+                f"Logo/Icon URL: {ev.logo or ev.source_icon}\n"
                 f"Title: {ev.title}\n"
                 f"Evidence: {ev.content}\n"
             )
@@ -217,6 +220,8 @@ class EvidencePackage:
                 "domain": ev.source_domain,
                 "url": ev.url,
                 "icon": ev.source_icon,
+                "logo": ev.logo or ev.source_icon,
+                "favicon": ev.source_icon,
                 "source_type": ev.source_type,
                 "tier": ev.tier,
                 "supports_claims": ev.supports_claims,
@@ -359,10 +364,12 @@ def classify_domain(domain: str) -> SourceIdentity:
     )
 
 
-def favicon_url(domain: str) -> str:
-    """Resolve a favicon URL for a domain. Safe fallback to empty."""
-    d = domain.replace("www.", "")
-    return f"https://www.google.com/s2/favicons?sz=32&domain={d}"
+def favicon_url(domain: str, size: int = 128) -> str:
+    """Resolve a high-resolution favicon URL for a domain. Safe fallback to empty."""
+    d = str(domain or "").strip().lower().replace("www.", "")
+    if not d or "/" in d or " " in d:
+        return ""
+    return f"https://www.google.com/s2/favicons?sz={int(size)}&domain={quote(d, safe='')}"
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -815,6 +822,7 @@ def _build_evidence_from_snippet(result: dict) -> Evidence:
         source_name=source.name,
         source_domain=source.domain,
         source_icon=source.icon_url,
+        logo=result.get("logo") or result.get("icon") or result.get("favicon") or source.icon_url,
         source_type=source.source_type,
         url=url,
         title=title,
@@ -1033,7 +1041,7 @@ class SourceIntelligence:
         """
         from core.external_apis import (
             _search_general_web,
-            _fetch_url_content,
+            _fetch_url_with_metadata,
             get_last_structured_results,
             _reset_search_sources,
             LIVE_DATA_UNAVAILABLE,
@@ -1101,9 +1109,16 @@ class SourceIntelligence:
                 continue
             fetched_urls.add(url)
             try:
-                content = _fetch_url_content(url, max_chars=MAX_FETCH_CHARS)
-                if content:
+                content, fetch_meta = _fetch_url_with_metadata(url, max_chars=MAX_FETCH_CHARS)
+                if content or fetch_meta:
                     r["_fetched_content"] = content
+                    r["_fetch_metadata"] = fetch_meta
+                    if fetch_meta.get("logo"):
+                        r["logo"] = r.get("logo") or fetch_meta["logo"]
+                    if fetch_meta.get("icon"):
+                        r["icon"] = r.get("icon") or fetch_meta["icon"]
+                    if fetch_meta.get("image"):
+                        r["image"] = r.get("image") or fetch_meta["image"]
                     log.append(f"Fetched {urlparse(url).netloc}: {len(content)} chars")
             except Exception as exc:
                 log.append(f"Fetch {urlparse(url).netloc} failed: {exc}")
@@ -1120,10 +1135,13 @@ class SourceIntelligence:
                 claims = _extract_claims(fetched)
                 published = str(r.get("published", "") or "")
                 _age, age_label = _age_label(published)
+                fetch_meta = r.get("_fetch_metadata", {}) or {}
                 ev = Evidence(
                     source_name=source.name,
                     source_domain=source.domain,
-                    source_icon=source.icon_url,
+                    source_icon=fetch_meta.get("icon") or source.icon_url,
+                    logo=(r.get("logo") or fetch_meta.get("logo")
+                          or fetch_meta.get("icon") or source.icon_url),
                     source_type=source.source_type,
                     url=r.get("url", ""),
                     title=r.get("title", ""),

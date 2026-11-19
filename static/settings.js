@@ -2580,6 +2580,7 @@ window.VMRichRender = (function () {
             continue;
           }
           var keep = false;
+          if (/^data-vm-entity-(name|domain|logo|url)$/.test(name)) keep = true;
           if (ALLOWED_ATTRS[tag] && ALLOWED_ATTRS[tag][name]) keep = true;
           else if ((name === "href" || name === "src") && isSafeUrl(a.value)) keep = true;
           else if (name === "alt" || name === "title" || name === "colspan" || name === "rowspan" || name === "loading" || name === "preload" || name === "controls" || name === "playsinline") keep = true;
@@ -2876,31 +2877,93 @@ window.VMRichRender = (function () {
     });
   }
 
+  function decodeFaviconDomain(value) {
+    var v = decodeEntities(value || "").trim();
+    var m = v.match(/[?&]domain=([^&#]+)/i);
+    if (!m) return "";
+    try { return decodeURIComponent(m[1]); } catch (e) { return m[1]; }
+  }
+
   function canonicalDomain(value) {
     var v = decodeEntities(value || "").trim();
     if (!v) return "";
+    var faviconDomain = decodeFaviconDomain(v);
+    if (faviconDomain) v = faviconDomain;
+    // Never resolve the favicon service's own host as an entity's logo.
+    if (/google\.com\/s2\/favicons/i.test(v)) return "";
     if (/^https?:\/\//i.test(v)) {
       var host = hostnameFromUrl(v);
+      if (/^(www\.)?google\.com$/i.test(host)) return "";
       return host;
     }
     return v.replace(/^www\./i, "").split(/[\/?#]/)[0].replace(/:\d+$/, "").toLowerCase();
   }
 
-  function entityLogoUrl(domainOrLogo) {
+  function entityLogoUrl(domainOrLogo, fallbackDomain) {
     var v = decodeEntities(domainOrLogo || "").trim();
-    // An explicit image URL is already a verified logo asset.
-    if (/^https?:\/\//i.test(v) && /\.(?:png|jpe?g|gif|webp|svg)(?:\?|$)/i.test(v)) return v;
-    var domain = canonicalDomain(v);
+    if (isSafeUrl(v)) {
+      // Google favicon URLs must resolve to the TARGET domain, not google.com.
+      var faviconDomain = decodeFaviconDomain(v);
+      if (faviconDomain) {
+        var target = canonicalDomain(faviconDomain);
+        return target
+          ? "https://www.google.com/s2/favicons?sz=128&domain=" + encodeURIComponent(target)
+          : "";
+      }
+      // Accept extensionless CDN/favicon URLs too; many real logos have no
+      // file extension and the old regex rejected every one of them.
+      return v;
+    }
+    var domain = canonicalDomain(v) || canonicalDomain(fallbackDomain);
     if (!domain || !/^[a-z0-9.-]+$/.test(domain) || domain.indexOf(".") === -1) return "";
-    return "https://www.google.com/s2/favicons?domain=" + encodeURIComponent(domain) + "&sz=128";
+    return "https://www.google.com/s2/favicons?sz=128&domain=" + encodeURIComponent(domain);
   }
 
-  function renderEntityLogoList(items) {
+  function findSourceForEntity(item, sources) {
+    item = item || {};
+    var pool = sourcePool(sources);
+    if (!pool.length) return null;
+
+    var keys = [item.name, item.domain, item.url, hostnameFromUrl(item.url)];
+    for (var i = 0; i < keys.length; i++) {
+      var key = String(keys[i] || "").trim();
+      if (!key || normalizedSourceText(key) === "entity") continue;
+      var match = findSourceForCitation(key, pool);
+      if (match) return match;
+    }
+
+    var wanted = canonicalDomain(item.domain || hostnameFromUrl(item.url));
+    if (wanted) {
+      for (var j = 0; j < pool.length; j++) {
+        if (canonicalDomain(pool[j].domain || pool[j].url || "") === wanted) return pool[j];
+      }
+    }
+
+    var name = normalizedSourceText(item.name);
+    if (name && name !== "entity") {
+      for (var k = 0; k < pool.length; k++) {
+        var hay = normalizedSourceText([
+          pool[k].name, pool[k].title, pool[k].site_name, pool[k].domain
+        ].join(" "));
+        if (hay.length >= 4 && (hay.indexOf(name) !== -1 || name.indexOf(hay) !== -1)) return pool[k];
+      }
+    }
+    return null;
+  }
+
+  function renderEntityLogoList(items, sources) {
     if (!Array.isArray(items) || !items.length) return "";
     var html = '<div class="vm-entity-list">';
     items.forEach(function (item, i) {
-      var url = isSafeUrl(item.url) ? item.url : "";
-      var logo = entityLogoUrl(item.logo || item.domain || "");
+      var src = findSourceForEntity(item, sources);
+      var domain = canonicalDomain(item.domain || hostnameFromUrl(item.url) || (src && (src.domain || src.url)) || "");
+      var logoCandidate = item.logo || (src && (src.logo || src.icon || src.favicon)) || domain;
+      var logo = entityLogoUrl(logoCandidate, domain);
+      var fallbackLogo = entityLogoUrl(domain);
+      var onerror = (fallbackLogo && fallbackLogo !== logo)
+        ? ' onerror="this.onerror=null;this.src=\'' + escapeHtml(fallbackLogo) + '\'"'
+        : ' onerror="this.style.display=\'none\'"';
+      var url = isSafeUrl(item.url) ? item.url : (src && isSafeUrl(src.url) ? src.url : "");
       var monogram = escapeHtml((item.name || "?").trim().charAt(0).toUpperCase() || "?");
       var title = escapeHtml(decodeEntities(item.name || "Entity"));
       var subtitle = item.subtitle
@@ -2910,10 +2973,14 @@ window.VMRichRender = (function () {
             ? '<a class="vm-entity-desc" href="' + escapeHtml(url) + '" target="_blank" rel="noopener noreferrer">' + escapeHtml(decodeEntities(item.desc)) + '</a>'
             : '<span class="vm-entity-desc">' + escapeHtml(decodeEntities(item.desc)) + '</span>')
         : "";
-      html += '<div class="vm-entity-row">' +
+      html += '<div class="vm-entity-row"' +
+        ' data-vm-entity-name="' + escapeHtml(item.name || "") + '"' +
+        ' data-vm-entity-domain="' + escapeHtml(domain) + '"' +
+        ' data-vm-entity-logo="' + escapeHtml(logo) + '"' +
+        ' data-vm-entity-url="' + escapeHtml(url) + '">' +
         (url ? '<a class="vm-entity-logo" href="' + escapeHtml(url) + '" target="_blank" rel="noopener noreferrer">' : '<span class="vm-entity-logo">') +
           '<span class="vm-entity-monogram">' + monogram + '</span>' +
-          (logo ? '<img class="vm-entity-logo-img" src="' + escapeHtml(logo) + '" alt="" loading="lazy" onerror="this.style.display=\'none\'">' : '') +
+          (logo ? '<img class="vm-entity-logo-img" src="' + escapeHtml(logo) + '" alt="" loading="lazy"' + onerror + '>' : '') +
         (url ? '</a>' : '</span>') +
         '<div class="vm-entity-body">' +
           (url ? '<a class="vm-entity-title" href="' + escapeHtml(url) + '" target="_blank" rel="noopener noreferrer">' : '<span class="vm-entity-title">') +
@@ -2924,15 +2991,50 @@ window.VMRichRender = (function () {
     return html + '</div>';
   }
 
-  function parseEntityBlocks(text) {
+  function makeEntityItem(parts, sources) {
+    var field2 = String(parts[2] || "").trim();
+    var field3 = String(parts[3] || "").trim();
+    var field4 = String(parts[4] || "").trim();
+    var field5 = String(parts[5] || "").trim();
+    var logo = "";
+    var desc = "";
+
+    // New 6-field form: Name | Subtitle | Domain | URL | LogoURL | Description.
+    // Legacy 5-field form stays valid: field2 is domain-or-logo, field4 is desc.
+    if (parts.length >= 6) {
+      logo = isSafeUrl(field4) ? field4 : "";
+      desc = field5;
+    } else {
+      if (isSafeUrl(field2) && isSafeUrl(field3)) logo = field2;
+      desc = field4;
+    }
+
+    var item = {
+      name: String(parts[0] || "Entity").trim() || "Entity",
+      subtitle: String(parts[1] || "").trim(),
+      domain: canonicalDomain(field2) || (isSafeUrl(field2) ? hostnameFromUrl(field2) : ""),
+      logo: logo,
+      url: isSafeUrl(field3) ? field3 : (isSafeUrl(field2) ? field2 : ""),
+      desc: desc
+    };
+    var src = findSourceForEntity(item, sources);
+    if (src) {
+      if (!item.domain) item.domain = canonicalDomain(src.domain || src.url);
+      if (!item.url && isSafeUrl(src.url)) item.url = src.url;
+      if (!item.logo) item.logo = src.logo || src.icon || src.favicon || "";
+    }
+    if (!item.logo) item.logo = item.domain;
+    return item;
+  }
+
+  function parseEntityBlocks(text, sources) {
     var items = [];
     var out = String(text == null ? "" : text);
-    // [[ENTITY: Name | Subtitle | DomainOrLogoUrl | TargetUrl | Description]]
+    // [[ENTITY: Name | Subtitle | Domain | URL | LogoURL-or-blank | Description]]
     out = out.replace(/\[\[ENTITY:\s*([^\]\n]+)\]\]/gi, function (m, body) {
       var parts = body.split("|").map(function (p) { return String(p || "").trim(); });
-      if (parts.length < 3) return m;
-      var url = isSafeUrl(parts[3]) ? parts[3] : (isSafeUrl(parts[2]) ? parts[2] : "");
-      items.push({ name: parts[0] || "Entity", subtitle: parts[1] || "", logo: parts[2] || "", url: url, desc: parts[4] || "" });
+      if (!parts.length || !parts[0]) return m;
+      items.push(makeEntityItem(parts, sources));
       return "\uFFF8E" + (items.length - 1) + "\uFFF8E";
     });
     // Fallback: numbered bold markdown links ("1. **[Name](https://...)** — Subtitle").
@@ -2942,11 +3044,57 @@ window.VMRichRender = (function () {
     if (!items.length && !hasMarkdownTable) {
       out = out.replace(/^\s*\d+\.\s*\*{0,2}\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)\*{0,2}(?:\s*[—–-]\s*([^\n]+))?/gmi,
         function (m, name, url, sub) {
-          items.push({ name: name, subtitle: (sub || "").trim(), logo: url, url: url, desc: "" });
+          items.push(makeEntityItem([name, (sub || "").trim(), "", url, "", ""], sources));
           return "\uFFF8E" + (items.length - 1) + "\uFFF8E";
         });
     }
     return { text: out, items: items };
+  }
+
+  function hydrateEntityCards(rootEl, sources) {
+    if (!rootEl || typeof rootEl.querySelectorAll !== "function") return;
+    var pool = sourcePool(sources);
+    if (!pool.length) return;
+    var rows = rootEl.querySelectorAll(".vm-entity-row");
+    for (var i = 0; i < rows.length; i++) {
+      var row = rows[i];
+      if (!row || typeof row.getAttribute !== "function") continue;
+      var seed = {
+        name: row.getAttribute("data-vm-entity-name") || "",
+        domain: row.getAttribute("data-vm-entity-domain") || "",
+        logo: row.getAttribute("data-vm-entity-logo") || "",
+        url: row.getAttribute("data-vm-entity-url") || ""
+      };
+      var src = findSourceForEntity(seed, pool);
+      if (!src) continue;
+      var domain = canonicalDomain(seed.domain || src.domain || src.url);
+      var logo = entityLogoUrl(src.logo || src.icon || src.favicon || seed.logo || domain, domain);
+      if (logo && typeof row.querySelector === "function") {
+        var img = row.querySelector(".vm-entity-logo-img");
+        if (!img && typeof document !== "undefined" && document.createElement) {
+          img = document.createElement("img");
+          img.className = "vm-entity-logo-img";
+          img.alt = "";
+          img.loading = "lazy";
+          var holder = row.querySelector(".vm-entity-logo");
+          if (holder && typeof holder.insertBefore === "function" && holder.firstChild) {
+            holder.insertBefore(img, holder.firstChild);
+          } else if (holder && typeof holder.appendChild === "function") {
+            holder.appendChild(img);
+          }
+        }
+        if (img) {
+          img.src = logo;
+          if (img.style) img.style.display = "";
+        }
+      }
+      if (isSafeUrl(src.url) && typeof row.querySelectorAll === "function") {
+        var links = row.querySelectorAll(".vm-entity-logo, .vm-entity-title");
+        for (var j = 0; j < links.length; j++) {
+          if (links[j]) links[j].href = src.url;
+        }
+      }
+    }
   }
 
   // Named/【】 citations become pills; numeric [1] markers stay untouched.
@@ -2959,7 +3107,7 @@ window.VMRichRender = (function () {
 
     // Structured entity cards are extracted before markdown processing so the
     // [[ENTITY: ...]] syntax never leaks into the rendered reply.
-    var entityParts = parseEntityBlocks(t);
+    var entityParts = parseEntityBlocks(t, sourceMetadata);
     t = entityParts.text;
 
     // vm-fix19: convert dash-row/ASCII/fenced tabular text to real markdown tables
@@ -3069,7 +3217,7 @@ window.VMRichRender = (function () {
       safe = safe.replace(/\uFFF8E(\d+)\uFFF8E/g, function () {
         if (!firstEntity) return "";
         firstEntity = false;
-        return renderEntityLogoList(entityParts.items);
+        return renderEntityLogoList(entityParts.items, sourceMetadata);
       });
     }
     return safe;
@@ -3079,6 +3227,7 @@ window.VMRichRender = (function () {
     render: render,
     renderEntityLogoList: renderEntityLogoList,
     hydrateCitePills: hydrateCitePills,
+    hydrateEntityCards: hydrateEntityCards,
     findSourceForCitation: findSourceForCitation,
     decodeEntities: decodeEntities,
     sourceSlug: sourceSlug
@@ -3475,6 +3624,11 @@ window.VMEnrichAssistantReply = function (bub, fullText, sourceMetadata, sources
     // Re-run pill hydration now that evt.done may have delivered source metadata.
     if (pillSources.length && typeof window.VMRichRender.hydrateCitePills === "function") {
       window.VMRichRender.hydrateCitePills(bub, pillSources);
+    }
+    // Source metadata can arrive after the text stream. Fill empty entity logos
+    // and links in place so a late logo payload is never missed.
+    if (pillSources.length && typeof window.VMRichRender.hydrateEntityCards === "function") {
+      window.VMRichRender.hydrateEntityCards(bub, pillSources);
     }
     // Wrap tables for horizontal scrolling on mobile/desktop without dropping content.
     window.VMWrapReplyTables(bub);

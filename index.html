@@ -6638,6 +6638,10 @@ function VMHydrateCitationPills(bubbleEl, sourceMetadata, sources) {
     if (bub && window.VMRichRender && typeof window.VMRichRender.hydrateCitePills === "function") {
         window.VMRichRender.hydrateCitePills(bub, list);
     }
+    // Late source metadata also hydrates semantic entity-card logos/links.
+    if (bub && window.VMRichRender && typeof window.VMRichRender.hydrateEntityCards === "function") {
+        window.VMRichRender.hydrateEntityCards(bub, list);
+    }
     return list;
 }
 

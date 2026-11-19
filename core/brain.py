@@ -244,7 +244,7 @@ FORMAT RULES (choose the right format; keep these in one consistent style):
 - Explanation → short intro, then headings only if the answer is long.
 - Steps/how-to → numbered list.
 - Multi-attribute comparison (for example comparing pricing, speed and context window) → a real markdown pipe table (header row, separator row like |---|---|, data rows). Never use a code fence for tables, never use dash-line "ASCII tables", never output tabular data as plain aligned text.
-- List/name/mention/recommend/rank of brands, AI models, apps, products, movies, clubs or tools → one entity block per item using [[ENTITY: Name | Subtitle | official-domain.com | https://official-domain.com | Concise explanation]]. Do NOT use a table for a plain list.
+- List/name/mention/recommend/rank of brands, AI models, apps, products, movies, clubs or tools → one entity block per item using [[ENTITY: Name | Subtitle | official-domain.com | https://official-domain.com | Logo/Icon URL or blank | Concise explanation]]. Use the logo/icon URL supplied in the source context when available; leave the field blank rather than invent one. Do NOT use a table for a plain list.
 - If the user asks to both list and compare → entity blocks for the list, followed by one compact markdown comparison table.
 - Pros/cons → two short bullet lists or a two-column table.
 - Report/research → title, summary, sections, key points, sources.
@@ -463,6 +463,12 @@ def _filter_query_images(items, query: str) -> list:
         if image_url and (not allow_images or _is_generic_research_image(image_url)):
             copy["image"] = ""
             copy["image_credit"] = ""
+        # Logos are identity metadata, not visual-research images. They must
+        # survive data/list queries or entity cards render with empty logos.
+        for key in ("logo", "icon", "favicon"):
+            value = copy.get(key)
+            if value:
+                copy[key] = str(value).strip()
         filtered.append(copy)
     return filtered
 
@@ -2085,18 +2091,20 @@ class MarcusBrain:
             sections.append(
                 "Presentation choice: this is an entity list/ranking. Put each named item on its own line using:\n"
                 "[[ENTITY: Name | Maker/Subtitle | official-domain.com | https://official-domain.com | "
-                "Concise 1-2 sentence explanation]]\n"
+                "Logo/Icon URL or blank | Concise 1-2 sentence explanation]]\n"
                 "The app renders these as 52px logo-left, clickable-title-right cards. Use the exact "
-                "official domain and target URL from the provided sources when available; never invent URLs. "
+                "official domain, target URL, and Logo/Icon URL from the provided source context when available; "
+                "leave the logo field blank instead of inventing one. Never invent domains or URLs. "
                 "Do not wrap the syntax in markdown or code fences, and do not use a table for this list."
             )
         elif presentation == "combined":
             sections.append(
                 "Presentation choice: this asks to list AND compare. First put each named item on its own line using:\n"
                 "[[ENTITY: Name | Maker/Subtitle | official-domain.com | https://official-domain.com | "
-                "Concise explanation]]\n"
+                "Logo/Icon URL or blank | Concise explanation]]\n"
                 "Then add one compact markdown comparison table for the requested attributes. "
-                "Use exact official domains/URLs from the provided sources when available; never invent URLs."
+                "Use exact official domains, target URLs, and Logo/Icon URLs from the provided source context "
+                "when available; leave the logo field blank instead of inventing one."
             )
 
         system_with_context = "\n".join(sections)
@@ -2562,9 +2570,9 @@ class MarcusBrain:
                                     "supports_claims": ev.supports_claims,
                                     "published": ev.published,
                                     "tier": ev.tier,
-
+                                    "icon": ev.source_icon,
+                                    "logo": ev.logo or ev.source_icon,
                                     "image": ev.image,
-
                                     "image_credit": ev.image_credit,
                                 })
                         self._pending_sources = _filter_query_images(
@@ -2832,9 +2840,9 @@ class MarcusBrain:
                                 "supports_claims": ev.supports_claims,
                                 "published": ev.published,
                                 "tier": ev.tier,
-
+                                "icon": ev.source_icon,
+                                "logo": ev.logo or ev.source_icon,
                                 "image": ev.image,
-
                                 "image_credit": ev.image_credit,
                                 "freshness_label": ev.freshness_label,
                             })
@@ -2855,6 +2863,8 @@ class MarcusBrain:
                                     "supports_claims": ev.supports_claims,
                                     "published": ev.published,
                                     "tier": ev.tier,
+                                    "icon": ev.source_icon,
+                                    "logo": ev.logo or ev.source_icon,
                                     "image": ev.image,
                                     "image_credit": ev.image_credit,
                                     "freshness_label": ev.freshness_label,

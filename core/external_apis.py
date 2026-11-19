@@ -3,7 +3,7 @@ import os
 import re
 import threading
 from datetime import datetime
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 import requests
 
 from core.auto_model import get_latest_groq_model
@@ -44,6 +44,67 @@ def _reset_search_sources():
     _search_ctx.structured_results = []
 
 
+def _normalized_meta_key(key) -> str:
+    return re.sub(r"[^a-z0-9]+", "_", str(key or "").lower()).strip("_")
+
+
+def _safe_metadata_url(value, base_url: str = "") -> str:
+    """Normalize a metadata value into an http(s) URL without trusting schemes."""
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    if text.startswith("//"):
+        text = "https:" + text
+    if not re.match(r"^https?://", text, re.IGNORECASE):
+        if not base_url:
+            return ""
+        text = urljoin(base_url, text)
+    if not re.match(r"^https?://", text, re.IGNORECASE):
+        return ""
+    return text
+
+
+def _extract_result_metadata(result, base_url: str = "") -> dict:
+    """Extract logo/icon/image URLs from TinyFish results.
+
+    TinyFish has changed response shapes before, so this looks through the
+    result and common metadata containers instead of assuming one fixed key.
+    Dedicated logo/icon fields stay separate from the research `image` field.
+    """
+    meta = {"logo": "", "icon": "", "image": ""}
+    if not isinstance(result, dict):
+        return meta
+
+    root_url = str(base_url or result.get("final_url") or result.get("url") or "")
+    containers = [result]
+    for key in ("metadata", "meta", "open_graph", "og", "links", "images"):
+        nested = result.get(key)
+        if isinstance(nested, dict):
+            containers.append(nested)
+        elif isinstance(nested, list):
+            for item in nested[:5]:
+                if isinstance(item, dict):
+                    containers.append(item)
+
+    for container in containers:
+        for key, value in container.items():
+            nk = _normalized_meta_key(key)
+            url = _safe_metadata_url(value, root_url)
+            if not url:
+                continue
+            is_iconish = any(token in nk for token in ("favicon", "icon", "logo"))
+            if not meta["logo"] and is_iconish:
+                meta["logo"] = url
+            if not meta["icon"] and any(token in nk for token in ("favicon", "icon")):
+                meta["icon"] = url
+            is_image = any(token in nk for token in ("image", "thumbnail", "og_image", "twitter_image"))
+            if not meta["image"] and is_image and not is_iconish:
+                meta["image"] = url
+
+    meta["logo"] = meta["logo"] or meta["icon"]
+    return meta
+
+
 def _record_search_sources(items: list):
     existing = getattr(_search_ctx, "sources", None)
     if existing is None:
@@ -60,12 +121,17 @@ def _record_search_sources(items: list):
             domain = urlparse(url).netloc.replace("www.", "")
         except Exception:
             domain = ""
+        meta = _extract_result_metadata(it, url)
         existing.append({
             "title": it.get("title", ""),
             "url": url,
             "domain": domain,
+            "site_name": it.get("site_name", ""),
             "snippet": it.get("summary", "")[:400],
             "published": it.get("published", ""),
+            "logo": it.get("logo") or meta["logo"],
+            "icon": it.get("icon") or meta["icon"] or meta["logo"],
+            "image": it.get("image") or meta["image"],
         })
 
 
@@ -821,28 +887,30 @@ def _tinyfish_api_key() -> str:
     return os.getenv("TINYFISH_API_KEY", "").strip() or os.getenv("TF_API_KEY", "").strip()
 
 
-def _fetch_url_content(url: str, max_chars: int = 4000) -> str:
-    """Fetch and extract text content from a URL using TinyFish Fetch API.
+def _fetch_url_with_metadata(url: str, max_chars: int = 4000) -> tuple[str, dict]:
+    """Fetch a URL and return ``(cleaned_text, metadata)``.
 
-    Returns cleaned text content (not HTML), truncated to max_chars.
-    Falls back to empty string on failure — never raises.
-    Includes SSRF protection to block private/metadata IPs.
+    TinyFish Fetch expects ``{"urls": [...]}`` and answers with a top-level
+    ``results`` array. The old code sent ``{"url": ...}`` and read a top-level
+    ``content``/``text`` key, so every fetch 400'd and all logo/image metadata
+    was dropped. This keeps the existing string API via `_fetch_url_content`
+    while preserving logo/icon fields for entity cards.
     """
+    empty: tuple[str, dict] = ("", {})
     if provider_blocked("tinyfish"):
         _log("TinyFish Fetch skipped: free quota unavailable")
-        return ""
+        return empty
     api_key = _tinyfish_api_key()
     if not api_key:
         _log("TinyFish Fetch skipped: TINYFISH_API_KEY not set")
-        return ""
+        return empty
 
     # SSRF protection: block private and metadata IPs
     try:
         parsed = urlparse(url)
         hostname = parsed.hostname or ""
         if not hostname:
-            return ""
-        # Block obvious private/metadata targets
+            return empty
         blocked = {
             "localhost", "127.0.0.1", "0.0.0.0", "::1",
             "metadata.google.internal", "169.254.169.254",
@@ -850,50 +918,94 @@ def _fetch_url_content(url: str, max_chars: int = 4000) -> str:
         }
         if hostname.lower() in blocked:
             _log(f"Fetch blocked: SSRF target {hostname}")
-            return ""
-        # Block RFC1918 / loopback / link-local ranges if parsed as IP
+            return empty
         import ipaddress
         try:
             ip = ipaddress.ip_address(hostname)
             if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast:
                 _log(f"Fetch blocked: private IP {hostname}")
-                return ""
+                return empty
         except ValueError:
-            pass  # hostname is a domain name, not an IP — fine
-        # Only allow http/https schemes
+            pass
         if parsed.scheme and parsed.scheme not in ("http", "https"):
             _log(f"Fetch blocked: non-http scheme {parsed.scheme}")
-            return ""
+            return empty
     except Exception:
-        return ""
+        return empty
 
     _log(f"TinyFish Fetch: {url[:80]}")
     try:
+        # CORRECT REQUEST SHAPE: urls is an array.
         resp = requests.post(
             "https://api.fetch.tinyfish.ai",
-            json={"url": url},
+            json={"urls": [url]},
             headers={"X-API-Key": api_key},
             timeout=20,
         )
         if resp.status_code != 200:
             record_error("tinyfish", status_code=resp.status_code, body=resp.text[:200])
             _log(f"TinyFish Fetch HTTP {resp.status_code}")
-            return ""
+            return empty
         record_success("tinyfish")
         data = resp.json()
-        content = data.get("content") or data.get("text") or ""
-        if not content:
-            _log("TinyFish Fetch returned empty content")
-            return ""
-        # Clean and truncate
-        content = re.sub(r"\s+", " ", content).strip()
+        if not isinstance(data, dict):
+            _log("TinyFish Fetch returned non-object JSON")
+            return empty
+
+        errors = data.get("errors") or []
+        if data.get("error"):
+            errors = [data["error"]] + list(errors or [])
+
+        results = data.get("results")
+        if not isinstance(results, list):
+            # Tolerate older payloads that returned one object at the root.
+            results = [data] if (data.get("content") or data.get("text")) else []
+
+        result = None
+        for candidate in results:
+            if not isinstance(candidate, dict):
+                continue
+            candidate_url = str(candidate.get("final_url") or candidate.get("url") or "")
+            if candidate_url == url or candidate.get("text") or candidate.get("content"):
+                result = candidate
+                break
+        if result is None:
+            result = next((r for r in results if isinstance(r, dict)), None)
+
+        if not result:
+            detail = ""
+            if errors and isinstance(errors[0], dict):
+                detail = str(errors[0].get("message") or errors[0].get("code") or "")[:160]
+            _log(f"TinyFish Fetch returned no results{f': {detail}' if detail else ''}")
+            return empty
+
+        raw_content = result.get("content") or result.get("text") or ""
+        if isinstance(raw_content, list):
+            raw_content = " ".join(str(part) for part in raw_content)
+        content = re.sub(r"\s+", " ", str(raw_content)).strip()
         if len(content) > max_chars:
             content = content[:max_chars].rsplit(" ", 1)[0] + "..."
-        _log(f"TinyFish Fetch success: {len(content)} chars")
-        return content
+
+        metadata = _extract_result_metadata(result, str(result.get("final_url") or url))
+        metadata["title"] = str(result.get("title") or "")
+        description = str(result.get("description") or "").strip()
+        metadata["description"] = "" if description.lower() in ("none", "null") else description
+        metadata["final_url"] = str(result.get("final_url") or result.get("url") or url)
+        metadata["published"] = str(result.get("published_date") or result.get("published") or "")
+
+        if not content:
+            _log("TinyFish Fetch returned empty content (metadata preserved)")
+        else:
+            _log(f"TinyFish Fetch success: {len(content)} chars")
+        return content, metadata
     except Exception as exc:
         _log(f"TinyFish Fetch failed: {_safe_error(exc)[:100]}")
-        return ""
+        return empty
+
+
+def _fetch_url_content(url: str, max_chars: int = 4000) -> str:
+    """Backwards-compatible text-only wrapper around `_fetch_url_with_metadata`."""
+    return _fetch_url_with_metadata(url, max_chars)[0]
 
 
 def _search_tinyfish(query: str, site: str = "") -> str:
@@ -955,15 +1067,19 @@ def _search_tinyfish(query: str, site: str = "") -> str:
     if not results:
         raise RuntimeError("TinyFish returned no results")
 
-    items = [
-        {
+    items = []
+    for r in results[:5]:
+        meta = _extract_result_metadata(r, str(r.get("url") or ""))
+        items.append({
             "title": r.get("title", ""),
             "summary": r.get("snippet", ""),
             "url": r.get("url", ""),
+            "site_name": r.get("site_name", ""),
             "published": "",
-        }
-        for r in results[:5]
-    ]
+            "logo": r.get("logo") or meta["logo"],
+            "icon": r.get("icon") or meta["icon"] or meta["logo"],
+            "image": r.get("image") or meta["image"],
+        })
     _record_search_sources(items)
     # Also store structured results for the Source Intelligence Layer
     structured = []
@@ -974,12 +1090,17 @@ def _search_tinyfish(query: str, site: str = "") -> str:
             domain = urlparse(url).netloc.replace("www.", "")
         except Exception:
             pass
+        meta = _extract_result_metadata(r, url)
         structured.append({
             "title": r.get("title", ""),
             "url": url,
             "domain": domain,
+            "site_name": r.get("site_name", ""),
             "snippet": r.get("snippet", ""),
             "published": "",
+            "logo": r.get("logo") or meta["logo"],
+            "icon": r.get("icon") or meta["icon"] or meta["logo"],
+            "image": r.get("image") or meta["image"],
         })
     _record_structured_results(structured)
     record_success("tinyfish")
@@ -1246,6 +1367,35 @@ def _source_image_from_page(url: str):
         return None
 
 
+def _extract_logo_from_html(html_text: str, base_url: str):
+    """Return {logo_url, image_credit} from a real <link rel=icon> / og:logo."""
+    if not html_text:
+        return None
+    patterns = [
+        r'<link[^>]+rel=["\'][^"\']*(?:shortcut\s+icon|apple-touch-icon|icon|mask-icon)[^"\']*["\'][^>]+href=["\']([^"\']+)["\']',
+        r'<link[^>]+href=["\']([^"\']+)["\'][^>]+rel=["\'][^"\']*(?:shortcut\s+icon|apple-touch-icon|icon|mask-icon)[^"\']*["\']',
+        r'<meta[^>]+(?:property|name)=["\'](?:og:logo|og:image:logo)["\'][^>]+content=["\']([^"\']+)["\']',
+    ]
+    for pat in patterns:
+        mm = re.search(pat, html_text, re.IGNORECASE)
+        if mm:
+            logo = _resolve_url(mm.group(1), base_url)
+            if logo.lower().startswith("https://"):
+                return {"logo_url": logo, "image_credit": _host_credit(base_url)}
+    return None
+
+
+def _source_visual_metadata_from_page(url: str):
+    """One guarded page-head read returning both research image and logo."""
+    try:
+        html = _fetch_page_head(url)
+        if not html:
+            return None, None
+        return _extract_og_image_from_html(html, url), _extract_logo_from_html(html, url)
+    except Exception:
+        return None, None
+
+
 def _wikimedia_image(query: str):
     """Wikipedia/Wikimedia pageimage for a public entity, with attribution.
 
@@ -1289,10 +1439,15 @@ def _enrich_results_with_images(results, query: str = ""):
             continue
         tried += 1
         img = None
+        logo = None
         try:
-            img = _source_image_from_page(url)
+            img, logo = _source_visual_metadata_from_page(url)
         except Exception:
-            img = None
+            img, logo = None, None
+        # A source's real favicon/og:logo is a logo field, not a generic research image.
+        if logo and not r.get("logo"):
+            r["logo"] = logo.get("logo_url", "")
+            r["logo_credit"] = logo.get("image_credit", "")
         if not img:
             host = ""
             try:

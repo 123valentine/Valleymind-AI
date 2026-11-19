@@ -440,6 +440,51 @@ assert('entity logo-left and clickable title-right',
   /class="vm-entity-title"[^>]*href="https:\/\/www\.liverpoolfc\.com"/.test(entityHtml),
   entityHtml.slice(0, 260));
 
+// --- Logo fixes: extensionless logos, late source metadata, empty fields ----
+var extensionlessLogo = render('[[ENTITY: Acme | Startup | acme.test | https://acme.test | https://cdn.test/logo?id=42 | Makes things]]');
+assert('extensionless absolute logo URL is accepted',
+  extensionlessLogo.indexOf('src="https://cdn.test/logo?id=42"') !== -1,
+  extensionlessLogo.slice(0, 300));
+
+var sourceLogoHtml = VMRichRender.render(
+  '[[ENTITY: Liverpool FC | club |  |  |  | Historic club]]',
+  [{ name: 'Liverpool FC', domain: 'liverpoolfc.com', url: 'https://www.liverpoolfc.com/',
+     logo: 'https://cdn.test/liverpool-logo' }]
+);
+assert('empty entity fields are hydrated from source metadata',
+  sourceLogoHtml.indexOf('vm-entity-row') !== -1 &&
+  sourceLogoHtml.indexOf('src="https://cdn.test/liverpool-logo"') !== -1 &&
+  sourceLogoHtml.indexOf('href="https://www.liverpoolfc.com/"') !== -1,
+  sourceLogoHtml.slice(0, 320));
+
+var faviconFixHtml = render('[[ENTITY: Example | Site | https://www.google.com/s2/favicons?domain=example.com&sz=32 | https://example.com |  | Example site]]');
+assert('google favicon input resolves target domain at 128px',
+  faviconFixHtml.indexOf('sz=128&amp;domain=example.com') !== -1 &&
+  faviconFixHtml.indexOf('domain=google.com') === -1,
+  faviconFixHtml.slice(0, 320));
+
+var fakeImg = { src: '', style: { display: 'none' } };
+var fakeRow = {
+  getAttribute: function (name) {
+    return ({
+      'data-vm-entity-name': 'Liverpool FC',
+      'data-vm-entity-domain': '',
+      'data-vm-entity-logo': '',
+      'data-vm-entity-url': ''
+    })[name] || '';
+  },
+  querySelector: function (sel) { return sel === '.vm-entity-logo-img' ? fakeImg : null; }
+};
+var fakeRoot = {
+  querySelectorAll: function (sel) { return sel === '.vm-entity-row' ? [fakeRow] : []; }
+};
+VMRichRender.hydrateEntityCards(fakeRoot, [
+  { title: 'Liverpool FC', domain: 'liverpoolfc.com', url: 'https://www.liverpoolfc.com/', logo: 'https://cdn.test/lfc' }
+]);
+assert('late hydrateEntityCards fills an empty entity logo',
+  fakeImg.src === 'https://cdn.test/lfc' && fakeImg.style.display === '',
+  fakeImg.src);
+
 // --- Clickable citation pills: match label against source metadata ----------
 var pillSources = [
   { title: 'AzLabs AI', domain: 'azlabs.com', url: 'https://azlabs.com/article' },
