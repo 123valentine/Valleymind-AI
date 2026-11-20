@@ -38,6 +38,8 @@ const canvas = $("stage");
 const root = $("vmOverlayRoot");
 const halo = $("vmHalo");
 const stopBtn = $("btnStop");
+const callBtn = $("btnCall");
+const muteBtn = $("btnMute");
 
 const engine = new Companion(canvas, () => {}, { transparent: true });
 const voice = window.VMCloudVoice || null;
@@ -70,6 +72,33 @@ const nativeCamera = (window.vmCompanionAndroid && typeof window.vmCompanionAndr
 
 // Prompts that should make the companion actually LOOK before it answers.
 const VISION_PROMPT = /\b(what\s+am\s+i\s+wearing|look\s+at\s+this|what\s+do\s+you\s+see|describe\s+what\s+you\s+see|what(?:'s|\s+is)\s+this)\b/i;
+
+// Navigation prompts mean "inspect the active screen, then guide me step by
+// step". They are answered from the optional Android Accessibility UI-tree (or
+// a CameraX frame routed through the SAME /api/vision/analyze endpoint) and the
+// normal brain — never from a guess.
+const NAV_PROMPT = /\b(where\s+do\s+i\s+(?:tap|click|go)|what\s+do\s+i\s+tap|which\s+(?:button|tab|menu)|help\s+me\s+navigate|show\s+me\s+where|how\s+do\s+i\s+(?:get|open|find|use)|guide\s+me|walk\s+me\s+through|next\s+step|stuck\s+on\s+(?:this|the)\s+screen|look\s+at\s+(?:this|my)\s+screen)\b/i;
+
+// brain.py semantic states -> real engine behaviours + face expressions.
+const ANIM_BEHAVIOUR = {
+  idle: "idle", listen: "listening", listening: "listening", think: "thinking",
+  thinking: "thinking", work: "working", working: "working", observe: "listening",
+  look: "pointing", curious: "listening", greet: "waving", wave: "waving",
+  welcome: "waving", explain: "talking", talk: "talking", speaking: "talking",
+  ask: "listening", nod: "nodding", agree: "nodding", celebrate: "happy",
+  happy: "happy", success: "happy", point: "pointing", guide: "pointing",
+  walk: "walking", lead: "walking", sit: "sitting", gesture: "gestures",
+  empathetic: "listening", sympathize: "listening", sad: "sad",
+  disagree: "headshake", headshake: "headshake", unsure: "unsure",
+  confused: "unsure", surprised: "idle", blink: "idle", angry: "angry",
+};
+const ANIM_MOOD = {
+  happy: "happy", celebrate: "happy", success: "happy", greet: "happy",
+  wave: "happy", welcome: "happy", empathetic: "sad", sad: "sad",
+  angry: "angry", surprised: "surprised", curious: "surprised", look: "surprised",
+  observe: "surprised", unsure: "surprised", confused: "surprised",
+  relaxed: "relaxed", blink: "blink", neutral: "neutral",
+};
 
 const badgeCamera = $("vmBadgeCamera");
 const badgeOverlay = $("vmBadgeOverlay");
@@ -128,6 +157,8 @@ const state = {
   behaviour: "",       // the body animation currently playing
   speaking: false,
   session: false,      // a hands-free conversation is running
+  muted: false,        // explicit Mute escape hatch (stops auto-resume)
+  animation: null,     // last semantic animation resolved from the brain
 };
 
 // ── voice module hooks (reused, not reimplemented) ────────────────────────
@@ -198,7 +229,7 @@ function execute(effects) {
   for (const eff of effects) {
     switch (eff.type) {
       case "wake": triggerWake(); break;
-      case "start-listen": startListening(); break;
+      case "start-listen": if (!state.muted) startListening(); break;
       case "stop-listen": stopListening(); break;
       case "transcribe": transcribeAndChat(eff.blob); break;
       case "chat": sendChat(eff.text); break;
@@ -206,7 +237,7 @@ function execute(effects) {
       case "stop-speak": stopSpeaking(); break;
       case "abort": abortInFlight(); break;
       case "feedback": cue(eff.message); break;
-      case "session-end": endSession(); break;
+      case "session-end": endSession(eff.reason); break;
     }
   }
 }
@@ -300,13 +331,31 @@ function stopSpeaking() {
 }
 
 // ── the end of a hands-free conversation ──────────────────────────────────
-function endSession() {
+function endSession(reason) {
   if (state.errorTimer) { clearTimeout(state.errorTimer); state.errorTimer = 0; }
   if (state.wakeTimer) { clearTimeout(state.wakeTimer); state.wakeTimer = 0; }
   if (state.asrTimer) { clearTimeout(state.asrTimer); state.asrTimer = 0; }
   if (nativeAsr && nativeAsr.asrCancel) { try { nativeAsr.asrCancel(); } catch (e) {} }
   state.session = false;
-  stopBtn.classList.remove("on");
+  // End resets the mute escape hatch; an explicit Mute keeps it latched until
+  // the user taps UNMUTE (which starts a fresh session).
+  if (reason !== "muted" && !state.keepMuted) state.muted = false;
+  state.keepMuted = false;
+  state.animation = null;
+  syncCallControls();
+}
+
+// Call / Mute / End stay in lockstep with the turn state machine. `Call` starts
+// the hands-free loop (listen -> brain -> lip-synced speech -> listen); `Mute`
+// silences it immediately; `End` (the stop square) tears it down.
+function syncCallControls() {
+  if (callBtn) callBtn.classList.toggle("on", !!state.session);
+  if (muteBtn) {
+    muteBtn.classList.toggle("on", !!state.muted);
+    muteBtn.textContent = state.muted ? "UNMUTE" : "MUTE";
+    muteBtn.setAttribute("aria-label", state.muted ? "Unmute hands-free listening" : "Mute hands-free listening");
+  }
+  if (stopBtn) stopBtn.classList.toggle("on", !!state.session);
 }
 
 // ── VAD recording fallback (no Web Speech recognition available) ──────────
@@ -399,6 +448,22 @@ function cameraEyesAvailable() {
   } catch (e) { return false; }
 }
 
+// Keeps the floating window as small as the character so transparent canvas
+// space cannot swallow taps meant for the app underneath. Android has no
+// per-pixel overlay input mask, so the practical, pointer-safe solution is a
+// compact window region (validated/clamped natively by OverlayRegionRules).
+function requestCompactRegion() {
+  try {
+    if (window.vmNative && window.vmNative.overlay && typeof window.vmNative.overlay.setRegion === "function") {
+      window.vmNative.overlay.setRegion(176, 270);
+      return;
+    }
+    if (window.VMNative && window.VMNative.overlayRegion && typeof window.VMNative.overlayRegion.set === "function") {
+      window.VMNative.overlayRegion.set(176, 270);
+    }
+  } catch (e) { /* older shells keep their current window size */ }
+}
+
 function paintBadges() {
   let camActive = false;
   if (nativeCamera && typeof nativeCamera.cameraState === "function") {
@@ -456,9 +521,88 @@ async function lookAndAnswer(question) {
   }
 }
 
+// ── screen-context capture (optional native eyes) ─────────────────────────
+// The AccessibilityService UI-tree is the low-bandwidth "what is on screen"
+// signal; CameraX frames are the high-fidelity path. Both feed the SAME brain
+// and the SAME /api/vision/analyze endpoint the rest of the app uses.
+function screenBridge() {
+  const a = window.vmCompanionAndroid;
+  if (a && typeof a.screenContextJson === "function") return a;
+  const n = window.VMNative;
+  if (n && n.screen && typeof n.screen.context === "function") {
+    return {
+      screenContextSupported: function () { return n.screen.supported(); },
+      screenContextJson: function () { return n.screen.context(); },
+      screenContextSettings: function () { if (n.screen.settings) n.screen.settings(); },
+    };
+  }
+  return null;
+}
+
+function readScreenContext() {
+  const b = screenBridge();
+  if (!b) return null;
+  try {
+    if (b.screenContextSupported && !b.screenContextSupported()) return null;
+    const raw = b.screenContextJson();
+    const data = (typeof raw === "string") ? JSON.parse(raw) : raw;
+    if (!data || data.ok === false || !data.summary) return null;
+    return data;
+  } catch (e) { return null; }
+}
+
+async function screenGuidanceContext(question) {
+  const ctx = readScreenContext();
+  let visual = "";
+  if (cameraEyesAvailable()) {
+    visual = (await lookAndAnswer(question + " Focus on which control to tap next.")) || "";
+  }
+  if (!ctx && !visual) return null;
+  try { engine.trigger("pointing"); } catch (e) { /* cue only */ }
+  const parts = [];
+  if (ctx) {
+    parts.push("[Active screen context] package=" + (ctx.package || "unknown"));
+    parts.push(String(ctx.summary || "").slice(0, 3000));
+    if (Array.isArray(ctx.nodes)) {
+      parts.push("Interactive elements: " + ctx.nodes.slice(0, 40)
+        .map((n) => (n && (n.label || n.text || n.id)) || "").filter(Boolean).join(" | "));
+    }
+  }
+  if (visual) parts.push("[Vision analysis] " + visual);
+  parts.push("Question: " + question);
+  parts.push("Answer with numbered, concrete steps naming the exact on-screen control to tap. Never invent controls that are not in the context.");
+  return parts.join("\n");
+}
+
+// Strip the brain's silent wire tags; they control the avatar, never speech.
+function takeAnimTags(reply) {
+  const raw = String(reply || "");
+  const anim = raw.match(/\[\s*ANIM\s*:\s*([a-zA-Z][\w-]*)\s*\]/i);
+  const emo = raw.match(/\[\s*(?:EMO|EMOTION)\s*:\s*([a-zA-Z][\w-]*)\s*\]/i);
+  const text = raw
+    .replace(/\[\s*ANIM\s*:\s*[a-zA-Z][\w-]*\s*\]/gi, "")
+    .replace(/\[\s*(?:EMO|EMOTION)\s*:\s*[a-zA-Z][\w-]*\s*\]/gi, "")
+    .replace(/[ \t]{2,}/g, " ").trim();
+  return { text: text, state: anim ? anim[1].toLowerCase() : "", emotion: emo ? emo[1].toLowerCase() : "" };
+}
+
+function applyBrainAnimation(anim) {
+  if (!anim || !anim.state) return;
+  const key = String(anim.state).toLowerCase().replace(/\s+/g, "_");
+  const behaviour = ANIM_BEHAVIOUR[key] || "idle";
+  state.animation = { state: key, behaviour: behaviour, emotion: anim.emotion || "" };
+  state.behaviour = behaviour;
+  try { engine.trigger(behaviour); } catch (e) { /* pose is a cue, not required */ }
+  if (engine.face && typeof engine.face.setMood === "function") {
+    const mood = ANIM_MOOD[anim.emotion] || ANIM_MOOD[key] || "neutral";
+    try { engine.face.setMood(mood); } catch (e) { }
+  }
+}
+
 // ── the ONE brain ─────────────────────────────────────────────────────────
 async function sendChat(text) {
   clearWatchdog();
+  state.animation = null; // each reply brings its own semantic animation
   state.watchdog = window.setTimeout(() => dispatch({ type: "PROCESSING_TIMEOUT" }), 60000);
   try {
     state.req = new AbortController();
@@ -469,15 +613,26 @@ async function sendChat(text) {
       const description = await lookAndAnswer(text);
       if (description) {
         clearWatchdog();
+        applyBrainAnimation({ state: "guide", emotion: "surprised" });
         dispatch({ type: "CHAT_OK", reply: description });
         return;
       }
+    }
+    // "Where do I tap here?" / "Help me navigate this app": on-demand screen
+    // context (Accessibility UI-tree and/or a CameraX frame via the SAME
+    // /api/vision/analyze endpoint) is injected into this turn only.
+    let message = text;
+    if (NAV_PROMPT.test(text)) {
+      try {
+        const context = await screenGuidanceContext(text);
+        if (context) message = context;
+      } catch (e) { /* the plain question still reaches the brain */ }
     }
     const r = await fetch("/api/cloud/chat", {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: text, chat_id: state.chatId }),
+      body: JSON.stringify({ message: message, chat_id: state.chatId }),
       signal: state.req.signal,
     });
     if (r.status === 401 || r.status === 403) { clearWatchdog(); dispatch({ type: "CHAT_ERR" }); return; }
@@ -485,7 +640,12 @@ async function sendChat(text) {
     clearWatchdog();
     if (!r.ok || data.status !== "success" || !data.reply) { dispatch({ type: "CHAT_ERR" }); return; }
     state.chatId = data.chat_id || state.chatId;
-    dispatch({ type: "CHAT_OK", reply: data.reply, presentation: data.presentation });
+    // The brain's [ANIM: ...] / [EMO: ...] tags are silent control data: never
+    // speak or display them. Structured `animation` from /api/cloud/chat wins.
+    const tags = takeAnimTags(data.reply);
+    const anim = data.animation && data.animation.state ? data.animation : tags;
+    if (anim.state) applyBrainAnimation(anim);
+    dispatch({ type: "CHAT_OK", reply: tags.text, presentation: data.presentation });
   } catch (err) {
     clearWatchdog();
     if (err && err.name === "AbortError") return; // a TAP superseded this turn
@@ -574,13 +734,23 @@ function applyState(s) {
   const active = s !== "idle";
   if (active !== state.session) {
     state.session = active;
-    stopBtn.classList.toggle("on", active);
+    syncCallControls();
   }
-  const behaviour = s === "waking" ? "waving"
+  let behaviour = s === "waking" ? "waving"
     : s === "listening" ? "listening"
     : s === "processing" ? "thinking"
     : s === "speaking" ? "talking"
     : "idle";
+  // A semantic brain animation (e.g. guide/pointing, celebrate/happy) owns the
+  // body while the reply is spoken; it must not be overwritten by the generic
+  // "talking" fallback. The face channel carries the matching expression.
+  if (s === "speaking" && state.animation && state.animation.behaviour) {
+    behaviour = state.animation.behaviour;
+    if (engine.face && typeof engine.face.setMood === "function") {
+      const mood = ANIM_MOOD[state.animation.emotion] || ANIM_MOOD[state.animation.state] || "neutral";
+      try { engine.face.setMood(mood); } catch (e) { /* keep the current face */ }
+    }
+  }
   // Only re-trigger the body when the behaviour actually changes, so the
   // animation is not restarted on every state touch.
   if (behaviour !== state.behaviour) {
@@ -652,7 +822,33 @@ function wireControls() {
       : "";
     dispatch({ type: "TAP", text: String(text || "").trim() });
   });
-  // The only way to end the conversation.
+  // Dedicated Live Companion Call: explicit start for the hands-free loop.
+  if (callBtn) {
+    callBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (voice && voice.unlock) { try { voice.unlock(); } catch (err) {} }
+      if (state.muted) { state.muted = false; syncCallControls(); }
+      if (!state.session) dispatch({ type: "TAP", text: "" });
+    });
+  }
+  // Mute is an immediate escape hatch: stop the mic and the loop. Unmute
+  // restarts a fresh listening session.
+  if (muteBtn) {
+    muteBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      state.muted = !state.muted;
+      syncCallControls();
+      if (state.muted) {
+        stopListening();
+        stopSpeaking();
+        state.keepMuted = true;
+        dispatch({ type: "STOP" });
+      } else if (state.session) {
+        dispatch({ type: "TAP", text: "" });
+      }
+    });
+  }
+  // The stop square ends the conversation.
   stopBtn.addEventListener("click", (e) => {
     e.stopPropagation();
     dispatch({ type: "STOP" });
@@ -692,6 +888,7 @@ async function boot() {
   wireNativeAsr();
   wireCameraControls();
   paintBadges();
+  requestCompactRegion();
   try {
     await engine.boot();
   } catch (err) {

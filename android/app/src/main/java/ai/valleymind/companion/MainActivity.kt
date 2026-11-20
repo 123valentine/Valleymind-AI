@@ -77,6 +77,9 @@ class MainActivity : AppCompatActivity(), CompanionBridge.Host {
     /** Native TTS fallback (Android WebView has no speechSynthesis). */
     private lateinit var systemTts: SystemTts
 
+    /** Platform SpeechRecognizer for the in-app Live Companion Call. */
+    private lateinit var asr: CompanionAsr
+
     /** The origin the WebView loads; production default, runtime-overridable. */
     private var baseUrl: String = BuildConfig.VALLEY_BASE_URL
 
@@ -160,6 +163,20 @@ class MainActivity : AppCompatActivity(), CompanionBridge.Host {
 
         systemTts = SystemTts(this)
         systemTts.init()
+
+        // The in-app WebView has no Web Speech API. Drive the platform's own
+        // recogniser and forward its real events to the companion page's call
+        // loop (listen -> brain -> lip-synced speech -> listen).
+        asr = CompanionAsr(this)
+        asr.setListener(object : CompanionAsr.Listener {
+            override fun onAsrReady() = deliverAsrEvent(CompanionAsr.eventJson("ready"))
+            override fun onAsrPartial(text: String) =
+                deliverAsrEvent(CompanionAsr.eventJson("partial", text))
+            override fun onAsrEndOfSpeech() = deliverAsrEvent(CompanionAsr.eventJson("end"))
+            override fun onAsrFinal(text: String) = deliverAsrEvent(CompanionAsr.eventJson("final", text))
+            override fun onAsrError(reason: String) =
+                deliverAsrEvent(CompanionAsr.eventJson("error", null, reason))
+        })
         // The native-TTS completion callback is evaluated in this WebView.
         NativeTtsRegistry.install { name, ok ->
             val js = "window.__vmTtsDone_" + name + " && window.__vmTtsDone_" + name + "(" + ok + ");"
@@ -646,6 +663,13 @@ class MainActivity : AppCompatActivity(), CompanionBridge.Host {
         webView.post { webView.evaluateJavascript("window.__vmAndroidState && window.__vmAndroidState($json);", null) }
     }
 
+    /** Delivers one platform recognition event into the in-app companion page. */
+    private fun deliverAsrEvent(json: String) {
+        webView.post {
+            webView.evaluateJavascript("window.__vmAsrEvent && window.__vmAsrEvent($json);", null)
+        }
+    }
+
     // ── CompanionBridge.Host ────────────────────────────────────────
 
     override fun isOverlaySupported(): Boolean = true
@@ -719,6 +743,7 @@ class MainActivity : AppCompatActivity(), CompanionBridge.Host {
         cameraImageUri = null
         cameraVideoUri = null
         if (::systemTts.isInitialized) systemTts.shutdown()
+        if (::asr.isInitialized) asr.shutdown()
         NativeTtsRegistry.install(null)
         NativeTtsRegistry.installSpeech(null)
         CameraResultRegistry.install(null)
@@ -799,6 +824,39 @@ class MainActivity : AppCompatActivity(), CompanionBridge.Host {
         }
         systemTts.speak(text, voiceId) { /* completion is delivered as the "end" event */ }
     }
+
+    // ── CompanionBridge.Host: hands-free native voice ────────────────
+
+    override fun asrSupported(): Boolean = ::asr.isInitialized && asr.supported
+
+    override fun asrStart(locale: String?): Boolean {
+        if (!asrSupported()) return false
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            recordAudioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+            deliverAsrEvent(CompanionAsr.eventJson("error", null, "permission"))
+            return false
+        }
+        return asr.start(locale ?: "en-US")
+    }
+
+    override fun asrStop() { if (::asr.isInitialized) asr.stop() }
+
+    override fun asrCancel() { if (::asr.isInitialized) asr.cancel() }
+
+    // ── CompanionBridge.Host: optional screen context ────────────────
+
+    override fun screenContextSupported(): Boolean = CompanionScreenService.isEnabled(this)
+
+    override fun screenContextJson(): String {
+        if (!screenContextSupported()) {
+            return "{\"ok\":false,\"reason\":\"screen-context-disabled\"}"
+        }
+        return CompanionScreenService.snapshotJson()
+    }
+
+    override fun screenContextSettings() = CompanionScreenService.openSettings(this)
 
     // ── CompanionBridge.Host: camera eyes ─────────────────────────────
 

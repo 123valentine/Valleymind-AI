@@ -95,6 +95,22 @@
             android:name=".CompanionCameraService"
             android:exported="false"
             android:foregroundServiceType="camera" />
+
+        <!-- Optional screen context for "Where do I tap here?" navigation help.
+             OFF by default: the user must explicitly enable it in Accessibility
+             settings. When off, the bridge reports ok:false and the companion
+             falls back to its CameraX eyes + /api/vision/analyze. -->
+        <service
+            android:name=".CompanionScreenService"
+            android:exported="false"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_service_config" />
+        </service>
     </application>
 
 </manifest>

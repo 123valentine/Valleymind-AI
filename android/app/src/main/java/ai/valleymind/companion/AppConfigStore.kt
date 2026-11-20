@@ -32,8 +32,39 @@ class AppConfigStore(context: Context) {
         prefs.edit().remove(KEY_BASE_URL).apply()
     }
 
+    // ── floating companion placement (drag persistence) ──────────────
+
+    /** The last clamped overlay window position, or null on a fresh install. */
+    fun getOverlayPosition(): Pair<Int, Int>? {
+        val x = prefs.getString(KEY_OVERLAY_X, null)?.toIntOrNull() ?: return null
+        val y = prefs.getString(KEY_OVERLAY_Y, null)?.toIntOrNull() ?: return null
+        return x to y
+    }
+
+    fun setOverlayPosition(x: Int, y: Int) {
+        prefs.edit().putString(KEY_OVERLAY_X, x.toString()).putString(KEY_OVERLAY_Y, y.toString()).apply()
+    }
+
+    /** The compact, pointer-safe window size requested by the companion page. */
+    fun getOverlayRegionDp(): Pair<Int, Int>? {
+        val w = prefs.getString(KEY_OVERLAY_W, null)?.toIntOrNull() ?: return null
+        val h = prefs.getString(KEY_OVERLAY_H, null)?.toIntOrNull() ?: return null
+        return w to h
+    }
+
+    fun setOverlayRegionDp(widthDp: Int, heightDp: Int) {
+        prefs.edit()
+            .putString(KEY_OVERLAY_W, widthDp.toString())
+            .putString(KEY_OVERLAY_H, heightDp.toString())
+            .apply()
+    }
+
     companion object {
         private const val PREFS_NAME = "vm_app_config"
         private const val KEY_BASE_URL = "base_url_override"
+        private const val KEY_OVERLAY_X = "overlay_x"
+        private const val KEY_OVERLAY_Y = "overlay_y"
+        private const val KEY_OVERLAY_W = "overlay_width_dp"
+        private const val KEY_OVERLAY_H = "overlay_height_dp"
     }
 }

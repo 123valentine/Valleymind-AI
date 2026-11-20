@@ -25,7 +25,10 @@
     "contractJson",
     "capabilitiesJson",
     "setOverlayRegion",
-    "getOverlayRegion"
+    "getOverlayRegion",
+    "screenContextSupported",
+    "screenContextJson",
+    "screenContextSettings"
   ],
   "shimMethods": [
     "isSupported",
@@ -51,7 +54,10 @@
     "asrStart",
     "asrStop",
     "asrCancel",
-    "onAsrEvent"
+    "onAsrEvent",
+    "screenContextSupported",
+    "screenContextJson",
+    "screenContextSettings"
   ],
   "capabilities": [
     "overlay",
@@ -60,7 +66,10 @@
     "ttsEvents",
     "camera",
     "asr",
-    "files"
+    "files",
+    "liveCall",
+    "dragPersistence",
+    "screenContext"
   ],
   "events": [
     "__vmAndroidState",

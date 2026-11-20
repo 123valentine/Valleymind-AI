@@ -3952,6 +3952,7 @@ def api_cloud_chat():
             "personality_style": cloud_model.normalize_personality(prefs.get("personality_style")),
             "presentation": cloud_model.normalize_presentation(prefs.get("presentation")),
             "state": cloud_model.cloud_default_state(prefs),
+            "animation": getattr(marcus, "last_animation", None),
             "updated_title": updated_title,
             "sources": list(meta.get("sources") or []),
             "fallback_used": bool(meta.get("fallback_used")),

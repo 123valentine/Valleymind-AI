@@ -41,7 +41,10 @@ object BridgeContract {
         "contractJson",
         "capabilitiesJson",
         "setOverlayRegion",
-        "getOverlayRegion"
+        "getOverlayRegion",
+        "screenContextSupported",
+        "screenContextJson",
+        "screenContextSettings"
     )
 
     /** Methods the injected shim (AndroidBridgeJs) promises to the web layer. */
@@ -69,11 +72,15 @@ object BridgeContract {
         "asrStart",
         "asrStop",
         "asrCancel",
-        "onAsrEvent"
+        "onAsrEvent",
+        "screenContextSupported",
+        "screenContextJson",
+        "screenContextSettings"
     )
 
     val CAPABILITIES = listOf(
-        "overlay", "overlayRegion", "tts", "ttsEvents", "camera", "asr", "files"
+        "overlay", "overlayRegion", "tts", "ttsEvents", "camera", "asr", "files",
+        "liveCall", "dragPersistence", "screenContext"
     )
 
     val EVENTS = listOf(

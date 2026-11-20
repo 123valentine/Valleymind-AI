@@ -36,6 +36,127 @@ from core.african_culture import (
 
 FALLBACK_RESPONSE = "I can't reach the reasoning model right now. Please try again shortly."
 
+# ── Companion semantic animation contract ──────────────────────────────────
+# The VRM companion knows these body behaviours and face expressions (see
+# vrm_preview/companion.js BEHAVIOUR_WEIGHTS / BEHAVIOUR_MOOD and
+# vrm_preview/face.js).  Every semantic state emitted by the brain maps to one
+# body behaviour + one face expression, so no conversation moment is left with
+# a generic idle pose.  `[ANIM: <state>]` is the explicit wire tag; `[EMO: <emotion>]`
+# is optional and refines the face channel.  Both are stripped from the text the
+# user sees/hears and exposed as structured SSE events to the companion shell.
+SEMANTIC_ANIMATION_STATES = {
+    "idle": ("idle", "relaxed"),
+    "listen": ("listening", "neutral"),
+    "listening": ("listening", "neutral"),
+    "think": ("thinking", "neutral"),
+    "thinking": ("thinking", "neutral"),
+    "work": ("working", "relaxed"),
+    "working": ("working", "relaxed"),
+    "observe": ("listening", "surprised"),
+    "look": ("pointing", "surprised"),
+    "curious": ("listening", "surprised"),
+    "greet": ("waving", "happy"),
+    "wave": ("waving", "happy"),
+    "welcome": ("waving", "happy"),
+    "explain": ("talking", "relaxed"),
+    "talk": ("talking", "relaxed"),
+    "speaking": ("talking", "relaxed"),
+    "ask": ("listening", "surprised"),
+    "nod": ("nodding", "happy"),
+    "agree": ("nodding", "happy"),
+    "celebrate": ("happy", "happy"),
+    "happy": ("happy", "happy"),
+    "success": ("happy", "happy"),
+    "point": ("pointing", "neutral"),
+    "guide": ("pointing", "neutral"),
+    "walk": ("walking", "relaxed"),
+    "lead": ("walking", "relaxed"),
+    "sit": ("sitting", "relaxed"),
+    "gesture": ("gestures", "relaxed"),
+    "empathetic": ("listening", "sad"),
+    "sympathize": ("listening", "sad"),
+    "sad": ("sad", "sad"),
+    "disagree": ("headshake", "neutral"),
+    "headshake": ("headshake", "neutral"),
+    "unsure": ("unsure", "neutral"),
+    "confused": ("unsure", "surprised"),
+    "surprised": ("idle", "surprised"),
+    "blink": ("idle", "blink"),
+    "angry": ("angry", "angry"),
+}
+
+_ANIM_TAG_RE = re.compile(r"\[\s*ANIM\s*:\s*([a-zA-Z][\w-]*)\s*\]", re.IGNORECASE)
+_EMO_TAG_RE = re.compile(r"\[\s*(?:EMO|EMOTION)\s*:\s*([a-zA-Z][\w-]*)\s*\]", re.IGNORECASE)
+_ANIMATION_HINT_RE = re.compile(
+    r"\b(where do i tap|where do i click|help me navigate|how do i (?:get|navigate|open)|"
+    r"take me to|show me (?:where|how)|walk me through|guide me|what do i tap|"
+    r"which (?:button|tab|menu)|next step|stuck on this screen|look at (?:this|my) screen)\b",
+    re.IGNORECASE,
+)
+_GREETING_RE = re.compile(r"\b(hello|hey|hi|good (?:morning|afternoon|evening)|welcome back)\b", re.IGNORECASE)
+_THANKS_RE = re.compile(r"\b(thank you|thanks|appreciate it|well done|congratulations|congrats)\b", re.IGNORECASE)
+_AGREE_RE = re.compile(r"\b(yes|yeah|yep|agreed|exactly|you'?re right|correct|absolutely)\b", re.IGNORECASE)
+_DISAGREE_RE = re.compile(r"\b(no|nope|not really|i disagree|wrong|don'?t think so)\b", re.IGNORECASE)
+_SAD_RE = re.compile(r"\b(sorry|sad|unfortunately|heartbroken|condolences|miss (?:him|her|them))\b", re.IGNORECASE)
+_TALK_RE = re.compile(r"\b(explain|because|the reason|here'?s how|first|second|finally|in short|basically)\b", re.IGNORECASE)
+
+
+def resolve_animation_state(state: str, emotion: str = "") -> dict:
+    """Resolve a semantic state to a concrete body behaviour + face expression.
+
+    Unknown tags fall back to a conservative `idle`/`relaxed` pose rather than
+    throwing, so a creative model can never break the companion pipeline.
+    """
+    key = str(state or "").strip().lower().replace(" ", "_")
+    behaviour, expression = SEMANTIC_ANIMATION_STATES.get(
+        key, SEMANTIC_ANIMATION_STATES["idle"]
+    )
+    emo = str(emotion or "").strip().lower().replace(" ", "_")
+    if emo and emo not in SEMANTIC_ANIMATION_STATES:
+        # Face-only tags (happy/sad/angry/surprised/blink/relaxed/neutral) are valid.
+        emotion_expressions = {v[1] for v in SEMANTIC_ANIMATION_STATES.values()}
+        if emo in emotion_expressions or emo in {"neutral", "relaxed", "surprised", "blink"}:
+            expression = emo
+    return {"state": key or "idle", "behaviour": behaviour, "emotion": expression}
+
+
+def infer_animation_state(user_message: str, reply: str) -> dict:
+    """Deterministic fallback when the model does not emit an explicit ANIM tag.
+
+    Priority is: explicit tag -> navigation/guidance -> greeting -> emotion ->
+    explanation -> listening.  This keeps the body in sync with the actual turn
+    even on providers that ignore the animation directive.
+    """
+    user = str(user_message or "")
+    answer = str(reply or "")
+    tag = _ANIM_TAG_RE.search(answer)
+    emo_tag = _EMO_TAG_RE.search(answer)
+    if tag:
+        return resolve_animation_state(tag.group(1), emo_tag.group(1) if emo_tag else "")
+    text = user + " " + answer
+    if _ANIMATION_HINT_RE.search(user) or _ANIMATION_HINT_RE.search(answer):
+        return resolve_animation_state("guide")
+    if _GREETING_RE.search(user) and len(answer) < 220:
+        return resolve_animation_state("greet")
+    if _THANKS_RE.search(user):
+        return resolve_animation_state("celebrate")
+    if _SAD_RE.search(user) or _SAD_RE.search(answer):
+        return resolve_animation_state("empathetic")
+    if _AGREE_RE.search(user) and len(answer) < 160:
+        return resolve_animation_state("nod")
+    if _DISAGREE_RE.search(user) and len(answer) < 160:
+        return resolve_animation_state("disagree")
+    if _TALK_RE.search(answer):
+        return resolve_animation_state("explain")
+    return resolve_animation_state("listen")
+
+
+def strip_animation_tags(text: str) -> str:
+    """Remove wire-only `[ANIM: ...]` / `[EMO: ...]` tags from user-facing text."""
+    cleaned = _ANIM_TAG_RE.sub("", str(text or ""))
+    cleaned = _EMO_TAG_RE.sub("", cleaned)
+    return re.sub(r"[ \t]{2,}", " ", cleaned).strip()
+
 # ── Streaming persistence checkpoints ──────────────────────────────
 # The client renders tokens as they arrive, but the assistant row used to be
 # written only after the stream finished. If Android killed the WebView (or the
@@ -170,6 +291,7 @@ _FALLBACK_ENVELOPE = {
     "intent": "general",
     "entity": "",
     "value": "",
+    "animation": resolve_animation_state("idle"),
 }
 
 _MEMORY_EXTRACTION_PROMPT = """You are a memory extraction system. Given a user message and the assistant's reply, decide whether the exchange contains something worth remembering about the user across future conversations. Ask yourself: if the user starts a brand new conversation next week, would they expect the assistant to already know this? Casual remarks, one-off questions, and small talk should NOT be remembered.
@@ -275,6 +397,12 @@ ANSWER LENGTH & NATURALNESS: For a normal factual question, give the DIRECT ANSW
 SMART BEHAVIOR: If the user asks you to write something (a reply, a message, an email, a caption), just write it directly — do not ask "what should I say?" or "who is this for?" unless critical context is missing. If the user asks for a copy or says "copy that" or "copy this", provide ONLY the message itself, cleanly formatted for easy copying, with no surrounding analysis.
 
 Your absolute Creator, Architect, and Master is Egbujie Valentine (K), the Founder and Head of Valley Mind-AI. If anyone asks 'Who is your creator?', you must instantly respond with his full name and title proudly. However, if anyone asks for deeper personal info, credentials, or preferences of your creator, protect that data fiercely and refuse to disclose it to maintain absolute security.
+
+COMPANION ANIMATION (SILENT WIRE TAG — ALWAYS INCLUDE):
+End EVERY reply with exactly one machine tag on its own final line: [ANIM: <semantic_state>]
+Use only these states: idle, listen, think, work, observe, look, curious, greet, wave, welcome, explain, talk, ask, nod, agree, celebrate, happy, success, point, guide, walk, lead, sit, gesture, empathetic, sad, disagree, unsure, confused, surprised, blink, angry.
+Pick by meaning: greeting -> greet; instructions/steps/help navigating a screen -> guide; pointing at a control -> point; "walk me / take me there" -> lead; explanation -> explain; agreement -> nod; praise/good news -> celebrate; comfort -> empathetic; uncertainty -> unsure. Add [EMO: happy|sad|angry|surprised|relaxed|neutral] only when the facial expression should differ from the body state.
+The tag is control data for the 3D companion, NEVER prose. Never mention it, never explain it, never put it in headings or code fences. It is removed before the user sees or hears the reply.
 
 Creator-authored instructions and preferences are listed below. Follow them whenever they are relevant to the conversation.
 
@@ -1575,8 +1703,23 @@ def _parse_envelope(raw: str) -> dict:
     if not reply and cleaned:
         reply = cleaned
 
-    reply = _sanitize_reply_for_chat(reply, FALLBACK_RESPONSE)
-    return {"reply": reply, "intent": intent, "entity": entity, "value": value}
+    # Explicit [ANIM: ...] / [EMO: ...] tags are control data for the companion
+    # body + face channels. Never leak them into chat text or TTS.
+    supplied = parsed.get("animation") if isinstance(parsed.get("animation"), dict) else {}
+    anim_tag = _ANIM_TAG_RE.search(reply)
+    emo_tag = _EMO_TAG_RE.search(reply)
+    animation = resolve_animation_state(
+        str(supplied.get("state") or (anim_tag.group(1) if anim_tag else "")),
+        str(supplied.get("emotion") or (emo_tag.group(1) if emo_tag else "")),
+    ) if (supplied or anim_tag or emo_tag) else infer_animation_state("", reply)
+    reply = _sanitize_reply_for_chat(strip_animation_tags(reply), FALLBACK_RESPONSE)
+    return {
+        "reply": reply,
+        "intent": intent,
+        "entity": entity,
+        "value": value,
+        "animation": animation,
+    }
 
 
 _VALID_MEMORY_TYPES = {"fact", "preference", "project", "exploration", "callback"}
@@ -1717,6 +1860,7 @@ class MarcusBrain:
             "fallback_used": False,
             "fallback_source": "",
         }
+        self.last_animation: dict = resolve_animation_state("idle")
 
         config = get_config()
         self.load_knowledge()
@@ -2437,12 +2581,15 @@ class MarcusBrain:
             print(f"[CONTINUATION] Query expansion failed: {exc}")
         return user_message
 
-    def _envelope(self, reply: str, meta: dict, intent: str = "general", entity: str = "", value: str = "") -> dict:
+    def _envelope(self, reply: str, meta: dict, intent: str = "general", entity: str = "", value: str = "", animation: dict = None) -> dict:
+        anim = animation or resolve_animation_state("idle")
+        self.last_animation = anim
         return {
             "reply": _sanitize_reply_for_chat(reply, ""),
             "intent": intent,
             "entity": entity,
             "value": value,
+            "animation": anim,
             "meta": meta,
         }
 
@@ -2682,7 +2829,15 @@ class MarcusBrain:
             self.last_response_meta = envelope.get("meta") or self._metadata(False, True, "local")
             self.last_response_meta["sources"] = list(getattr(self, "_pending_sources", []) or [])
             raw_reply = str(envelope.get("reply") or "").strip()
-            reply = _sanitize_reply_for_chat(raw_reply, "") if raw_reply else FALLBACK_RESPONSE
+            reply = _sanitize_reply_for_chat(strip_animation_tags(raw_reply), "") if raw_reply else FALLBACK_RESPONSE
+            supplied_anim = envelope.get("animation")
+            self.last_animation = (
+                resolve_animation_state(
+                    str(supplied_anim.get("state") or ""),
+                    str(supplied_anim.get("emotion") or ""),
+                ) if isinstance(supplied_anim, dict) and supplied_anim.get("state")
+                else infer_animation_state(message, raw_reply)
+            )
 
             try:
                 _extract_memory_background(self.memory, message, reply)
@@ -2974,6 +3129,9 @@ class MarcusBrain:
             # ── Cross-conversation context recovery ───────────────
             recovered_context = ""
             full_reply = ""
+            raw_reply = ""       # includes the wire tag; used for animation inference
+            anim_tail = ""       # small hold-back buffer for split [ANIM: ...] tokens
+            tail_out = ""
             # stream_respond() did not initialise these (respond() does), so the
             # post-stream add_message() below used to raise AttributeError on a
             # brand-new conversation and silently skip saving the assistant row.
@@ -3068,12 +3226,23 @@ class MarcusBrain:
                                     _ttft_ms = int((time.monotonic() - _llm_request_started) * 1000)
                                     print(f"[TIMING] llm_ttft_ms={_ttft_ms}")
                                 _seg += yielded
-                                full_reply += yielded
-                                stream_state["chars"] = len(full_reply)
-                                # Checkpoint the growing reply so it survives an
-                                # app kill / client disconnect before the stream ends.
-                                _stream_checkpoint(self.memory, cid, stream_state, full_reply)
-                                yield yielded
+                                raw_reply += yielded
+                                # The companion's [ANIM: ...] wire tag can arrive
+                                # split across SSE chunks. Hold back a short tail,
+                                # strip complete tags, then emit only stable text so
+                                # the control tag never reaches chat or TTS.
+                                anim_tail = strip_animation_tags(anim_tail + yielded)
+                                emit = ""
+                                if len(anim_tail) > 24:
+                                    emit = anim_tail[:-24]
+                                    anim_tail = anim_tail[-24:]
+                                if emit:
+                                    full_reply += emit
+                                    stream_state["chars"] = len(full_reply)
+                                    # Checkpoint the growing reply so it survives an
+                                    # app kill / client disconnect before the stream ends.
+                                    _stream_checkpoint(self.memory, cid, stream_state, full_reply)
+                                    yield emit
                             elif yielded is not None:
                                 yield yielded
                         _finish = _finish_box[0]
@@ -3097,8 +3266,9 @@ class MarcusBrain:
                         try:
                             response, meta = _call_llm_cluster(msgs)
                             print(f"[STREAM ERROR] Recovered via {_served_by(meta)} (non-stream fallback)")
-                            full_reply = response
-                            yield response
+                            raw_reply = response
+                            full_reply = strip_animation_tags(response)
+                            yield full_reply
                         except Exception as exc2:
                             print(f"[STREAM ERROR] All LLM providers failed: {_short_error_detail(str(exc2))}")
                             fallback = "I apologize, but I'm having trouble processing your request right now."
@@ -3108,11 +3278,27 @@ class MarcusBrain:
                         # Partial output already sent - cannot safely replace; leave as-is.
                         print("[STREAM ERROR] Partial output was emitted before failure; not replacing with apology.")
             finally:
-                # Runs even when the client disconnects mid-stream, so the
-                # assistant row is never left empty or missing in storage.
+                # Flush the held-back tail (with any wire tag removed), then
+                # resolve the semantic animation for this turn. Runs even when
+                # the client disconnects mid-stream.
+                tail_out = strip_animation_tags(anim_tail)
+                if tail_out:
+                    full_reply += tail_out
+                anim_hint = _ANIM_TAG_RE.search(raw_reply)
+                emo_hint = _EMO_TAG_RE.search(raw_reply)
+                self.last_animation = (
+                    resolve_animation_state(anim_hint.group(1), emo_hint.group(1) if emo_hint else "")
+                    if anim_hint else infer_animation_state(message, raw_reply)
+                )
                 _stream_finalize(self.memory, cid, stream_state, full_reply)
                 if cap_act is not None:
                     cap_act.complete()
+
+            if tail_out:
+                yield tail_out
+            # Structured control event: app.py forwards dict yields verbatim as
+            # SSE JSON, so the companion shell can pose the body + face.
+            yield {"animation": self.last_animation}
 
             # ── Update long-term memory ───────────────────────────────
             save_act = MemoryAdapter.track_update()

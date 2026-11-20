@@ -80,6 +80,11 @@ class CompanionBridge(private val host: Host) {
             "{\"ok\":false,\"reason\":\"unsupported\"}"
 
         fun getOverlayRegion(): String = "{\"ok\":false,\"reason\":\"unsupported\"}"
+
+        // ── optional screen context (navigation guidance) ─────────────
+        fun screenContextSupported(): Boolean = false
+        fun screenContextJson(): String = "{\"ok\":false,\"reason\":\"screen-context-unsupported\"}"
+        fun screenContextSettings() { /* no-op by default */ }
     }
 
     @JavascriptInterface
@@ -199,4 +204,17 @@ class CompanionBridge(private val host: Host) {
 
     @JavascriptInterface
     fun getOverlayRegion(): String = host.getOverlayRegion()
+
+    // ── optional screen context ─────────────────────────────────────────────
+    /** True only when the user enabled the companion's AccessibilityService. */
+    @JavascriptInterface
+    fun screenContextSupported(): Boolean = host.screenContextSupported()
+
+    /** A bounded JSON UI-tree snapshot, or a safe `ok:false` payload. */
+    @JavascriptInterface
+    fun screenContextJson(): String = host.screenContextJson()
+
+    /** Opens Accessibility settings; never enables the service silently. */
+    @JavascriptInterface
+    fun screenContextSettings() = host.screenContextSettings()
 }

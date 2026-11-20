@@ -70,10 +70,15 @@
       <span id="vmBadgeOverlay" class="badge badge-overlay" hidden title="Companion is showing over other apps">OVER APP</span>
     </div>
 
-    <button id="btnStop" class="stop" type="button" aria-label="Stop the conversation" title="Stop">&#9632;</button>
+    <button id="btnCall" class="callctl" type="button" aria-label="Start Live Companion Call (hands-free voice)" title="Live Companion Call — hands-free voice">CALL</button>
+    <button id="btnMute" class="callctl" type="button" aria-label="Mute hands-free listening" title="Mute / unmute">MUTE</button>
+    <button id="btnStop" class="stop" type="button" aria-label="End the conversation" title="End call">&#9632;</button>
     <button id="btnHide" class="hide" type="button" aria-label="Put the companion away" title="Put away">&#10005;</button>
   </div>
 
+  <!-- Versioned native facade (additive): capability checks for overlay region,
+       native ASR and screen-context capture. -->
+  <script src="/static/native_bridge.js"></script>
   <script type="module" src="/static/companion_overlay.js"></script>
 </body>
 </html>

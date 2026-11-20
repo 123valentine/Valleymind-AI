@@ -85,22 +85,76 @@ object AndroidBridgeJs {
   // Installed once so older pages can feature-detect without knowing the shell.
   if (!window.vmNative) {
     var contract = null;
-    var caps = [];
     try { contract = JSON.parse(B.contractJson()); } catch (e) { contract = null; }
+    if (!contract || typeof contract !== "object" || typeof contract.version !== "number") {
+      // An older shell has no contract at all (or a malformed one): describe it
+      // honestly as version 1 rather than breaking every feature check.
+      contract = { version: 1, ready: true, shell: {} };
+    }
+    var caps = [];
     try { var parsed = JSON.parse(B.capabilitiesJson()); if (parsed && parsed.length) caps = parsed; } catch (e) {}
+    if (contract.capabilities && contract.capabilities.length) caps = contract.capabilities;
+
+    // Capability detection is deliberately defensive: prefer the declared
+    // contract list, but fall back to the ACTUAL native methods so an older or
+    // partially-updated shell still reports what it can really do.
+    function hasCapability(cap) {
+      cap = String(cap);
+      if (caps.indexOf(cap) !== -1) return true;
+      switch (cap) {
+        case "overlay": return typeof B.isOverlaySupported === "function";
+        case "tts": return typeof B.ttsSpeak === "function";
+        case "ttsEvents": return typeof B.ttsSpeakV2 === "function";
+        case "asr": return typeof B.asrSupported === "function";
+        case "camera": return typeof B.cameraSupported === "function";
+        case "files": return true; // file picking/upload lives in the web layer
+        case "overlayRegion":
+          return typeof B.setOverlayRegion === "function" && typeof B.getOverlayRegion === "function";
+        case "liveCall":
+          return typeof B.asrSupported === "function" && typeof B.ttsSpeak === "function";
+        case "dragPersistence": return true;
+        case "screenContext": return typeof B.screenContextSupported === "function";
+        default: return false;
+      }
+    }
+
     window.vmNative = {
       contract: contract,
       capabilities: function () { return caps.slice(); },
-      app: { getInfo: function () { return state(); } },
+      isReady: function () { return !!contract.ready; },
+      has: hasCapability,
+      app: {
+        getInfo: function () {
+          var info = state();
+          if (contract.shell) info.shell = contract.shell;
+          return info;
+        }
+      },
       overlay: {
         setRegion: function (w, h) {
+          if (typeof B.setOverlayRegion !== "function") return { ok: false, reason: "unsupported" };
           try { return JSON.parse(B.setOverlayRegion(w, h)); }
           catch (e) { return { ok: false, reason: "bridge-error" }; }
         },
         getRegion: function () {
+          if (typeof B.getOverlayRegion !== "function") return { ok: false, reason: "unsupported" };
           try { return JSON.parse(B.getOverlayRegion()); }
           catch (e) { return { ok: false, reason: "bridge-error" }; }
         }
+      },
+      // Optional screen context (navigation guidance). Feature-detect with
+      // vmNative.has("screenContext") or screen.supported().
+      screen: {
+        supported: function () {
+          try { return typeof B.screenContextSupported === "function" && !!B.screenContextSupported(); }
+          catch (e) { return false; }
+        },
+        context: function () {
+          if (typeof B.screenContextJson !== "function") return { ok: false, reason: "screen-context-unsupported" };
+          try { return JSON.parse(B.screenContextJson()); }
+          catch (e) { return { ok: false, reason: "screen-context-error" }; }
+        },
+        settings: function () { try { if (typeof B.screenContextSettings === "function") B.screenContextSettings(); } catch (e) {} }
       }
     };
   }
@@ -238,6 +292,20 @@ object AndroidBridgeJs {
       if (typeof cb !== "function") return;
       bus.listeners.push(cb);
       while (bus.queue.length) emitAsr(bus.queue.shift());
+    },
+
+    // ── optional screen context (additive) ──────────────────────────────
+    screenContextSupported: function () {
+      try { return typeof B.screenContextSupported === "function" && !!B.screenContextSupported(); }
+      catch (e) { return false; }
+    },
+    screenContextJson: function () {
+      if (typeof B.screenContextJson !== "function") return '{"ok":false,"reason":"screen-context-unsupported"}';
+      try { return B.screenContextJson(); }
+      catch (e) { return '{"ok":false,"reason":"screen-context-error"}'; }
+    },
+    screenContextSettings: function () {
+      try { if (typeof B.screenContextSettings === "function") B.screenContextSettings(); } catch (e) {}
     }
   };
 

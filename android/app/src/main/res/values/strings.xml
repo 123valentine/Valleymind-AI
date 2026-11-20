@@ -31,4 +31,7 @@
     <string name="overlay_error_message">The companion page couldn\'t be loaded, so it was not shown over other apps.</string>
     <string name="overlay_error_retry">Retry</string>
     <string name="overlay_error_hide">Hide</string>
+
+    <!-- Optional screen-context accessibility service (navigation guidance). -->
+    <string name="accessibility_service_description">Lets the ValleyMind companion read the labels of on-screen buttons and controls so it can answer “Where do I tap here?”. It is off unless you enable it, and no screen images or text are uploaded by this service.</string>
 </resources>

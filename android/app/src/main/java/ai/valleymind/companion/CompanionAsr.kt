@@ -231,6 +231,30 @@ class CompanionAsr(context: Context) {
     }
 
     companion object {
+        /** Builds the exact JSON event the injected shim forwards to the page. */
+        fun eventJson(type: String, text: String? = null, reason: String? = null): String {
+            val sb = StringBuilder("{\"type\":\"").append(type).append("\"")
+            if (text != null) sb.append(",\"text\":\"").append(escapeJson(text)).append("\"")
+            if (reason != null) sb.append(",\"reason\":\"").append(escapeJson(reason)).append("\"")
+            return sb.append("}").toString()
+        }
+
+        private fun escapeJson(raw: String): String {
+            val sb = StringBuilder(raw.length + 8)
+            for (ch in raw) {
+                when {
+                    ch == '\\' -> sb.append("\\\\")
+                    ch == '"' -> sb.append("\\\"")
+                    ch == '\n' -> sb.append("\\n")
+                    ch == '\r' -> sb.append("\\r")
+                    ch == '\t' -> sb.append("\\t")
+                    ch < ' ' -> sb.append(String.format(java.util.Locale.ROOT, "\\u%04x", ch.code))
+                    else -> sb.append(ch)
+                }
+            }
+            return sb.toString()
+        }
+
         /**
          * Maps an Android recognition error onto a small, stable token the page
          * can act on. The raw code is never surfaced to the page.

@@ -83,6 +83,12 @@ class CompanionOverlayService : Service() {
     private var params: WindowManager.LayoutParams? = null
     private var baseUrl: String = DEFAULT_BASE_URL
 
+    /** Persisted placement + compact, pointer-safe window region. */
+    private lateinit var configStore: AppConfigStore
+    private var regionDp: OverlayRegionRules.Region = OverlayRegionRules.Region(
+        OverlayRegionRules.DEFAULT_WIDTH_DP, OverlayRegionRules.DEFAULT_HEIGHT_DP
+    )
+
     /** The drag surface: the whole window moves the character. */
     private var dragLayout: OverlayDragLayout? = null
 
@@ -166,6 +172,27 @@ class CompanionOverlayService : Service() {
         override fun asrCancel() {
             asr?.cancel()
         }
+
+        // ── compact, pointer-safe overlay region ──────────────────────
+        override fun setOverlayRegion(widthDp: Int, heightDp: Int): String =
+            this@CompanionOverlayService.applyOverlayRegion(widthDp.toDouble(), heightDp.toDouble())
+
+        override fun getOverlayRegion(): String =
+            "{\"ok\":true,\"widthDp\":${regionDp.widthDp},\"heightDp\":${regionDp.heightDp}}"
+
+        // ── optional screen context ───────────────────────────────────
+        override fun screenContextSupported(): Boolean =
+            CompanionScreenService.isEnabled(this@CompanionOverlayService)
+
+        override fun screenContextJson(): String {
+            if (!screenContextSupported()) {
+                return "{\"ok\":false,\"reason\":\"screen-context-disabled\"}"
+            }
+            return CompanionScreenService.snapshotJson()
+        }
+
+        override fun screenContextSettings() =
+            CompanionScreenService.openSettings(this@CompanionOverlayService)
     }
 
     /** Moves the overlay window while the user drags the character. */
@@ -187,7 +214,11 @@ class CompanionOverlayService : Service() {
             } catch (e: Exception) { /* the window was removed mid-gesture */ }
         }
 
-        override fun onDragEnd() { /* nothing to settle: the window is already where it belongs */ }
+        override fun onDragEnd() {
+            // The window is already at the final clamped position: persist it so
+            // the companion comes back exactly where the user left it.
+            params?.let { configStore.setOverlayPosition(it.x, it.y) }
+        }
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -195,6 +226,8 @@ class CompanionOverlayService : Service() {
     override fun onCreate() {
         super.onCreate()
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        configStore = AppConfigStore(this)
+        configStore.getOverlayRegionDp()?.let { regionDp = OverlayRegionRules.Region(it.first, it.second) }
         createNotificationChannel()
     }
 
@@ -252,9 +285,12 @@ class CompanionOverlayService : Service() {
         else
             @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE
 
+        val pixels = OverlayRegionRules.toPixels(
+            regionDp, density, resources.displayMetrics.widthPixels, resources.displayMetrics.heightPixels
+        )
         val lp = WindowManager.LayoutParams(
-            (210 * density).roundToInt(),
-            (300 * density).roundToInt(),
+            pixels.widthPx,
+            pixels.heightPx,
             type,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
                 or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
@@ -262,8 +298,12 @@ class CompanionOverlayService : Service() {
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-            x = (resources.displayMetrics.widthPixels * 0.02f).roundToInt()
-            y = (resources.displayMetrics.heightPixels * 0.12f).roundToInt()
+            val saved = configStore.getOverlayPosition()
+            x = saved?.first ?: (resources.displayMetrics.widthPixels * 0.02f).roundToInt()
+            y = saved?.second ?: (resources.displayMetrics.heightPixels * 0.12f).roundToInt()
+            // A stored position can be stale after a rotation / display change.
+            x = x.coerceIn(0, max(0, resources.displayMetrics.widthPixels - pixels.widthPx))
+            y = y.coerceIn(0, max(0, resources.displayMetrics.heightPixels - pixels.heightPx))
         }
 
         rootView = view
@@ -573,6 +613,51 @@ class CompanionOverlayService : Service() {
         val maxX = max(left, right - w)
         val maxY = max(top, bottom - h)
         return OverlayBounds(left, maxX, top, maxY)
+    }
+
+    /**
+     * Applies a page-requested compact window region. Android can only resize
+     * the whole window, so the rules clamp untrusted JS values into a safe range
+     * and cap the pixel size to the display. The result is returned to the page
+     * so it can confirm the applied size.
+     */
+    private fun applyOverlayRegion(widthDp: Double, heightDp: Double): String {
+        val decision = OverlayRegionRules.decide(widthDp, heightDp)
+        val region: OverlayRegionRules.Region
+        val clamped: Boolean
+        when (decision) {
+            is OverlayRegionRules.Decision.Rejected ->
+                return "{\"ok\":false,\"reason\":\"${decision.reason}\"}"
+            is OverlayRegionRules.Decision.Accepted -> {
+                region = decision.region
+                clamped = decision.clamped
+            }
+        }
+        val lp = params ?: return "{\"ok\":false,\"reason\":\"overlay-not-ready\"}"
+        val view = rootView ?: return "{\"ok\":false,\"reason\":\"overlay-not-ready\"}"
+        val dm = resources.displayMetrics
+        val pixels = OverlayRegionRules.toPixels(region, dm.density, dm.widthPixels, dm.heightPixels)
+        if (lp.width == pixels.widthPx && lp.height == pixels.heightPx) {
+            return "{\"ok\":true,\"widthDp\":${region.widthDp},\"heightDp\":${region.heightDp},\"clamped\":false}"
+        }
+        lp.width = pixels.widthPx
+        lp.height = pixels.heightPx
+        // Keep the smaller window fully on screen after the resize.
+        lp.x = lp.x.coerceIn(0, max(0, dm.widthPixels - pixels.widthPx))
+        lp.y = lp.y.coerceIn(0, max(0, dm.heightPixels - pixels.heightPx))
+        dragLayout?.let {
+            it.windowX = lp.x
+            it.windowY = lp.y
+        }
+        try {
+            windowManager?.updateViewLayout(view, lp)
+        } catch (e: Exception) {
+            return "{\"ok\":false,\"reason\":\"update-failed\"}"
+        }
+        regionDp = region
+        configStore.setOverlayRegionDp(region.widthDp, region.heightDp)
+        configStore.setOverlayPosition(lp.x, lp.y)
+        return "{\"ok\":true,\"widthDp\":${region.widthDp},\"heightDp\":${region.heightDp},\"clamped\":$clamped}"
     }
 
     /** Delivers one recognition event into the overlay page. */

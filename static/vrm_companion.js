@@ -50,21 +50,37 @@ const DEFAULTS = {
   awake: true,
 };
 
+// Every semantic state emitted by core/brain.py has a labelled status here.
+// The behaviour values are REAL clip pools from vrm_preview/companion.js and
+// vrm_preview/clips.json (idle, talking, listening, thinking, walking, happy,
+// waving, nodding, pointing, sad, angry, headshake, unsure, working, sitting,
+// gestures) so `[ANIM: ...]` always resolves to an actual animation.
 const STATUS_LABEL = {
   idle: "idle",
   listening: "listening…",
   thinking: "thinking…",
   speaking: "speaking",
-  happy: "happy",
-  curious: "curious",
-  sad: "sad",
-  angry: "angry",
-  confused: "confused",
   working: "working",
   observing: "watching your screen",
+  looking: "looking closely",
   waving: "waving hello",
+  greeting: "greeting you",
   pointing: "pointing it out",
   guiding: "leading the way",
+  walking: "walking with you",
+  nodding: "nodding",
+  agreeing: "agreeing",
+  disagreeing: "shaking my head",
+  unsure: "not quite sure",
+  happy: "happy",
+  celebrating: "celebrating",
+  empathetic: "here for you",
+  sad: "sad",
+  angry: "angry",
+  surprised: "surprised",
+  blinking: "blinking",
+  gesturing: "gesturing",
+  sitting: "sitting",
 };
 
 const STATUS_BEHAVIOUR = {
@@ -72,36 +88,81 @@ const STATUS_BEHAVIOUR = {
   listening: "listening",
   thinking: "thinking",
   speaking: "talking",
-  happy: "happy",
-  curious: "listening",
-  sad: "sad",
-  angry: "angry",
-  confused: "unsure",
   working: "working",
   observing: "listening",
-  // Real engine clips (see vrm_preview/companion.js BEHAVIOUR_WEIGHTS).
+  looking: "pointing",
   waving: "waving",
+  greeting: "waving",
   pointing: "pointing",
-  guiding: "walking",
+  guiding: "pointing",
+  walking: "walking",
+  nodding: "nodding",
+  agreeing: "nodding",
+  disagreeing: "headshake",
+  unsure: "unsure",
+  happy: "happy",
+  celebrating: "happy",
+  empathetic: "listening",
+  sad: "sad",
+  angry: "angry",
+  surprised: "idle",
+  blinking: "idle",
+  gesturing: "gestures",
+  sitting: "sitting",
+  // Legacy aliases kept so older callers never break.
+  curious: "listening",
+  confused: "unsure",
 };
 
 // States that must stay locked to one clip until the driver changes them.
-// Transient accents (happy / sad / ...) just nudge the auto state machine.
+// Transient accents just nudge the auto state machine and settle to idle.
 const DRIVEN = new Set(["listening", "thinking", "speaking", "working"]);
 
 const EMOTION_STATUS = {
   neutral: "idle",
-  curious: "curious",
-  excited: "happy",
+  relaxed: "idle",
+  curious: "looking",
+  excited: "celebrating",
   happy: "happy",
   thinking: "thinking",
   focused: "thinking",
   sad: "sad",
   angry: "angry",
-  frustrated: "confused",
-  surprised: "curious",
-  confused: "confused",
-  concerned: "confused",
+  frustrated: "unsure",
+  surprised: "surprised",
+  confused: "unsure",
+  concerned: "empathetic",
+};
+
+// brain.py semantic state -> companion status. Covers every tag in the brain's
+// SEMANTIC_ANIMATION_STATES contract plus common aliases from older prompts.
+const SEMANTIC_STATUS = {
+  idle: "idle", listen: "listening", listening: "listening",
+  think: "thinking", thinking: "thinking", work: "working", working: "working",
+  observe: "observing", look: "looking", curious: "looking",
+  greet: "greeting", wave: "waving", welcome: "greeting",
+  explain: "speaking", talk: "speaking", speaking: "speaking", ask: "listening",
+  nod: "nodding", agree: "agreeing", celebrate: "celebrating",
+  happy: "happy", success: "celebrating", point: "pointing", guide: "guiding",
+  walk: "walking", lead: "walking", sit: "sitting", gesture: "gesturing",
+  empathetic: "empathetic", sympathize: "empathetic", sad: "sad",
+  disagree: "disagreeing", headshake: "disagreeing", unsure: "unsure",
+  confused: "unsure", surprised: "surprised", blink: "blinking", angry: "angry",
+};
+
+// Face expressions from vrm_preview/face.js. Brain emotion tags are validated
+// against this set before being handed to the engine.
+const FACE_EXPRESSIONS = new Set(["neutral", "happy", "angry", "sad", "relaxed", "surprised", "blink"]);
+
+const STATUS_EXPRESSION = {
+  idle: "relaxed", listening: "neutral", thinking: "neutral", speaking: "relaxed",
+  working: "neutral", observing: "surprised", looking: "surprised",
+  waving: "happy", greeting: "happy", pointing: "neutral", guiding: "neutral",
+  walking: "relaxed", nodding: "neutral", agreeing: "happy",
+  disagreeing: "neutral", unsure: "surprised", happy: "happy",
+  celebrating: "happy", empathetic: "sad", sad: "sad", angry: "angry",
+  surprised: "surprised", blinking: "blink", gesturing: "relaxed", sitting: "relaxed",
+  curious: "surprised", confused: "surprised",
 };
 
 // ── persisted prefs ───────────────────────────────────────────────────────
@@ -323,7 +384,7 @@ function roamStep() {
 }
 
 
-function setStatus(status) {
+function setStatus(status, expression) {
   const s = STATUS_BEHAVIOUR[status] ? status : "idle";
   if (s === stateKey && engine && engine.status.stage === "ready") {
     paintStatus();
@@ -343,6 +404,12 @@ function setStatus(status) {
   if (s !== "speaking") setFaceTalking(false);
   if (engine && engine.status.stage === "ready") {
     const behaviour = STATUS_BEHAVIOUR[s];
+    // Face channel is driven explicitly so every semantic state also carries the
+    // right expression, including statuses whose body clip is "idle".
+    if (engine.face && typeof engine.face.setMood === "function") {
+      const mood = FACE_EXPRESSIONS.has(expression) ? expression : (STATUS_EXPRESSION[s] || "relaxed");
+      try { engine.face.setMood(mood); } catch (e) { }
+    }
     engine.setAuto(false);
     if (DRIVEN.has(s)) {
       // listening / thinking / speaking / working hold their clip until an
@@ -469,6 +536,33 @@ function home() {
 // character). A press that moves is a drag: the position becomes user-preferred
 // (roaming pauses) and is persisted, so it survives navigation and reloads.
 let dragState = null;
+let dragRaf = 0;
+let dragTargetX = 0;
+let dragTargetY = 0;
+
+// Eases the box toward the last pointer target. A short, bounded lerp removes
+// the jitter of raw touch events without introducing a perceptible lag, and it
+// always settles exactly on the clamped target (no permanent offset).
+function runDragFrame() {
+  dragRaf = 0;
+  const el = $id("vmVrmCompanion");
+  if (!dragState || !el) return;
+  const r = el.getBoundingClientRect();
+  const dx = dragTargetX - r.left;
+  const dy = dragTargetY - r.top;
+  if (Math.abs(dx) < 0.6 && Math.abs(dy) < 0.6) {
+    el.style.left = Math.round(dragTargetX) + "px";
+    el.style.top = Math.round(dragTargetY) + "px";
+    return;
+  }
+  el.style.left = Math.round(r.left + dx * 0.45) + "px";
+  el.style.top = Math.round(r.top + dy * 0.45) + "px";
+  dragRaf = requestAnimationFrame(runDragFrame);
+}
+
+function stopDragFrame() {
+  if (dragRaf) { cancelAnimationFrame(dragRaf); dragRaf = 0; }
+}
 
 function wireDrag() {
   const el = $id("vmVrmCompanion");
@@ -496,26 +590,30 @@ function wireDrag() {
     if (!dragState.moved) return;
     const w = el.offsetWidth || 120;
     const h = el.offsetHeight || 120;
-    const x = Math.max(0, Math.min((window.innerWidth || 1280) - w, e.clientX - dragState.dx));
-    const y = Math.max(0, Math.min((window.innerHeight || 800) - h, e.clientY - dragState.dy));
-    el.style.left = Math.round(x) + "px";
-    el.style.top = Math.round(y) + "px";
+    dragTargetX = Math.max(0, Math.min((window.innerWidth || 1280) - w, e.clientX - dragState.dx));
+    dragTargetY = Math.max(0, Math.min((window.innerHeight || 800) - h, e.clientY - dragState.dy));
     el.style.right = "auto";
     el.style.bottom = "auto";
+    if (!dragRaf) dragRaf = requestAnimationFrame(runDragFrame);
   });
   const end = (e) => {
     if (!dragState || (e.pointerId != null && e.pointerId !== dragState.id)) return;
     const wasTap = !dragState.moved && (Date.now() - dragState.t) < 400;
     if (dragState.moved) {
-      const r = el.getBoundingClientRect();
-      prefs.x = Math.round(r.left);
-      prefs.y = Math.round(r.top);
+      // Settle exactly on the final clamped target before persisting, so the
+      // stored position matches where the avatar actually comes to rest.
+      stopDragFrame();
+      el.style.left = Math.round(dragTargetX) + "px";
+      el.style.top = Math.round(dragTargetY) + "px";
+      prefs.x = Math.round(dragTargetX);
+      prefs.y = Math.round(dragTargetY);
       prefs.userPlaced = true; // manual placement wins; autonomous roaming pauses
       savePrefs();
       clearRoamTimer();
     } else if (wasTap) {
       toggleChat();
     }
+    stopDragFrame();
     dragState = null;
     el.style.cursor = "grab";
   };
@@ -623,7 +721,9 @@ const EMOTION_CUES = {
 
 // Mirror the user's own clear emotion first (anger ONLY when the user is
 // genuinely angry), then let the reply's own tone show; default to idle.
-function emotionForReply(userText, reply) {
+// `explicitEmotion` comes from brain.py's [EMO: ...] tag and always wins.
+function emotionForReply(userText, reply, explicitEmotion) {
+  if (explicitEmotion && EMOTION_STATUS[explicitEmotion]) return EMOTION_STATUS[explicitEmotion];
   const user = String(userText || "");
   const ai = String(reply || "");
   for (const key of ["angry", "happy", "sad"]) {
@@ -633,6 +733,39 @@ function emotionForReply(userText, reply) {
     if (EMOTION_CUES[key].test(ai)) return EMOTION_STATUS[key];
   }
   return "idle";
+}
+
+// Parse the brain's silent wire tags out of a reply. They are control data and
+// must never appear in the chat log or be read aloud by TTS.
+function takeAnimationTags(text) {
+  const raw = String(text || "");
+  const anim = raw.match(/\[\s*ANIM\s*:\s*([a-zA-Z][\w-]*)\s*\]/i);
+  const emo = raw.match(/\[\s*(?:EMO|EMOTION)\s*:\s*([a-zA-Z][\w-]*)\s*\]/i);
+  const clean = raw
+    .replace(/\[\s*ANIM\s*:\s*[a-zA-Z][\w-]*\s*\]/gi, "")
+    .replace(/\[\s*(?:EMO|EMOTION)\s*:\s*[a-zA-Z][\w-]*\s*\]/gi, "")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
+  return {
+    state: anim ? anim[1].toLowerCase().replace(/\s+/g, "_") : "",
+    emotion: emo ? emo[1].toLowerCase().replace(/\s+/g, "_") : "",
+    text: clean,
+  };
+}
+
+// Apply a structured animation payload (from an SSE `animation` event or from
+// inline tags) to BOTH the body clip and the face channel.
+function applyBrainAnimation(anim) {
+  if (!anim || typeof anim !== "object") return;
+  const key = String(anim.state || "").toLowerCase().replace(/\s+/g, "_");
+  const status = SEMANTIC_STATUS[key] || (STATUS_BEHAVIOUR[key] ? key : "idle");
+  const expression = FACE_EXPRESSIONS.has(anim.emotion) ? anim.emotion : undefined;
+  setStatus(status, expression);
+  // One-shot accents should be visible immediately even when a driven status
+  // (listening/thinking/speaking) was already active.
+  if (expression && engine && engine.face && typeof engine.face.setMood === "function") {
+    try { engine.face.setMood(expression); } catch (e) { }
+  }
 }
 
 // ── voice-first routing ───────────────────────────────────────────────────
@@ -755,13 +888,29 @@ async function chatTurn(text) {
     if (t !== turn) { busy = false; return; }
     busy = false;
     if (d && d.status === "success") {
-      const reply = d.reply || "";
+      // brain.py strips [ANIM: ...] / [EMO: ...] from the reply and returns a
+      // structured `animation` field. Older servers may still inline the tags,
+      // so strip those defensively too; the structured field always wins.
+      const tags = takeAnimationTags(d.reply || "");
+      const reply = tags.text;
       pushChat("ai", reply);
       // Emotion is grounded in THIS exchange, never the Cloud section's default.
-      const emo = emotionForReply(text, reply);
-      if (reply && window.VMCloudVoice && !prefs.muted) {
+      const emo = emotionForReply(text, reply, tags.emotion);
+      const anim = (d.animation && d.animation.state)
+        ? d.animation
+        : (tags.state ? { state: tags.state, emotion: tags.emotion } : null);
+      if (anim) applyBrainAnimation(anim);
+      // Guidance replies also walk the companion to the target and highlight it.
+      if (isGuidanceRequest(text) || isGuidanceReply(reply)) {
+        try { runStepGuidance(text, reply); } catch (e) { /* motion is a cue, not required */ }
+      }
+      if (reply && window.VMCloudVoice && !prefs.muted && !usingNativeAsr()) {
         setStatus("speaking");
         speakText(reply, emo);
+      } else if (reply && usingNativeAsr() && !prefs.muted) {
+        // Native TTS on Android: the bridge reports real start/end events.
+        setStatus("speaking");
+        speakNativeReply(reply, emo);
       } else {
         setStatus(emo);
         resumeListening();
@@ -1163,6 +1312,118 @@ function wireNativeSpeech() {
   });
 }
 
+// ── Live Companion Call (hands-free native loop, in-app WebView) ───────────
+// The main WebView uses the SAME platform SpeechRecognizer as the overlay when
+// the Android shell provides one. The loop is listen -> brain -> lip-synced TTS
+// -> listen again; it only stops on End / Mute / hide.
+const nativeBridge = (window.vmCompanionAndroid && typeof window.vmCompanionAndroid.setVisible === "function")
+  ? window.vmCompanionAndroid : null;
+let nativeCallActive = false;
+let nativeAsrWired = false;
+let nativeAsrRetry = null;
+
+function nativeAsrAvailable() {
+  try { return !!(nativeBridge && nativeBridge.hasNativeAsr && nativeBridge.hasNativeAsr()); }
+  catch (e) { return false; }
+}
+function usingNativeAsr() { return nativeCallActive && nativeAsrAvailable(); }
+
+function wireInAppNativeAsr() {
+  if (nativeAsrWired || !nativeBridge || typeof nativeBridge.onAsrEvent !== "function") return;
+  nativeAsrWired = true;
+  nativeBridge.onAsrEvent(function (ev) {
+    if (!nativeCallActive || !voiceActive() || prefs.muted) return;
+    const type = String((ev && ev.type) || "");
+    const reason = String((ev && ev.reason) || "");
+    if (type === "final") {
+      const text = String((ev && ev.text) || "").trim();
+      if (text.length >= 2) send(text);
+      else resumeNativeListening();
+      return;
+    }
+    if (type === "ready" || type === "partial") { setStatus("listening"); return; }
+    if (type === "end") { setStatus("thinking"); return; }
+    if (type === "error") {
+      if (reason === "busy") { resumeNativeListening(700); return; }
+      if (reason === "no-match" || reason === "timeout" || reason === "audio") {
+        resumeNativeListening(600); return;
+      }
+      setStatus("unsure");
+      logLine("Microphone unavailable — you can still type to the companion.");
+      endCall();
+    }
+  });
+}
+
+function clearNativeAsrRetry() {
+  if (nativeAsrRetry) { clearTimeout(nativeAsrRetry); nativeAsrRetry = null; }
+}
+
+function resumeNativeListening(delay) {
+  clearNativeAsrRetry();
+  if (!nativeCallActive || prefs.muted || !isAwake() || !nativeAsrAvailable()) return;
+  if (busy || stateKey === "speaking") return;
+  nativeAsrRetry = setTimeout(function () {
+    nativeAsrRetry = null;
+    if (!nativeCallActive || prefs.muted || !isAwake() || busy) return;
+    setStatus("listening");
+    try {
+      if (!nativeBridge.asrStart()) resumeNativeListening(700);
+    } catch (e) { resumeNativeListening(700); }
+  }, Number(delay) || 450);
+}
+
+function startCall() {
+  if (!accessAllowed()) { maybePromptAccess(); return; }
+  if (prefs.muted) toggleMute();
+  nativeCallActive = false;
+  stop();
+  wireInAppNativeAsr();
+  if (nativeAsrAvailable()) {
+    nativeCallActive = true;
+    syncControls();
+    resumeNativeListening(0);
+    return;
+  }
+  // Browser/desktop fallback: the existing VMCloudVoice loop.
+  startVoiceSession();
+  syncControls();
+}
+
+function endCall() {
+  nativeCallActive = false;
+  clearNativeAsrRetry();
+  clearResumeTimer();
+  if (nativeBridge && nativeBridge.asrCancel) { try { nativeBridge.asrCancel(); } catch (e) { } }
+  stop();
+  syncControls();
+}
+
+// Native TTS for the in-app call: real engine start/end + bounded level drive
+// the same face channel used by server TTS. The site's server TTS still wins on
+// desktop; this is the Android WebView fallback that makes speech audible.
+function speakNativeReply(text, endEmo) {
+  if (!nativeBridge || prefs.muted) { resumeNativeListening(); return false; }
+  voiceEndEmo = EMOTION_STATUS[endEmo] ? endEmo : "idle";
+  const done = function () {
+    setFaceTalking(false);
+    setStatus(voiceEndEmo || "idle");
+    resumeNativeListening();
+  };
+  try {
+    if (nativeBridge.ttsSpeakV2 && typeof nativeBridge.ttsSpeakV2 === "function") {
+      return !!nativeBridge.ttsSpeakV2(String(text), null, {
+        onStart: function () { setStatus("speaking"); setFaceTalking(true); },
+        onLevel: function (level) {
+          if (stateKey === "speaking") applyNativeSpeechEvent("level", level);
+        },
+        onEnd: done,
+      });
+    }
+    return !!nativeBridge.ttsSpeak(String(text), null, done);
+  } catch (e) { done(); return false; }
+}
+
 function toggleVoice() {
   if (!window.VMCloudVoice) return;
   if (!window.VMCloudVoice.supported()) {
@@ -1189,9 +1450,13 @@ function toggleMute() {
   savePrefs();
   if (prefs.muted) {
     if (window.VMCloudVoice) { try { window.VMCloudVoice.stop(); } catch (e) { } }
+    clearNativeAsrRetry();
+    if (nativeBridge && nativeBridge.asrCancel) { try { nativeBridge.asrCancel(); } catch (e) { } }
     clearResumeTimer();
     setFaceTalking(false);
     setStatus("idle");
+  } else if (nativeCallActive && nativeAsrAvailable()) {
+    resumeNativeListening(0);
   } else {
     if (accessAllowed()) startVoiceSession();
   }
@@ -1370,6 +1635,133 @@ function guide(ws) {
   });
 }
 
+// ── structured UI-step navigator (in-app DOM guidance) ─────────────────────
+// Guidance replies are turned into visible steps: the companion walks toward
+// the target control, plays the real `pointing` clip, highlights the element and
+// explains what to tap next. It READS the DOM and never clicks on the user's
+// behalf, so the human stays in control.
+const GUIDANCE_REQUEST_RE = /\b(where do i (?:tap|click|go)|what do i tap|which (?:button|tab|menu)|help me navigate|show me where|how do i (?:get|open|find)|guide me|walk me through|next step|take me to|stuck on (?:this|the) screen)\b/i;
+const GUIDANCE_STEP_RE = /^\s*(?:\d+[.)]|step\s*\d+[:.)-]?|[-•*])\s*(.+)$/i;
+const GUIDANCE_ACTION_RE = /\b(tap|click|press|select|choose|open|go to|hit)\b/i;
+let guideHighlightTimer = null;
+
+function isGuidanceRequest(text) { return GUIDANCE_REQUEST_RE.test(String(text || "")); }
+function isGuidanceReply(reply) {
+  const t = String(reply || "");
+  return GUIDANCE_STEP_RE.test(t.split("\n").filter(Boolean)[0] || "") || GUIDANCE_ACTION_RE.test(t);
+}
+
+function parseGuidanceSteps(reply) {
+  const lines = String(reply || "").split(/\n+/).map((s) => s.trim()).filter(Boolean);
+  const numbered = lines.map((l) => l.match(GUIDANCE_STEP_RE)).filter(Boolean).map((m) => m[1].trim());
+  if (numbered.length) return numbered;
+  // Prose fallback: split into sentences that contain an actionable verb.
+  return lines.join(" ").split(/(?<=[.!?])\s+/)
+    .map((s) => s.trim()).filter((s) => GUIDANCE_ACTION_RE.test(s));
+}
+
+function findGuidanceElement(step) {
+  const raw = String(step || "");
+  const quoted = raw.match(/["'`“]([^"'`”]{2,60})["'`”]/);
+  let phrase = quoted ? quoted[1] : "";
+  if (!phrase) {
+    const m = raw.match(/\b(?:tap|click|press|select|choose|open|go to|hit)\s+(?:the\s+)?([^\s.,!?]+(?:\s+[^\s.,!?]+){0,4})/i);
+    phrase = m ? m[1].trim() : "";
+  }
+  if (!phrase) return null;
+  const norm = (s) => String(s || "").toLowerCase().replace(/[\s_\-]+/g, " ").trim();
+  const needle = norm(phrase);
+  const candidates = document.querySelectorAll(
+    'button, a[href], input, select, textarea, [role="button"], [role="tab"], [role="menuitem"], [data-vm-mode], [data-ws], [id]'
+  );
+  let best = null, bestScore = 0;
+  for (const el of candidates) {
+    if (!el.getClientRects || !el.getClientRects().length) continue;
+    const label = norm([
+      el.textContent, el.getAttribute("aria-label"), el.getAttribute("title"),
+      el.getAttribute("placeholder"), el.getAttribute("id"), el.value,
+    ].filter(Boolean).join(" "));
+    if (!label) continue;
+    const words = needle.split(" ").filter((w) => w.length > 1);
+    const score = words.reduce((n, w) => n + (label.includes(w) ? 1 : 0), 0);
+    if (score > bestScore) { bestScore = score; best = el; }
+  }
+  return bestScore >= Math.max(1, Math.ceil(needle.split(" ").filter((w) => w.length > 1).length / 2)) ? best : null;
+}
+
+function injectGuideStyles() {
+  if ($id("vmvrmGuideStyle")) return;
+  const style = document.createElement("style");
+  style.id = "vmvrmGuideStyle";
+  style.textContent =
+    ".vmvrm-guide-highlight{outline:3px solid #38bdf8!important;outline-offset:3px!important;" +
+    "box-shadow:0 0 0 6px rgba(56,189,248,.22),0 0 24px rgba(56,189,248,.45)!important;" +
+    "border-radius:8px;position:relative;z-index:100001!important}" +
+    "#vmvrmGuideTip{position:fixed;z-index:100002;pointer-events:none;background:#0f172a;" +
+    "color:#e0f7ff;border:1px solid #38bdf8;border-radius:8px;padding:5px 9px;font:600 12px/1.3 " +
+    "Inter,system-ui,sans-serif;box-shadow:0 8px 24px rgba(0,0,0,.5);white-space:nowrap}";
+  (document.head || document.documentElement).appendChild(style);
+}
+
+function highlightGuidanceTarget(el, step) {
+  if (!el) return;
+  injectGuideStyles();
+  clearGuidanceHighlight();
+  el.classList.add("vmvrm-guide-highlight");
+  const tip = document.createElement("div");
+  tip.id = "vmvrmGuideTip";
+  tip.textContent = "Tap here → " + String(step || "").slice(0, 72);
+  document.body.appendChild(tip);
+  const place = () => {
+    const r = el.getBoundingClientRect();
+    tip.style.left = Math.max(6, Math.min((window.innerWidth || 1280) - 220, r.left)) + "px";
+    tip.style.top = Math.max(6, r.top - 34) + "px";
+  };
+  place();
+  window.addEventListener("scroll", place, true);
+  window.addEventListener("resize", place);
+  guideHighlightTimer = setTimeout(clearGuidanceHighlight, 9000);
+}
+
+function clearGuidanceHighlight() {
+  if (guideHighlightTimer) { clearTimeout(guideHighlightTimer); guideHighlightTimer = null; }
+  const old = document.querySelector(".vmvrm-guide-highlight");
+  if (old) old.classList.remove("vmvrm-guide-highlight");
+  const tip = $id("vmvrmGuideTip");
+  if (tip && tip.parentNode) tip.parentNode.removeChild(tip);
+}
+
+function runStepGuidance(userText, reply) {
+  const steps = parseGuidanceSteps(reply);
+  if (!steps.length) return false;
+  clearGuidanceHighlight();
+  const step = steps[0];
+  const el = findGuidanceElement(step);
+  const explain = "Step 1: " + step;
+  if (el) { try { el.scrollIntoView({ block: "center", behavior: "smooth" }); } catch (e) { } }
+  const box = $id("vmVrmCompanion");
+  // Let the spoken explanation start first; then walk over, point and highlight.
+  setTimeout(() => {
+    if (el && box) {
+      const r = el.getBoundingClientRect();
+      const bw = box.offsetWidth || 120;
+      walkTo(r.left - bw - 12, r.top, {
+        ms: 850,
+        done: () => {
+          setStatus("pointing");
+          highlightGuidanceTarget(el, step);
+          if (!prefs.muted && window.VMCloudVoice) speakText(explain, "idle");
+        },
+      });
+    } else {
+      setStatus("pointing");
+      if (!prefs.muted && window.VMCloudVoice) speakText(explain, "idle");
+      logLine(explain);
+    }
+  }, 240);
+  return true;
+}
+
 // ── (formerly the attached settings popover; now the main Settings section) ─
 // The companion's own controls were removed from the overlay. The main sidebar
 // Settings → Companion section renders elements carrying data-vm-mode /
@@ -1384,6 +1776,13 @@ function syncControls() {
   for (const c of chips) {
     c.classList.toggle("on", c.getAttribute("data-skin") === (prefs.skin || ""));
   }
+  const callBtn = $id("vmVrmCompanionCallBtn");
+  if (callBtn) callBtn.classList.toggle("on", nativeCallActive);
+  const muteBtn = $id("vmVrmCompanionMuteBtn");
+  if (muteBtn) {
+    muteBtn.classList.toggle("on", !!prefs.muted);
+    muteBtn.textContent = prefs.muted ? "Unmute" : "Mute";
+  }
   syncTaskPermControls();
   paintStatus();
 }
@@ -1395,6 +1794,9 @@ function buildUI() {
   on($id("vmVrmCompanionSend"), "click", sendFromInput);
   on($id("vmVrmCompanionInput"), "keydown", (e) => { if (e.key === "Enter") sendFromInput(); });
   on($id("vmVrmCompanionMicBtn"), "click", toggleVoice);
+  on($id("vmVrmCompanionCallBtn"), "click", startCall);
+  on($id("vmVrmCompanionEndBtn"), "click", endCall);
+  on($id("vmVrmCompanionMuteBtn"), "click", toggleMute);
   on($id("vmVrmCompanionScreenBtn"), "click", toggleVision);
 
   // Direct manipulation: drag to reposition, tap to open the chat panel.
@@ -1615,6 +2017,9 @@ async function show() {
 function hide() {
   setDataset();
   cancelWalk();
+  nativeCallActive = false;
+  clearNativeAsrRetry();
+  if (nativeBridge && nativeBridge.asrCancel) { try { nativeBridge.asrCancel(); } catch (e) { } }
   clearResumeTimer();
   clearIdleTimer();
   clearRoamTimer();
@@ -1717,6 +2122,19 @@ window.vmVrmCompanion = {
    */
   applyStatus: function (s) { setStatus(s); },
   getStatus: function () { return stateKey; },
+  // brain.py [ANIM: ...] / SSE `animation` event seam.
+  applyAnimation: applyBrainAnimation,
+  // Live Companion Call controls (native SpeechRecognizer when available).
+  startCall: startCall,
+  endCall: endCall,
+  // Structured, read-only DOM guidance used by the UI-step navigator.
+  guideToElement: function (step) {
+    const el = findGuidanceElement(step);
+    if (!el) return false;
+    highlightGuidanceTarget(el, step);
+    return true;
+  },
+  clearGuidanceHighlight: clearGuidanceHighlight,
   /**
    * One-shot, real-clip gestures: waving (hello), pointing (look at this),
    * guiding (walk with me). They hold the clip briefly, then return to idle.

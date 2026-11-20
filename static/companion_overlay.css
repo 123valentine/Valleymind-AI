@@ -189,6 +189,38 @@ html, body {
 .stop:hover { opacity: 1; border-color: rgba(239, 68, 68, 0.6); color: #fecaca; }
 
 /*
+ * Dedicated Live Companion Call controls. `Call` is the explicit hands-free
+ * start (it loops listen -> think -> speak -> listen until End/Mute), `Mute`
+ * stops listening immediately. Both stay tiny and only paint their own pixels;
+ * all transparent space remains pointer-transparent to the window below.
+ */
+.callctl {
+  position: absolute;
+  top: 6px;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid rgba(56, 189, 248, 0.45);
+  background: rgba(2, 6, 23, 0.62);
+  color: #bae6fd;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  touch-action: manipulation;
+  z-index: 6;
+  opacity: 0.75;
+}
+.callctl:hover { opacity: 1; border-color: #38bdf8; }
+.callctl.on { background: rgba(14, 116, 144, 0.85); color: #e0f7ff; }
+#btnCall { right: 92px; }
+#btnMute { right: 64px; }
+
+/*
  * Icon-only × to put the companion away. Deliberately not a panel and not a
  * labelled button; it is the one existing affordance the Android page verifier
  * requires (PAGE_MARKER_JS checks for #btnHide). Touching the character itself
