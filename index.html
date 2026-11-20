@@ -2044,6 +2044,8 @@
   .msg-toolbar .playback-ctrl.is-speaking .playback-icon{color:#00d4ff}
   .msg-toolbar .up-active{color:#00ff88 !important;background:rgba(0,255,136,0.1) !important}
   .msg-toolbar .down-active{color:#ff6b7a !important;background:rgba(255,45,70,0.1) !important}
+  /* Muted one-line AI note shown under each completed assistant action bar. */
+  .vm-ai-disclaimer{ font-size:11px; opacity:0.62; margin-top:6px; color:#94a3b8; line-height:1.3; white-space:nowrap; }
   /* â”€â”€ Conversation-focused chat workspace â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
      Conversation first; everything else secondary. More breathing room,
      lighter bubbles, and a comfortable reading column on wide screens. */
@@ -2581,7 +2583,7 @@
   /* Composer bar: subtle separating line, roomier on phones. */
   .chat-composer-bar{ border-top:1px solid rgba(255,255,255,0.05); }
   @media(max-width:768px){
-    .chat-composer-bar{ padding:10px 12px 12px !important; }
+    .chat-composer-bar{ padding:10px 12px 8px !important; }
     .chat-composer-bar>div{ max-width:none !important; }
   }
   /* â”€â”€ Unified composer (input box) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
@@ -2592,6 +2594,11 @@
   }
   #composer.focused{ border-color:rgba(0,212,255,0.45); box-shadow:0 0 0 1px rgba(0,212,255,0.15); }
   #composerRow{ display:flex; flex-direction:column; gap:6px; width:100%; }
+  /* Bottom action row: + and agent pill on the left, mic and send on the right,
+     all vertically centred on one baseline flush with the input box bottom. */
+  #composerBtnRow{ display:flex; align-items:center; gap:6px; width:100%; }
+  #composerLeftGroup,#composerRightGroup{ display:flex; align-items:center; gap:6px; }
+  #composerRightGroup{ margin-left:auto; }
   #chatInput:focus{ outline:none !important; box-shadow:none !important; }
   #chatInput::-webkit-scrollbar{ display:none; width:0; height:0; }
   /* Hide visible scrollbar track on main chat while preserving scroll (fixes unwanted vertical line) */
@@ -3569,7 +3576,7 @@ body[data-vm-companion="cloud"] #vmVrmCompanion { display: none !important; }
     </div>
 
     <!-- INPUT BAR -->
-    <div class="chat-composer-bar" style="padding:12px 24px 24px;background:linear-gradient(180deg, rgba(5,14,24,0.35), rgba(5,14,24,0.92));box-shadow:0 -24px 50px rgba(0,0,0,0.35);">
+    <div class="chat-composer-bar" style="padding:12px 24px 12px;background:linear-gradient(180deg, rgba(5,14,24,0.35), rgba(5,14,24,0.92));box-shadow:0 -24px 50px rgba(0,0,0,0.35);">
       <div style="max-width:1100px;margin:0 auto;">
 
         <!-- HIDDEN FILE INPUTS -->
@@ -3599,7 +3606,7 @@ body[data-vm-companion="cloud"] #vmVrmCompanion { display: none !important; }
           <span id="micWordsCounter" style="color:#00d4ff;font-size:11px;font-weight:700;margin-left:8px;display:none;">words captured: 0</span>
 
           <!-- Button row: LEFT group = + then persona; RIGHT group = mic then send -->
-          <div id="composerBtnRow" style="display:flex; align-items:center; gap:6px; width:100%; padding:8px;">
+          <div id="composerBtnRow" style="display:flex; align-items:center; gap:6px; width:100%; padding:4px 2px 0;">
 
             <!-- LEFT group: + button then persona pill -->
             <div id="composerLeftGroup" style="display:flex; align-items:center; gap:6px;">
@@ -3648,7 +3655,6 @@ body[data-vm-companion="cloud"] #vmVrmCompanion { display: none !important; }
 
           </div><!-- /composerBtnRow -->
         </div><!-- /composer -->
-        <p style="text-align:center;font-size:10px;color:#334155;margin-top:10px;text-transform:uppercase;letter-spacing:0.15em;font-family:'Space Grotesk',sans-serif;">Valley Mind-AI can make mistakes. Verify critical information.</p>
       </div>
     </div>
   </div>
@@ -7473,6 +7479,21 @@ function VMAddProactiveSuggestions(bubbleEl, fullText, intent) {
     bub.appendChild(container);
 }
 
+/* Append the small, muted AI disclaimer directly under a message's action bar.
+   Idempotent so live-streamed and restored replies never render it twice. */
+function VMAddAssistantDisclaimer(wrapper, toolbar) {
+    if (!wrapper || typeof wrapper.querySelector !== "function") return null;
+    var note = wrapper.querySelector(".vm-ai-disclaimer");
+    if (note) return note;
+    note = document.createElement("div");
+    note.className = "vm-ai-disclaimer";
+    note.textContent = "ValleyMind is AI and can make mistakes.";
+    var bar = toolbar || wrapper.querySelector(".msg-toolbar");
+    if (bar && bar.parentNode === wrapper && bar.nextSibling) wrapper.insertBefore(note, bar.nextSibling);
+    else wrapper.appendChild(note);
+    return note;
+}
+
 function addMessage(text, type = "ai", imageData, mediaUrl, videoUrl, images, sourceMetadata, files) {
     const container = document.getElementById("messages");
     const welcome = document.getElementById("welcome");
@@ -7785,6 +7806,7 @@ function addMessage(text, type = "ai", imageData, mediaUrl, videoUrl, images, so
         toolbar.appendChild(dotsBtn);
 
         wrapper.appendChild(toolbar);
+        VMAddAssistantDisclaimer(wrapper, toolbar);
 
         // Restored/history assistant replies with evidence get the same compact
         // favicon source stack in the bottom action row as live replies.
@@ -8320,7 +8342,7 @@ function removeThinkingIndicator(indicator) {
 function VMEnsureAssistantToolbar(wrapper, msgIndex) {
     if (!wrapper || typeof wrapper.querySelector !== "function") return null;
     var toolbar = wrapper.querySelector(".msg-toolbar");
-    if (toolbar) return toolbar;
+    if (toolbar) { VMAddAssistantDisclaimer(wrapper, toolbar); return toolbar; }
 
     toolbar = document.createElement("div");
     toolbar.className = "msg-toolbar";
@@ -8386,6 +8408,7 @@ function VMEnsureAssistantToolbar(wrapper, msgIndex) {
     toolbar.appendChild(dotsBtn);
 
     wrapper.appendChild(toolbar);
+    VMAddAssistantDisclaimer(wrapper, toolbar);
     if (typeof lucide !== "undefined" && lucide.createIcons) lucide.createIcons();
     return toolbar;
 }
