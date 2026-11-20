@@ -16,12 +16,14 @@
     const style = document.createElement("style");
     style.id = "vm-activity-v2-styles";
     style.textContent = `
+      /* Full-width block row: the status must NEVER share a line with reply text,
+         including while tokens stream in. Inner dots/text stay on one line. */
       .vm-activity-inline {
-        display: inline-flex;
-        align-items: center;
-        gap: 9px;
+        display: block;
+        width: 100%;
+        flex: 0 0 auto;
+        margin: 2px 0 8px 0;
         padding: 4px 2px;
-        margin: 2px 0 6px 0;
         background: transparent;
         border: none;
         font-size: 13.5px;
@@ -40,6 +42,8 @@
         align-items: center;
         gap: 4px;
         flex-shrink: 0;
+        margin-right: 9px;
+        vertical-align: middle;
       }
       .vm-activity-dots.is-hidden {
         display: none;

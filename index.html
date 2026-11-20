@@ -2031,6 +2031,22 @@
   .user-message .bubble{background:rgba(0,212,255,0.16);border:1px solid rgba(255,255,255,0.1);border-radius:14px 14px 4px 14px;padding:12px 16px;color:#dde3e7;white-space:pre-wrap;word-break:break-word;width:100%}
   .assistant-message{align-self:flex-start;margin-left:0;margin-right:0;max-width:780px;width:-moz-fit-content;width:fit-content;display:flex;flex-direction:column;align-items:flex-start;text-align:left}
   .assistant-message .bubble{background:none;border:none;box-shadow:none;padding:0;margin:0;color:#dde3e7;white-space:pre-wrap;word-break:break-word;width:auto;text-align:left}
+  /* The assistant bubble is the parent of BOTH the activity/thinking status host
+     and the reply text. Keep it a vertical stack — never a row. Block layout is
+     the default; while tokens stream it is an explicit column so the live text
+     span can never sit beside the activity pill. */
+  .assistant-message .bubble:has(.vm-stream-text){ display:flex; flex-direction:column; align-items:flex-start; }
+  .vm-reply-body{ display:block; width:100%; }
+  /* Activity status host always owns a full-width row above the reply text. */
+  .vm-activity,
+  .vm-activity-inline,
+  [data-vm-activity],
+  .thinking-indicator{
+    display:block;
+    width:100%;
+    flex:0 0 auto;
+    margin-bottom:8px;
+  }
   .msg-toolbar{display:flex;align-items:center;gap:4px;margin-top:4px;padding-left:4px}
   .msg-toolbar .vm-sources-bar{margin-left:auto;margin-top:0;padding-right:2px}
   .msg-toolbar button{background:none;border:none;cursor:pointer;padding:4px;border-radius:6px;display:flex;align-items:center;color:#64748b;transition:all 0.15s}
