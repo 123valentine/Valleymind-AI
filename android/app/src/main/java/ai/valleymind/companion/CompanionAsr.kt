@@ -2,6 +2,12 @@ package ai.valleymind.companion
 
 import android.content.Context
 import android.content.Intent
+import android.media.AudioFormat
+import android.media.AudioRecord
+import android.media.MediaRecorder
+import android.media.audiofx.AcousticEchoCanceler
+import android.media.audiofx.AutomaticGainControl
+import android.media.audiofx.NoiseSuppressor
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -63,6 +69,14 @@ class CompanionAsr(context: Context) {
     private var listening = false
     private var listener: Listener? = null
 
+    // Voice-processing chain attached to a VOICE_RECOGNITION audio session for
+    // the lifetime of one utterance. The AudioRecord is never started: it only
+    // owns the audio session the platform effects attach to.
+    private var voiceProcessingRecord: AudioRecord? = null
+    private var automaticGainControl: AutomaticGainControl? = null
+    private var noiseSuppressor: NoiseSuppressor? = null
+    private var acousticEchoCanceler: AcousticEchoCanceler? = null
+
     /** True when the platform actually offers a speech recogniser. */
     val supported: Boolean
         get() = try {
@@ -100,6 +114,74 @@ class CompanionAsr(context: Context) {
     }
 
     /**
+     * Attaches Android's voice-processing effects to a VOICE_RECOGNITION audio
+     * session. AGC, noise suppression and acoustic echo cancellation are all
+     * optional (device/API dependent); an unavailable effect is simply skipped
+     * and never blocks recognition. The holder AudioRecord is never started, so
+     * it cannot contend with SpeechRecognizer for the microphone.
+     */
+    private fun attachVoiceProcessing() {
+        releaseVoiceProcessing()
+        try {
+            val sampleRate = VOICE_PROCESSING_SAMPLE_RATE
+            val channelConfig = AudioFormat.CHANNEL_IN_MONO
+            val encoding = AudioFormat.ENCODING_PCM_16BIT
+            val minBuffer = AudioRecord.getMinBufferSize(sampleRate, channelConfig, encoding)
+            if (minBuffer <= 0) return
+
+            val record = AudioRecord(
+                MediaRecorder.AudioSource.VOICE_RECOGNITION,
+                sampleRate,
+                channelConfig,
+                encoding,
+                minBuffer * 2
+            )
+            val session = record.audioSessionId
+            if (session == 0) {
+                record.release()
+                return
+            }
+            voiceProcessingRecord = record
+
+            if (AutomaticGainControl.isAvailable()) {
+                val effect = AutomaticGainControl.create(session)
+                if (effect != null) {
+                    try { effect.enabled = true } catch (e: Exception) { /* keep device default */ }
+                    automaticGainControl = effect
+                }
+            }
+            if (NoiseSuppressor.isAvailable()) {
+                val effect = NoiseSuppressor.create(session)
+                if (effect != null) {
+                    try { effect.enabled = true } catch (e: Exception) { /* keep device default */ }
+                    noiseSuppressor = effect
+                }
+            }
+            if (AcousticEchoCanceler.isAvailable()) {
+                val effect = AcousticEchoCanceler.create(session)
+                if (effect != null) {
+                    try { effect.enabled = true } catch (e: Exception) { /* keep device default */ }
+                    acousticEchoCanceler = effect
+                }
+            }
+        } catch (e: Exception) {
+            // Voice processing is best-effort: SpeechRecognizer still works.
+        }
+    }
+
+    /** Releases the optional effect chain after the utterance completes. */
+    private fun releaseVoiceProcessing() {
+        try { automaticGainControl?.release() } catch (e: Exception) { /* ignore */ }
+        try { noiseSuppressor?.release() } catch (e: Exception) { /* ignore */ }
+        try { acousticEchoCanceler?.release() } catch (e: Exception) { /* ignore */ }
+        automaticGainControl = null
+        noiseSuppressor = null
+        acousticEchoCanceler = null
+        try { voiceProcessingRecord?.release() } catch (e: Exception) { /* ignore */ }
+        voiceProcessingRecord = null
+    }
+
+    /**
      * Starts recognition. Returns false when it could not be started (no
      * recogniser, already listening, or the platform refused) — the caller must
      * never assume the microphone is open.
@@ -120,15 +202,22 @@ class CompanionAsr(context: Context) {
                 putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
                 putExtra(RecognizerIntent.EXTRA_LANGUAGE, locale)
                 putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+                // Longer silence windows stop the recogniser cutting the user off
+                // mid-thought on a noisy phone call, while still ending the turn.
+                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1800L)
+                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 1400L)
+                putExtra(RecognizerIntent.EXTRA_AUDIO_SOURCE, MediaRecorder.AudioSource.VOICE_RECOGNITION)
                 putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
                 putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, appContext.packageName)
             }
+            attachVoiceProcessing()
             try {
                 r.startListening(intent)
                 listening = true
                 listener?.onAsrReady()
             } catch (e: Exception) {
                 listening = false
+                releaseVoiceProcessing()
                 emitError("client")
             }
         }
@@ -157,6 +246,7 @@ class CompanionAsr(context: Context) {
         mainHandler.post {
             val r = recognizer ?: return@post
             listening = false
+            releaseVoiceProcessing()
             try {
                 r.cancel()
             } catch (e: Exception) {
@@ -169,6 +259,7 @@ class CompanionAsr(context: Context) {
     fun shutdown() {
         mainHandler.post {
             listening = false
+            releaseVoiceProcessing()
             recognizer?.let { r ->
                 try {
                     r.destroy()
@@ -209,12 +300,14 @@ class CompanionAsr(context: Context) {
 
         override fun onError(error: Int) {
             listening = false
+            releaseVoiceProcessing()
             val reason = reasonFor(error)
             mainHandler.post { listener?.onAsrError(reason) }
         }
 
         override fun onResults(results: Bundle?) {
             listening = false
+            releaseVoiceProcessing()
             val text = firstResult(results)
             mainHandler.post {
                 if (text.isEmpty()) listener?.onAsrError("no-match") else listener?.onAsrFinal(text)
@@ -231,6 +324,9 @@ class CompanionAsr(context: Context) {
     }
 
     companion object {
+        /** Standard speech sample rate for the optional voice-effect session. */
+        private const val VOICE_PROCESSING_SAMPLE_RATE = 16000
+
         /** Builds the exact JSON event the injected shim forwards to the page. */
         fun eventJson(type: String, text: String? = null, reason: String? = null): String {
             val sb = StringBuilder("{\"type\":\"").append(type).append("\"")

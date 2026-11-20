@@ -172,13 +172,13 @@ class VrmCompanionStaticTests(unittest.TestCase):
         self.assertIn("getMode() === \"vrm\"", js)
 
     # ── companion geometry + persistence ───────────────────────────────────
-    def test_default_size_is_compact_full_body(self):
+    def test_default_size_is_full_body(self):
         js = self._companion()
-        self.assertIn("sizePct: 16", js)
+        self.assertIn("sizePct: 100", js)
         # The size control lives in the main Settings → Companion section and
-        # stays in the requested compact band's vicinity.
+        # allows the whole full-body band down to a compact size.
         settings = self._settings()
-        self.assertIn('id="vmSetSize" type="range" min="10" max="24"', settings)
+        self.assertIn('id="vmSetSize" type="range" min="10" max="100"', settings)
         self.assertIn("vmCompanionSetSize", settings)
 
     def test_home_and_show_hide_controls(self):
@@ -292,7 +292,9 @@ class VrmCompanionStaticTests(unittest.TestCase):
         # (e.g. a plain greeting).
         js = self._companion()
         self.assertIn("function emotionForReply(", js)
-        self.assertIn("const emo = emotionForReply(text, reply)", js)
+        # An explicit [EMO: ...] tag may win, but it comes from THIS reply's
+        # parsed wire tags -- never the stale d.state.emotion default.
+        self.assertIn("const emo = emotionForReply(text, reply, tags.emotion)", js)
         self.assertNotIn("function endEmotion(", js)
         self.assertNotIn("const emo = endEmotion(d)", js)
         self.assertIn("EMOTION_CUES", js)
@@ -301,10 +303,9 @@ class VrmCompanionStaticTests(unittest.TestCase):
         self.assertIn('return "idle";', js)
 
     def test_mouth_is_closed_when_speech_ends(self):
-        # The face channel keeps a target level + speaking flag, and simulates a
-        # wobble whenever speaking is on with no level. Ending speech (or stop /
-        # mute / hide) must explicitly close BOTH, or the mouth stays open or
-        # keeps moving after the voice has finished.
+        # The face channel requires BOTH the TTS gate and a live amplitude frame.
+        # There is no simulated wobble to leak into silence; ending speech (or
+        # stop / mute / hide) closes the gate and the level.
         js = self._companion()
         self.assertIn("function setFaceTalking(", js)
         self.assertIn("engine.face.setSpeaking(true)", js)
@@ -313,6 +314,32 @@ class VrmCompanionStaticTests(unittest.TestCase):
         # Closed on speak end, on every non-speaking status, on stop and on hide.
         self.assertGreaterEqual(js.count("setFaceTalking(false)"), 4)
         self.assertIn('if (s !== "speaking") setFaceTalking(false);', js)
+
+        face = (ROOT / "vrm_preview" / "face.js").read_text(encoding="utf-8")
+        self.assertIn("this.audioActive = false", face)
+        self.assertIn("get isSpeaking()", face)
+        self.assertIn("this.speaking === true && this.audioActive === true", face)
+        self.assertNotIn("simulated speech envelope", face)
+        for morph in ("aa", "ih", "ou", "ee", "oh"):
+            self.assertIn('m.setValue("' + morph + '", open *', face)
+
+    def test_idle_pool_only_contains_calm_breathing_clips(self):
+        manifest = json.loads((ROOT / "vrm_preview" / "clips.json").read_text(encoding="utf-8"))
+        idle = manifest["behaviours"]["idle"]
+        self.assertLessEqual(len(idle), 15)
+        for clip in idle:
+            lowered = clip.lower()
+            for forbidden in ("talking", "touch", "fidget", "stretch", "alt1", "alt2"):
+                self.assertNotIn(forbidden, lowered, f"idle pool still carries {clip}")
+
+    def test_voice_loop_uses_one_echo_guard_and_local_stop_phrases(self):
+        js = self._companion()
+        self.assertIn("const VOICE_ECHO_GUARD_MS = 250;", js)
+        self.assertIn("}, VOICE_ECHO_GUARD_MS);", js)
+        self.assertIn("Number(delay) || VOICE_ECHO_GUARD_MS", js)
+        self.assertIn("stop listening", js)
+        self.assertIn("goodbye", js)
+        self.assertIn("function isCallStopPhrase(text)", js)
 
     def test_purposeful_walking_reuses_existing_gait(self):
         js = self._companion()
@@ -472,12 +499,13 @@ class VrmPreviewRouteTests(unittest.TestCase):
 
 
 class VrmCompanionPhase1Tests(unittest.TestCase):
-    """Phase-1 'living companion' contracts.
+    """Calm companion + lifecycle contracts.
 
-    Lock in: varied natural idle, restrained roaming, drag/free positioning
-    (user-preferred), persistence of position/visibility across views, phone
-    sizing/re-framing, a reduced-motion / hidden-tab pause, and the sleep/wake
-    voice-state PREPARATION (which never claims a working wake word).
+    Lock in: a fixed calm idle (breathing/blinking only, no random shuffling or
+    roaming), explicit-event gestures, drag/free positioning (user-preferred),
+    persistence of position/visibility across views, phone sizing/re-framing,
+    hidden-tab GPU pause, and the sleep/wake voice-state PREPARATION (which
+    never claims a working wake word).
     """
 
     def _html(self):
@@ -489,32 +517,38 @@ class VrmCompanionPhase1Tests(unittest.TestCase):
     def _settings(self):
         return (ROOT / "static" / "settings.js").read_text(encoding="utf-8")
 
-    # ── varied natural idle ────────────────────────────────────────────────
-    def test_varied_idle_rotates_at_random_intervals(self):
+    # ── calm idle ──────────────────────────────────────────────────────────
+    def test_idle_is_locked_to_calm_breathing(self):
         js = self._companion()
-        self.assertIn("function scheduleIdleVariation(", js)
-        self.assertIn("const IDLE_MIN_MS = 9000;", js)
-        self.assertIn("const IDLE_MAX_MS = 21000;", js)
-        self.assertIn("function clearIdleTimer(", js)
-        # Rotation reuses the ONE authoritative entry point and never turns the
-        # broad autonomous loop on.
-        self.assertIn('engine.trigger("idle")', js)
+        # The engine's weighted random state machine stays OFF before and after
+        # boot; idle is one held breathing clip plus the face's blinking.
+        self.assertGreaterEqual(js.count("engine.setAuto(false);"), 3)
         self.assertNotIn("setAuto(true)", js)
-        self.assertIn("scheduleIdleVariation();", js)
-        # Rotates ONLY while resting: any driven state clears the idle timer.
-        self.assertIn('if (s !== "idle") { clearIdleTimer(); clearRoamTimer(); }', js)
+        self.assertIn('engine.trigger("idle");', js)
+        self.assertIn("const ACTIVE_BODY_STATES = new Set([", js)
+        # No idle shuffle timer or random idle pool rotation remains.
+        for gone in (
+            "function scheduleIdleVariation(", "IDLE_MIN_MS", "IDLE_MAX_MS",
+            "clearIdleTimer(", "scheduleIdleVariation();",
+        ):
+            self.assertNotIn(gone, js, f"idle still carries {gone}")
 
-    # ── restrained roaming + free positioning ──────────────────────────────
-    def test_restrained_roaming_reuses_walking_and_clamping(self):
+    # ── no autonomous roaming; walking is explicit only ────────────────────
+    def test_no_autonomous_roaming_walking_is_explicit_only(self):
         js = self._companion()
-        self.assertIn("function scheduleRoam(", js)
-        self.assertIn("function roamStep(", js)
-        self.assertIn("const ROAM_MIN_MS = 32000;", js)
-        # Roaming moves through the SAME gait + viewport clamp as guidance.
-        self.assertIn("walkTo(tx, ty", js)
+        for gone in (
+            "function scheduleRoam(", "function roamStep(", "ROAM_MIN_MS",
+            "walkTo(tx, ty", "clearRoamTimer()",
+        ):
+            self.assertNotIn(gone, js, f"roaming still carries {gone}")
+        # The legacy pref is accepted but hard-disabled for compatibility.
+        self.assertIn("roam: false,", js)
+        self.assertIn("prefs.roam = false;", js)
+        self.assertIn("roam: false, // idle roaming is permanently disabled", js)
+        # Real walking/clamping survive only for explicit guidance.
+        self.assertIn("function walkTo(", js)
         self.assertIn("function clampToViewport(", js)
-        # Roam pauses once the user has placed the avatar by hand.
-        self.assertIn("prefs.userPlaced !== true", js)
+        self.assertIn("function guide(", js)
 
     def test_drag_repositions_and_marks_user_preferred(self):
         js = self._companion()
@@ -522,9 +556,11 @@ class VrmCompanionPhase1Tests(unittest.TestCase):
         self.assertIn('"pointerdown"', js)
         self.assertIn('"pointermove"', js)
         self.assertIn("prefs.userPlaced = true", js)
-        # Position is persisted (x / y already exist) and roaming is paused.
-        self.assertIn("clearRoamTimer();", js)
-        # Home / dock / reset clear the manual-placement lock so roaming can resume.
+        # Position is persisted; a drag cancels any explicit guidance walk (there
+        # is no autonomous roaming timer left to pause).
+        self.assertIn("cancelWalk();", js)
+        self.assertNotIn("clearRoamTimer()", js)
+        # Home / dock / reset clear the manual-placement lock.
         self.assertGreaterEqual(js.count("prefs.userPlaced = false"), 3)
         # A press inside the chat panel is never a drag/tap.
         self.assertIn("chat.contains(e.target)", js)
@@ -560,15 +596,20 @@ class VrmCompanionPhase1Tests(unittest.TestCase):
         # Phone height is applied in px so it is never rounded to a cramped box.
         self.assertIn('el.style.height = px + "px";', js)
 
-    # ── reduced motion ─────────────────────────────────────────────────────
-    def test_reduced_motion_disables_autonomous_movement(self):
+    # ── reduced motion / hidden tab ────────────────────────────────────────
+    def test_no_autonomous_movement_timers_remain(self):
         js = self._companion()
-        self.assertIn("function reducedMotion(", js)
-        self.assertIn("prefers-reduced-motion: reduce", js)
-        self.assertIn("function motionOk()", js)
-        # Both the idle rotation and roaming bail out under reduced-motion.
-        self.assertIn("if (!motionOk()) return;", js)
-        self.assertIn("motionOk()", js)
+        # Autonomous movement was removed outright, so no reduced-motion gate is
+        # needed: idle only breathes/blinks and a hidden tab just stops rendering.
+        for gone in (
+            "function reducedMotion(", "function motionOk(",
+            "prefers-reduced-motion: reduce", "scheduleIdleVariation(",
+            "scheduleRoam(",
+        ):
+            self.assertNotIn(gone, js, f"autonomous movement still carries {gone}")
+        self.assertIn('document.addEventListener("visibilitychange"', js)
+        self.assertIn("engine.setRendering(false)", js)
+        self.assertIn("engine.setRendering(true)", js)
 
     # ── voice-interaction state preparation (no faked wake word) ────────────
     def test_sleep_wake_state_is_preparation_not_a_claimed_wake_word(self):
@@ -585,11 +626,13 @@ class VrmCompanionPhase1Tests(unittest.TestCase):
 
     def test_new_controls_surface_in_settings(self):
         settings = self._settings()
+        # Compatibility setter remains for old callers, but roaming no longer
+        # has a user-facing control (or any effect) now that idle is locked.
         self.assertIn("function vmCompanionSetRoam(", settings)
         self.assertIn("function vmCompanionSetAwake(", settings)
-        self.assertIn("Wander around", settings)
+        self.assertNotIn("Wander around", settings)
+        self.assertNotIn('"vmSetRoam"', settings)
         self.assertIn("Awake & ready", settings)
-        self.assertIn('"vmSetRoam"', settings)
         self.assertIn('"vmSetAwake"', settings)
 
     def test_module_is_cache_busted(self):

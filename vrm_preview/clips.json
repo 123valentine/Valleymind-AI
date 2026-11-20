@@ -94,22 +94,10 @@
    "rb-idle",
    "rb-neutral-2",
    "rb-neutral-3",
-   "rb-neutral-4",
-   "rb-neutral-5",
    "rb-neutral",
    "rb-relaxed-2",
    "rb-relaxed-3",
-   "rb-relaxed-4",
-   "rb-relaxed",
-   "relaxed-2",
-   "relaxed-3",
-   "relaxed",
-   "world-idle-alt1-enter",
-   "world-idle-alt1-exit",
-   "world-idle-alt1",
-   "world-idle-alt2-enter",
-   "world-idle-alt2-exit",
-   "world-idle-alt2"
+   "rb-relaxed-4"
   ],
   "jumping": null,
   "listening": [

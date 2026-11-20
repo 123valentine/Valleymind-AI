@@ -150,6 +150,19 @@ class OverlayChromeTests(unittest.TestCase):
         self.assertIn('id="stage"', html)
         self.assertIn('id="btnHide"', html)
 
+    def test_overlay_has_no_top_badge_strip(self):
+        # The old "OVER APP" / CAM strip sat over the character's head. Only the
+        # full-body character and the bottom micro-pill may render.
+        html = self._read("static/companion_overlay.html")
+        for gone in ("vmOverlayBadges", "vmBadgeOverlay", "vmBadgeCamera", "OVER APP"):
+            self.assertNotIn(gone, html, f"overlay still carries {gone}")
+        css = self._read("static/companion_overlay.css")
+        for gone in (".badges", ".badge-overlay", ".badge-camera"):
+            self.assertNotIn(gone, css, f"overlay css still styles {gone}")
+        js = self._read("static/companion_overlay.js")
+        self.assertNotIn("vmBadgeOverlay", js)
+        self.assertNotIn("badgeOverlay", js)
+
     def test_overlay_has_no_control_panel_or_reply_controls(self):
         html = self._read("static/companion_overlay.html")
         for gone in ("btnChat", "btnSend", "id=\"panel\"", "id=\"input\"", "id=\"hud\"", "id=\"log\""):
@@ -205,18 +218,54 @@ class OverlayChromeTests(unittest.TestCase):
         js = self._read("static/companion_overlay.js")
         self.assertIn("window.VMTurnSM", js)
 
+    def test_autonomous_idle_stays_off_through_boot(self):
+        js = self._read("static/companion_overlay.js")
+        self.assertGreaterEqual(js.count("engine.setAuto(false);"), 3)
+        boot_at = js.index("await engine.boot();")
+        self.assertLess(js.index("engine.setAuto(false);"), boot_at)
+        self.assertGreater(js.index("engine.setAuto(false);", boot_at), boot_at)
+
     def test_overlay_offers_the_four_free_voice_profiles(self):
         js = self._read("static/companion_overlay.js")
         for pid in ("marcus", "angelina", "elena", "companion"):
             self.assertIn(pid, js, f"missing voice profile {pid}")
         self.assertIn("vmVoiceProfile", js)
 
-    def test_overlay_declares_a_native_tts_fallback(self):
-        # Android WebView has no speechSynthesis; the page must fall back to the
-        # native engine rather than silently dropping the reply.
+    def test_overlay_prefers_native_tts_v2_with_bounded_fallback(self):
+        # Android WebView has no speechSynthesis. V2 is first because it reports
+        # real utterance events; server TTS and the legacy native callback are
+        # bounded fallbacks, not silent drops.
         js = self._read("static/companion_overlay.js")
+        self.assertIn("ttsSpeakV2", js)
         self.assertIn("ttsSpeak", js)
         self.assertIn("speakNative", js)
+        self.assertIn("startNativeV2Speech", js)
+        self.assertIn("startServerSpeech", js)
+        self.assertIn("startLegacyNativeSpeech", js)
+        self.assertIn("state.ttsFallbackUsed", js)
+        self.assertLess(js.index("startNativeV2Speech(text, seq);"),
+                        js.index("startServerSpeech(text, seq);"))
+
+    def test_tts_start_and_end_are_real_gates_for_the_mouth(self):
+        js = self._read("static/companion_overlay.js")
+        self.assertIn("function setFaceSpeaking(on)", js)
+        self.assertIn("function closeMouth()", js)
+        self.assertIn("function finishSpeaking(success, seq)", js)
+        self.assertIn("closeMouth();", js)
+        # Native V2 opens the mouth only on the engine's real onStart and closes
+        # it in finishSpeaking on both success and failure.
+        self.assertIn('onStart: () => { if (speechCurrent(seq, "nativeV2")) setFaceSpeaking(true); }', js)
+        self.assertIn("onLevel: (level) =>", js)
+        self.assertIn("onEnd: (ok) =>", js)
+        self.assertIn("finishSpeaking(true, seq)", js)
+        self.assertIn("finishSpeaking(false, seq)", js)
+
+    def test_tts_end_restarts_listening_after_the_echo_guard(self):
+        js = self._read("static/companion_overlay.js")
+        self.assertIn("const ECHO_GUARD_MS = 250;", js)
+        self.assertIn("state.restartDelayMs = ECHO_GUARD_MS;", js)
+        self.assertIn("function startListeningAfterEchoGuard()", js)
+        self.assertIn('case "start-listen": startListeningAfterEchoGuard();', js)
 
 
 class HandsFreeConversationTests(unittest.TestCase):
@@ -244,6 +293,14 @@ class HandsFreeConversationTests(unittest.TestCase):
         self.assertIn("voice.startListening", js)
         self.assertIn("startVadRecording", js)
 
+    def test_spoken_stop_phrases_end_the_hands_free_loop(self):
+        js = self._read("static/companion_overlay.js")
+        self.assertIn("stop listening", js)
+        self.assertIn("goodbye", js)
+        self.assertIn("function isCallStopPhrase(text)", js)
+        self.assertIn("function handleFinalTranscript(text)", js)
+        self.assertIn("dispatch({ type: \"STOP\" })", js)
+
     def test_native_bridge_exposes_the_recogniser(self):
         bridge = self._read(
             "android/app/src/main/java/ai/valleymind/companion/CompanionBridge.kt"
@@ -265,6 +322,23 @@ class HandsFreeConversationTests(unittest.TestCase):
         self.assertIn("EXTRA_LANGUAGE_MODEL", asr)
         for leaked in ("/api/editing/transcribe", "HttpURLConnection", "OkHttp"):
             self.assertNotIn(leaked, asr)
+
+    def test_native_recogniser_is_tuned_for_hands_free_speech(self):
+        asr = self._read(
+            "android/app/src/main/java/ai/valleymind/companion/CompanionAsr.kt"
+        )
+        self.assertIn("EXTRA_PARTIAL_RESULTS, true", asr)
+        self.assertIn(
+            "EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1800L", asr
+        )
+        self.assertIn(
+            "EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 1400L", asr
+        )
+        self.assertIn("MediaRecorder.AudioSource.VOICE_RECOGNITION", asr)
+        for effect in ("AutomaticGainControl", "NoiseSuppressor", "AcousticEchoCanceler"):
+            self.assertIn(effect + ".isAvailable()", asr)
+            self.assertIn(effect + ".create(session)", asr)
+        self.assertEqual(asr.count("effect.enabled = true"), 3)
 
 
 class OverlayDragSurfaceTests(unittest.TestCase):

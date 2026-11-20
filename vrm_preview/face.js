@@ -13,8 +13,10 @@
  *     const rms = analyser.getByteTimeDomainData(buf);  // Web Audio
  *     face.setTalkLevel(rms01(rms));                   // 0..1 mouth openness
  *
- * Until then setSpeaking(true) drives a simulated envelope so the wiring is
- * visibly correct before any audio exists.
+ * A real speech pipeline must now provide BOTH gates before any mouth morph is
+ * allowed to open: setSpeaking(true) while TTS is active AND non-zero level
+ * samples from that same playback. No audio means a perfectly closed mouth —
+ * there is deliberately no simulated envelope any more.
  */
 
 import * as THREE from "three";
@@ -30,7 +32,8 @@ export class FaceChannel {
     this.vrm = vrm;
     this.level = 0; // 0..1 current mouth openness
     this.targetLevel = 0;
-    this.speaking = false;
+    this.speaking = false; // TTS playback gate
+    this.audioActive = false; // a real level sample has arrived from that playback
     this.t = 0;
     this.blinkAt = 2.5;
     // Steady gaze so the head is not dead even while the body idles.
@@ -47,18 +50,45 @@ export class FaceChannel {
     }
   }
 
-  /** True while the companion should appear to be speaking. */
+  /**
+   * Opens the TTS gate. This alone never moves the mouth: a level sample from
+   * the active utterance must also arrive through setTalkLevel().
+   */
   setSpeaking(on) {
     this.speaking = !!on;
+    if (!this.speaking) this._closeMouth();
   }
 
   /**
-   * Direct mouth control. This is the hook a real TTS/audio lip-sync will use.
+   * True ONLY when TTS is active and its audio is producing level samples.
+   * Every morph write in update() is gated on this exact predicate.
+   */
+  get isSpeaking() {
+    return this.speaking === true && this.audioActive === true;
+  }
+
+  /**
+   * Direct mouth control from the active TTS amplitude tap.
    * @param {number} level 0..1
    */
   setTalkLevel(level) {
-    this.targetLevel = Math.max(0, Math.min(1, Number(level) || 0));
-    this.speaking = this.targetLevel > 0.01;
+    const v = Math.max(0, Math.min(1, Number(level) || 0));
+    // A late level event from a finished/interrupted utterance must not reopen
+    // the mouth, and setTalkLevel() must never turn the TTS gate on by itself.
+    if (!this.speaking || v <= 0.01) {
+      this.audioActive = false;
+      this.targetLevel = 0;
+      if (!this.speaking) this._closeMouth();
+      return;
+    }
+    this.audioActive = true;
+    this.targetLevel = v;
+  }
+
+  _closeMouth() {
+    this.audioActive = false;
+    this.targetLevel = 0;
+    this.level = 0;
   }
 
   /** -1..1 horizontal, -1..1 vertical gaze bias. */
@@ -124,25 +154,25 @@ export class FaceChannel {
     if (!this.enabled || !this.vrm.expressionManager) return;
     this.t += dt;
 
-    // ---- simulated speech envelope (stands in for a TTS amplitude track) ----
-    if (this.speaking && this.targetLevel <= 0.01) {
-      const wobble =
-        0.45 +
-        0.3 * Math.sin(this.t * 13.7) +
-        0.2 * Math.sin(this.t * 27.1 + 1.3) +
-        0.12 * Math.sin(this.t * 41.3 + 0.7);
-      this.level = Math.max(0, Math.min(1, wobble));
-    } else {
-      // ease toward whatever setTalkLevel asked for (or closed when idle)
+    // ---- TTS-only mouth: NEVER synthesise speech motion from silence ----
+    if (this.isSpeaking) {
+      // Ease toward the measured amplitude of the utterance that is playing.
       this.level += (this.targetLevel - this.level) * Math.min(1, dt * 18);
+    } else {
+      this.level += (0 - this.level) * Math.min(1, dt * 22);
+      if (this.level < 0.002) this.level = 0;
     }
 
     const m = this.vrm.expressionManager;
-    // Spread the level across the three jaw shapes so the mouth reads as speech.
-    m.setValue("aa", this.level * 0.85);
-    m.setValue("ih", this.level * 0.45 * (0.5 + 0.5 * Math.sin(this.t * 9.1)));
-    m.setValue("ou", this.level * 0.5 * (0.5 + 0.5 * Math.sin(this.t * 6.3 + 2.0)));
-    m.setValue("ee", this.level * 0.2 * (0.5 + 0.5 * Math.sin(this.t * 11.7 + 0.4)));
+    // Write ALL viseme morphs every frame. A hidden test can freeze the engine
+    // with no audio and prove aa/ih/ou/ee/oh are exactly zero; a stale value
+    // from a previous utterance is never allowed to survive.
+    const open = this.isSpeaking ? this.level : 0;
+    m.setValue("aa", open * 0.85);
+    m.setValue("ih", open * 0.45 * (0.5 + 0.5 * Math.sin(this.t * 9.1)));
+    m.setValue("ou", open * 0.5 * (0.5 + 0.5 * Math.sin(this.t * 6.3 + 2.0)));
+    m.setValue("ee", open * 0.2 * (0.5 + 0.5 * Math.sin(this.t * 11.7 + 0.4)));
+    m.setValue("oh", open * 0.55 * (0.5 + 0.5 * Math.sin(this.t * 7.7 + 1.9)));
 
     // ---- blinking ----
     if (this.t > this.blinkAt) {

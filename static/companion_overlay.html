@@ -54,14 +54,6 @@
   <div id="vmOverlayRoot" data-state="idle">
     <canvas id="stage"></canvas>
 
-    <!-- Live capability indicators. They appear only while the underlying
-         native feature is actually active, mirroring the OS camera/overlay
-         indicators instead of pretending a permission was granted. -->
-    <div id="vmOverlayBadges" class="badges">
-      <span id="vmBadgeCamera" class="badge badge-camera" hidden title="Camera eyes are live — tap to switch lens">CAM</span>
-      <span id="vmBadgeOverlay" class="badge badge-overlay" hidden title="Companion is showing over other apps">OVER APP</span>
-    </div>
-
     <div id="vmMicroPill" class="micro-pill" role="group" aria-label="Companion controls">
       <button id="btnTalk" class="ctl-btn" type="button" aria-label="Talk to ValleyMind" aria-pressed="false" title="Talk / Mute Mic">
         <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">

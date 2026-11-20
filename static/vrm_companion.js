@@ -944,8 +944,9 @@ function clearResumeTimer() {
 // Hands-free loop: after a spoken reply (or a graceful error) switch the mic
 // back on for the next turn -- but ONLY when the user granted first-use access,
 // voice is not muted, the companion is the active character, and the overlay is
-// still visible. The small delay lets the TTS tail clear so we never re-capture
-// our own reply.
+// still visible. 250 ms is the echo guard after TTS onEnd: long enough for the
+// speaker tail to clear, short enough to answer a follow-up naturally.
+const VOICE_ECHO_GUARD_MS = 250;
 function resumeListening() {
   clearResumeTimer();
   if (!voiceActive() || !accessAllowed() || prefs.muted || prefs.voiceFirst === false) return;
@@ -960,7 +961,7 @@ function resumeListening() {
     if (!isAwake()) return;
     if (window.VMCloudVoice.isListening()) return;
     try { window.VMCloudVoice.start(); } catch (e) { }
-  }, 900);
+  }, VOICE_ECHO_GUARD_MS);
 }
 
 function sendFromInput() {
@@ -1147,11 +1148,17 @@ function wireTaskControls() {
 // / speaking status and the amplitude-driven mouth sync were never connected.
 function voiceActive() { return getMode() === "vrm"; }
 
-// Explicit mouth control. The face channel keeps a target level and a separate
-// "speaking" flag, and its update() falls back to a SIMULATED wobble whenever
-// speaking is on with no level. Switching body clips does not clear either, so
-// after speech the mouth stayed open (or kept wobbling) forever. Every end /
-// stop / mute / state change therefore closes BOTH the flag and the level.
+// Local escape phrase for an active call. It is checked BEFORE the brain so a
+// spoken "goodbye" or "stop listening" always ends the loop immediately.
+const CALL_STOP_PHRASE = /^(?:stop listening|please stop listening|goodbye|good bye|bye bye)\.?$/i;
+function isCallStopPhrase(text) {
+  return CALL_STOP_PHRASE.test(String(text || "").trim().toLowerCase());
+}
+
+// Explicit mouth control. The face channel now requires TWO gates before it can
+// open a viseme: TTS playback is active AND a real amplitude sample arrived from
+// that playback. There is no simulated wobble to leak into silence. Every end /
+// stop / mute / state change therefore closes the gate and the level.
 function setFaceTalking(on) {
   if (!engine || !engine.face) return;
   try {
@@ -1179,6 +1186,10 @@ function wireVoice() {
       // simultaneous mic tap from double-sending the same phrase.
       if (busy) return;
       const t = String(text || "").trim();
+      if (isFinal && isCallStopPhrase(t)) {
+        if (nativeCallActive) endCall(); else stop();
+        return;
+      }
       if (isFinal && t.length >= 2) send(t);
     },
     onSpeakStart: function () {
@@ -1209,17 +1220,15 @@ function wireVoice() {
     },
   });
   // Mouth sync: the ONE existing TTS player's amplitude drives setTalkLevel.
-  // setTalkLevel() owns the speaking flag (level > 0.01), so a silent gap
-  // between words closes the mouth instead of triggering the simulated
-  // envelope; while audio is not playing the mouth is held shut.
+  // The face channel ignores a level unless setSpeaking(true) is also active,
+  // so a late amplitude frame cannot open the mouth after playback has ended.
   window.VMCloudVoice.setLevelListener(function (level) {
     if (!voiceActive() || !engine || !engine.face) return;
     try {
       if (stateKey === "speaking" && window.VMCloudVoice.isSpeaking()) {
         engine.face.setTalkLevel(level);
       } else {
-        engine.face.setSpeaking(false);
-        engine.face.setTalkLevel(0);
+        setFaceTalking(false);
       }
     } catch (e) { }
   });
@@ -1237,6 +1246,8 @@ function applyNativeSpeechEvent(event, value) {
       setStatus("speaking");
       setFaceTalking(true);
     } else if (event === "level") {
+      // setSpeaking(true) fires on the engine's real onStart; the face channel
+      // drops this sample if that gate is not open.
       if (stateKey === "speaking") {
         engine.face.setTalkLevel(Math.max(0, Math.min(1, Number(value) || 0)));
       }
@@ -1282,6 +1293,7 @@ function wireInAppNativeAsr() {
     const reason = String((ev && ev.reason) || "");
     if (type === "final") {
       const text = String((ev && ev.text) || "").trim();
+      if (isCallStopPhrase(text)) { endCall(); return; }
       if (text.length >= 2) send(text);
       else resumeNativeListening();
       return;
@@ -1315,7 +1327,7 @@ function resumeNativeListening(delay) {
     try {
       if (!nativeBridge.asrStart()) resumeNativeListening(700);
     } catch (e) { resumeNativeListening(700); }
-  }, Number(delay) || 450);
+  }, Number(delay) || VOICE_ECHO_GUARD_MS);
 }
 
 function startCall() {

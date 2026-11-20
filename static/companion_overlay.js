@@ -51,14 +51,16 @@ const android = (window.vmCompanionAndroid && typeof window.vmCompanionAndroid.s
   ? window.vmCompanionAndroid
   : null;
 
-// Native TTS fallback (Android WebView has no speechSynthesis). Used only when
-// the site's own voice module cannot actually produce sound on this platform.
+// Native TTS engine (Android WebView has no speechSynthesis). V2 is preferred
+// because it reports the engine's real utterance start/end; the legacy callback
+// is the last-resort fallback when even V2 cannot speak.
 const nativeTts = (window.vmCompanionAndroid && typeof window.vmCompanionAndroid.ttsSpeak === "function")
   ? window.vmCompanionAndroid
   : null;
 
 // Enhanced native TTS: real engine start/end plus a bounded level envelope for
-// the mouth (the site's server TTS still wins and supplies TRUE amplitude).
+// the mouth. It is the overlay's FIRST choice; server TTS remains the fallback
+// and supplies TRUE amplitude when the hosted voice is reachable.
 const nativeTtsV2 = (window.vmCompanionAndroid && typeof window.vmCompanionAndroid.ttsSpeakV2 === "function")
   ? window.vmCompanionAndroid
   : null;
@@ -104,9 +106,6 @@ const ANIM_MOOD = {
   relaxed: "relaxed", blink: "blink", neutral: "neutral",
 };
 
-const badgeCamera = $("vmBadgeCamera");
-const badgeOverlay = $("vmBadgeOverlay");
-
 // The turn state machine is pure logic; the page supplies every side effect.
 const sm = (window.VMTurnSM && window.VMTurnSM.create)
   ? window.VMTurnSM.create({ dedupeWindowMs: 15000, maxFailures: 3 })
@@ -145,6 +144,14 @@ const PROFILE_NATIVE_VOICE = {
 let profile = readProfile();
 
 // ── transient state ───────────────────────────────────────────────────────
+const ECHO_GUARD_MS = 250;
+// Spoken escape hatch. Checked before the brain so it always ends the loop.
+const CALL_STOP_PHRASE = /^(?:stop listening|please stop listening|goodbye|good bye|bye bye)\.?$/i;
+
+function isCallStopPhrase(text) {
+  return CALL_STOP_PHRASE.test(String(text || "").trim().toLowerCase());
+}
+
 const state = {
   chatId: "",
   recorder: null,
@@ -156,29 +163,103 @@ const state = {
   watchdog: 0,
   wakeTimer: 0,        // wakes the turn if the wake animation never reports back
   asrTimer: 0,         // delayed start of the platform recogniser
+  listenTimer: 0,      // 250 ms echo-guard before re-opening the mic
   errorTimer: 0,       // bounded automatic retry after a hard failure
   behaviour: "",       // the body animation currently playing
   speaking: false,
   session: false,      // a hands-free conversation is running
   muted: false,        // explicit Mute escape hatch (stops auto-resume)
   animation: null,     // last semantic animation resolved from the brain
+  lastReply: "",       // used to fall back from a failed server TTS to native TTS
+  restartDelayMs: 0,   // set by TTS onEnd, consumed by the next start-listen effect
+  ttsSeq: 0,           // invalidates callbacks from a stopped/superseded utterance
+  ttsBackend: "",      // which backend may still emit events for this utterance
+  ttsFallbackUsed: false, // one bounded fallback per reply, never a retry loop
 };
+
+// The face channel requires BOTH the TTS gate and a live amplitude sample.
+// Opening the gate alone never moves a viseme; ending playback closes both.
+function setFaceSpeaking(on) {
+  if (!engine.face) return;
+  try {
+    if (on) engine.face.setSpeaking(true);
+    else { engine.face.setSpeaking(false); engine.face.setTalkLevel(0); }
+  } catch (e) { /* a face channel is optional */ }
+}
+
+function closeMouth() { setFaceSpeaking(false); }
+
+function speechCurrent(seq, backend) {
+  return state.ttsSeq === seq && state.speaking &&
+    (!backend || state.ttsBackend === backend);
+}
+
+function beginSpeech(text) {
+  state.ttsSeq++;
+  state.ttsBackend = "";
+  state.ttsFallbackUsed = false;
+  state.lastReply = String(text || "");
+  return state.ttsSeq;
+}
+
+// A silent backend must not hold the hands-free turn hostage. The timeout is
+// bounded by the length of the reply, exactly like the original TTS watchdog.
+function armTtsWatchdog(seq, text) {
+  clearWatchdog();
+  state.watchdog = window.setTimeout(() => {
+    if (!speechCurrent(seq)) return;
+    dispatch({ type: "SPEAK_TIMEOUT" });
+  }, Math.max(8000, String(text || "").length * 90));
+}
+
+// Every successful TTS end (native engine or server audio) enters the next
+// listening turn through this one seam, so the 250 ms echo guard cannot be
+// bypassed by a future voice backend.
+function finishSpeaking(success, seq) {
+  if (!speechCurrent(seq)) return;
+  clearWatchdog();
+  closeMouth();
+  state.ttsBackend = "";
+  if (!success) { dispatch({ type: "SPEAK_ERR" }); return; }
+  state.restartDelayMs = ECHO_GUARD_MS;
+  dispatch({ type: "SPEAK_END" });
+}
 
 // ── voice module hooks (reused, not reimplemented) ────────────────────────
 function wireVoice() {
   if (!voice) return;
   voice.setHooks({
     onListeningChange: () => { /* the SM drives the state, not the module */ },
-    onResult: (text, final) => { if (final) dispatch({ type: "SPEECH_FINAL", text }); },
-    onSpeakStart: () => { /* SM already put us in SPEAKING */ },
-    onSpeakEnd: (reason) => { clearWatchdog(); dispatch({ type: reason === "tts failed" || reason === "tts blocked" || reason === "tts unavailable" ? "SPEAK_ERR" : "SPEAK_END" }); },
-    onError: (err) => { dispatch({ type: "SPEAK_ERR", err }); },
+    onResult: (text, final) => { if (final) handleFinalTranscript(text); },
+    onSpeakStart: () => {
+      if (state.ttsBackend === "server") setFaceSpeaking(true);
+    },
+    onSpeakEnd: (reason) => { handleServerSpeechEnd(reason, state.ttsSeq); },
+    onError: (err) => {
+      if (state.ttsBackend === "server") handleServerSpeechEnd("tts failed", state.ttsSeq);
+      else dispatch({ type: "SPEECH_ERR", reason: String(err || "asr") });
+    },
   });
   if (typeof voice.setLevelListener === "function") {
     voice.setLevelListener((level) => {
+      // setTalkLevel() is ignored unless setSpeaking(true) was called by the
+      // matching TTS onStart, so silence and stale frames cannot open the mouth.
       if (engine.face && state.speaking) engine.face.setTalkLevel(level);
     });
   }
+}
+
+// One entry point for every final transcript. A spoken stop phrase is handled
+// locally and immediately; real speech goes to the one brain as usual.
+function handleFinalTranscript(text) {
+  const clean = String(text || "").trim();
+  if (isCallStopPhrase(clean)) {
+    stopListening();
+    closeMouth();
+    dispatch({ type: "STOP" });
+    return;
+  }
+  dispatch({ type: "SPEECH_FINAL", text: clean });
 }
 
 // ── platform speech recognition (native) ───────────────────────────────────
@@ -190,7 +271,7 @@ function wireNativeAsr() {
     if (!ev || typeof ev !== "object") return;
     const reason = String(ev.reason || "");
     if (ev.type === "final") {
-      dispatch({ type: "SPEECH_FINAL", text: String(ev.text || "") });
+      handleFinalTranscript(String(ev.text || ""));
       return;
     }
     if (ev.type === "ready" || ev.type === "partial") {
@@ -228,11 +309,30 @@ function wireNativeAsr() {
 }
 
 // ── side-effect handlers (the SM returns these; we execute them) ──────────
+function cancelPendingListen() {
+  if (state.listenTimer) { clearTimeout(state.listenTimer); state.listenTimer = 0; }
+}
+
+function startListeningAfterEchoGuard() {
+  const delay = state.restartDelayMs;
+  state.restartDelayMs = 0;
+  cancelPendingListen();
+  if (state.muted) return;
+  if (!delay) { startListening(); return; }
+  // The state machine has already moved to LISTENING; keep that state while the
+  // speaker tail clears, then open CompanionAsr for the next follow-up.
+  state.listenTimer = window.setTimeout(() => {
+    state.listenTimer = 0;
+    if (state.muted) return;
+    startListening();
+  }, delay);
+}
+
 function execute(effects) {
   for (const eff of effects) {
     switch (eff.type) {
       case "wake": triggerWake(); break;
-      case "start-listen": if (!state.muted) startListening(); break;
+      case "start-listen": startListeningAfterEchoGuard(); break;
       case "stop-listen": stopListening(); break;
       case "transcribe": transcribeAndChat(eff.blob); break;
       case "chat": sendChat(eff.text); break;
@@ -315,6 +415,8 @@ function listenFallback() {
 
 function stopListening() {
   clearWatchdog();
+  cancelPendingListen();
+  state.restartDelayMs = 0;
   if (state.asrTimer) { clearTimeout(state.asrTimer); state.asrTimer = 0; }
   if (nativeAsr && nativeAsr.asrStop) { try { nativeAsr.asrStop(); } catch (e) {} }
   if (voice && voice.stopListening) { try { voice.stopListening(); } catch (e) {} }
@@ -326,11 +428,15 @@ function abortInFlight() {
 }
 
 function stopSpeaking() {
+  // Invalidate every pending backend callback before stopping the engines.
+  state.ttsSeq++;
+  state.ttsBackend = "";
+  clearWatchdog();
+  closeMouth();
   // The bridge exposes the native engine as ttsStop() (ttsSpeak/ttsStop).
   if (nativeTts && nativeTts.ttsStop) { try { nativeTts.ttsStop(); } catch (e) {} }
   if (voice && voice.stop) { try { voice.stop(); } catch (e) {} }
   state.speaking = false;
-  if (engine.face) engine.face.setTalkLevel(0);
 }
 
 // ── the end of a hands-free conversation ──────────────────────────────────
@@ -490,8 +596,9 @@ function syncCameraButton() {
   camBtn.title = label;
 }
 
-// The pill's camera icon is a real on/off toggle. The badge remains the OS-style
-// privacy indicator and still switches lens while the camera is live.
+// The pill's camera icon is a real on/off toggle and switches lens while the
+// camera is live. The OS foreground notification is the privacy indicator; the
+// overlay itself carries no top badge strip.
 function toggleCameraEyes() {
   if (!cameraEyesAvailable()) return;
   try {
@@ -506,15 +613,9 @@ function toggleCameraEyes() {
 }
 
 function paintBadges() {
-  const camActive = cameraActive();
-  const overApp = !!(android && typeof android.getState === "function" &&
-    android.getState().visible);
-  if (badgeCamera) badgeCamera.hidden = !camActive;
-  if (badgeOverlay) badgeOverlay.hidden = !overApp;
-  if (root) {
-    root.dataset.camera = camActive ? "on" : "off";
-    root.dataset.overlay = overApp ? "on" : "off";
-  }
+  // No DOM badge/strip: only the native foreground notification marks an
+  // active camera/overlay. The root data attribute is kept for CSS diagnostics.
+  if (root) root.dataset.camera = cameraActive() ? "on" : "off";
   syncCameraButton();
 }
 
@@ -692,75 +793,139 @@ async function sendChat(text) {
   }
 }
 
-// ── speaking: free TTS, with a native fallback ────────────────────────────
-// Order: the site's VMCloudVoice (server TTS -> same-origin MP3 -> REAL
-// amplitude lip-sync, or the browser synth on desktop). Android's WebView has
-// NO speechSynthesis, so when the server voice is unavailable the page must use
-// the device's own TTS engine through the bridge — otherwise the reply would be
-// silently dropped. The mouth in that fallback is event-driven (open at start,
-// close at end), which we disclose rather than fake as amplitude sync.
+// ── speaking: native engine first, bounded server fallback ────────────────
+// Android's WebView has no speechSynthesis. Native TTS V2 is preferred in the
+// overlay because its onStart/onEnd are the engine's REAL utterance events and
+// it works with no login/server key. VMCloudVoice stays as the bounded fallback:
+// when the hosted voice is available it supplies true measured amplitude, and a
+// failed server TTS falls back to the legacy native engine exactly once.
 function canUseBrowserSynth() {
   return !!(window.speechSynthesis && typeof window.SpeechSynthesisUtterance === "function");
 }
 
-function speakReply(reply) {
-  const text = String(reply || "").trim();
-  if (!text) { dispatch({ type: "SPEAK_END" }); return; }
-  // In the overlay WebView there is no browser speech engine, and the server
-  // voice may be unavailable (no login / no key). Prefer the native engine when
-  // the module cannot actually produce sound here.
-  const preferNative = nativeTts && !canUseBrowserSynth();
-  let handled = false;
-  if (!preferNative && voice && voice.speak) {
-    try {
-      voice.speak(text, { prefs: { voice_preference: profile }, presentation: "neutral" });
-      handled = true;
-    } catch (e) { handled = false; }
-  }
-  if (!handled && nativeTts) { speakNative(text); return; }
-  if (!handled) { dispatch({ type: "SPEAK_ERR" }); return; }
-  // Playback watchdog: a silent TTS failure must still free the turn.
-  state.watchdog = window.setTimeout(() => dispatch({ type: "SPEAK_TIMEOUT" }), Math.max(8000, text.length * 90));
+function isFailedTtsReason(reason) {
+  const r = String(reason || "").toLowerCase();
+  return r === "tts failed" || r === "tts blocked" || r === "tts unavailable" ||
+    r === "tts timeout" || r === "interrupted";
 }
 
-function speakNative(text) {
-  state.speaking = true;
-  if (engine.face) engine.face.setSpeaking(true);
-  const finish = () => {
-    clearWatchdog();
-    if (state.speaking) {
-      state.speaking = false;
-      if (engine.face) { engine.face.setSpeaking(false); engine.face.setTalkLevel(0); }
-      dispatch({ type: "SPEAK_END" });
-    }
-  };
+function startServerSpeech(text, seq) {
+  if (!voice || typeof voice.speak !== "function") return false;
+  state.ttsBackend = "server";
+  clearWatchdog();
+  closeMouth();
   try {
-    if (nativeTtsV2 && typeof nativeTtsV2.ttsSpeakV2 === "function") {
-      const voiceId = PROFILE_NATIVE_VOICE[profile] || null;
-      const started = nativeTtsV2.ttsSpeakV2(text, voiceId, {
-        // The native engine reports REAL utterance start/end. Its level is a
-        // bounded speech-shaped envelope (Android TTS exposes no amplitude);
-        // the site's server TTS path above still uses true measured amplitude.
-        onStart: () => {
-          state.speaking = true;
-          if (engine.face) engine.face.setSpeaking(true);
-        },
-        onLevel: (level) => {
-          if (state.speaking && engine.face) {
-            engine.face.setTalkLevel(Math.max(0, Math.min(1, Number(level) || 0)));
-          }
-        },
-        onEnd: finish,
-      });
-      if (!started) { dispatch({ type: "SPEAK_ERR" }); return; }
-    } else {
-      nativeTts.ttsSpeak(text, PROFILE_NATIVE_VOICE[profile] || null, finish);
-    }
+    voice.speak(text, { prefs: { voice_preference: profile }, presentation: "neutral" });
   } catch (e) {
-    dispatch({ type: "SPEAK_ERR" });
+    handleServerSpeechEnd("tts unavailable", seq);
+    return true;
+  }
+  armTtsWatchdog(seq, text);
+  return true;
+}
+
+function handleServerSpeechEnd(reason, seq) {
+  if (!speechCurrent(seq, "server")) return;
+  clearWatchdog();
+  if (!isFailedTtsReason(reason)) { finishSpeaking(true, seq); return; }
+  if (!state.ttsFallbackUsed && nativeTts && typeof nativeTts.ttsSpeak === "function") {
+    state.ttsFallbackUsed = true;
+    startLegacyNativeSpeech(state.lastReply, seq);
     return;
   }
-  state.watchdog = window.setTimeout(() => dispatch({ type: "SPEAK_TIMEOUT" }), Math.max(8000, text.length * 90));
+  finishSpeaking(false, seq);
+}
+
+function handleNativeSpeechFailure(seq, text) {
+  if (!speechCurrent(seq)) return;
+  clearWatchdog();
+  if (state.ttsFallbackUsed) { finishSpeaking(false, seq); return; }
+  state.ttsFallbackUsed = true;
+  if (startServerSpeech(text, seq)) return;
+  if (startLegacyNativeSpeech(text, seq)) return;
+  finishSpeaking(false, seq);
+}
+
+function startNativeV2Speech(text, seq) {
+  const voiceId = PROFILE_NATIVE_VOICE[profile] || null;
+  state.ttsBackend = "nativeV2";
+  clearWatchdog();
+  closeMouth();
+  try {
+    const started = nativeTtsV2.ttsSpeakV2(text, voiceId, {
+      // The mouth opens only on the engine's real onStart. Its level here is a
+      // bounded speech-shaped envelope because Android TTS exposes no amplitude;
+      // the server TTS fallback still uses the player's true amplitude tap.
+      onStart: () => { if (speechCurrent(seq, "nativeV2")) setFaceSpeaking(true); },
+      onLevel: (level) => {
+        if (speechCurrent(seq, "nativeV2") && engine.face) {
+          engine.face.setTalkLevel(Math.max(0, Math.min(1, Number(level) || 0)));
+        }
+      },
+      onEnd: (ok) => {
+        if (!speechCurrent(seq, "nativeV2")) return;
+        if (ok === true || ok === "true") finishSpeaking(true, seq);
+        else handleNativeSpeechFailure(seq, text);
+      },
+    });
+    if (!started) {
+      if (speechCurrent(seq, "nativeV2")) handleNativeSpeechFailure(seq, text);
+      return true;
+    }
+  } catch (e) {
+    if (speechCurrent(seq, "nativeV2")) handleNativeSpeechFailure(seq, text);
+    return true;
+  }
+  armTtsWatchdog(seq, text);
+  return true;
+}
+
+function startLegacyNativeSpeech(text, seq) {
+  if (!nativeTts || typeof nativeTts.ttsSpeak !== "function") return false;
+  state.ttsBackend = "native";
+  clearWatchdog();
+  // The legacy bridge has no start event, so the mouth stays shut instead of
+  // pretending to know when audio is playing. The completion callback ends the
+  // turn; V2 above carries the real start/end-driven mouth.
+  closeMouth();
+  try {
+    const started = nativeTts.ttsSpeak(text, PROFILE_NATIVE_VOICE[profile] || null, (ok) => {
+      if (!speechCurrent(seq, "native")) return;
+      finishSpeaking(!!ok, seq);
+    });
+    if (!started) {
+      if (speechCurrent(seq, "native")) finishSpeaking(false, seq);
+      return true;
+    }
+  } catch (e) {
+    if (speechCurrent(seq, "native")) finishSpeaking(false, seq);
+    return true;
+  }
+  armTtsWatchdog(seq, text);
+  return true;
+}
+
+function speakNative(text, seq) {
+  if (nativeTtsV2 && typeof nativeTtsV2.ttsSpeakV2 === "function") {
+    return startNativeV2Speech(text, seq);
+  }
+  return startLegacyNativeSpeech(text, seq);
+}
+
+function speakReply(reply) {
+  const text = String(reply || "").trim();
+  const seq = beginSpeech(text);
+  if (!text) { finishSpeaking(true, seq); return; }
+  if (nativeTtsV2 && typeof nativeTtsV2.ttsSpeakV2 === "function") {
+    speakNative(text, seq);
+    return;
+  }
+  if (voice && typeof voice.speak === "function") {
+    startServerSpeech(text, seq);
+    return;
+  }
+  if (speakNative(text, seq)) return;
+  finishSpeaking(false, seq);
 }
 
 // ── state on screen: body animation + the pill's centred glow ─────────────
@@ -890,15 +1055,6 @@ function wireCameraControls() {
       toggleCameraEyes();
     });
   }
-  if (badgeCamera) {
-    // Tapping the active camera badge switches lens; the badge is also the
-    // visible "camera is live" indicator required on Android 14+.
-    badgeCamera.addEventListener("click", (e) => {
-      e.stopPropagation();
-      if (!cameraEyesAvailable()) return;
-      try { nativeCamera.cameraSwitch(); } catch (err) { /* keep current lens */ }
-    });
-  }
   if (android && typeof android.onCompanionVisibility === "function") {
     android.onCompanionVisibility(() => paintBadges());
   }
@@ -911,6 +1067,9 @@ async function boot() {
   wireCameraControls();
   paintBadges();
   requestCompactRegion();
+  // Keep autonomous shuffling off across boot as well as after it: some engine
+  // versions restart their idle scheduler inside boot().
+  engine.setAuto(false);
   try {
     await engine.boot();
   } catch (err) {
