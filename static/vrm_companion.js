@@ -33,8 +33,8 @@ const DEFAULTS = {
   dock: "br",        // "br" | "bl" | "tr" | "tl" (used until the avatar is moved)
   x: null,           // manual position (px) once placed
   y: null,
-  userPlaced: false, // true once the user drags the avatar: roam pauses, position is preferred
-  roam: true,        // restrained autonomous roaming while idle (off under reduced-motion)
+  userPlaced: false, // true once the user drags the avatar; the manual position is preferred
+  roam: false,       // legacy pref kept for compatibility; autonomous idle roaming is disabled
   charName: "ValleyMind", // display name (shown in Settings; keeps CJK glyphs intact)
   voiceKey: "",      // "marcus" | "elena" | "angelina" ("" = follow the Cloud preference)
   visionOn: false,   // user preference: attach screen context to the brain
@@ -240,20 +240,8 @@ let voiceWired = false;
 let nativeSpeechWired = false;
 let uiBuilt = false;
 let resumeTimer = null;   // delayed hands-free re-listen (cleared on stop/hide/mute)
-let walkRaf = 0;          // walking animation handle (cancel on hide/stop)
-let idleTimer = null;     // varied-idle rotation (only while resting in "idle")
-let roamTimer = null;     // restrained autonomous roaming (only while idle + allowed)
-
-// ── motion preference ─────────────────────────────────────────────────────
-// Respect the OS/browser "reduce motion" setting: skip idle clip rotation and
-// autonomous roaming (the base idle clip keeps looping, so the companion still
-// breathes/blinks -- it simply never walks or switches pose on its own).
-function reducedMotion() {
-  try {
-    return !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
-  } catch (e) { return false; }
-}
-function motionOk() { return !reducedMotion(); }
+let walkRaf = 0;          // explicit guidance walk handle (cancel on hide/stop)
+let guidanceActive = false; // one explicit UI-guidance step owns the body clip
 
 let lastEngineLog = "";
 
@@ -275,6 +263,9 @@ async function getEngine() {
   const canvas = $id("vmVrmCompanionCanvas");
   if (!canvas) return null;
   engine = new Companion(canvas, logLine, { transparent: true });
+  // Disable the engine's weighted random state machine BEFORE boot starts its
+  // frame loop. Idle is always chosen explicitly below; no shuffle can slip in.
+  engine.setAuto(false);
   await engine.boot();
   booted = true;
   if (prefs.skin) { try { engine.setSkinTone(prefs.skin); } catch (e) { } }
@@ -297,106 +288,60 @@ function clearAccentTimer() {
   if (accentTimer) { clearTimeout(accentTimer); accentTimer = null; }
 }
 
-// ── varied natural idle ───────────────────────────────────────────────────
-// The desktop companion runs with the engine's autonomous loop OFF (every clip
-// is event-driven), so a single idle clip would otherwise loop forever. This
-// scheduler rotates among the shared idle pool at a RANDOM interval so the
-// character reads as alive without ever cycling through unrelated animations.
-// It is only armed while resting in "idle" and is cleared the moment a driven
-// state (listening / thinking / speaking / working) or a walk takes over, so it
-// can never interrupt the conversation. Respects reduced-motion.
-const IDLE_MIN_MS = 9000;
-const IDLE_MAX_MS = 21000;
+// ── idle lock ─────────────────────────────────────────────────────────────
+// The engine's weighted random state machine is permanently OFF. While nobody
+// is talking to the companion, the ONLY allowed body behaviour is `idle`:
+// calm breathing plus the face channel's natural blinking. There is no idle
+// shuffle timer and no autonomous roaming timer. Gestures are reserved for a
+// real live turn (listening / thinking / speaking), an active task, or an
+// explicit UI-guidance step.
+const ACTIVE_BODY_STATES = new Set(["listening", "thinking", "speaking", "working"]);
 
-function clearIdleTimer() {
-  if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
+function voiceInputActive() {
+  try {
+    return !!(window.VMCloudVoice && typeof window.VMCloudVoice.isListening === "function" &&
+      window.VMCloudVoice.isListening());
+  } catch (e) { return false; }
 }
 
-function scheduleIdleVariation() {
-  clearIdleTimer();
-  if (!motionOk()) return;
-  if (!engine || engine.status.stage !== "ready") return;
-  const delay = IDLE_MIN_MS + Math.random() * (IDLE_MAX_MS - IDLE_MIN_MS);
-  idleTimer = setTimeout(() => {
-    idleTimer = null;
-    // Only ever re-pose while genuinely resting; a walk, a reaction or a
-    // background tab defers the rotation instead of skipping it.
-    if (stateKey !== "idle" || busy || walkRaf || document.hidden) {
-      scheduleIdleVariation();
-      return;
-    }
-    engine.setAuto(false);
-    engine.trigger("idle"); // picks a fresh idle clip (never an immediate repeat)
-    scheduleIdleVariation();
-  }, delay);
+function ttsPlaying() {
+  if (stateKey === "speaking") return true;
+  try {
+    return !!(window.VMCloudVoice && typeof window.VMCloudVoice.isSpeaking === "function" &&
+      window.VMCloudVoice.isSpeaking());
+  } catch (e) { return false; }
 }
 
-// ── restrained autonomous roaming ─────────────────────────────────────────
-// Purposeful, infrequent movement within the visible area using the SAME
-// walkTo()/clamping path as voice-driven navigation: identity-safe clips, real
-// gait, never follows the cursor. Paused after a manual drag (userPlaced) and
-// disabled under reduced-motion or when the user turns "Wander" off.
-const ROAM_MIN_MS = 32000;
-const ROAM_MAX_MS = 96000;
-
-function clearRoamTimer() {
-  if (roamTimer) { clearTimeout(roamTimer); roamTimer = null; }
+function taskActive() {
+  const tc = taskController();
+  const snap = (tc && tc.current) ? tc.current() : null;
+  return !!(snap && (snap.active ||
+    ["planning", "working", "awaiting_confirmation"].indexOf(snap.state) !== -1));
 }
 
-function roamAllowed() {
-  return prefs.roam !== false && prefs.userPlaced !== true && motionOk();
+function isActivelyEngaged() {
+  if (busy || guidanceActive || walkRaf || voiceInputActive() || ttsPlaying()) return true;
+  return taskActive();
 }
 
-function scheduleRoam() {
-  clearRoamTimer();
-  if (!roamAllowed()) return;
-  const delay = ROAM_MIN_MS + Math.random() * (ROAM_MAX_MS - ROAM_MIN_MS);
-  roamTimer = setTimeout(() => {
-    roamTimer = null;
-    if (stateKey !== "idle" || busy || walkRaf || document.hidden || !isVisible()) {
-      scheduleRoam();
-      return;
-    }
-    roamStep();
-    scheduleRoam();
-  }, delay);
+// `explicit` is reserved for deliberate UI-guidance gestures. Everything else
+// collapses to idle unless a real conversation/task is in progress.
+function resolveStatus(status, explicit) {
+  if (!STATUS_BEHAVIOUR[status]) return "idle";
+  if (status === "idle") return "idle";
+  if (explicit || ACTIVE_BODY_STATES.has(status)) return status;
+  return isActivelyEngaged() ? status : "idle";
 }
 
-// A single small wander: pick a target a bounded distance away and let walkTo()
-// clamp it inside the safe area (clear of phone tab bars / input rows).
-function roamStep() {
-  const el = $id("vmVrmCompanion");
-  if (!el) return;
-  const r = el.getBoundingClientRect();
-  const narrow = (window.innerWidth || 1280) <= 760;
-  const margin = 12;
-  const w = r.width || 120;
-  const h = r.height || 120;
-  const minX = margin;
-  const maxX = Math.max(minX, (window.innerWidth || 1280) - w - margin);
-  const minY = narrow ? 104 : margin;
-  const maxY = Math.max(minY, (window.innerHeight || 800) - h - (narrow ? 92 : margin));
-  const dx = (Math.random() * 2 - 1) * Math.min(200, maxX - minX);
-  const dy = (Math.random() * 2 - 1) * Math.min(110, maxY - minY);
-  const tx = Math.max(minX, Math.min(maxX, r.left + dx));
-  const ty = Math.max(minY, Math.min(maxY, r.top + dy));
-  walkTo(tx, ty, { ms: 1100 + Math.random() * 800 });
-}
-
-
-function setStatus(status, expression) {
-  const s = STATUS_BEHAVIOUR[status] ? status : "idle";
+function setStatus(status, expression, explicit) {
+  const s = resolveStatus(status, !!explicit);
   if (s === stateKey && engine && engine.status.stage === "ready") {
     paintStatus();
-    // Keep the resting schedulers armed even on an idempotent idle set (e.g.
-    // right after show()), but never stack a second timer.
-    if (s === "idle" && !idleTimer) { scheduleIdleVariation(); scheduleRoam(); }
     return;
   }
   clearAccentTimer();
-  // Leaving the resting state cancels idle rotation + roaming immediately so a
-  // driven state (listening / thinking / speaking / working) is never interrupted.
-  if (s !== "idle") { clearIdleTimer(); clearRoamTimer(); }
+  if (s === "idle") guidanceActive = false;
+  else if (explicit) guidanceActive = true;
   stateKey = s;
   // Any non-speaking state must leave the mouth shut: the amplitude listener
   // only runs while audio plays, so without this the mouth stayed open (or kept
@@ -404,10 +349,12 @@ function setStatus(status, expression) {
   if (s !== "speaking") setFaceTalking(false);
   if (engine && engine.status.stage === "ready") {
     const behaviour = STATUS_BEHAVIOUR[s];
-    // Face channel is driven explicitly so every semantic state also carries the
-    // right expression, including statuses whose body clip is "idle".
+    // Idle always uses the relaxed face; a non-idle expression is only applied
+    // when its gesture was actually allowed above.
+    const mood = (s === "idle")
+      ? "relaxed"
+      : (FACE_EXPRESSIONS.has(expression) ? expression : (STATUS_EXPRESSION[s] || "relaxed"));
     if (engine.face && typeof engine.face.setMood === "function") {
-      const mood = FACE_EXPRESSIONS.has(expression) ? expression : (STATUS_EXPRESSION[s] || "relaxed");
       try { engine.face.setMood(mood); } catch (e) { }
     }
     engine.setAuto(false);
@@ -416,14 +363,10 @@ function setStatus(status, expression) {
       // event changes the state; no auto-cycling can interrupt them.
       engine.trigger(behaviour);
     } else if (s === "idle") {
-      // Idle is the resting state: a real idle clip (breathing/blinking), never
-      // an unrelated animation. A scheduler rotates idle variants over time.
+      // A real idle clip (breathing/blinking) held until an event changes it.
       engine.trigger("idle");
-      scheduleIdleVariation();
-      scheduleRoam();
     } else if (behaviour && behaviour !== "idle") {
-      // A momentary conversational/app reaction (happy/sad/curious/…) plays
-      // once, then the companion returns to idle on its own.
+      // A momentary conversational/guidance accent plays once, then settles.
       engine.trigger(behaviour);
       const reaction = s;
       accentTimer = setTimeout(() => {
@@ -519,12 +462,11 @@ function home() {
   prefs.y = null;
   prefs.dock = DEFAULTS.dock;
   prefs.sizePct = DEFAULTS.sizePct;
-  // Home is an explicit user reset: roaming may resume from the docked rest pose.
+  // Home is an explicit user reset back to the docked rest pose.
   prefs.userPlaced = false;
   savePrefs();
   applySize();
   applyPosition();
-  scheduleRoam();
   syncControls();
 }
 
@@ -534,7 +476,7 @@ function home() {
 // not move is treated as a tap and opens/closes the EXISTING chat panel (the
 // discreet touch control surface: mic + input live there, no new buttons on the
 // character). A press that moves is a drag: the position becomes user-preferred
-// (roaming pauses) and is persisted, so it survives navigation and reloads.
+// and is persisted, so it survives navigation and reloads.
 let dragState = null;
 let dragRaf = 0;
 let dragTargetX = 0;
@@ -607,9 +549,8 @@ function wireDrag() {
       el.style.top = Math.round(dragTargetY) + "px";
       prefs.x = Math.round(dragTargetX);
       prefs.y = Math.round(dragTargetY);
-      prefs.userPlaced = true; // manual placement wins; autonomous roaming pauses
+      prefs.userPlaced = true; // manual placement is remembered
       savePrefs();
-      clearRoamTimer();
     } else if (wasTap) {
       toggleChat();
     }
@@ -758,7 +699,11 @@ function takeAnimationTags(text) {
 function applyBrainAnimation(anim) {
   if (!anim || typeof anim !== "object") return;
   const key = String(anim.state || "").toLowerCase().replace(/\s+/g, "_");
-  const status = SEMANTIC_STATUS[key] || (STATUS_BEHAVIOUR[key] ? key : "idle");
+  const rawStatus = SEMANTIC_STATUS[key] || (STATUS_BEHAVIOUR[key] ? key : "idle");
+  // Brain tags never arm a gesture while the companion is idle. A pending AI
+  // answer keeps `busy` true, so real conversational accents still resolve.
+  const status = resolveStatus(rawStatus, false);
+  if (status === "idle") return;
   const expression = FACE_EXPRESSIONS.has(anim.emotion) ? anim.emotion : undefined;
   setStatus(status, expression);
   // One-shot accents should be visible immediately even when a driven status
@@ -1535,6 +1480,7 @@ function toggleVision() {
 // the visible area.
 function cancelWalk() {
   if (walkRaf) { cancelAnimationFrame(walkRaf); walkRaf = 0; }
+  guidanceActive = false;
 }
 
 function clampToViewport(x, y, w, h, gap) {
@@ -1735,6 +1681,7 @@ function runStepGuidance(userText, reply) {
   const steps = parseGuidanceSteps(reply);
   if (!steps.length) return false;
   clearGuidanceHighlight();
+  guidanceActive = true; // an explicit guidance step may point even after TTS ends
   const step = steps[0];
   const el = findGuidanceElement(step);
   const explain = "Step 1: " + step;
@@ -1748,13 +1695,13 @@ function runStepGuidance(userText, reply) {
       walkTo(r.left - bw - 12, r.top, {
         ms: 850,
         done: () => {
-          setStatus("pointing");
+          setStatus("pointing", undefined, true);
           highlightGuidanceTarget(el, step);
           if (!prefs.muted && window.VMCloudVoice) speakText(explain, "idle");
         },
       });
     } else {
-      setStatus("pointing");
+      setStatus("pointing", undefined, true);
       if (!prefs.muted && window.VMCloudVoice) speakText(explain, "idle");
       logLine(explain);
     }
@@ -1874,7 +1821,6 @@ function setDock(d) {
   prefs.userPlaced = false; // an explicit dock clears the manual-placement lock
   savePrefs();
   applyPosition();
-  scheduleRoam();
   syncControls();
 }
 
@@ -1921,12 +1867,11 @@ function setVoiceFirst(on) {
   syncControls();
 }
 
-// Wander toggle: autonomous roaming while idle. Turning it off leaves the
-// companion exactly where it is (no snap); Home still returns it to the dock.
+// Legacy setting kept so older callers do not break. Autonomous idle roaming
+// is intentionally disabled; walking only happens during explicit guidance.
 function setRoam(on) {
-  prefs.roam = !!on;
+  prefs.roam = false;
   savePrefs();
-  if (prefs.roam) scheduleRoam(); else clearRoamTimer();
   syncControls();
 }
 
@@ -1943,7 +1888,7 @@ function getProps() {
     sizePct: prefs.sizePct,
     dock: prefs.dock,
     skin: prefs.skin || "",
-    roam: prefs.roam !== false,
+    roam: false, // idle roaming is permanently disabled
     userPlaced: prefs.userPlaced === true,
     awake: prefs.awake !== false,
     charName: prefs.charName || DEFAULTS.charName,
@@ -2021,8 +1966,7 @@ function hide() {
   clearNativeAsrRetry();
   if (nativeBridge && nativeBridge.asrCancel) { try { nativeBridge.asrCancel(); } catch (e) { } }
   clearResumeTimer();
-  clearIdleTimer();
-  clearRoamTimer();
+  guidanceActive = false;
   if (window.VMCloudVoice) { try { window.VMCloudVoice.stop(); } catch (e) { } }
   setFaceTalking(false);
   const el = $id("vmVrmCompanion");
@@ -2142,7 +2086,7 @@ window.vmVrmCompanion = {
   gesture: function (name) {
     const key = String(name || "").toLowerCase();
     if (!STATUS_BEHAVIOUR[key]) return false;
-    setStatus(key);
+    setStatus(key, undefined, true); // explicit caller request, never an idle shuffle
     return true;
   },
   applySpeechEvent: applyNativeSpeechEvent,
@@ -2176,34 +2120,14 @@ setDataset();
 buildUI();
 window.vmVrmCompanion.prefs = prefs;
 
-// Hidden tab: stop spending GPU time and pause the resting schedulers; resume
-// cleanly when the tab is visible again (the renderer is only re-enabled when
-// the companion is actually meant to be on screen). This keeps battery/CPU use
-// down on a phone without ever destroying or recreating the single engine.
+// Hidden tab: stop spending GPU time; resume cleanly when the tab is visible
+// again. There are no idle timers to pause any more — the idle clip simply keeps
+// its held pose until a real event changes it.
 document.addEventListener("visibilitychange", () => {
   if (!engine) return;
-  if (document.hidden) {
-    clearIdleTimer();
-    clearRoamTimer();
-    engine.setRendering(false);
-  } else if (isVisible()) {
-    engine.setRendering(true);
-    if (stateKey === "idle") { scheduleIdleVariation(); scheduleRoam(); }
-  }
+  if (document.hidden) engine.setRendering(false);
+  else if (isVisible()) engine.setRendering(true);
 });
-
-// React live to a change of the OS "reduce motion" preference.
-if (window.matchMedia) {
-  try {
-    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const onPref = () => {
-      if (motionOk()) { if (stateKey === "idle") { scheduleIdleVariation(); scheduleRoam(); } }
-      else { clearIdleTimer(); clearRoamTimer(); }
-    };
-    if (mq.addEventListener) mq.addEventListener("change", onPref);
-    else if (mq.addListener) mq.addListener(onPref);
-  } catch (e) { /* matchMedia quirks are non-fatal */ }
-}
 
 // Cookie-authenticated opens / refreshes / new tabs: show immediately once
 // the app shell reports auth (mirrors the Cloud character's showIfAuthed()).

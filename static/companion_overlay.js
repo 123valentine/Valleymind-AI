@@ -2,11 +2,12 @@
  * companion_overlay.js — renderer for the Android floating-companion surface.
  *
  * This is the SAME companion as everywhere else; only the chrome differs — and
- * there is almost none: the character fills a fully transparent window, you
- * start a conversation by tapping the character, and the companion then talks
- * on its own (listen -> think -> speak -> listen) until you stop it. No
- * microphone icon, no panel, no text box, no status pill. Settings and
- * secondary controls live in the main app (static/settings.js).
+ * there is almost none: the character fills a compact transparent stage, with a
+ * dark-glass micro-pill directly beneath her feet (Talk/Mute Mic, Camera Eyes,
+ * Close). Tapping the character or the mic starts the hands-free conversation
+ * (listen -> think -> speak -> listen). No panel, no text box, no status pill,
+ * and no ring behind the character. Idle is locked to the engine's breathing /
+ * blinking idle pool; every other clip comes from a real turn or guidance step.
  *
  * Reuse map (nothing is reimplemented):
  *   body animation -> /vrm-preview/assets/companion.js  (the ONE engine)
@@ -36,12 +37,15 @@ import { Companion } from "/vrm-preview/assets/companion.js";
 const $ = (id) => document.getElementById(id);
 const canvas = $("stage");
 const root = $("vmOverlayRoot");
-const halo = $("vmHalo");
-const stopBtn = $("btnStop");
-const callBtn = $("btnCall");
-const muteBtn = $("btnMute");
+const pill = $("vmMicroPill");
+const talkBtn = $("btnTalk");
+const camBtn = $("btnCamera");
+const hideBtn = $("btnHide");
 
 const engine = new Companion(canvas, () => {}, { transparent: true });
+// No autonomous shuffling: idle is held to the breathing/blinking idle pool and
+// every other clip comes from a real turn or an explicit guidance step.
+engine.setAuto(false);
 const voice = window.VMCloudVoice || null;
 const android = (window.vmCompanionAndroid && typeof window.vmCompanionAndroid.setVisible === "function")
   ? window.vmCompanionAndroid
@@ -149,7 +153,6 @@ const state = {
   vad: null,           // MediaRecorder VAD (getUserMedia) fallback
   vadRaf: 0,
   vadHadSpeech: false,
-  raf: 0,              // halo-anchor frame loop
   watchdog: 0,
   wakeTimer: 0,        // wakes the turn if the wake animation never reports back
   asrTimer: 0,         // delayed start of the platform recogniser
@@ -345,17 +348,22 @@ function endSession(reason) {
   syncCallControls();
 }
 
-// Call / Mute / End stay in lockstep with the turn state machine. `Call` starts
-// the hands-free loop (listen -> brain -> lip-synced speech -> listen); `Mute`
-// silences it immediately; `End` (the stop square) tears it down.
+// The compact pill's Talk/Mute Mic button is a single toggle: tap once to start
+// hands-free conversation, tap again to mute/stop it, tap while muted to resume.
+// A soft centred glow (CSS, driven by root[data-state]) shows live listening or
+// speech without a ring anywhere near the character's legs.
 function syncCallControls() {
-  if (callBtn) callBtn.classList.toggle("on", !!state.session);
-  if (muteBtn) {
-    muteBtn.classList.toggle("on", !!state.muted);
-    muteBtn.textContent = state.muted ? "UNMUTE" : "MUTE";
-    muteBtn.setAttribute("aria-label", state.muted ? "Unmute hands-free listening" : "Mute hands-free listening");
+  if (talkBtn) {
+    talkBtn.classList.toggle("on", !!state.session);
+    talkBtn.classList.toggle("muted", !!state.muted);
+    talkBtn.setAttribute("aria-pressed", state.session ? "true" : "false");
+    const label = state.muted
+      ? "Unmute microphone and restart conversation"
+      : (state.session ? "Mute microphone and end conversation" : "Talk to ValleyMind");
+    talkBtn.setAttribute("aria-label", label);
+    talkBtn.title = label;
   }
-  if (stopBtn) stopBtn.classList.toggle("on", !!state.session);
+  syncCameraButton();
 }
 
 // ── VAD recording fallback (no Web Speech recognition available) ──────────
@@ -453,22 +461,52 @@ function cameraEyesAvailable() {
 // per-pixel overlay input mask, so the practical, pointer-safe solution is a
 // compact window region (validated/clamped natively by OverlayRegionRules).
 function requestCompactRegion() {
+  // 270dp is the character stage; 46dp below it is the bottom micro-pill.
   try {
     if (window.vmNative && window.vmNative.overlay && typeof window.vmNative.overlay.setRegion === "function") {
-      window.vmNative.overlay.setRegion(176, 270);
+      window.vmNative.overlay.setRegion(176, 316);
       return;
     }
     if (window.VMNative && window.VMNative.overlayRegion && typeof window.VMNative.overlayRegion.set === "function") {
-      window.VMNative.overlayRegion.set(176, 270);
+      window.VMNative.overlayRegion.set(176, 316);
     }
   } catch (e) { /* older shells keep their current window size */ }
 }
 
-function paintBadges() {
-  let camActive = false;
+function cameraActive() {
   if (nativeCamera && typeof nativeCamera.cameraState === "function") {
-    try { camActive = !!nativeCamera.cameraState().active; } catch (e) { camActive = false; }
+    try { return !!nativeCamera.cameraState().active; } catch (e) { return false; }
   }
+  return false;
+}
+
+function syncCameraButton() {
+  if (!camBtn) return;
+  const active = cameraActive();
+  camBtn.classList.toggle("on", active);
+  camBtn.setAttribute("aria-pressed", active ? "true" : "false");
+  const label = active ? "Turn camera eyes off" : "Turn camera eyes on";
+  camBtn.setAttribute("aria-label", label);
+  camBtn.title = label;
+}
+
+// The pill's camera icon is a real on/off toggle. The badge remains the OS-style
+// privacy indicator and still switches lens while the camera is live.
+function toggleCameraEyes() {
+  if (!cameraEyesAvailable()) return;
+  try {
+    if (cameraActive()) {
+      if (typeof nativeCamera.cameraStop === "function") nativeCamera.cameraStop();
+      else if (typeof nativeCamera.cameraSwitch === "function") nativeCamera.cameraSwitch();
+    } else if (typeof nativeCamera.cameraStart === "function") {
+      nativeCamera.cameraStart("back");
+    }
+  } catch (e) { /* keep the last known camera state */ }
+  paintBadges();
+}
+
+function paintBadges() {
+  const camActive = cameraActive();
   const overApp = !!(android && typeof android.getState === "function" &&
     android.getState().visible);
   if (badgeCamera) badgeCamera.hidden = !camActive;
@@ -477,6 +515,7 @@ function paintBadges() {
     root.dataset.camera = camActive ? "on" : "off";
     root.dataset.overlay = overApp ? "on" : "off";
   }
+  syncCameraButton();
 }
 
 async function ensureCameraEyes() {
@@ -724,13 +763,14 @@ function speakNative(text) {
   state.watchdog = window.setTimeout(() => dispatch({ type: "SPEAK_TIMEOUT" }), Math.max(8000, text.length * 90));
 }
 
-// ── state on screen: a colour halo and the body animation ─────────────────
-// No text, no box: the character shows what it is doing.
+// ── state on screen: body animation + the pill's centred glow ─────────────
+// No text, no box and no ring behind the character: the body clip shows what
+// she is doing, and root[data-state] lights the Talk/Mute Mic glow while live.
 function applyState(s) {
   if (root) root.dataset.state = s;
   state.speaking = s === "speaking";
-  // "error" is still a running conversation: the stop control must stay
-  // reachable so the user can end it without waiting for the retry.
+  // "error" is still a running conversation: the pill stays reachable so the
+  // user can end it without waiting for the retry.
   const active = s !== "idle";
   if (active !== state.session) {
     state.session = active;
@@ -772,33 +812,10 @@ function applyState(s) {
 }
 
 function cue(kind) {
-  if (!halo) return;
-  halo.classList.remove("cue");
-  void halo.offsetWidth;
-  halo.classList.add("cue");
-}
-
-// Anchors the halo to the character's chest every frame using the engine's own
-// world->screen projection, so the state indicator is genuinely attached to
-// the body.
-function anchorHalo() {
-  const tick = () => {
-    state.raf = requestAnimationFrame(tick);
-    if (!halo) return;
-    const vrm = engine.vrm;
-    if (!vrm || !vrm.humanoid || typeof engine.projectWorld !== "function") return;
-    const chest = vrm.humanoid.getRawBoneNode("chest") || vrm.humanoid.getRawBoneNode("spine");
-    if (!chest) return;
-    chest.updateWorldMatrix(true, false);
-    const p = chest.matrixWorld.elements;
-    const [px, py] = engine.projectWorld(p[12], p[13], p[14]);
-    const rect = canvas.getBoundingClientRect();
-    halo.style.left = (px / canvas.width) * rect.width + "px";
-    halo.style.top = (py / canvas.height) * rect.height + "px";
-    halo.style.margin = "0";
-    halo.style.transform = "translate(-50%, -50%)";
-  };
-  tick();
+  if (!pill) return;
+  pill.classList.remove("cue");
+  void pill.offsetWidth;
+  pill.classList.add("cue");
 }
 
 function clearWatchdog() {
@@ -822,42 +839,41 @@ function wireControls() {
       : "";
     dispatch({ type: "TAP", text: String(text || "").trim() });
   });
-  // Dedicated Live Companion Call: explicit start for the hands-free loop.
-  if (callBtn) {
-    callBtn.addEventListener("click", (e) => {
+  // One icon button covers Talk / Mute Mic:
+  //   idle     -> start the hands-free conversation
+  //   active   -> mute + end it immediately
+  //   muted    -> unmute and start a fresh conversation
+  if (talkBtn) {
+    talkBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       if (voice && voice.unlock) { try { voice.unlock(); } catch (err) {} }
-      if (state.muted) { state.muted = false; syncCallControls(); }
-      if (!state.session) dispatch({ type: "TAP", text: "" });
-    });
-  }
-  // Mute is an immediate escape hatch: stop the mic and the loop. Unmute
-  // restarts a fresh listening session.
-  if (muteBtn) {
-    muteBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      state.muted = !state.muted;
-      syncCallControls();
       if (state.muted) {
+        state.muted = false;
+        state.keepMuted = false;
+        syncCallControls();
+        dispatch({ type: "TAP", text: "" });
+        return;
+      }
+      if (state.session) {
         stopListening();
         stopSpeaking();
+        state.muted = true;
         state.keepMuted = true;
+        syncCallControls();
         dispatch({ type: "STOP" });
-      } else if (state.session) {
-        dispatch({ type: "TAP", text: "" });
+        return;
       }
+      dispatch({ type: "TAP", text: "" });
     });
   }
-  // The stop square ends the conversation.
-  stopBtn.addEventListener("click", (e) => {
-    e.stopPropagation();
-    dispatch({ type: "STOP" });
-  });
-  $("btnHide").addEventListener("click", () => {
-    dispatch({ type: "STOP" });
-    if (android) { try { android.setVisible(false); return; } catch (e) { /* fall through */ } }
-    window.close();
-  });
+  if (hideBtn) {
+    hideBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      dispatch({ type: "STOP" });
+      if (android) { try { android.setVisible(false); return; } catch (err) { /* fall through */ } }
+      window.close();
+    });
+  }
   // A profile change made in the main app Settings (same origin, same storage)
   // takes effect here without a reload.
   window.addEventListener("storage", (e) => {
@@ -868,6 +884,12 @@ function wireControls() {
 function wireCameraControls() {
   // Native pushes camera start/stop/lens-switch state here (reserved callback).
   window.__vmCameraState = function () { paintBadges(); };
+  if (camBtn) {
+    camBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      toggleCameraEyes();
+    });
+  }
   if (badgeCamera) {
     // Tapping the active camera badge switches lens; the badge is also the
     // visible "camera is live" indicator required on Android 14+.
@@ -894,8 +916,10 @@ async function boot() {
   } catch (err) {
     return; // the companion cannot load without a character; nothing to show
   }
+  // Belt-and-braces: boot starts the render loop, so keep autonomous shuffling
+  // off even if a future engine version re-enables it by default on boot.
+  engine.setAuto(false);
   applyState("idle");
-  anchorHalo();
   document.addEventListener("visibilitychange", () => engine.setRendering(!document.hidden));
 }
 

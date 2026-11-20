@@ -42,25 +42,17 @@
 </head>
 <body>
   <!--
-    The floating surface. The character IS the UI: no panel, no card, no
-    status pill, and no microphone icon — the mic was a tap-to-talk button,
-    which is exactly what hands-free conversation makes redundant. You start
-    a conversation by tapping the character itself, and the companion then
-    listens, thinks and speaks on its own until you stop it.
+    The floating surface. The character is the UI: no panel, no card, no status
+    pill and no ring behind her legs. A compact dark-glass micro-pill sits
+    directly beneath her feet with three icon controls: Talk / Mute Mic (with a
+    centred glow while listening or speaking), Camera Eyes toggle, and Close.
 
-    The only chrome left is:
-      - a soft halo around the character that shows the turn state
-        (listening / thinking / speaking) as colour only, never as text;
-      - a tiny stop button that appears ONLY while a conversation is running;
-      - the tiny × that puts the companion away (required by the Android page
-        verifier, which checks for #vmOverlayRoot, #stage and #btnHide).
-
-    The whole window is also the drag surface (see OverlayDragLayout): a tap
-    wakes the companion, a drag moves it.
+    The character stage + pill are the whole interactive region; transparent
+    space outside them passes touches straight through. The stage is also the
+    drag surface: a tap wakes the companion, a drag moves it.
   -->
   <div id="vmOverlayRoot" data-state="idle">
     <canvas id="stage"></canvas>
-    <div id="vmHalo" class="halo" aria-hidden="true"></div>
 
     <!-- Live capability indicators. They appear only while the underlying
          native feature is actually active, mirroring the OS camera/overlay
@@ -70,10 +62,30 @@
       <span id="vmBadgeOverlay" class="badge badge-overlay" hidden title="Companion is showing over other apps">OVER APP</span>
     </div>
 
-    <button id="btnCall" class="callctl" type="button" aria-label="Start Live Companion Call (hands-free voice)" title="Live Companion Call — hands-free voice">CALL</button>
-    <button id="btnMute" class="callctl" type="button" aria-label="Mute hands-free listening" title="Mute / unmute">MUTE</button>
-    <button id="btnStop" class="stop" type="button" aria-label="End the conversation" title="End call">&#9632;</button>
-    <button id="btnHide" class="hide" type="button" aria-label="Put the companion away" title="Put away">&#10005;</button>
+    <div id="vmMicroPill" class="micro-pill" role="group" aria-label="Companion controls">
+      <button id="btnTalk" class="ctl-btn" type="button" aria-label="Talk to ValleyMind" aria-pressed="false" title="Talk / Mute Mic">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Z" />
+          <path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3" />
+        </svg>
+        <svg class="icon icon-slash" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4 4L20 20" />
+        </svg>
+        <span class="vm-glow" aria-hidden="true"></span>
+      </button>
+      <button id="btnCamera" class="ctl-btn" type="button" aria-label="Turn camera eyes on" aria-pressed="false" title="Camera Eyes">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+          <rect x="3" y="6.5" width="13" height="11" rx="2.5" />
+          <path d="M16 10.5l5-3v9l-5-3z" />
+        </svg>
+      </button>
+      <button id="btnHide" class="ctl-btn" type="button" aria-label="Put the companion away" title="Put away">&#10005;</button>
+    </div>
+
+    <!-- Kept hidden for the legacy Android page verifier; the visible end/mute
+         control is now the Talk/Mute Mic icon in the pill above. -->
+    <div id="vmHalo" class="halo" hidden aria-hidden="true"></div>
+    <button id="btnStop" class="stop" type="button" hidden aria-label="End the conversation">&#9632;</button>
   </div>
 
   <!-- Versioned native facade (additive): capability checks for overlay region,

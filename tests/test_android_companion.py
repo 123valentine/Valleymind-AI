@@ -136,9 +136,9 @@ class OverlaySurfaceTests(unittest.TestCase):
 
 
 class OverlayChromeTests(unittest.TestCase):
-    """The overlay is character-first: no panel, no microphone icon, and only the
-    required icon-only hide affordance plus a stop control that only appears
-    while a conversation is running."""
+    """The overlay is character-first: no panel, no text boxes, no body halo.
+    Its only chrome is a compact dark-glass micro-pill beneath the character's
+    feet with Talk/Mute Mic, Camera Eyes and Close icon controls."""
 
     def _read(self, rel):
         return (ROOT / rel).read_text(encoding="utf-8")
@@ -158,33 +158,45 @@ class OverlayChromeTests(unittest.TestCase):
         for gone in ("#panel", "#hud", ".pill", ".bubble", "#input"):
             self.assertNotIn(gone, css, f"overlay css still styles {gone}")
 
-    def test_overlay_has_no_microphone_button(self):
-        # Hands-free conversation makes a tap-to-talk mic pointless: the
-        # character itself is the control.
+    def test_overlay_has_no_standalone_tap_to_talk_mic_button(self):
+        # The pill's Talk/Mute Mic icon replaces the old CALL/MUTE text boxes;
+        # there is no separate mic-only tap-to-talk control.
         html = self._read("static/companion_overlay.html")
         self.assertNotIn('id="btnMic"', html)
+        self.assertIn('id="btnTalk"', html)
         css = self._read("static/companion_overlay.css")
         self.assertNotIn(".mic", css)
         js = self._read("static/companion_overlay.js")
         self.assertNotIn("btnMic", js)
         self.assertNotIn("micBtn", js)
 
-    def test_overlay_shows_the_turn_state_as_a_colour_halo(self):
-        # No text box, no status pill: the state is a halo attached to the body.
+    def test_overlay_lights_a_centred_pill_glow_instead_of_a_body_halo(self):
+        # No ring behind the legs: live state lights a soft glow centred inside
+        # the Talk/Mute Mic button at the bottom of the compact window.
         html = self._read("static/companion_overlay.html")
-        self.assertIn('id="vmHalo"', html)
+        self.assertIn('id="vmMicroPill"', html)
+        self.assertIn('id="btnTalk"', html)
         css = self._read("static/companion_overlay.css")
+        self.assertIn("#vmMicroPill", css)
+        self.assertIn(".vm-glow", css)
         for state in ("listening", "processing", "speaking", "error", "waking"):
             self.assertIn(f'[data-state="{state}"]', css)
         js = self._read("static/companion_overlay.js")
-        # The halo follows the model's own world->screen projection.
-        self.assertIn("projectWorld", js)
-        self.assertIn("getRawBoneNode", js)
+        # The old chest-projected halo anchor is gone.
+        self.assertIn("engine.setAuto(false)", js)
+        self.assertNotIn("projectWorld", js)
+        self.assertNotIn("getRawBoneNode", js)
 
-    def test_overlay_stop_control_is_the_only_way_to_end_a_conversation(self):
+    def test_overlay_micro_pill_owns_the_visible_conversation_controls(self):
         html = self._read("static/companion_overlay.html")
-        self.assertIn('id="btnStop"', html)
+        for marker in ('id="vmMicroPill"', 'id="btnTalk"', 'id="btnCamera"', 'id="btnHide"'):
+            self.assertIn(marker, html)
+        self.assertNotIn(">CALL<", html)
+        self.assertNotIn(">MUTE<", html)
+        css = self._read("static/companion_overlay.css")
+        self.assertIn("height: calc(100% - 46px)", css)
         js = self._read("static/companion_overlay.js")
+        self.assertIn("setRegion(176, 316)", js)
         self.assertIn('type: "STOP"', js)
 
     def test_overlay_loads_the_turn_state_machine(self):

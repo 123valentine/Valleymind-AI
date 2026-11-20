@@ -1143,7 +1143,6 @@ function renderCompanionInto(container) {
     _SH.card("Size & Position", '<div style="display:flex;flex-direction:column;gap:16px;">' +
       '<div><p style="color:#94a3b8;font-size:10px;margin:0 0 4px;text-transform:uppercase;letter-spacing:0.12em;font-family:\'Space Grotesk\',sans-serif;">Size <b id="vmSetSizeVal" style="color:#e2e8f0;">' + p.sizePct + '%</b></p><input id="vmSetSize" type="range" min="10" max="100" step="1" value="' + p.sizePct + '" oninput="vmCompanionSetSize(this.value)" style="width:100%;"></div>' +
       '<div><p style="color:#94a3b8;font-size:10px;margin:0 0 4px;text-transform:uppercase;letter-spacing:0.12em;font-family:\'Space Grotesk\',sans-serif;">Docked position</p>' + _SH.select([{ value: "br", label: "Bottom-right" }, { value: "bl", label: "Bottom-left" }, { value: "tr", label: "Top-right" }, { value: "tl", label: "Top-left" }], "vmSetDock", p.dock, "vmCompanionSetDock(this.value)") + '</div>' +
-      '<div>' + _SH.row("Wander around", _SH.toggle("vmSetRoam", p.roam, "vmCompanionSetRoam(this.checked)"), "Let the character roam a little while idle. Turn off to keep it still. Dragging it by hand also pauses wandering.") + '</div>' +
       '<div>' + _SH.btn("Reset position & size", "vmCompanionResetHome()") + '</div>' +
       '</div>') +
     _SH.card("Voice & Microphone", '<div style="display:flex;flex-direction:column;">' +
