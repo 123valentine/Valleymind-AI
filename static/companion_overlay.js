@@ -51,10 +51,28 @@ const nativeTts = (window.vmCompanionAndroid && typeof window.vmCompanionAndroid
   ? window.vmCompanionAndroid
   : null;
 
+// Enhanced native TTS: real engine start/end plus a bounded level envelope for
+// the mouth (the site's server TTS still wins and supplies TRUE amplitude).
+const nativeTtsV2 = (window.vmCompanionAndroid && typeof window.vmCompanionAndroid.ttsSpeakV2 === "function")
+  ? window.vmCompanionAndroid
+  : null;
+
 // The platform speech recogniser (same bridge, same process).
 const nativeAsr = (window.vmCompanionAndroid && typeof window.vmCompanionAndroid.asrStart === "function")
   ? window.vmCompanionAndroid
   : null;
+
+// Camera eyes. Native code only captures a JPEG frame; this page posts it to
+// the SAME authenticated /api/vision/analyze endpoint the rest of the app uses.
+const nativeCamera = (window.vmCompanionAndroid && typeof window.vmCompanionAndroid.cameraCapture === "function")
+  ? window.vmCompanionAndroid
+  : null;
+
+// Prompts that should make the companion actually LOOK before it answers.
+const VISION_PROMPT = /\b(what\s+am\s+i\s+wearing|look\s+at\s+this|what\s+do\s+you\s+see|describe\s+what\s+you\s+see|what(?:'s|\s+is)\s+this)\b/i;
+
+const badgeCamera = $("vmBadgeCamera");
+const badgeOverlay = $("vmBadgeOverlay");
 
 // The turn state machine is pure logic; the page supplies every side effect.
 const sm = (window.VMTurnSM && window.VMTurnSM.create)
@@ -373,12 +391,88 @@ async function transcribeAndChat(blob) {
   }
 }
 
+// ── camera eyes: LOOK, then answer with the existing vision service ──────
+function cameraEyesAvailable() {
+  try {
+    return !!(nativeCamera && typeof nativeCamera.hasNativeCamera === "function" &&
+      nativeCamera.hasNativeCamera());
+  } catch (e) { return false; }
+}
+
+function paintBadges() {
+  let camActive = false;
+  if (nativeCamera && typeof nativeCamera.cameraState === "function") {
+    try { camActive = !!nativeCamera.cameraState().active; } catch (e) { camActive = false; }
+  }
+  const overApp = !!(android && typeof android.getState === "function" &&
+    android.getState().visible);
+  if (badgeCamera) badgeCamera.hidden = !camActive;
+  if (badgeOverlay) badgeOverlay.hidden = !overApp;
+  if (root) {
+    root.dataset.camera = camActive ? "on" : "off";
+    root.dataset.overlay = overApp ? "on" : "off";
+  }
+}
+
+async function ensureCameraEyes() {
+  if (!cameraEyesAvailable()) return false;
+  try {
+    let st = nativeCamera.cameraState ? nativeCamera.cameraState() : { active: false };
+    if (!st.active) {
+      if (!nativeCamera.cameraStart("back")) return false;
+      paintBadges();
+      // CameraX binds asynchronously; give it a short, bounded window to open.
+      await new Promise((resolve) => setTimeout(resolve, 900));
+      st = nativeCamera.cameraState ? nativeCamera.cameraState() : { active: false };
+    }
+    paintBadges();
+    return !!st.active;
+  } catch (e) { return false; }
+}
+
+// Returns the vision description, or null when the eyes are unavailable.
+async function lookAndAnswer(question) {
+  const ready = await ensureCameraEyes();
+  if (!ready) return null;
+  try {
+    // "Look at this" -> point at what it sees; the engine has a real clip.
+    try { engine.trigger("pointing"); } catch (e) { /* motion is a cue, not required */ }
+    const dataUri = await nativeCamera.cameraCapture();
+    const r = await fetch("/api/vision/analyze", {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        image: dataUri,
+        question: question,
+        context: "Frame captured by the ValleyMind companion's live camera eyes",
+      }),
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok || data.status !== "success" || !data.description) return null;
+    return String(data.description).trim();
+  } catch (e) {
+    return null;
+  }
+}
+
 // ── the ONE brain ─────────────────────────────────────────────────────────
 async function sendChat(text) {
   clearWatchdog();
   state.watchdog = window.setTimeout(() => dispatch({ type: "PROCESSING_TIMEOUT" }), 60000);
   try {
     state.req = new AbortController();
+    // "What am I wearing?" / "Look at this" must be answered from a REAL frame,
+    // not guessed by the language model. The vision description then goes
+    // through the same brain/speech path as any other reply.
+    if (VISION_PROMPT.test(text) && cameraEyesAvailable()) {
+      const description = await lookAndAnswer(text);
+      if (description) {
+        clearWatchdog();
+        dispatch({ type: "CHAT_OK", reply: description });
+        return;
+      }
+    }
     const r = await fetch("/api/cloud/chat", {
       method: "POST",
       credentials: "include",
@@ -442,7 +536,27 @@ function speakNative(text) {
     }
   };
   try {
-    nativeTts.ttsSpeak(text, PROFILE_NATIVE_VOICE[profile] || null, finish);
+    if (nativeTtsV2 && typeof nativeTtsV2.ttsSpeakV2 === "function") {
+      const voiceId = PROFILE_NATIVE_VOICE[profile] || null;
+      const started = nativeTtsV2.ttsSpeakV2(text, voiceId, {
+        // The native engine reports REAL utterance start/end. Its level is a
+        // bounded speech-shaped envelope (Android TTS exposes no amplitude);
+        // the site's server TTS path above still uses true measured amplitude.
+        onStart: () => {
+          state.speaking = true;
+          if (engine.face) engine.face.setSpeaking(true);
+        },
+        onLevel: (level) => {
+          if (state.speaking && engine.face) {
+            engine.face.setTalkLevel(Math.max(0, Math.min(1, Number(level) || 0)));
+          }
+        },
+        onEnd: finish,
+      });
+      if (!started) { dispatch({ type: "SPEAK_ERR" }); return; }
+    } else {
+      nativeTts.ttsSpeak(text, PROFILE_NATIVE_VOICE[profile] || null, finish);
+    }
   } catch (e) {
     dispatch({ type: "SPEAK_ERR" });
     return;
@@ -555,10 +669,29 @@ function wireControls() {
   });
 }
 
+function wireCameraControls() {
+  // Native pushes camera start/stop/lens-switch state here (reserved callback).
+  window.__vmCameraState = function () { paintBadges(); };
+  if (badgeCamera) {
+    // Tapping the active camera badge switches lens; the badge is also the
+    // visible "camera is live" indicator required on Android 14+.
+    badgeCamera.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (!cameraEyesAvailable()) return;
+      try { nativeCamera.cameraSwitch(); } catch (err) { /* keep current lens */ }
+    });
+  }
+  if (android && typeof android.onCompanionVisibility === "function") {
+    android.onCompanionVisibility(() => paintBadges());
+  }
+}
+
 async function boot() {
   wireControls();
   wireVoice();
   wireNativeAsr();
+  wireCameraControls();
+  paintBadges();
   try {
     await engine.boot();
   } catch (err) {

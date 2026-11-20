@@ -1,9 +1,13 @@
 package ai.valleymind.companion
 
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import java.util.Locale
+import kotlin.math.PI
+import kotlin.math.sin
 
 /**
  * SystemTts — a thin wrapper over Android's own TextToSpeech engine.
@@ -26,6 +30,19 @@ import java.util.Locale
  */
 class SystemTts(context: Context) {
 
+    /**
+     * Voice lifecycle delivered to the web companion. Android's TextToSpeech
+     * has no amplitude stream, so onLevel is a speech-shaped envelope emitted
+     * only between the engine's real onStart and onEnd callbacks. The web layer
+     * still uses TRUE amplitude when the site's server TTS is available; this
+     * is explicitly the native fallback, never a claim of measured amplitude.
+     */
+    interface SpeakingListener {
+        fun onStart(utteranceId: String)
+        fun onLevel(level: Float)
+        fun onEnd(utteranceId: String, ok: Boolean)
+    }
+
     private val appContext = context.applicationContext
     private var tts: TextToSpeech? = null
     private var ready = false
@@ -33,6 +50,14 @@ class SystemTts(context: Context) {
 
     /** Called when an utterance actually finishes (or fails). */
     private var onDone: ((Boolean) -> Unit)? = null
+    var speakingListener: SpeakingListener? = null
+
+    private val levelHandler = Handler(Looper.getMainLooper())
+    private var levelRunnable: Runnable? = null
+    private var levelStartMs = 0L
+    private var levelSeed = 0
+    private var currentUtteranceId = ""
+
     /** Last voice ids the device reported, for diagnostics. */
     val availableVoices: List<String> get() = try { tts?.voices?.map { it.name } ?: emptyList() } catch (e: Exception) { emptyList() }
 
@@ -42,7 +67,12 @@ class SystemTts(context: Context) {
             ready = status == TextToSpeech.SUCCESS
             try { tts?.language = Locale.US } catch (e: Exception) { /* engine may refuse */ }
             tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-                override fun onStart(utteranceId: String?) { /* mouth opens in speak() */ }
+                override fun onStart(utteranceId: String?) {
+                    val id = utteranceId ?: ""
+                    currentUtteranceId = id
+                    speakingListener?.onStart(id)
+                    startLevelTicker(id)
+                }
                 override fun onDone(utteranceId: String?) { finish(true) }
                 @Deprecated("kept for API < 21 compatibility of the listener contract")
                 override fun onError(utteranceId: String?) { finish(false) }
@@ -91,12 +121,38 @@ class SystemTts(context: Context) {
     }
 
     fun shutdown() {
+        stopLevelTicker()
         try { tts?.stop() } catch (e: Exception) { /* ignore */ }
         try { tts?.shutdown() } catch (e: Exception) { /* ignore */ }
         tts = null
         ready = false
         pending = null
         onDone = null
+        speakingListener = null
+    }
+
+    /** Emits a bounded, syllable-shaped level between the engine's start/end. */
+    private fun startLevelTicker(id: String) {
+        stopLevelTicker()
+        levelStartMs = System.currentTimeMillis()
+        levelSeed = id.hashCode()
+        val tick = object : Runnable {
+            override fun run() {
+                val t = (System.currentTimeMillis() - levelStartMs) / 1000f
+                val syllable = 0.5f + 0.5f * sin(t * 2f * PI.toFloat() * 4.5f + levelSeed)
+                val phrase = 0.55f + 0.45f * sin(t * 2f * PI.toFloat() * 0.35f + 0.7f)
+                val level = (0.08f + 0.87f * syllable * phrase).coerceIn(0f, 1f)
+                speakingListener?.onLevel(level)
+                levelRunnable?.let { levelHandler.postDelayed(it, 70L) }
+            }
+        }
+        levelRunnable = tick
+        levelHandler.post(tick)
+    }
+
+    private fun stopLevelTicker() {
+        levelRunnable?.let { levelHandler.removeCallbacks(it) }
+        levelRunnable = null
     }
 
     /** Maps one of the four companion profile ids to a best-effort voice id. */
@@ -119,6 +175,12 @@ class SystemTts(context: Context) {
     }
 
     private fun finish(ok: Boolean) {
+        stopLevelTicker()
+        val listener = speakingListener
+        speakingListener = null
+        if (listener != null) {
+            try { listener.onEnd(currentUtteranceId, ok) } catch (e: Exception) { /* ignore */ }
+        }
         val cb = onDone
         onDone = null
         if (cb != null) {

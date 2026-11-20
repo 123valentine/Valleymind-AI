@@ -111,6 +111,50 @@ html, body {
 }
 
 /*
+ * Active-capability badges. They are indicators first: they only appear while
+ * the native feature is genuinely on, mirroring the OS camera/overlay privacy
+ * indicators. The camera badge doubles as the "switch lens" tap target.
+ */
+.badges {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  z-index: 7;
+}
+.badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px 6px;
+  border-radius: 5px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: rgba(2, 6, 23, 0.72);
+  color: #e2e8f0;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  line-height: 1;
+  white-space: nowrap;
+  touch-action: manipulation;
+}
+.badge[hidden] { display: none; }
+.badge-camera {
+  border-color: rgba(239, 68, 68, 0.7);
+  color: #fecaca;
+  cursor: pointer;
+  pointer-events: auto;
+  animation: badge-breathe 1.8s ease-in-out infinite;
+}
+.badge-overlay { border-color: rgba(167, 139, 250, 0.6); color: #ddd6fe; }
+@keyframes badge-breathe {
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 1; }
+}
+
+/*
  * The stop control. It exists ONLY while a hands-free conversation is
  * running, and it is the one way to end that conversation. It stays small and
  * out of the way, in the corner next to the ×.

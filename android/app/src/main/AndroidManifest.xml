@@ -13,16 +13,33 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Voice conversation reuses the existing site voice pipeline. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
-    <!-- No CAMERA permission on purpose: image capture is delegated to the
-         user's camera app via ACTION_IMAGE_CAPTURE, which handles its own
-         permission. Declaring CAMERA here would make that intent require a
-         runtime grant this app never asks for and the capture would fail. -->
+    <!-- The + button can take a photo directly from the WebView. Declaring the
+         permission AND requesting it at runtime is required on every supported
+         API level when this app launches the camera intent itself. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <!-- Gallery reads for the + picker. Android 13+ splits images and video;
+         older releases use READ_EXTERNAL_STORAGE. -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+    <!-- Live companion "eyes" run as a camera foreground service on Android 14+. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
+
+    <!-- Camera hardware is optional: the WebView still works on devices without
+         one (documents/gallery upload and the rest of the companion remain). -->
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
 
     <!-- Package visibility (Android 11+): without this, resolveActivity() for
          the capture intent returns null even when a camera app is installed. -->
     <queries>
         <intent>
             <action android:name="android.media.action.IMAGE_CAPTURE" />
+        </intent>
+        <intent>
+            <action android:name="android.media.action.VIDEO_CAPTURE" />
         </intent>
     </queries>
 
@@ -70,6 +87,14 @@
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="User-enabled floating AI companion overlay shown over other apps" />
         </service>
+
+        <!-- The companion's camera "eyes": a user-started CameraX preview plus
+             frame capture to the existing vision endpoint. Only runs while the
+             user has explicitly switched the lens on. -->
+        <service
+            android:name=".CompanionCameraService"
+            android:exported="false"
+            android:foregroundServiceType="camera" />
     </application>
 
 </manifest>

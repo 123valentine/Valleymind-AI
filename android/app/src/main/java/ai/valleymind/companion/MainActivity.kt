@@ -80,10 +80,53 @@ class MainActivity : AppCompatActivity(), CompanionBridge.Host {
     /** The origin the WebView loads; production default, runtime-overridable. */
     private var baseUrl: String = BuildConfig.VALLEY_BASE_URL
 
-    private val REQUEST_CODE_FILE_CHOOSER = 1002
-    private val REQUEST_CODE_CAMERA_CAPTURE = 1003
     private var filePathCallback: ValueCallback<Array<Uri>>? = null
     private var cameraImageUri: Uri? = null
+    /** Output URI for a `capture="video"` request (separate from photo capture). */
+    private var cameraVideoUri: Uri? = null
+
+    /** MIME carried across a camera-permission round trip (images, video, documents). */
+    private var pendingPickerMime: String = "*/*"
+
+    /**
+     * Modern Activity Result API launchers. The WebView keeps only ONE pending
+     * ValueCallback; every launcher below must answer it exactly once, including
+     * cancellation and permission denial, or the page's file input stays open.
+     */
+    private val filePickerLauncher = registerForActivityResult(
+        ActivityResultContracts.GetMultipleContents()
+    ) { uris -> deliverChooserResults(uris) }
+
+    private val cameraCaptureLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result -> handleCameraCaptureResult(result.resultCode, result.data) }
+
+    private val videoCaptureLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result -> handleVideoCaptureResult(result.resultCode, result.data) }
+
+    private val cameraPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (!granted) {
+            // Denial must still answer the WebView: fall back to the SAF picker.
+            launchPickerSafely(pendingPickerMime)
+        } else if (pendingPickerMime == "video/*") {
+            launchVideoCapture()
+        } else {
+            launchCameraCapture()
+        }
+    }
+
+    private val mediaPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { /* best-effort: the SAF picker needs no storage grant on Android 13+ */ }
+
+    /** Camera grant for the companion's camera eyes (no capture on result). */
+    private val cameraOnlyPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { /* the user retries the camera toggle if they decline */ }
+
     private val loadMonitor = LoadMonitor(LoadMonitor.DEFAULT_TIMEOUT_MS)
     private val mainHandler = Handler(Looper.getMainLooper())
     private val loadTimeoutRunnable = Runnable {
@@ -122,6 +165,17 @@ class MainActivity : AppCompatActivity(), CompanionBridge.Host {
             val js = "window.__vmTtsDone_" + name + " && window.__vmTtsDone_" + name + "(" + ok + ");"
             webView.post { webView.evaluateJavascript(js, null) }
         }
+        // Real engine start/end + bounded level, and camera frame results.
+        NativeTtsRegistry.installSpeech { name, event, value ->
+            val js = "window.__vmSpeechEvent_" + name + " && window.__vmSpeechEvent_" + name +
+                    "(" + jsString(event) + "," + (if (value == null) "null" else jsString(value)) + ");"
+            webView.post { webView.evaluateJavascript(js, null) }
+        }
+        CameraResultRegistry.install { name, json ->
+            val target = if (name == "__cameraState") "window.__vmCameraState" else "window.__vmCameraResult_" + name
+            val js = target + " && " + target + "(" + json + ");"
+            webView.post { webView.evaluateJavascript(js, null) }
+        }
 
         webView = findViewById(R.id.webView)
         errorView = findViewById(R.id.errorView)
@@ -138,48 +192,108 @@ class MainActivity : AppCompatActivity(), CompanionBridge.Host {
         loadApp()
         maybeRequestNotificationPermission()
         maybeRequestRecordAudio()
-    }
-
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-        when (requestCode) {
-            REQUEST_CODE_FILE_CHOOSER -> handleFileChooserResult(resultCode, data)
-            REQUEST_CODE_CAMERA_CAPTURE -> handleCameraCaptureResult(resultCode, data)
-        }
+        maybeRequestMediaPermissions()
+        maybeRequestCameraPermission()
     }
 
     /**
-     * Result of the system file/media picker. A cancelled chooser must still
-     * answer the WebView callback, otherwise the page's file input stays "open"
-     * and the composer never recovers.
+     * Result of ActivityResultContracts.GetMultipleContents. A cancelled chooser
+     * must still answer the WebView callback, otherwise the page's file input
+     * stays "open" and the composer never recovers.
      */
-    private fun handleFileChooserResult(resultCode: Int, data: Intent?) {
-        val callback = filePathCallback
+    private fun deliverChooserResults(uris: List<Uri>?) {
+        val callback = filePathCallback ?: return
         filePathCallback = null
-        if (callback == null) return
+        val values = uris?.mapNotNull { it }?.toTypedArray()
+        callback.onReceiveValue(if (values.isNullOrEmpty()) null else values)
+    }
 
-        if (resultCode != Activity.RESULT_OK) {
-            callback.onReceiveValue(null)
+    private fun launchPickerSafely(mime: String) {
+        try {
+            filePickerLauncher.launch(if (mime.isNotBlank()) mime else "*/*")
+        } catch (e: Exception) {
+            deliverChooserResults(null)
+        }
+    }
+
+    /** Opens the native camera app for a direct video capture (capture="video"). */
+    private fun launchVideoCapture() {
+        val outputUri = newCameraOutputUri(".mp4")
+        if (outputUri == null) {
+            launchPickerSafely(pendingPickerMime)
             return
         }
-
-        val results: Array<Uri>? = try {
-            val clip = data?.clipData
-            when {
-                clip != null && clip.itemCount > 0 -> {
-                    val uris = mutableListOf<Uri>()
-                    for (i in 0 until clip.itemCount) {
-                        clip.getItemAt(i)?.uri?.let { uris.add(it) }
-                    }
-                    if (uris.isNotEmpty()) uris.toTypedArray() else null
-                }
-                data?.data != null -> arrayOf(data.data!!)
-                else -> null
-            }
-        } catch (_: Exception) {
-            null
+        val captureIntent = Intent(MediaStore.ACTION_VIDEO_CAPTURE).apply {
+            putExtra(MediaStore.EXTRA_OUTPUT, outputUri)
+            addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
-        callback.onReceiveValue(results)
+        if (captureIntent.resolveActivity(packageManager) == null) {
+            deleteCameraFile(outputUri)
+            launchPickerSafely(pendingPickerMime)
+            return
+        }
+        cameraVideoUri = outputUri
+        try {
+            videoCaptureLauncher.launch(captureIntent)
+        } catch (e: Exception) {
+            deleteCameraFile(outputUri)
+            cameraVideoUri = null
+            deliverChooserResults(null)
+        }
+    }
+
+    private fun handleVideoCaptureResult(resultCode: Int, data: Intent?) {
+        val callback = filePathCallback
+        filePathCallback = null
+        val outputUri = cameraVideoUri
+        cameraVideoUri = null
+
+        if (callback == null) {
+            deleteCameraFile(outputUri)
+            return
+        }
+        if (resultCode != Activity.RESULT_OK) {
+            callback.onReceiveValue(null)
+            deleteCameraFile(outputUri)
+            return
+        }
+        // Camera apps may write EXTRA_OUTPUT or return the clip as data URI.
+        val result = data?.data?.takeIf { contentHasBytes(it) }
+            ?: outputUri?.takeIf { contentHasBytes(it) }
+        if (result == null) {
+            deleteCameraFile(outputUri)
+            callback.onReceiveValue(null)
+        } else {
+            callback.onReceiveValue(arrayOf(result))
+        }
+    }
+
+    /** Opens the native camera app for a direct photo capture. */
+    private fun launchCameraCapture() {
+        val outputUri = newCameraOutputUri()
+        if (outputUri == null) {
+            launchPickerSafely(pendingPickerMime)
+            return
+        }
+        val captureIntent = Intent(MediaStore.ACTION_IMAGE_CAPTURE).apply {
+            putExtra(MediaStore.EXTRA_OUTPUT, outputUri)
+            // Request the rear (environment) camera by default, not the front selfie camera.
+            putExtra("android.intent.extra.USE_FRONT_CAMERA", false)
+            addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        if (captureIntent.resolveActivity(packageManager) == null) {
+            deleteCameraFile(outputUri)
+            launchPickerSafely(pendingPickerMime)
+            return
+        }
+        cameraImageUri = outputUri
+        try {
+            cameraCaptureLauncher.launch(captureIntent)
+        } catch (e: Exception) {
+            deleteCameraFile(outputUri)
+            cameraImageUri = null
+            deliverChooserResults(null)
+        }
     }
 
     /**
@@ -230,13 +344,13 @@ class MainActivity : AppCompatActivity(), CompanionBridge.Host {
     /** Private cache directory shared with res/xml/file_paths.xml. */
     private fun cameraOutputDir(): File = File(cacheDir, "camera").apply { if (!exists()) mkdirs() }
 
-    private fun newCameraOutputUri(): Uri? {
+    private fun newCameraOutputUri(extension: String = ".jpg"): Uri? {
         return try {
             val dir = cameraOutputDir()
             // Captures whose URI the page never consumed would otherwise pile up.
             val cutoff = System.currentTimeMillis() - 24L * 60L * 60L * 1000L
             dir.listFiles()?.forEach { f -> if (f.lastModified() < cutoff) f.delete() }
-            val file = File.createTempFile("capture_", ".jpg", dir)
+            val file = File.createTempFile("capture_", extension, dir)
             FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
         } catch (_: Exception) {
             null
@@ -316,64 +430,41 @@ class MainActivity : AppCompatActivity(), CompanionBridge.Host {
 
                 val accepts = fileChooserParams.acceptTypes?.filter { it.isNotBlank() } ?: emptyList()
                 val imageOnly = accepts.isNotEmpty() && accepts.all { it.startsWith("image/") }
+                val videoOnly = accepts.isNotEmpty() && accepts.all { it.startsWith("video/") }
                 val captureRequested = try { fileChooserParams.isCaptureEnabled } catch (_: Exception) { false }
 
-                // "Camera" (accept="image/*" capture) opens the system camera with a
-                // FileProvider output URI. If no camera app is installed, fall through
-                // to the normal chooser so the callback is always answered.
-                if (captureRequested && imageOnly) {
-                    val outputUri = newCameraOutputUri()
-                    if (outputUri != null) {
-                        val captureIntent = Intent(MediaStore.ACTION_IMAGE_CAPTURE).apply {
-                            putExtra(MediaStore.EXTRA_OUTPUT, outputUri)
-                            // Request the rear (environment) camera by default, not the front selfie camera.
-                            putExtra("android.intent.extra.USE_FRONT_CAMERA", false)
-                            addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                        }
-                        if (captureIntent.resolveActivity(packageManager) != null) {
-                            cameraImageUri = outputUri
-                            return try {
-                                startActivityForResult(captureIntent, REQUEST_CODE_CAMERA_CAPTURE)
-                                true
-                            } catch (_: Exception) {
-                                deleteCameraFile(outputUri)
-                                cameraImageUri = null
-                                val cb = filePathCallback
-                                filePathCallback = null
-                                cb?.onReceiveValue(null)
-                                false
-                            }
-                        }
+                // Resolve ONE MIME for both the camera and the SAF picker. The
+                // + menu sends "image/*", "video/*", or document types; the
+                // browser's capture hint asks us to go straight to the camera.
+                val only = accepts.singleOrNull()
+                val mime = when {
+                    imageOnly -> "image/*"
+                    videoOnly -> "video/*"
+                    only != null && only.contains("/") -> only
+                    else -> "*/*"
+                }
+                pendingPickerMime = mime
+
+                if (captureRequested && (imageOnly || videoOnly)) {
+                    // Remember WHICH capture was asked for: the permission
+                    // callback must resume the same intent rather than always
+                    // opening the still-camera app.
+                    pendingPickerMime = if (videoOnly) "video/*" else "image/*"
+                    if (ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.CAMERA)
+                        == PackageManager.PERMISSION_GRANTED
+                    ) {
+                        if (videoOnly) launchVideoCapture() else launchCameraCapture()
+                    } else {
+                        cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
                     }
-                    deleteCameraFile(outputUri)
+                    return true
                 }
 
-                return try {
-                    // createIntent() already targets ACTION_GET_CONTENT with
-                    // CATEGORY_OPENABLE; adding more categories here would hide
-                    // gallery/camera apps that return non-openable URIs.
-                    val intent = fileChooserParams.createIntent().apply {
-                        if (fileChooserParams.mode == FileChooserParams.MODE_OPEN_MULTIPLE) {
-                            putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
-                        }
-                        // Respect the accept attribute when it is a single MIME type.
-                        val only = accepts.singleOrNull()
-                        if (type.isNullOrBlank() || type == "*/*") {
-                            type = when {
-                                accepts.isEmpty() -> "*/*"
-                                only != null && only.contains("/") -> only
-                                else -> "*/*"
-                            }
-                        }
-                    }
-                    startActivityForResult(Intent.createChooser(intent, "Select file"), REQUEST_CODE_FILE_CHOOSER)
-                    true
-                } catch (e: Exception) {
-                    val cb = filePathCallback
-                    filePathCallback = null
-                    cb?.onReceiveValue(null)
-                    false
-                }
+                // GetMultipleContents handles single AND multiple selection (the
+                // WebView's MODE_OPEN_MULTIPLE is conveyed by the page's own
+                // input[multiple] attribute), images, video and documents alike.
+                launchPickerSafely(mime)
+                return true
             }
         }
         webView.webViewClient = object : WebViewClient() {
@@ -626,8 +717,12 @@ class MainActivity : AppCompatActivity(), CompanionBridge.Host {
         filePathCallback?.onReceiveValue(null)
         filePathCallback = null
         cameraImageUri = null
+        cameraVideoUri = null
         if (::systemTts.isInitialized) systemTts.shutdown()
         NativeTtsRegistry.install(null)
+        NativeTtsRegistry.installSpeech(null)
+        CameraResultRegistry.install(null)
+        CompanionCameraService.stop(this)
         super.onDestroy()
     }
 
@@ -653,10 +748,84 @@ class MainActivity : AppCompatActivity(), CompanionBridge.Host {
         }
     }
 
+    /**
+     * Gallery permissions for the + picker. SAF (GetMultipleContents) grants its
+     * own URI permission, so denial never breaks uploads — but requesting the
+     * declared permissions up front means gallery/camera apps and older Android
+     * versions behave consistently, and the system settings page shows them.
+     */
+    private fun maybeRequestMediaPermissions() {
+        val needed = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            arrayOf(Manifest.permission.READ_MEDIA_IMAGES, Manifest.permission.READ_MEDIA_VIDEO)
+        } else {
+            arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
+        }
+        val missing = needed.filter {
+            ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
+        }
+        if (missing.isNotEmpty()) mediaPermissionLauncher.launch(missing.toTypedArray())
+    }
+
+    /**
+     * The overlay page can toggle the camera eyes, but only an Activity may ask
+     * for CAMERA. Ask once here so the later tool call is not denied by default.
+     */
+    private fun maybeRequestCameraPermission() {
+        if (!CompanionCameraService.hasPermission(this)) {
+            cameraOnlyPermissionLauncher.launch(Manifest.permission.CAMERA)
+        }
+    }
+
+    /** Minimal JS string literal for the small event values we emit. */
+    private fun jsString(value: String): String =
+        "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"")
+            .replace("\n", "\\n").replace("\r", "\\r") + "\""
+
     // ── CompanionBridge.Host: native TTS fallback ───────────────────
 
     override fun speakNative(text: String, voiceId: String?, done: (Boolean) -> Unit) {
         systemTts.speak(text, voiceId, done)
+    }
+
+    override fun speakNativeWithEvents(
+        text: String,
+        voiceId: String?,
+        events: (event: String, value: String?) -> Unit
+    ) {
+        systemTts.speakingListener = object : SystemTts.SpeakingListener {
+            override fun onStart(utteranceId: String) { events("start", utteranceId) }
+            override fun onLevel(level: Float) { events("level", level.toString()) }
+            override fun onEnd(utteranceId: String, ok: Boolean) { events("end", ok.toString()) }
+        }
+        systemTts.speak(text, voiceId) { /* completion is delivered as the "end" event */ }
+    }
+
+    // ── CompanionBridge.Host: camera eyes ─────────────────────────────
+
+    override fun cameraSupported(): Boolean =
+        packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY)
+
+    override fun cameraStart(facing: String?): Boolean {
+        if (!CompanionCameraService.hasPermission(this)) {
+            cameraOnlyPermissionLauncher.launch(Manifest.permission.CAMERA)
+            return false
+        }
+        return CompanionCameraService.start(this, facing)
+    }
+
+    override fun cameraStop() = CompanionCameraService.stop(this)
+
+    override fun cameraSwitch(): Boolean = CompanionCameraService.switchLens(this)
+
+    override fun cameraStateJson(): String = CompanionCameraService.stateJson()
+
+    override fun cameraCapture(callbackName: String?) {
+        if (callbackName.isNullOrBlank()) return
+        if (!CompanionCameraService.isActive()) {
+            CameraResultRegistry.deliver(callbackName, CameraResultRegistry.errorJson("camera-not-active"))
+            return
+        }
+        CompanionCameraService.capture(this, callbackName)
     }
 
     override fun stopNativeSpeech() {

@@ -25,4 +25,21 @@ object NativeTtsRegistry {
         val d = dispatcher ?: return
         try { d(callbackName, ok) } catch (e: Exception) { /* one failure never blocks speech */ }
     }
+
+    // ── start / amplitude / end events for lip-sync ──────────────────────
+    // Separate from the completion dispatcher so older hosts that only install
+    // `install()` keep working unchanged (additive-only contract).
+    fun interface SpeechDispatcher {
+        fun onEvent(callbackName: String, event: String, value: String?)
+    }
+
+    @Volatile
+    private var speechDispatcher: SpeechDispatcher? = null
+
+    fun installSpeech(fn: SpeechDispatcher?) { speechDispatcher = fn }
+
+    fun deliverSpeech(callbackName: String, event: String, value: String? = null) {
+        val d = speechDispatcher ?: return
+        try { d.onEvent(callbackName, event, value) } catch (e: Exception) { /* ignore */ }
+    }
 }

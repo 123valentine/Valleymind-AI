@@ -123,6 +123,38 @@ class CompanionOverlayService : Service() {
         override fun stopNativeSpeech() {
             systemTts?.stop()
         }
+        override fun speakNativeWithEvents(
+            text: String,
+            voiceId: String?,
+            events: (event: String, value: String?) -> Unit
+        ) {
+            val tts = systemTts ?: run { events("end", "false"); return }
+            tts.speakingListener = object : SystemTts.SpeakingListener {
+                override fun onStart(utteranceId: String) { events("start", utteranceId) }
+                override fun onLevel(level: Float) { events("level", level.toString()) }
+                override fun onEnd(utteranceId: String, ok: Boolean) { events("end", ok.toString()) }
+            }
+            tts.speak(text, voiceId) { /* completion is delivered as the "end" event */ }
+        }
+        override fun cameraSupported(): Boolean =
+            packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_CAMERA_ANY)
+        override fun cameraStart(facing: String?): Boolean =
+            CompanionCameraService.start(this@CompanionOverlayService, facing)
+        override fun cameraStop() = CompanionCameraService.stop(this@CompanionOverlayService)
+        override fun cameraSwitch(): Boolean =
+            CompanionCameraService.switchLens(this@CompanionOverlayService)
+        override fun cameraStateJson(): String = CompanionCameraService.stateJson()
+        override fun cameraCapture(callbackName: String?) {
+            if (callbackName.isNullOrBlank()) return
+            if (!CompanionCameraService.isActive()) {
+                CameraResultRegistry.deliver(
+                    callbackName,
+                    CameraResultRegistry.errorJson("camera-not-active")
+                )
+                return
+            }
+            CompanionCameraService.capture(this@CompanionOverlayService, callbackName)
+        }
         override fun asrSupported(): Boolean = asr?.supported == true
         override fun asrStart(locale: String?): Boolean {
             val engine = asr ?: return false
@@ -264,6 +296,16 @@ class CompanionOverlayService : Service() {
         // back into this WebView.
         NativeTtsRegistry.install { name, ok ->
             val js = "window.__vmTtsDone_" + name + " && window.__vmTtsDone_" + name + "(" + ok + ");"
+            wv.post { wv.evaluateJavascript(js, null) }
+        }
+        NativeTtsRegistry.installSpeech { name, event, value ->
+            val js = "window.__vmSpeechEvent_" + name + " && window.__vmSpeechEvent_" + name +
+                    "(" + jsString(event) + "," + (if (value == null) "null" else jsString(value)) + ");"
+            wv.post { wv.evaluateJavascript(js, null) }
+        }
+        CameraResultRegistry.install { name, json ->
+            val target = if (name == "__cameraState") "window.__vmCameraState" else "window.__vmCameraResult_" + name
+            val js = target + " && " + target + "(" + json + ");"
             wv.post { wv.evaluateJavascript(js, null) }
         }
         wv.addJavascriptInterface(CompanionBridge(overlayHost), "VmAndroidBridge")
@@ -580,6 +622,9 @@ class CompanionOverlayService : Service() {
         try { systemTts?.shutdown() } catch (e: Exception) { /* ignore */ }
         systemTts = null
         NativeTtsRegistry.install(null)
+        NativeTtsRegistry.installSpeech(null)
+        CameraResultRegistry.install(null)
+        CompanionCameraService.stop(this)
         isVisible = false
         isRunning = false
     }
@@ -599,6 +644,11 @@ class CompanionOverlayService : Service() {
 
     private fun stateJson(): String =
         "{\"granted\":${canDrawOverlays()},\"running\":$isRunning,\"visible\":$isVisible}"
+
+    /** Minimal JS string literal for the small event values we emit. */
+    private fun jsString(value: String): String =
+        "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"")
+            .replace("\n", "\\n").replace("\r", "\\r") + "\""
 
     // ── foreground notification ─────────────────────────────────────
 

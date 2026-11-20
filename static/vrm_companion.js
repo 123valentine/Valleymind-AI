@@ -62,6 +62,9 @@ const STATUS_LABEL = {
   confused: "confused",
   working: "working",
   observing: "watching your screen",
+  waving: "waving hello",
+  pointing: "pointing it out",
+  guiding: "leading the way",
 };
 
 const STATUS_BEHAVIOUR = {
@@ -76,6 +79,10 @@ const STATUS_BEHAVIOUR = {
   confused: "unsure",
   working: "working",
   observing: "listening",
+  // Real engine clips (see vrm_preview/companion.js BEHAVIOUR_WEIGHTS).
+  waving: "waving",
+  pointing: "pointing",
+  guiding: "walking",
 };
 
 // States that must stay locked to one clip until the driver changes them.
@@ -169,6 +176,7 @@ let voiceEndEmo = "idle";
 let chatId = "";
 let transcript = [];
 let voiceWired = false;
+let nativeSpeechWired = false;
 let uiBuilt = false;
 let resumeTimer = null;   // delayed hands-free re-listen (cleared on stop/hide/mute)
 let walkRaf = 0;          // walking animation handle (cancel on hide/stop)
@@ -1123,6 +1131,38 @@ function wireVoice() {
   });
 }
 
+// ── native TTS fallback lip-sync (Android WebView) ─────────────────────────
+// The site's server TTS remains the primary path and supplies TRUE amplitude.
+// On Android the engine has no speechSynthesis/Web Audio amplitude, so the
+// native bridge reports real engine start/end plus a bounded level envelope.
+// This adapter drives the SAME face channel; it never claims measured amplitude.
+function applyNativeSpeechEvent(event, value) {
+  if (!voiceActive() || !engine || !engine.face) return;
+  try {
+    if (event === "start") {
+      setStatus("speaking");
+      setFaceTalking(true);
+    } else if (event === "level") {
+      if (stateKey === "speaking") {
+        engine.face.setTalkLevel(Math.max(0, Math.min(1, Number(value) || 0)));
+      }
+    } else if (event === "end") {
+      setFaceTalking(false);
+      setStatus(voiceEndEmo || "idle");
+    }
+  } catch (e) { }
+}
+
+function wireNativeSpeech() {
+  if (nativeSpeechWired) return;
+  const a = window.vmCompanionAndroid;
+  if (!a || typeof a.onSpeechEvent !== "function") return;
+  nativeSpeechWired = true;
+  a.onSpeechEvent(function (ev) {
+    if (ev && ev.event) applyNativeSpeechEvent(ev.event, ev.value);
+  });
+}
+
 function toggleVoice() {
   if (!window.VMCloudVoice) return;
   if (!window.VMCloudVoice.supported()) {
@@ -1544,6 +1584,7 @@ async function show() {
   setDataset();
   buildUI();
   wireVoice();
+  wireNativeSpeech();
   const el = $id("vmVrmCompanion");
   if (!el) return;
   el.style.display = "block";
@@ -1676,6 +1717,17 @@ window.vmVrmCompanion = {
    */
   applyStatus: function (s) { setStatus(s); },
   getStatus: function () { return stateKey; },
+  /**
+   * One-shot, real-clip gestures: waving (hello), pointing (look at this),
+   * guiding (walk with me). They hold the clip briefly, then return to idle.
+   */
+  gesture: function (name) {
+    const key = String(name || "").toLowerCase();
+    if (!STATUS_BEHAVIOUR[key]) return false;
+    setStatus(key);
+    return true;
+  },
+  applySpeechEvent: applyNativeSpeechEvent,
   setRendering: function (on) { if (engine) engine.setRendering(!!on); },
   // ── task execution layer surface ─────────────────────────────────────────
   submitTask: submitTask,

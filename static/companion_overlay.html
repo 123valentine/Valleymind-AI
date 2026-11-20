@@ -62,6 +62,14 @@
     <canvas id="stage"></canvas>
     <div id="vmHalo" class="halo" aria-hidden="true"></div>
 
+    <!-- Live capability indicators. They appear only while the underlying
+         native feature is actually active, mirroring the OS camera/overlay
+         indicators instead of pretending a permission was granted. -->
+    <div id="vmOverlayBadges" class="badges">
+      <span id="vmBadgeCamera" class="badge badge-camera" hidden title="Camera eyes are live — tap to switch lens">CAM</span>
+      <span id="vmBadgeOverlay" class="badge badge-overlay" hidden title="Companion is showing over other apps">OVER APP</span>
+    </div>
+
     <button id="btnStop" class="stop" type="button" aria-label="Stop the conversation" title="Stop">&#9632;</button>
     <button id="btnHide" class="hide" type="button" aria-label="Put the companion away" title="Put away">&#10005;</button>
   </div>

@@ -23,6 +23,7 @@ object AndroidBridgeJs {
   if (!B) { return; }
   var listeners = [];
   var __vmTtsSeq = 0;
+  var __vmCameraSeq = 0;
 
   // ── native speech recognition bus ────────────────────────────────────
   // The platform recogniser reports back through window.__vmAsrEvent(json).
@@ -38,6 +39,17 @@ object AndroidBridgeJs {
   function emitAsr(ev) {
     for (var i = 0; i < bus.listeners.length; i++) {
       try { bus.listeners[i](ev); } catch (e) { /* one bad listener never blocks others */ }
+    }
+  }
+
+  // A process-wide speech bus so BOTH WebViews (main app + overlay) can observe
+  // native TTS lifecycle events for lip-sync without owning the per-call
+  // callback. Per-call handlers still work; this is purely additive.
+  var speechBus = window.__vmSpeechBus;
+  if (!speechBus) { speechBus = { listeners: [] }; window.__vmSpeechBus = speechBus; }
+  function emitSpeech(ev) {
+    for (var i = 0; i < speechBus.listeners.length; i++) {
+      try { speechBus.listeners[i](ev); } catch (e) { /* ignore */ }
     }
   }
 
@@ -68,6 +80,30 @@ object AndroidBridgeJs {
 
   // Called from native when the service/overlay state changes.
   window.__vmAndroidState = function () { emit(); };
+
+  // The versioned façade used by static/native_bridge.js (window.VMNative).
+  // Installed once so older pages can feature-detect without knowing the shell.
+  if (!window.vmNative) {
+    var contract = null;
+    var caps = [];
+    try { contract = JSON.parse(B.contractJson()); } catch (e) { contract = null; }
+    try { var parsed = JSON.parse(B.capabilitiesJson()); if (parsed && parsed.length) caps = parsed; } catch (e) {}
+    window.vmNative = {
+      contract: contract,
+      capabilities: function () { return caps.slice(); },
+      app: { getInfo: function () { return state(); } },
+      overlay: {
+        setRegion: function (w, h) {
+          try { return JSON.parse(B.setOverlayRegion(w, h)); }
+          catch (e) { return { ok: false, reason: "bridge-error" }; }
+        },
+        getRegion: function () {
+          try { return JSON.parse(B.getOverlayRegion()); }
+          catch (e) { return { ok: false, reason: "bridge-error" }; }
+        }
+      }
+    };
+  }
 
   window.vmCompanionAndroid = {
     isSupported: function () { try { return !!B.isOverlaySupported(); } catch (e) { return false; } },
@@ -110,6 +146,75 @@ object AndroidBridgeJs {
       catch (e) { if (done) done(false); return false; }
     },
     ttsStop: function () { try { if (typeof B.ttsStop === "function") B.ttsStop(); } catch (e) { /* ignore */ } },
+
+    // ── native TTS with real start/end events + a lip-sync level ──────────
+    // The site's server TTS (when available) still wins. This path is used only
+    // for the native fallback, where Android's engine reports real start/end but
+    // has no amplitude stream: `onLevel` is a bounded speech-shaped envelope,
+    // never presented as measured amplitude.
+    hasNativeTtsV2: function () { try { return typeof B.ttsSpeakV2 === "function"; } catch (e) { return false; } },
+    ttsSpeakV2: function (text, voiceId, handlers) {
+      handlers = handlers || {};
+      if (typeof B.ttsSpeakV2 !== "function") {
+        return window.vmCompanionAndroid.ttsSpeak(text, voiceId, handlers.onEnd);
+      }
+      var name = "vmTtsV2" + (++__vmTtsSeq);
+      window["__vmSpeechEvent_" + name] = function (event, value) {
+        emitSpeech({ name: name, event: event, value: value });
+        if (event === "start") {
+          if (typeof handlers.onStart === "function") handlers.onStart(value);
+        } else if (event === "level") {
+          if (typeof handlers.onLevel === "function") handlers.onLevel(parseFloat(value) || 0);
+        } else if (event === "end") {
+          try { delete window["__vmSpeechEvent_" + name]; } catch (e) { window["__vmSpeechEvent_" + name] = undefined; }
+          if (typeof handlers.onEnd === "function") handlers.onEnd(value === "true");
+        }
+      };
+      // Keep the legacy completion callback too, so both bridges resolve once.
+      window["__vmTtsDone_" + name] = function () {
+        try { delete window["__vmTtsDone_" + name]; } catch (e) { window["__vmTtsDone_" + name] = undefined; }
+      };
+      try { return !!B.ttsSpeakV2(String(text || ""), voiceId || null, name); }
+      catch (e) { if (typeof handlers.onEnd === "function") handlers.onEnd(false); return false; }
+    },
+    onSpeechEvent: function (cb) {
+      if (typeof cb === "function") speechBus.listeners.push(cb);
+    },
+
+    // ── native camera eyes ────────────────────────────────────────────────
+    // Native code only captures JPEG frames. The PAGE posts them to the same
+    // authenticated /api/vision/analyze endpoint, so no session is duplicated.
+    hasNativeCamera: function () {
+      try { return typeof B.cameraSupported === "function" && !!B.cameraSupported(); }
+      catch (e) { return false; }
+    },
+    cameraStart: function (facing) {
+      try { return typeof B.cameraStart === "function" ? !!B.cameraStart(facing || "back") : false; }
+      catch (e) { return false; }
+    },
+    cameraStop: function () { try { if (typeof B.cameraStop === "function") B.cameraStop(); } catch (e) { /* ignore */ } },
+    cameraSwitch: function () {
+      try { return typeof B.cameraSwitch === "function" ? !!B.cameraSwitch() : false; }
+      catch (e) { return false; }
+    },
+    cameraState: function () {
+      try { return JSON.parse(B.cameraStateJson()); }
+      catch (e) { return { active: false, facing: "back" }; }
+    },
+    cameraCapture: function () {
+      return new Promise(function (resolve, reject) {
+        if (typeof B.cameraCapture !== "function") { reject(new Error("camera-unsupported")); return; }
+        var name = "vmCam" + (++__vmCameraSeq);
+        window["__vmCameraResult_" + name] = function (payload) {
+          try { delete window["__vmCameraResult_" + name]; } catch (e) { window["__vmCameraResult_" + name] = undefined; }
+          var res;
+          try { res = (typeof payload === "string") ? JSON.parse(payload) : payload; } catch (e) { res = null; }
+          if (res && res.ok && res.dataUri) resolve(res.dataUri);
+          else reject(new Error((res && res.error) || "camera-capture-failed"));
+        };
+        try { B.cameraCapture(name); } catch (e) { reject(e); }
+      });
+    },
 
     // ── native speech recognition ─────────────────────────────────────────
     // The overlay page prefers the platform recogniser (it reports the end of

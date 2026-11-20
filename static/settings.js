@@ -1097,8 +1097,18 @@ function renderCompanionInto(container) {
   // toggle here only tells it to show or hide (it never starts a second copy).
   var desktopCard = _SH.card("Desktop app",
     '<p style="color:#94a3b8;font-size:12px;margin:0 0 12px;line-height:1.5;">Show the floating character over your other windows, outside the browser. Turning this on starts it automatically \u2014 no shortcut needed \u2014 and it reuses the same character and account.</p>' +
-    _SH.row("Show companion outside ValleyMind", _SH.toggle("vmSetDesktopVisible", false, "vmCompanionSetDesktopVisible(this.checked)"), "When on, the standalone character appears on top of your other windows. When off, it stays only in this app.") +
-    '<p style="color:#475569;font-size:11px;margin:8px 0 0;">Desktop companion: <span id="vmCompanionDesktopStatus">Checking\u2026</span></p>');
+    _SH.row("Allow Companion Outside App", _SH.toggle("vmSetDesktopVisible", false, "vmCompanionSetDesktopVisible(this.checked)"), "When on, the standalone character appears on top of your other apps (Android overlay / desktop window). When off, it stays only in ValleyMind.") +
+    '<p style="color:#475569;font-size:11px;margin:8px 0 0;">Companion outside app: <span id="vmCompanionDesktopStatus">Checking\u2026</span></p>');
+
+  // Camera eyes are advertised only by shells that actually implement them.
+  var cameraActive = vmCompanionCameraActive();
+  var cameraCard = vmCompanionCameraAvailable()
+    ? _SH.card("Camera eyes",
+        '<p style="color:#94a3b8;font-size:12px;margin:0 0 12px;line-height:1.5;">Let the companion look through the camera so it can answer \u201cWhat am I wearing?\u201d and \u201cLook at this\u201d from a real frame. The frame is sent only to ValleyMind\u2019s vision endpoint while you ask. Your device shows a camera indicator while it is on.</p>' +
+        _SH.row("Camera eyes", _SH.toggle("vmSetCameraEyes", cameraActive, "vmCompanionSetCameraEyes(this.checked)"), cameraActive ? "Camera is live \u2014 the companion can see right now." : "Off \u2014 the camera stays closed until you ask.") +
+        (cameraActive ? '<div style="margin-top:10px;">' + _SH.btn("Switch front / back lens", "vmCompanionSwitchCameraLens()") + '</div>' : '') +
+        '<p style="color:#475569;font-size:11px;margin:8px 0 0;">Camera: <span id="vmCompanionCameraStatus">' + (cameraActive ? "On" : "Off") + '</span></p>')
+    : "";
 
   // The task plan / controls / input used to be an on-screen dashboard. It now
   // lives here, inline, with the same element ids so the module's existing
@@ -1129,6 +1139,7 @@ function renderCompanionInto(container) {
       '<div><p style="color:#94a3b8;font-size:10px;margin:0 0 6px;text-transform:uppercase;letter-spacing:0.12em;font-family:\'Space Grotesk\',sans-serif;">Skin tone</p><div class="vmvrm-skins" id="vmSetSkins">' + swatches + '</div></div>' +
       '</div>') +
     desktopCard +
+    cameraCard +
     _SH.card("Size & Position", '<div style="display:flex;flex-direction:column;gap:16px;">' +
       '<div><p style="color:#94a3b8;font-size:10px;margin:0 0 4px;text-transform:uppercase;letter-spacing:0.12em;font-family:\'Space Grotesk\',sans-serif;">Size <b id="vmSetSizeVal" style="color:#e2e8f0;">' + p.sizePct + '%</b></p><input id="vmSetSize" type="range" min="10" max="100" step="1" value="' + p.sizePct + '" oninput="vmCompanionSetSize(this.value)" style="width:100%;"></div>' +
       '<div><p style="color:#94a3b8;font-size:10px;margin:0 0 4px;text-transform:uppercase;letter-spacing:0.12em;font-family:\'Space Grotesk\',sans-serif;">Docked position</p>' + _SH.select([{ value: "br", label: "Bottom-right" }, { value: "bl", label: "Bottom-left" }, { value: "tr", label: "Top-right" }, { value: "tl", label: "Top-left" }], "vmSetDock", p.dock, "vmCompanionSetDock(this.value)") + '</div>' +
@@ -1517,6 +1528,40 @@ function vmCompanionSetAwake(on) {
 function vmCompanionSetVision(on) {
   var vm = _vmCompanion(); if (!vm) return;
   vm.setVision(!!on);
+}
+
+// ── companion camera eyes (native Android only) ──────────────────────────
+// The page never uploads a frame itself in native code: it toggles the native
+// CameraX service, which hands captured JPEGs back to the same-origin overlay
+// page for the authenticated /api/vision/analyze POST.
+function _vmCameraBridge() {
+  var a = window.vmCompanionAndroid;
+  return (a && typeof a.cameraCapture === "function") ? a : null;
+}
+function vmCompanionCameraAvailable() {
+  var a = _vmCameraBridge();
+  try { return !!(a && typeof a.hasNativeCamera === "function" && a.hasNativeCamera()); }
+  catch (e) { return false; }
+}
+function vmCompanionCameraActive() {
+  var a = _vmCameraBridge();
+  if (!a || typeof a.cameraState !== "function") return false;
+  try { return !!a.cameraState().active; } catch (e) { return false; }
+}
+function vmCompanionSetCameraEyes(on) {
+  var a = _vmCameraBridge();
+  if (!a) return;
+  try {
+    if (on) { a.cameraStart("back"); }
+    else { a.cameraStop(); }
+  } catch (e) { /* keep the toggle honest: state is re-read below */ }
+  // CameraX binds asynchronously; re-render from REAL native state, not the toggle.
+  window.setTimeout(refreshCompanionSettings, 1000);
+}
+function vmCompanionSwitchCameraLens() {
+  var a = _vmCameraBridge(); if (!a) return;
+  try { a.cameraSwitch(); } catch (e) { /* ignore */ }
+  window.setTimeout(refreshCompanionSettings, 700);
 }
 function vmCompanionAllowAccess() {
   var vm = _vmCompanion(); if (!vm) return;

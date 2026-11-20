@@ -32,6 +32,19 @@ class CompanionBridge(private val host: Host) {
         fun speakNative(text: String, voiceId: String?, done: (Boolean) -> Unit) { done(false) }
         fun stopNativeSpeech() { /* no-op by default */ }
 
+        /**
+         * Enhanced native speech: reports real engine start/end plus a bounded
+         * level envelope to the web companion for lip-sync. Hosts that do not
+         * implement it keep the original completion-only behaviour.
+         */
+        fun speakNativeWithEvents(
+            text: String,
+            voiceId: String?,
+            events: (event: String, value: String?) -> Unit
+        ) {
+            speakNative(text, voiceId) { ok -> events("end", ok.toString()) }
+        }
+
         // ── native speech recognition ───────────────────────────────────
         // Android's WebView has no Web Speech API, so the overlay page cannot
         // recognise speech in-page. These let the page drive the platform's own
@@ -42,6 +55,31 @@ class CompanionBridge(private val host: Host) {
         fun asrStart(locale: String?): Boolean = false
         fun asrStop() { /* no-op by default */ }
         fun asrCancel() { /* no-op by default */ }
+
+        // ── camera "eyes" ────────────────────────────────────────────────
+        // A user-started CameraX preview plus single-frame capture. Nothing is
+        // uploaded by native code: the captured JPEG is handed back to the page,
+        // which posts it to the SAME authenticated /api/vision/analyze endpoint
+        // the rest of the app uses. Hosts with no camera keep the defaults below.
+        fun cameraSupported(): Boolean = false
+        fun cameraStart(facing: String?): Boolean = false
+        fun cameraStop() { /* no-op by default */ }
+        fun cameraSwitch(): Boolean = false
+        fun cameraStateJson(): String = "{\"active\":false,\"facing\":\"back\"}"
+        fun cameraCapture(callbackName: String?) {
+            if (!callbackName.isNullOrBlank()) {
+                CameraResultRegistry.deliver(
+                    callbackName,
+                    CameraResultRegistry.errorJson("camera-unsupported")
+                )
+            }
+        }
+
+        // ── compact overlay region (feature-detected via window.VMNative) ──
+        fun setOverlayRegion(widthDp: Int, heightDp: Int): String =
+            "{\"ok\":false,\"reason\":\"unsupported\"}"
+
+        fun getOverlayRegion(): String = "{\"ok\":false,\"reason\":\"unsupported\"}"
     }
 
     @JavascriptInterface
@@ -84,6 +122,27 @@ class CompanionBridge(private val host: Host) {
     fun ttsStop() = host.stopNativeSpeech()
 
     /**
+     * Enhanced native TTS with real engine start/end events and a bounded level
+     * envelope for lip-sync. Events are delivered as
+     * window.__vmSpeechEvent_<callbackName>(event, value) via NativeTtsRegistry;
+     * "end" also fires the original __vmTtsDone_ callback so both the old and
+     * new web bridges keep working.
+     */
+    @JavascriptInterface
+    fun ttsSpeakV2(text: String, voiceId: String?, callbackName: String?): Boolean {
+        val clean = text.trim()
+        if (clean.isEmpty()) return false
+        val name = callbackName ?: return false
+        host.speakNativeWithEvents(clean, voiceId) { event, value ->
+            NativeTtsRegistry.deliverSpeech(name, event, value)
+            if (event == "end") {
+                NativeTtsRegistry.deliver(name, value?.toBooleanStrictOrNull() ?: false)
+            }
+        }
+        return true
+    }
+
+    /**
      * Native speech-recognition entry points. The recogniser lives in the host
      * (the overlay service owns the WebView and the context); the page only
      * asks it to start and stop, and receives the results as
@@ -100,4 +159,44 @@ class CompanionBridge(private val host: Host) {
 
     @JavascriptInterface
     fun asrCancel() = host.asrCancel()
+
+    // ── camera eyes ───────────────────────────────────────────────────────
+    @JavascriptInterface
+    fun cameraSupported(): Boolean = host.cameraSupported()
+
+    @JavascriptInterface
+    fun cameraStart(facing: String?): Boolean = host.cameraStart(facing)
+
+    @JavascriptInterface
+    fun cameraStop() = host.cameraStop()
+
+    @JavascriptInterface
+    fun cameraSwitch(): Boolean = host.cameraSwitch()
+
+    @JavascriptInterface
+    fun cameraStateJson(): String = host.cameraStateJson()
+
+    /**
+     * Captures one frame. The JPEG data URI is delivered asynchronously as
+     * window.__vmCameraResult_<callbackName>(json) so the page can post it to
+     * the existing authenticated vision endpoint.
+     */
+    @JavascriptInterface
+    fun cameraCapture(callbackName: String?) = host.cameraCapture(callbackName)
+
+    // ── versioned contract (also surfaced as window.vmNative by the shim) ──
+    @JavascriptInterface
+    fun contractJson(): String = BridgeContract.contractJson(
+        BuildConfig.VERSION_CODE, BuildConfig.VERSION_NAME, true
+    )
+
+    @JavascriptInterface
+    fun capabilitiesJson(): String = BridgeContract.capabilitiesJson()
+
+    @JavascriptInterface
+    fun setOverlayRegion(widthDp: Int, heightDp: Int): String =
+        host.setOverlayRegion(widthDp, heightDp)
+
+    @JavascriptInterface
+    fun getOverlayRegion(): String = host.getOverlayRegion()
 }
