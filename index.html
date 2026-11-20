@@ -8474,13 +8474,31 @@ function VMEnsureLiveAssistantBubble(thinkingEl, regenCtx) {
     return { wrapper: wrapper, bubble: bubble };
 }
 
-/* Hide partially streamed [[ENTITY: ...]] blocks; full cards render on done. */
-function VMStreamEntitySafeText(text) {
+/* Buffer streamed [[CARD:]] / [[ENTITY:]] blocks until their closing ]] arrives.
+   Complete blocks are withheld too: raw pipe syntax must never flash in the
+   message body. The final render turns them into formatted cards. */
+function VMStreamCardSafeText(text) {
     var s = String(text == null ? "" : text);
-    var open = s.lastIndexOf("[[ENTITY:");
-    if (open !== -1 && s.indexOf("]]", open) === -1) s = s.slice(0, open);
-    return s.replace(/\[\[ENTITY:[^\]]*$/i, "");
+    var marker = /\[\[(?:CARD|ENTITY):/gi;
+    var spans = [];
+    var m;
+    while ((m = marker.exec(s)) !== null) {
+        var close = s.indexOf("]]", marker.lastIndex);
+        if (close === -1) {
+            // Incomplete block: buffer everything from its opening marker.
+            s = s.slice(0, m.index);
+            break;
+        }
+        spans.push([m.index, close + 2]);
+        marker.lastIndex = close + 2;
+    }
+    for (var i = spans.length - 1; i >= 0; i--) {
+        s = s.slice(0, spans[i][0]) + s.slice(spans[i][1]);
+    }
+    return s;
 }
+/* Legacy name kept for any cached page that still calls the old helper. */
+window.VMStreamEntitySafeText = VMStreamCardSafeText;
 
 /* Update only the text span so the activity root above it is never removed. */
 function VMSetLiveAssistantText(bubble, text) {
@@ -8491,7 +8509,7 @@ function VMSetLiveAssistantText(bubble, text) {
         span.className = "vm-stream-text";
         bubble.appendChild(span);
     }
-    span.textContent = VMStreamEntitySafeText(text);
+    span.textContent = VMStreamCardSafeText(text);
 }
 
 /* ── Shared activity indicator ─────────────────────────────────────
@@ -14336,13 +14354,19 @@ window.send = async function () {
                 else if (evt.delta !== undefined && evt.delta !== null) chunkText = evt.delta;
                 if (chunkText !== null) {
                     var tok = String(chunkText);
-                    if (tok === "" || tok === " ") continue;
+                    // A whitespace-only delta is a real token. Dropping a lone
+                    // space glues streamed words ("toillegal", "Ifyou").
+                    if (tok === "") continue;
 
-                    /* ---- LAYER 3: TOKEN CONTENT FILTER (reject any JSON-like bleed) ---- */
-                    if (tok.startsWith("{") || tok.startsWith("[") ||
-                        tok.indexOf('{"intent":') !== -1 ||
-                        tok.indexOf('{"token":') !== -1 ||
-                        tok.indexOf('{"done":') !== -1) {
+                    /* ---- LAYER 3: TOKEN CONTENT FILTER (reject JSON bleed only) ----
+                       Never reject tokens starting with "[" here: citation pills
+                       and [[CARD:/[[ENTITY: markers legitimately start that way. */
+                    var tokProbe = tok.replace(/^\s+/, "");
+                    if (tokProbe.indexOf('{"intent":') === 0 ||
+                        tokProbe.indexOf('{"token":') === 0 ||
+                        tokProbe.indexOf('{"done":') === 0 ||
+                        /^\{\s*"[a-z_]+"\s*:/i.test(tokProbe) ||
+                        /^\[\s*\{/.test(tokProbe)) { // JSON-array bleed only
                         continue;
                     }
 

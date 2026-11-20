@@ -439,6 +439,34 @@ assert('entity logo-left and clickable title-right',
   /class="vm-entity-logo"[^>]*href="https:\/\/www\.liverpoolfc\.com"/.test(entityHtml) &&
   /class="vm-entity-title"[^>]*href="https:\/\/www\.liverpoolfc\.com"/.test(entityHtml),
   entityHtml.slice(0, 260));
+assert('entity description has a separating space after the title',
+  entityHtml.indexOf('</a> <span class="vm-entity-desc">') !== -1,
+  entityHtml.slice(0, 320));
+
+// --- [[CARD: ...]] alias and malformed/truncated card rows ----------------
+var cardAliasHtml = render('[[CARD: Prime Video | Streaming service | primevideo.com | https://www.primevideo.com | Legal streaming]]');
+assert('CARD syntax renders the same entity card as ENTITY',
+  cardAliasHtml.indexOf('vm-entity-row') !== -1 &&
+  cardAliasHtml.indexOf('[[CARD:') === -1 &&
+  /class="vm-entity-title"[^>]*href="https:\/\/www\.primevideo\.com"/.test(cardAliasHtml),
+  cardAliasHtml.slice(0, 260));
+
+var malformedCardHtml = render('Prime Video | Streaming and rental service | primevideo.com | https://www.primevideo.com ||');
+assert('malformed card row renders as a card, not raw pipe syntax',
+  malformedCardHtml.indexOf('vm-entity-row') !== -1 &&
+  malformedCardHtml.indexOf('|') === -1 &&
+  malformedCardHtml.indexOf('primevideo.com') !== -1,
+  malformedCardHtml.slice(0, 320));
+
+var truncatedCardHtml = render('Here: [[CARD: Prime Video | Streaming and rental service | primevideo.com | https://www.primevideo.com ||');
+assert('truncated CARD block renders its row as a card',
+  truncatedCardHtml.indexOf('vm-entity-row') !== -1 &&
+  truncatedCardHtml.indexOf('[[CARD:') === -1 &&
+  truncatedCardHtml.indexOf('|') === -1,
+  truncatedCardHtml.slice(0, 320));
+
+assert('CARD syntax selects the rich presentation',
+  select('[[CARD: Acme | Startup | acme.test | https://acme.test | Makes things]]') === 'rich');
 
 // --- Logo fixes: extensionless logos, late source metadata, empty fields ----
 var extensionlessLogo = render('[[ENTITY: Acme | Startup | acme.test | https://acme.test | https://cdn.test/logo?id=42 | Makes things]]');

@@ -865,7 +865,7 @@ class TestSSEDictYields(unittest.TestCase):
         import re
 
         # Read brain.py source
-        with open("core/brain.py", "r") as f:
+        with open("core/brain.py", "r", encoding="utf-8") as f:
             source = f.read()
 
         # Find stream_respond method body (full method, not a fixed window)
@@ -893,7 +893,7 @@ class TestSSEDictYields(unittest.TestCase):
 
     def test_no_json_dumps_for_structured_events(self):
         """Ensure no json.dumps() wrapping for structured SSE events."""
-        with open("core/brain.py", "r") as f:
+        with open("core/brain.py", "r", encoding="utf-8") as f:
             source = f.read()
 
         start = source.find("def stream_respond(self, message: str")
@@ -1140,7 +1140,7 @@ class TestReplyMode(unittest.TestCase):
     def test_stream_respond_yields_reply_mode(self):
         """stream_respond should yield a reply_mode dict in MODE B (reply/copy) intent."""
         import re
-        with open("core/brain.py", "r") as f:
+        with open("core/brain.py", "r", encoding="utf-8") as f:
             source = f.read()
         start = source.find("def stream_respond(self, message: str")
         assert start > 0, "stream_respond method not found"

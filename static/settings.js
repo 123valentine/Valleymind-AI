@@ -3252,7 +3252,7 @@ window.VMRichRender = (function () {
         '<div class="vm-entity-body">' +
           (url ? '<a class="vm-entity-title" href="' + escapeHtml(url) + '" target="_blank" rel="noopener noreferrer">' : '<span class="vm-entity-title">') +
             escapeHtml(String(i + 1)) + '. ' + title + subtitle +
-          (url ? '</a>' : '</span>') + desc +
+          (url ? '</a>' : '</span>') + (desc ? " " + desc : "") +
         '</div></div>';
     });
     return html + '</div>';
@@ -3347,19 +3347,60 @@ window.VMRichRender = (function () {
     return item;
   }
 
+  // A malformed/truncated card row still has enough identity to be rendered as
+  // a card: at least three pipe fields plus a URL or domain. Ordinary prose and
+  // markdown tables without an explicit link/domain are left untouched.
+  function looksLikeCardFields(parts, minParts) {
+    if (!parts || parts.length < (minParts || 3)) return false;
+    for (var i = 0; i < parts.length; i++) {
+      var v = decodeEntities(parts[i] || "").trim();
+      if (/^https?:\/\/\S+/i.test(v)) return true;
+      if (/^[a-z0-9-]+(?:\.[a-z0-9-]+)+$/i.test(v)) return true;
+    }
+    return false;
+  }
+
   function parseEntityBlocks(text, sources) {
     var items = [];
     var out = String(text == null ? "" : text);
-    // [[ENTITY: Name | Subtitle | Domain | URL | LogoURL-or-blank | Description]]
+    // [[ENTITY: ...]] and [[CARD: ...]] share the same pipe-delimited schema:
+    // Name | Subtitle | Domain | URL | LogoURL-or-blank | Description
     // Match across newlines and stop only at the real closing `]]`, so inline
     // citation markers like [espn.com] inside the explanation and wrapped,
     // multi-line explanations parse cleanly without leaking raw `|`/`]]` text.
-    out = out.replace(/\[\[ENTITY:\s*([\s\S]*?)\]\]/gi, function (m, body) {
+    out = out.replace(/\[\[(?:ENTITY|CARD):\s*([\s\S]*?)\]\]/gi, function (m, body) {
       var parts = body.split("|").map(function (p) { return String(p || "").trim(); });
       if (!parts.length || !parts[0]) return m;
       items.push(makeEntityItem(parts, sources));
       return "\uFFF8E" + (items.length - 1) + "\uFFF8E";
     });
+
+    // Fallback for malformed/truncated card lines that never received a closing
+    // `]]` (the live stream can be cut mid-card). Turn them into a real card
+    // instead of leaking "Title | Service | domain | url ||" as raw text.
+    out = out.split(/\r?\n/).map(function (line) {
+      var open = line.search(/\[\[(?:CARD|ENTITY):/i);
+      if (open !== -1) {
+        var body = line.slice(open).replace(/^\[\[(?:CARD|ENTITY):\s*/i, "").trim();
+        var fields = body.split("|").map(function (p) { return String(p || "").trim(); });
+        if (looksLikeCardFields(fields)) {
+          items.push(makeEntityItem(fields, sources));
+          return line.slice(0, open) + "\uFFF8E" + (items.length - 1) + "\uFFF8E";
+        }
+        return line.slice(0, open);
+      }
+      var row = String(line || "").trim();
+      if (!row || row.charAt(0) === "|") return line;
+      var parts = row.split("|").map(function (p) { return String(p || "").trim(); });
+      // Bare rows need a full card identity (name, subtitle, domain, URL) so a
+      // three-cell line of ordinary prose is never mistaken for a card.
+      if (looksLikeCardFields(parts, 4)) {
+        items.push(makeEntityItem(parts, sources));
+        return "\uFFF8E" + (items.length - 1) + "\uFFF8E";
+      }
+      return line;
+    }).join("\n");
+
     // Fallback: numbered bold markdown links ("1. **[Name](https://...)** — Subtitle").
     // Skip this fallback for multi-attribute Markdown comparison tables so a
     // semantic matrix comparison is never converted into entity cards.
@@ -3585,7 +3626,7 @@ window.VMPresentationSelector = (function () {
     // even when no other markdown is present.
     if (/\[choice:\s/i.test(t) || /\[circle:\s/i.test(t)) return "interactive";
 
-    if (/\[card:\s/i.test(t) || /\[copybox:\s/i.test(t)) return "rich";
+    if (/\[card:\s/i.test(t) || /\[copybox:\s/i.test(t) || /\[\[CARD:/i.test(t)) return "rich";
 
     // Mathematical expressions ($$, $$, \\(, \\[, $...$).
     if (/\$\$|\\\(|\\\[|\$[A-Za-z]/.test(t)) return "math";
@@ -3945,7 +3986,7 @@ window.VMEnrichAssistantReply = function (bub, fullText, sourceMetadata, sources
     // so raw ** * # - symbols never appear unrendered. Only truly plain
     // short answers with no markdown markers stay as plain text.
     var hasMd = /\*\*|\*[^*]|^#{1,6}\s|^[-*+]\s|^\d+\.\s|```|~~~|\|.*\|.*\n.*\|[-: ]|^>\s|\[.+\]\(.+\)|^---+$/m.test(t);
-    var hasEntity = /\[\[ENTITY:/i.test(t);
+    var hasEntity = /\[\[(?:ENTITY|CARD):/i.test(t);
     var hasCitation = /【[^】]+】|\[[A-Za-z][A-Za-z0-9 .&'\-]{1,40}\](?!\()/m.test(t);
     if (fmt === "plain" && !hasMd && !hasEntity && !hasCitation) return;
     var pillSources = (Array.isArray(sourceMetadata) && sourceMetadata.length)

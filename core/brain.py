@@ -157,6 +157,18 @@ def strip_animation_tags(text: str) -> str:
     cleaned = _EMO_TAG_RE.sub("", cleaned)
     return re.sub(r"[ \t]{2,}", " ", cleaned).strip()
 
+
+def strip_animation_tags_preserve_space(text: str) -> str:
+    """Remove wire-only tags from an SSE delta WITHOUT touching whitespace.
+
+    A streamed delta is frequently a single space. strip_animation_tags()
+    collapses runs and trims the edges, which silently deletes those deltas and
+    glues words together ("toillegal", "Ifyou", "originalhorror"). This variant
+    removes ONLY complete tag markers; every other byte — including leading and
+    trailing whitespace — is passed through exactly as received.
+    """
+    return _EMO_TAG_RE.sub("", _ANIM_TAG_RE.sub("", str(text or "")))
+
 # ── Streaming persistence checkpoints ──────────────────────────────
 # The client renders tokens as they arrive, but the assistant row used to be
 # written only after the stream finished. If Android killed the WebView (or the
@@ -499,6 +511,47 @@ def _wants_entity_list(message: str) -> bool:
     """True for list/name/mention/recommend/rank requests about named entities."""
     text = str(message or "")
     return bool(_ENTITY_LIST_SIGNAL_RE.search(text) and _ENTITY_SUBJECT_RE.search(text))
+
+
+# Direct, time-sensitive factual questions must never depend on the LLM search
+# classifier's mood. A year/current/latest signal plus an entity subject (or an
+# explicit list request) always goes through the real web-search pipeline.
+_FORCED_SEARCH_FRESHNESS_RE = re.compile(
+    r"\b(?:current|latest|newest|new|recent|today|now|this\s+year|upcoming|"
+    r"released?|releases?|202[4-9]|20[3-9]\d)\b",
+    re.IGNORECASE,
+)
+_FORCED_SEARCH_SUBJECT_RE = re.compile(
+    r"\b(?:movies?|films?|shows?|series|animes?|games?|albums?|songs?|music|"
+    r"news|headlines?|releases?|titles?|apps?|phones?|models?|ai|llms?|brands?|"
+    r"products?|companies|clubs?|teams?|players?|prices?|stocks?|crypto|weather|"
+    r"scores?|results?|elections?|restaurants?|destinations?)\b",
+    re.IGNORECASE,
+)
+_FORCED_SEARCH_ACTION_RE = re.compile(
+    r"\b(?:list|name|names|mention|recommend|recommendations?|suggest|top|best|"
+    r"greatest|examples?|alternatives?|find|search|lookup|look\s+up|compare)\b",
+    re.IGNORECASE,
+)
+_FORCED_SEARCH_CHAT_EXCLUDE_RE = re.compile(
+    r"^\s*(?:how\s+are\s+you|how'?s\s+it\s+going|what'?s\s+up|who\s+are\s+you|"
+    r"what\s+are\s+you|thanks?|thank\s+you|good\s+(?:morning|afternoon|evening))\b",
+    re.IGNORECASE,
+)
+
+
+def _needs_forced_live_search(message: str) -> bool:
+    """True when a direct factual/current question must trigger live search."""
+    text = str(message or "").strip()
+    if not text or _FORCED_SEARCH_CHAT_EXCLUDE_RE.match(text):
+        return False
+    if not _FORCED_SEARCH_FRESHNESS_RE.search(text):
+        return False
+    return bool(
+        _FORCED_SEARCH_ACTION_RE.search(text)
+        or _FORCED_SEARCH_SUBJECT_RE.search(text)
+        or re.search(r"[?？]", text)
+    )
 
 
 def _wants_combined_presentation(message: str) -> bool:
@@ -2235,6 +2288,16 @@ class MarcusBrain:
                 "(e.g. which item to compare, analyze tactically, or check current schedules/pricing "
                 "for). Keep the follow-up short, warm and relevant to what you just said."
             )
+        if _needs_forced_live_search(user_message):
+            sections.append(
+                "DIRECT ANSWER MODE: This is a current/factual question. Use the live "
+                "results above to answer the user's ACTUAL question first, with real "
+                "movie/show/news/product titles, dates and legal watch/download sources "
+                "when the user asks where to find them. Never reply 'I don't have a "
+                "confirmed list', 'I don't know', or a generic refusal before using the "
+                "search context. If a detail is uncertain, say so briefly AFTER giving "
+                "the concrete answer, not instead of it."
+            )
         presentation = _presentation_mode(user_message)
         if presentation == "matrix":
             sections.append(
@@ -2277,6 +2340,11 @@ class MarcusBrain:
                 "and Logo/Icon URLs from the provided source context when available; leave the logo field "
                 "blank instead of inventing one. Finish with a brief, natural follow-up insight or "
                 "engaging question tailored to the topic."
+            )
+        if presentation in ("entities", "combined"):
+            sections.append(
+                "Card syntax alias: [[CARD: Name | Subtitle | Domain | URL | Logo-or-blank | "
+                "Description]] renders identically to [[ENTITY: ...]]. Either form is valid."
             )
 
         system_with_context = "\n".join(sections)
@@ -2693,6 +2761,16 @@ class MarcusBrain:
             research_info = classify_research_intent(message, recent_context=self._recent_context_for_routing(cid))
             intent = research_info["intent"]
             research_domain = research_info.get("domain", "general")
+            forced_live_search = _needs_forced_live_search(message)
+            if forced_live_search:
+                # Never let a chat/none classification skip a direct 2026/news/list
+                # question. This forces the normal web_search -> research pipeline.
+                intent = "search"
+                if research_domain in ("", "general"):
+                    research_domain = (
+                        "media" if _FORCED_SEARCH_SUBJECT_RE.search(message) else "news"
+                    )
+                print(f"[FORCED SEARCH] Direct factual question — searching web: {message[:120]}")
             contextual_route = self._contextual_search_route(cid, message, route=route)
             if directed_site:
                 intent = "search"
@@ -2939,6 +3017,14 @@ class MarcusBrain:
             # MODE B: user wants a copy-ready reply/message rather than a normal answer
             self._reply_mode = research_info.get("reason") in ("reply-writing", "copy-box")
             reply_mode = self._reply_mode
+            forced_live_search = _needs_forced_live_search(message)
+            if forced_live_search and not reply_mode:
+                intent = "search"
+                if research_domain in ("", "general"):
+                    research_domain = (
+                        "media" if _FORCED_SEARCH_SUBJECT_RE.search(message) else "news"
+                    )
+                print(f"[FORCED SEARCH] Direct factual question — searching web: {message[:120]}")
             contextual_route = self._contextual_search_route(cid, message, route=route)
             if directed_site:
                 intent = "search"
@@ -3090,7 +3176,16 @@ class MarcusBrain:
 
                 # Do not claim results exist when search ran but returned nothing reliable.
                 if intent != "none" and not (live_ctx and str(live_ctx).strip() and str(live_ctx).strip() != str(LIVE_DATA_UNAVAILABLE)):
-                    search_note = "Live search was attempted but unavailable or returned no reliable results for this request."
+                    if forced_live_search:
+                        search_note = (
+                            "Live web search was attempted for this direct factual question. "
+                            "Answer it directly and concretely from whatever reliable context "
+                            "is available; if specific titles cannot be verified, name likely "
+                            "candidates only when genuinely known and mark uncertainty briefly. "
+                            "Never open with 'I don't know' or 'I don't have a confirmed list'."
+                        )
+                    else:
+                        search_note = "Live search was attempted but unavailable or returned no reliable results for this request."
                     if live_ctx and str(live_ctx).strip() == str(LIVE_DATA_UNAVAILABLE):
                         live_ctx = ""
 
@@ -3231,7 +3326,7 @@ class MarcusBrain:
                                 # split across SSE chunks. Hold back a short tail,
                                 # strip complete tags, then emit only stable text so
                                 # the control tag never reaches chat or TTS.
-                                anim_tail = strip_animation_tags(anim_tail + yielded)
+                                anim_tail = strip_animation_tags_preserve_space(anim_tail + yielded)
                                 emit = ""
                                 if len(anim_tail) > 24:
                                     emit = anim_tail[:-24]

@@ -15,6 +15,7 @@ import android.provider.MediaStore
 import android.provider.Settings
 import android.text.InputType
 import android.view.View
+import android.webkit.CookieManager
 import android.webkit.PermissionRequest
 import android.webkit.RenderProcessGoneDetail
 import android.webkit.SslErrorHandler
@@ -159,7 +160,15 @@ class MainActivity : AppCompatActivity(), CompanionBridge.Host {
         setContentView(R.layout.activity_main)
 
         configStore = AppConfigStore(this)
+        // A cold start of a shipped build must always target the hosted app.
+        // A persisted override is a development-only affordance (debug builds
+        // only); never let one silently strand the release app on a stale
+        // local server.
+        if (!BuildConfig.DEBUG && configStore.hasOverride()) {
+            configStore.clearBaseUrlOverride()
+        }
         baseUrl = configStore.getBaseUrl(BuildConfig.VALLEY_BASE_URL)
+        android.util.Log.i("ValleyMind", "Loading ValleyMind from $baseUrl")
 
         systemTts = SystemTts(this)
         systemTts.init()
@@ -413,6 +422,20 @@ class MainActivity : AppCompatActivity(), CompanionBridge.Host {
             mediaPlaybackRequiresUserGesture = false
             javaScriptCanOpenWindowsAutomatically = true
             mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
+            // Never serve a cached copy of the shell/HTML/JS. A redeploy on the
+            // server must be visible on the next load, not hidden behind a
+            // stale WebView HTTP cache entry.
+            cacheMode = WebSettings.LOAD_NO_CACHE
+        }
+        // The app's session lives in cookies. Modern WebViews disable
+        // third-party cookies by default, which silently drops auth/session
+        // cookies on redirects and leaves the companion out of sync with the
+        // hosted app. Accept both first- and third-party cookies and flush so
+        // they survive process restarts.
+        CookieManager.getInstance().apply {
+            setAcceptCookie(true)
+            setAcceptThirdPartyCookies(webView, true)
+            flush()
         }
         WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG)
 
@@ -575,6 +598,10 @@ class MainActivity : AppCompatActivity(), CompanionBridge.Host {
         loadMonitor.onLoadStarted()
         cancelLoadTimeout()
         mainHandler.postDelayed(loadTimeoutRunnable, loadMonitor.timeoutMs)
+        // Belt-and-braces with LOAD_NO_CACHE: evict anything cached from a
+        // previous version of the app so stale HTML/JS can never be replayed.
+        webView.clearCache(true)
+        android.util.Log.i("ValleyMind", "WebView loading $baseUrl (cache cleared)")
         webView.loadUrl(baseUrl)
     }
 

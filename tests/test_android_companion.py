@@ -510,5 +510,47 @@ class NativeAsrBridgeTests(unittest.TestCase):
         self.assertGreater(summary["passed"], 0, "injected bridge shim asserted nothing")
 
 
+class WebViewSyncTests(unittest.TestCase):
+    """The in-app WebView must reuse the hosted app's session and never replay
+    a stale cached bundle after a server redeploy."""
+
+    def _read(self, rel):
+        return (ROOT / rel).read_text(encoding="utf-8")
+
+    def test_webview_accepts_first_and_third_party_cookies(self):
+        act = self._read(
+            "android/app/src/main/java/ai/valleymind/companion/MainActivity.kt"
+        )
+        self.assertIn("import android.webkit.CookieManager", act)
+        for needle in (
+            "CookieManager.getInstance().apply",
+            "setAcceptCookie(true)",
+            "setAcceptThirdPartyCookies(webView, true)",
+            "flush()",
+            "domStorageEnabled = true",
+        ):
+            self.assertIn(needle, act, f"MainActivity is missing {needle}")
+
+    def test_webview_never_serves_stale_cached_html_or_js(self):
+        act = self._read(
+            "android/app/src/main/java/ai/valleymind/companion/MainActivity.kt"
+        )
+        self.assertIn("cacheMode = WebSettings.LOAD_NO_CACHE", act)
+        self.assertIn("webView.clearCache(true)", act)
+        # The cache is dropped on every load, including Retry and a base-URL
+        # change, not only on a cold start.
+        load_app = act.split("private fun loadApp()", 1)[1].split("\n    }", 1)[0]
+        self.assertIn("webView.clearCache(true)", load_app)
+        self.assertIn("webView.loadUrl(baseUrl)", load_app)
+
+    def test_cold_start_uses_the_hosted_production_url(self):
+        act = self._read(
+            "android/app/src/main/java/ai/valleymind/companion/MainActivity.kt"
+        )
+        self.assertIn("baseUrl = configStore.getBaseUrl(BuildConfig.VALLEY_BASE_URL)", act)
+        self.assertIn("!BuildConfig.DEBUG && configStore.hasOverride()", act)
+        self.assertIn("configStore.clearBaseUrlOverride()", act)
+
+
 if __name__ == "__main__":
     unittest.main()
