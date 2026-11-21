@@ -3,6 +3,9 @@
 
   var END_SILENCE_MS = 1500;
   var VALID_KEYS = ["marcus", "elena", "angelina"];
+  // Neutral/unset preferences resolve to the female companion persona instead
+  // of the old male Marcus default. Explicit saved choices still win.
+  var DEFAULT_VOICE_KEY = "elena";
 
   var hooks = {
     onListeningChange: null,
@@ -42,9 +45,10 @@
     if (vp.indexOf("melodic") !== -1 || vp.indexOf("musical") !== -1 ||
         vp.indexOf("smooth") !== -1 || vp.indexOf("rich") !== -1 ||
         vp.indexOf("husky") !== -1) return "angelina";
+    if (vp === "companion" || vp.indexOf("companion") !== -1) return DEFAULT_VOICE_KEY;
     if (p === "feminine") return "elena";
     if (p === "masculine") return "marcus";
-    return "marcus";
+    return DEFAULT_VOICE_KEY;
   }
 
   function getVoiceLabel(key) {

@@ -72,6 +72,35 @@ const BEHAVIOUR_MOOD = {
 
 const CROSSFADE = 0.45;
 
+/** Camera easing rate (higher = faster). Conversation and full-body shots use
+ * the SAME projection; only the target position/lookAt move, so switching
+ * presets never causes a visible FOV jump. */
+const FRAMING_EASE = 6.5;
+
+/** Find a humanoid bone without importing a second copy of the VRM enum. Both
+ * string names and the raw/normalised accessors are supported across v3 builds. */
+function humanBoneNode(vrm, name) {
+  const humanoid = vrm && vrm.humanoid;
+  if (!humanoid) return null;
+  try {
+    if (typeof humanoid.getRawBoneNode === "function") {
+      const raw = humanoid.getRawBoneNode(name);
+      if (raw) return raw;
+    }
+  } catch (e) { /* fall through */ }
+  try {
+    if (typeof humanoid.getNormalizedBoneNode === "function") {
+      const normalized = humanoid.getNormalizedBoneNode(name);
+      if (normalized) return normalized;
+    }
+  } catch (e) { /* fall through */ }
+  try {
+    const found = (humanoid.humanBones || []).find((b) => (b && b.bone) === name);
+    if (found) return found.node || found.boneNode || null;
+  } catch (e) { /* no bones available */ }
+  return null;
+}
+
 /** Skin-tone presets. Raw sRGB, 0..1 per channel; the MToon mapper converts to
  * linear and only shifts the skin materials whose name carries "_SKIN". */
 const SKIN_PRESETS = [
@@ -136,6 +165,13 @@ export class Companion {
     this._skinState = new Map(); // MToonMaterial -> { color, shade } (untouched originals)
     this.skin = null; // selected preset { name, hex }, or null = original VRM colors
 
+    // Camera framing: "full" by default, "close" for listening/speaking. The
+    // callers only name the preset; this class owns the one smooth lerp.
+    this.framing = "full";
+    this._framePresets = null;
+    this._cameraGoal = null;
+    this._cameraLook = new THREE.Vector3(0, 1.0, 0);
+
     this._buildScene();
   }
 
@@ -165,7 +201,8 @@ export class Companion {
 
     this.camera = new THREE.PerspectiveCamera(28, 1, 0.05, 200);
     this.camera.position.set(0, 1.35, 4.2);
-    this.camera.lookAt(0, 1.0, 0);
+    this._cameraLook.set(0, 1.0, 0);
+    this.camera.lookAt(this._cameraLook);
 
     const key = new THREE.DirectionalLight(0xffffff, 2.1);
     key.position.set(2.6, 4.4, 3.2);
@@ -208,6 +245,9 @@ export class Companion {
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
+    // Re-derive BOTH presets, then keep easing to the active one. Recomputing
+    // only the full-body shot used to snap back mid-conversation on rotation.
+    if (this.vrm) this._recomputeFraming();
   }
 
   // ── boot ────────────────────────────────────────────────────────────────
@@ -253,24 +293,142 @@ export class Companion {
     return this;
   }
 
-  /** Frames the camera so the whole body is visible with headroom. */
-  frameFullBody() {
+  /**
+   * Recompute the two camera presets from the loaded VRM and current canvas
+   * aspect. Both are plain {position, lookAt, near, far} targets: no second
+   * camera, no FOV animation, just one destination the render loop eases toward.
+   */
+  _recomputeFraming() {
+    if (!this.vrm) return;
+    const full = this._computeFrame("full");
+    const close = this._computeFrame("close", full.height);
+    this._framePresets = { full, close };
+    this.fullBodyHeight = full.height;
+  }
+
+  _computeFrame(mode, knownHeight) {
+    const fov = THREE.MathUtils.degToRad(this.camera.fov);
+    const aspect = this.camera.aspect || 1;
+    if (!this.vrm) {
+      const defaultFrame = {
+        position: new THREE.Vector3(0, 1.35, 4.2),
+        lookAt: new THREE.Vector3(0, 1.0, 0),
+        near: 0.05,
+        far: 200,
+        height: knownHeight || 1.6,
+      };
+      return defaultFrame;
+    }
+
+    this.scene.updateMatrixWorld(true);
     const box = new THREE.Box3().setFromObject(this.vrm.scene);
     const size = new THREE.Vector3();
     const center = new THREE.Vector3();
     box.getSize(size);
     box.getCenter(center);
-    const height = Math.max(size.y, 0.5);
-    const fov = THREE.MathUtils.degToRad(this.camera.fov);
-    let dist = height / (2 * Math.tan(fov / 2));
-    if (this.camera.aspect < 1) dist /= this.camera.aspect * 0.92;
-    dist *= 1.18; // breathing room
-    this.camera.position.set(center.x, center.y + height * 0.04, center.z + dist);
-    this.camera.lookAt(center.x, center.y + height * 0.02, center.z);
-    this.camera.near = 0.05;
-    this.camera.far = dist * 4 + 20;
+    const height = Math.max(knownHeight || size.y, size.y, 0.5);
+
+    if (mode !== "close") {
+      // Whole body with headroom — the historical frameFullBody behaviour.
+      let dist = height / (2 * Math.tan(fov / 2));
+      if (aspect < 1) dist /= aspect * 0.92;
+      dist *= 1.18; // breathing room
+      return {
+        position: new THREE.Vector3(center.x, center.y + height * 0.04, center.z + dist),
+        lookAt: new THREE.Vector3(center.x, center.y + height * 0.02, center.z),
+        near: 0.05,
+        far: dist * 4 + 20,
+        height,
+      };
+    }
+
+    // Face + shoulders. Prefer the real head/face mesh bounds, fall back to the
+    // head bone and an upper-body span derived from the model height.
+    const headBox = new THREE.Box3();
+    let hasHeadMesh = false;
+    this.vrm.scene.traverse((o) => {
+      if (!o.isMesh || !o.name || !/(face|head)/i.test(o.name)) return;
+      headBox.expandByObject(o);
+      hasHeadMesh = true;
+    });
+    let span = THREE.MathUtils.clamp(height * 0.32, 0.36, 0.72);
+    let focus = center.clone();
+    if (hasHeadMesh && !headBox.isEmpty()) {
+      const headSize = new THREE.Vector3();
+      headBox.getSize(headSize);
+      headBox.getCenter(focus);
+      span = THREE.MathUtils.clamp(Math.max(headSize.y * 1.8, height * 0.22), 0.36, 0.78);
+    } else {
+      const head = humanBoneNode(this.vrm, "head");
+      if (head) focus.copy(head.getWorldPosition(new THREE.Vector3()));
+      else focus.set(center.x, box.max.y - height * 0.12, center.z);
+    }
+    // Shift down slightly so shoulders stay in shot under the face.
+    focus.y -= span * 0.16;
+
+    let dist = span / (2 * Math.tan(fov / 2));
+    if (aspect < 1) dist /= aspect * 0.82;
+    dist *= 1.16; // a little air around the head
+    return {
+      position: new THREE.Vector3(focus.x, focus.y + span * 0.03, focus.z + dist),
+      lookAt: new THREE.Vector3(focus.x, focus.y, focus.z),
+      near: 0.05,
+      far: dist * 4 + 20,
+      height,
+    };
+  }
+
+  /** Apply a framing target. `immediate` is only used on boot; every other
+   * transition (including resize) rides the per-frame lerp below. */
+  _applyFraming(immediate) {
+    const frame = this._framePresets && this._framePresets[this.framing];
+    if (!frame) return;
+    this._cameraGoal = frame;
+    if (!immediate) return;
+    this.camera.position.copy(frame.position);
+    this._cameraLook.copy(frame.lookAt);
+    this.camera.near = frame.near;
+    this.camera.far = frame.far;
+    this.camera.lookAt(this._cameraLook);
     this.camera.updateProjectionMatrix();
-    this.fullBodyHeight = height;
+  }
+
+  _updateFraming(dt) {
+    const frame = this._cameraGoal;
+    if (!frame) return;
+    const k = 1 - Math.exp(-Math.max(0, dt) * FRAMING_EASE);
+    this.camera.position.lerp(frame.position, k);
+    this._cameraLook.lerp(frame.lookAt, k);
+    if (this.camera.near !== frame.near || this.camera.far !== frame.far) {
+      this.camera.near = frame.near;
+      this.camera.far = frame.far;
+      this.camera.updateProjectionMatrix();
+    }
+    this.camera.lookAt(this._cameraLook);
+  }
+
+  /**
+   * Select the conversation close-up or the full-body shot. The page never
+   * touches camera.position: it only says what the interaction needs.
+   */
+  setFraming(mode, immediate) {
+    const next = mode === "close" ? "close" : "full";
+    if (next !== this.framing) {
+      this.framing = next;
+      this.log(`camera framing: ${next}`);
+    }
+    if (!this._framePresets || !this._framePresets[next]) this._recomputeFraming();
+    this._applyFraming(!!immediate);
+    return this.framing;
+  }
+
+  /** Frames the camera so the whole body is visible with headroom. Kept as the
+   * public full-body entry point for the preview page and older host pages. */
+  frameFullBody() {
+    this._recomputeFraming();
+    this.framing = "full";
+    this._applyFraming(true);
+    return this._framePresets && this._framePresets.full;
   }
 
   /** Maps a world-space point to canvas pixels using the live camera/projection.
@@ -575,6 +733,10 @@ export class Companion {
       // hair, hood and bust simulation, or the strands stop colliding and sink
       // into the shoulders the moment the user hits pause.
       if (this.vrm) this.vrm.update(dt);
+      // Ease the ONE camera toward the active preset every frame. This runs
+      // inside the render loop so a resize or a listening/speaking switch never
+      // snaps the shot; idle/walking/pointing/guiding ease back to full body.
+      this._updateFraming(dt);
       if (this.face) this.face.update(dt, this.camera);
       this.renderer.render(this.scene, this.camera);
       this._tickStatus();

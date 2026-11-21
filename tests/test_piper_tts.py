@@ -323,7 +323,8 @@ def test_voice_preview_free_reference_routes_to_free_engine(tmp_path, monkeypatc
     assert body["voice"] == "en-US-AriaNeural"
 
 
-def test_voice_preview_companion_reference_routes_to_companion_profile(tmp_path, monkeypatch):
+def test_voice_preview_companion_reference_routes_to_female_companion_profile(tmp_path, monkeypatch):
+    """The legacy Christopher reference now resolves to the female companion voice."""
     captured = {}
     monkeypatch.setattr(tts, "synthesize_free",
                         lambda text, profile: (captured.update(profile=profile) or
@@ -333,7 +334,7 @@ def test_voice_preview_companion_reference_routes_to_companion_profile(tmp_path,
     with _Route(tmp_path) as r:
         body = r.client.post("/api/tts",
                              json={"text": "hi", "voice": "en-US-ChristopherNeural"}).get_json()
-    assert body["voice"] == "en-US-ChristopherNeural"
+    assert body["voice"] == "en-US-AriaNeural"
     assert captured["profile"] == "companion"
 
 

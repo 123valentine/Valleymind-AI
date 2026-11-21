@@ -1,7 +1,9 @@
 package ai.valleymind.companion
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SystemTtsTest {
@@ -25,6 +27,22 @@ class SystemTtsTest {
     fun `mapping is case and whitespace tolerant`() {
         assertEquals(SystemTts.mapProfileToVoice("marcus"), SystemTts.mapProfileToVoice("  MARCUS "))
         assertEquals(SystemTts.mapProfileToVoice("companion"), SystemTts.mapProfileToVoice("Companion"))
+    }
+
+    @Test
+    fun `semantic voice requests resolve female by default`() {
+        assertEquals("female", SystemTts.voiceRequestForProfile("elena"))
+        assertEquals("female", SystemTts.voiceRequestForProfile("angelina"))
+        assertEquals("female", SystemTts.voiceRequestForProfile("companion"))
+        assertEquals("male", SystemTts.voiceRequestForProfile("marcus"))
+        assertNull(SystemTts.voiceRequestForProfile("unknown"))
+
+        assertTrue(SystemTts.isFemaleVoiceRequest(" FEMALE "))
+        assertTrue(SystemTts.isFemaleVoiceRequest("elena"))
+        assertFalse(SystemTts.isFemaleVoiceRequest("male"))
+        assertTrue(SystemTts.isMaleVoiceRequest(" male "))
+        assertTrue(SystemTts.isMaleVoiceRequest("marcus"))
+        assertFalse(SystemTts.isMaleVoiceRequest("female"))
     }
 
     @Test

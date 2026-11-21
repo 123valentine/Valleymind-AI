@@ -122,11 +122,16 @@ const VOICE_PROFILES = [
   { id: "elena", label: "Elena", gender: "feminine" },
   { id: "companion", label: "Companion", gender: "neutral" },
 ];
-const DEFAULT_PROFILE = "companion";
+// The VRM companion speaks with Elena's natural female voice unless the user
+// explicitly saved another profile. "companion" remains readable for old saved
+// values and is normalised to the same female default below.
+const DEFAULT_PROFILE = "elena";
+const GREETING_TEXT = "Hi! I'm right here—how can I help you today?";
 
 function readProfile() {
   try {
     const v = String(localStorage.getItem(VOICE_PROFILE_KEY) || "").toLowerCase();
+    if (v === "companion") return DEFAULT_PROFILE;
     if (VOICE_PROFILES.some((p) => p.id === v)) return v;
   } catch (e) { /* storage blocked */ }
   return DEFAULT_PROFILE;
@@ -141,7 +146,16 @@ const PROFILE_NATIVE_VOICE = {
   companion: "en-us-x-tpd-local",
 };
 
+// Device voice ids differ across Android builds. The native layer resolves these
+// semantic requests against tts.voices (female first, higher-pitch fallback).
+function nativeVoiceRequest() {
+  return profile === "marcus" ? "male" : "female";
+}
+
 let profile = readProfile();
+let autoWakeStarted = false;
+let screenContextOn = false;
+let screenContextCache = null;
 
 // ── transient state ───────────────────────────────────────────────────────
 const ECHO_GUARD_MS = 250;
@@ -332,6 +346,7 @@ function execute(effects) {
   for (const eff of effects) {
     switch (eff.type) {
       case "wake": triggerWake(); break;
+      case "greet": playGreetingAnimation(); break;
       case "start-listen": startListeningAfterEchoGuard(); break;
       case "stop-listen": stopListening(); break;
       case "transcribe": transcribeAndChat(eff.blob); break;
@@ -375,6 +390,45 @@ function triggerWake() {
       }).catch(() => { /* the fallback timer still advances the turn */ });
     }
   } catch (e) { /* the fallback timer still advances the turn */ }
+}
+
+// ── one-switch startup: wave, smile, speak first, then listen ─────────────
+// The overlay WebView is created the instant the outside-app switch is turned
+// on, so boot() is the switch edge. The greeting is an ordinary spoken turn:
+// speakReply() opens the SAME lip-sync gate as every other reply, and its real
+// TTS onEnd emits SPEAK_END, which is the only thing that opens CompanionAsr.
+function playGreetingAnimation() {
+  state.behaviour = "waving";
+  try {
+    if (engine.face && typeof engine.face.setMood === "function") engine.face.setMood("happy");
+  } catch (e) { /* the pose is a cue, not required */ }
+  let settled = false;
+  const toHappy = () => {
+    if (settled) return;
+    settled = true;
+    if (state.wakeTimer) { clearTimeout(state.wakeTimer); state.wakeTimer = 0; }
+    state.behaviour = "happy";
+    try { engine.trigger("happy"); } catch (e) { /* keep the wave pose */ }
+  };
+  state.wakeTimer = window.setTimeout(toHappy, 900);
+  try {
+    const p = engine.trigger("waving");
+    if (p && typeof p.then === "function") p.then(toHappy).catch(toHappy);
+    else if (p === false) toHappy();
+  } catch (e) { toHappy(); }
+}
+
+function startAutoWake() {
+  if (autoWakeStarted) return;
+  autoWakeStarted = true;
+  if (voice && typeof voice.unlock === "function") { try { voice.unlock(); } catch (e) {} }
+  // The switch is explicit: unmute and arm the hands-free preference in one step.
+  state.muted = false;
+  state.keepMuted = false;
+  state.restartDelayMs = 0;
+  syncCallControls();
+  enableScreenAwareness();
+  dispatch({ type: "AUTO_START", reply: GREETING_TEXT });
 }
 
 // ── listening ─────────────────────────────────────────────────────────────
@@ -691,6 +745,36 @@ function readScreenContext() {
   } catch (e) { return null; }
 }
 
+// One-switch screen awareness: if the Accessibility service is off, open its
+// settings ONCE (never on every boot), then cache the current UI-tree so the
+// first spoken turn already has context. Nothing here reads screen pixels — it
+// reuses the existing permission-gated bridge and the one /api/cloud/chat brain.
+function enableScreenAwareness() {
+  screenContextOn = true;
+  try {
+    if (window.VMNative && window.VMNative.screen &&
+        typeof window.VMNative.screen.promptOnce === "function") {
+      window.VMNative.screen.promptOnce();
+    }
+  } catch (e) { /* older shells keep their current permission state */ }
+  screenContextCache = readScreenContext();
+}
+
+function attachScreenContext(message) {
+  if (!screenContextOn || !screenContextCache || !message) return message;
+  // Refresh opportunistically so continuous awareness follows the active screen.
+  const fresh = readScreenContext();
+  if (fresh) screenContextCache = fresh;
+  const ctx = screenContextCache;
+  const nodes = Array.isArray(ctx.nodes)
+    ? ctx.nodes.slice(0, 24).map((n) => (n && (n.label || n.text || n.id)) || "").filter(Boolean).join(" | ")
+    : "";
+  const parts = ["[Active screen context] package=" + (ctx.package || "unknown")];
+  parts.push(String(ctx.summary || "").slice(0, 1200));
+  if (nodes) parts.push("Interactive elements: " + nodes);
+  return parts.join("\n") + "\nQuestion: " + message;
+}
+
 async function screenGuidanceContext(question) {
   const ctx = readScreenContext();
   let visual = "";
@@ -761,7 +845,9 @@ async function sendChat(text) {
     // "Where do I tap here?" / "Help me navigate this app": on-demand screen
     // context (Accessibility UI-tree and/or a CameraX frame via the SAME
     // /api/vision/analyze endpoint) is injected into this turn only.
-    let message = text;
+    // Continuous screen awareness rides on the same turn; navigation prompts
+    // still use the richer step-by-step context path below.
+    let message = NAV_PROMPT.test(text) ? text : attachScreenContext(text);
     if (NAV_PROMPT.test(text)) {
       try {
         const context = await screenGuidanceContext(text);
@@ -847,7 +933,7 @@ function handleNativeSpeechFailure(seq, text) {
 }
 
 function startNativeV2Speech(text, seq) {
-  const voiceId = PROFILE_NATIVE_VOICE[profile] || null;
+  const voiceId = nativeVoiceRequest();
   state.ttsBackend = "nativeV2";
   clearWatchdog();
   closeMouth();
@@ -889,7 +975,7 @@ function startLegacyNativeSpeech(text, seq) {
   // turn; V2 above carries the real start/end-driven mouth.
   closeMouth();
   try {
-    const started = nativeTts.ttsSpeak(text, PROFILE_NATIVE_VOICE[profile] || null, (ok) => {
+    const started = nativeTts.ttsSpeak(text, nativeVoiceRequest(), (ok) => {
       if (!speechCurrent(seq, "native")) return;
       finishSpeaking(!!ok, seq);
     });
@@ -931,6 +1017,20 @@ function speakReply(reply) {
 // ── state on screen: body animation + the pill's centred glow ─────────────
 // No text, no box and no ring behind the character: the body clip shows what
 // she is doing, and root[data-state] lights the Talk/Mute Mic glow while live.
+const FULL_BODY_BEHAVIOURS = new Set(["walking", "pointing", "guiding"]);
+
+// Conversation zooms to the face/shoulders so lip-sync and blinks are legible in
+// the compact overlay. Walking and pointing/guiding always ease back out so the
+// hands and the target stay visible.
+function updateFraming(s, behaviour) {
+  if (!engine || typeof engine.setFraming !== "function") return;
+  const conversational = s === "listening" || s === "speaking";
+  const gesture = FULL_BODY_BEHAVIOURS.has(behaviour) ||
+    (state.animation && FULL_BODY_BEHAVIOURS.has(state.animation.behaviour));
+  try { engine.setFraming(conversational && !gesture ? "close" : "full"); }
+  catch (e) { /* an older engine keeps its full-body camera */ }
+}
+
 function applyState(s) {
   if (root) root.dataset.state = s;
   state.speaking = s === "speaking";
@@ -941,7 +1041,8 @@ function applyState(s) {
     state.session = active;
     syncCallControls();
   }
-  let behaviour = s === "waking" ? "waving"
+  let behaviour = s === "greeting" ? "idle" // the greet effect owns the wave clip
+    : s === "waking" ? "waving"
     : s === "listening" ? "listening"
     : s === "processing" ? "thinking"
     : s === "speaking" ? "talking"
@@ -956,6 +1057,10 @@ function applyState(s) {
       try { engine.face.setMood(mood); } catch (e) { /* keep the current face */ }
     }
   }
+  if (s === "greeting" && engine.face && typeof engine.face.setMood === "function") {
+    try { engine.face.setMood("happy"); } catch (e) { /* keep the current face */ }
+  }
+  updateFraming(s, behaviour);
   // Only re-trigger the body when the behaviour actually changes, so the
   // animation is not restarted on every state touch.
   if (behaviour !== state.behaviour) {
@@ -1080,6 +1185,9 @@ async function boot() {
   engine.setAuto(false);
   applyState("idle");
   document.addEventListener("visibilitychange", () => engine.setRendering(!document.hidden));
+  // This page is created exactly when the outside-app switch turns on, so its
+  // boot is the one-switch edge: capabilities + greeting + zero-tap listening.
+  startAutoWake();
 }
 
 boot();

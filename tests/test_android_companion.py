@@ -510,6 +510,71 @@ class NativeAsrBridgeTests(unittest.TestCase):
         self.assertGreater(summary["passed"], 0, "injected bridge shim asserted nothing")
 
 
+class OneSwitchStartupTests(unittest.TestCase):
+    """Turning the companion ON is the only gesture: greet aloud, then listen."""
+
+    def _read(self, rel):
+        return (ROOT / rel).read_text(encoding="utf-8")
+
+    def test_overlay_greets_then_listens_only_on_real_tts_end(self):
+        js = self._read("static/companion_overlay.js")
+        self.assertIn('const GREETING_TEXT = "Hi! I\'m right here—how can I help you today?";', js)
+        self.assertIn('case "greet": playGreetingAnimation();', js)
+        self.assertIn('dispatch({ type: "AUTO_START", reply: GREETING_TEXT });', js)
+        self.assertIn("function startAutoWake()", js)
+        self.assertIn("engine.trigger(\"waving\")", js)
+        self.assertIn("engine.trigger(\"happy\")", js)
+        # The switch is the boot edge of the overlay WebView.
+        self.assertIn("startAutoWake();", js.split("async function boot()", 1)[1])
+
+    def test_state_machine_has_an_additive_auto_start_greeting_path(self):
+        sm = self._read("static/companion_turn_sm.js")
+        self.assertIn('GREETING: "greeting"', sm)
+        self.assertIn('GREET: "greet"', sm)
+        self.assertIn('ev.type === "AUTO_START"', sm)
+        self.assertIn("effects.push({ type: EFFECTS.GREET });", sm)
+        # TTS onEnd (not a timer or a tap) opens the microphone.
+        self.assertIn("case STATES.GREETING:", sm)
+        greeting = sm.split("case STATES.GREETING:", 1)[1].split("case STATES.WAKING:", 1)[0]
+        self.assertIn('ev.type === "SPEAK_END"', greeting)
+        self.assertIn("EFFECTS.START_LISTEN", greeting)
+        self.assertIn("version: 3", sm)
+
+    def test_native_voice_requests_are_semantic_and_female_by_default(self):
+        js = self._read("static/companion_overlay.js")
+        self.assertIn('const DEFAULT_PROFILE = "elena";', js)
+        self.assertIn('if (v === "companion") return DEFAULT_PROFILE;', js)
+        self.assertIn('return profile === "marcus" ? "male" : "female";', js)
+        self.assertIn("nativeVoiceRequest()", js)
+        kt = self._read(
+            "android/app/src/main/java/ai/valleymind/companion/SystemTts.kt"
+        )
+        self.assertIn('"female", "feminine", "elena", "angelina", "companion" -> true', kt)
+        self.assertIn('"male", "masculine", "marcus" -> true', kt)
+        self.assertIn("engine.setPitch(1.08f)", kt)
+
+    def test_screen_awareness_prompts_for_accessibility_once(self):
+        js = self._read("static/companion_overlay.js")
+        self.assertIn("enableScreenAwareness();", js)
+        self.assertIn("VMNative.screen.promptOnce()", js)
+        self.assertIn("attachScreenContext(text)", js)
+        helper = self._read("static/native_bridge.js")
+        self.assertIn('var SCREEN_PROMPT_KEY = "vmAccessibilityPrompted";', helper)
+        self.assertIn("promptOnce: promptScreenSettingsOnce", helper)
+        self.assertIn('localStorage.getItem(SCREEN_PROMPT_KEY) === "1"', helper)
+
+    def test_conversation_zooms_in_and_gestures_pull_back(self):
+        js = self._read("static/companion_overlay.js")
+        self.assertIn('const FULL_BODY_BEHAVIOURS = new Set(["walking", "pointing", "guiding"]);', js)
+        self.assertIn('s === "listening" || s === "speaking"', js)
+        self.assertIn('engine.setFraming(conversational && !gesture ? "close" : "full")', js)
+        engine = self._read("vrm_preview/companion.js")
+        self.assertIn("setFraming(mode, immediate)", engine)
+        self.assertIn("_computeFrame(mode, knownHeight)", engine)
+        self.assertIn("this.camera.position.lerp(frame.position, k)", engine)
+        self.assertIn("this._cameraLook.lerp(frame.lookAt, k)", engine)
+
+
 class WebViewSyncTests(unittest.TestCase):
     """The in-app WebView must reuse the hosted app's session and never replay
     a stale cached bundle after a server redeploy."""

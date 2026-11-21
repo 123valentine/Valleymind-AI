@@ -1190,7 +1190,9 @@ def api_tts():
                 _ref_profile = "elena"
             elif preview_voice == "jenny":
                 _ref_profile = "angelina"
-            elif preview_voice == "christopher":
+            elif preview_voice in ("christopher", "en-us-christopherneural"):
+                # Legacy Christopher references resolve to the female companion
+                # profile, never the old male default.
                 _ref_profile = "companion"
         if _ref_profile:
             result = synthesize_free(text, _ref_profile)

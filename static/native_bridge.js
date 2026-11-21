@@ -35,6 +35,46 @@
       !!native.overlay && typeof native.overlay.setRegion === "function";
   }
 
+  // Optional screen-context bridge. The helper is deliberately lazy for the
+  // same reason as the rest of this file: AndroidBridgeJs may install the shim
+  // after this script has already run.
+  var SCREEN_PROMPT_KEY = "vmAccessibilityPrompted";
+  function screenApi() {
+    var native = current();
+    return (native && native.screen && typeof native.screen === "object") ? native.screen : null;
+  }
+  function screenSupported() {
+    var api = screenApi();
+    return !!(api && typeof api.supported === "function" && api.supported());
+  }
+  function screenContext() {
+    var api = screenApi();
+    if (!api || typeof api.context !== "function") {
+      return { ok: false, reason: "screen-context-unsupported" };
+    }
+    try { return api.context(); }
+    catch (e) { return { ok: false, reason: "screen-context-error" }; }
+  }
+  function screenSettings() {
+    var api = screenApi();
+    if (api && typeof api.settings === "function") {
+      try { api.settings(); } catch (e) { /* keep the current permission state */ }
+    }
+  }
+  function promptScreenSettingsOnce() {
+    try {
+      var api = screenApi();
+      // A browser (or an old shell) has no Accessibility settings to open.
+      if (!api || typeof api.settings !== "function") return false;
+      if (screenSupported()) return false;
+      if (typeof localStorage !== "undefined" &&
+          localStorage.getItem(SCREEN_PROMPT_KEY) === "1") return false;
+      screenSettings();
+      if (typeof localStorage !== "undefined") localStorage.setItem(SCREEN_PROMPT_KEY, "1");
+      return true;
+    } catch (e) { return false; }
+  }
+
   window.VMNative = {
     available: function () { return !!current(); },
     contract: function () {
@@ -66,6 +106,13 @@
           return { ok: false, reason: "bridge-error" };
         }
       }
+    },
+    screen: {
+      supported: screenSupported,
+      context: screenContext,
+      settings: screenSettings,
+      // Opens Accessibility settings at most once when the service is off.
+      promptOnce: promptScreenSettingsOnce
     }
   };
 })();

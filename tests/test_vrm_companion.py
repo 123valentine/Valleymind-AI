@@ -640,5 +640,77 @@ class VrmCompanionPhase1Tests(unittest.TestCase):
         self.assertRegex(html, r'<script type="module" src="/static/vrm_companion\.js\?vm=\d+"')
 
 
+class InAppOneSwitchTests(unittest.TestCase):
+    """Settings → Companion ON wakes every capability and speaks first."""
+
+    def _companion(self):
+        return (ROOT / "static" / "vrm_companion.js").read_text(encoding="utf-8")
+
+    def test_toggle_on_starts_auto_wake_after_show(self):
+        js = self._companion()
+        self.assertIn("function setVisible(on)", js)
+        set_visible = js.split("function setVisible(on)", 1)[1].split("function isVisible()", 1)[0]
+        self.assertIn("autoWakePending = true", set_visible)
+        self.assertIn("startAutoWake();", set_visible)
+        self.assertIn("function setMode(mode, opts)", js)
+        set_mode = js.split("function setMode(mode, opts)", 1)[1].split("function maybeAutoShow()", 1)[0]
+        self.assertIn("opts.fromUser", set_mode)
+        self.assertIn("startAutoWake();", set_mode)
+        # show() must not open the mic before the greeting has finished.
+        show = js.split("async function show()", 1)[1].split("function hide()", 1)[0]
+        self.assertIn("!autoWakePending", show)
+
+    def test_greeting_is_spoken_before_listening(self):
+        js = self._companion()
+        self.assertIn('const GREETING_TEXT = "Hi! I\'m right here—how can I help you today?";', js)
+        self.assertIn("function startAutoWake()", js)
+        self.assertIn("speakGreeting();", js)
+        self.assertIn("engine.trigger(\"happy\")", js)
+        self.assertIn('setStatus("greeting", "happy", true)', js)
+        # Real TTS end (native V2 or VMCloudVoice) arms the mic, never a timer.
+        self.assertIn("function finishAutoGreeting()", js)
+        self.assertIn("armListeningAfterGreeting();", js)
+        on_end = js.split("onSpeakEnd: function (reason)", 1)[1].split("onError: function (code)", 1)[0]
+        self.assertIn("if (greetingActive) { finishAutoGreeting(); return; }", on_end)
+        native_greet = js.split("function speakGreeting()", 1)[1].split("function startAutoWake()", 1)[0]
+        self.assertIn('ttsSpeakV2(GREETING_TEXT, nativeVoiceRequest()', native_greet)
+        self.assertIn("onEnd: function (ok) { finish(ok !== false); }", native_greet)
+
+    def test_capabilities_are_enabled_on_the_switch_edge(self):
+        js = self._companion()
+        capabilities = js.split("function enableAutoCapabilities()", 1)[1].split(
+            "function armListeningAfterGreeting()", 1)[0]
+        self.assertIn("prefs.awake = true", capabilities)
+        self.assertIn("prefs.voiceFirst = true", capabilities)
+        self.assertIn("prefs.muted = false", capabilities)
+        self.assertIn("VMNative.screen.promptOnce()", capabilities)
+        self.assertIn("setVision(true)", capabilities)
+        self.assertIn("wireInAppNativeAsr()", capabilities)
+        self.assertIn("maybePromptAccess()", capabilities)
+        html = (ROOT / "index.html").read_text(encoding="utf-8")
+        self.assertIn("/static/native_bridge.js", html)
+        self.assertLess(html.index("/static/native_bridge.js"),
+                        html.index("/static/vrm_companion.js"))
+
+    def test_female_voice_is_the_companion_default(self):
+        js = self._companion()
+        self.assertIn('voiceKey: "elena",', js)
+        self.assertIn('if (!p.voiceKey || p.voiceKey === "companion") p.voiceKey = DEFAULTS.voiceKey;', js)
+        self.assertIn('return prefs.voiceKey === "marcus" ? "male" : "female";', js)
+        settings = (ROOT / "static" / "settings.js").read_text(encoding="utf-8")
+        self.assertIn('{ key: "companion", label: "Companion", defaultVoice: "jenny" }', settings)
+        cloud = (ROOT / "static" / "cloud_voice.js").read_text(encoding="utf-8")
+        self.assertIn('var DEFAULT_VOICE_KEY = "elena";', cloud)
+
+    def test_framing_uses_close_for_conversation_and_full_for_gestures(self):
+        js = self._companion()
+        self.assertIn("function currentFraming()", js)
+        self.assertIn("function syncFraming()", js)
+        self.assertIn('s === "listening" || s === "speaking" || ttsPlaying() || voiceInputActive()', js)
+        self.assertIn('const FULL_BODY_BEHAVIOURS = new Set(["walking", "pointing", "guiding"]);', js)
+        self.assertIn('return conversational && !gesture ? "close" : "full";', js)
+        self.assertIn("engine.setFraming(currentFraming())", js)
+
+
 if __name__ == "__main__":
     unittest.main()

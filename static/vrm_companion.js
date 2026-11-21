@@ -36,7 +36,7 @@ const DEFAULTS = {
   userPlaced: false, // true once the user drags the avatar; the manual position is preferred
   roam: false,       // legacy pref kept for compatibility; autonomous idle roaming is disabled
   charName: "ValleyMind", // display name (shown in Settings; keeps CJK glyphs intact)
-  voiceKey: "",      // "marcus" | "elena" | "angelina" ("" = follow the Cloud preference)
+  voiceKey: "elena", // female companion default; "marcus" remains an explicit opt-in
   visionOn: false,   // user preference: attach screen context to the brain
   chatOpen: false,
   taskOpen: false,   // task panel visibility (opened from Settings / auto on confirm)
@@ -49,6 +49,9 @@ const DEFAULTS = {
   // always-on listening loop here -- that is deliberately NOT faked.
   awake: true,
 };
+
+// Spoken by BOTH companion surfaces the instant the user switches her on.
+const GREETING_TEXT = "Hi! I'm right here—how can I help you today?";
 
 // Every semantic state emitted by core/brain.py has a labelled status here.
 // The behaviour values are REAL clip pools from vrm_preview/companion.js and
@@ -175,6 +178,9 @@ function readPrefs() {
   for (const k of Object.keys(DEFAULTS)) {
     if (raw[k] !== undefined && raw[k] !== null) p[k] = raw[k];
   }
+  // Old profiles stored "" (follow Cloud) or "companion"; both could resolve to
+  // a male voice. Normalise them to the natural female companion default.
+  if (!p.voiceKey || p.voiceKey === "companion") p.voiceKey = DEFAULTS.voiceKey;
   return p;
 }
 
@@ -238,6 +244,9 @@ let chatId = "";
 let transcript = [];
 let voiceWired = false;
 let nativeSpeechWired = false;
+let autoWakeStarted = false;
+let autoWakePending = false;
+let greetingActive = false;
 let uiBuilt = false;
 let resumeTimer = null;   // delayed hands-free re-listen (cleared on stop/hide/mute)
 let walkRaf = 0;          // explicit guidance walk handle (cancel on hide/stop)
@@ -358,6 +367,7 @@ function setStatus(status, expression, explicit) {
       try { engine.face.setMood(mood); } catch (e) { }
     }
     engine.setAuto(false);
+    syncFraming();
     if (DRIVEN.has(s)) {
       // listening / thinking / speaking / working hold their clip until an
       // event changes the state; no auto-cycling can interrupt them.
@@ -402,14 +412,35 @@ function applySize() {
 }
 
 // Re-fit the renderer AND the camera framing together. Resizing alone changes
-// camera.aspect without re-framing, which crops a full-body shot on a phone in
-// landscape/portrait. Re-running the same frameFullBody() keeps the whole body
-// in shot at every size/orientation.
+// camera.aspect without re-framing, which crops a shot on a phone in
+// landscape/portrait. The engine recomputes BOTH presets on resize, then eases
+// to the one the current interaction needs (no snap back to full body mid-talk).
+const FULL_BODY_BEHAVIOURS = new Set(["walking", "pointing", "guiding"]);
+
+function currentFraming() {
+  const s = stateKey || "idle";
+  const behaviour = STATUS_BEHAVIOUR[s] || "idle";
+  const conversational = s === "listening" || s === "speaking" || ttsPlaying() || voiceInputActive();
+  const gesture = FULL_BODY_BEHAVIOURS.has(behaviour) || guidanceActive;
+  return conversational && !gesture ? "close" : "full";
+}
+
+function syncFraming() {
+  if (!engine || typeof engine.setFraming !== "function") return;
+  try { engine.setFraming(currentFraming()); } catch (e) { /* older engine: no-op */ }
+}
+
 function refit() {
   if (!engine) return;
   try {
     engine.resize();
-    if (typeof engine.frameFullBody === "function") engine.frameFullBody();
+    // Older engines only know frameFullBody(); the current engine owns a smooth
+    // lerp and keeps the active preset across orientation changes.
+    if (typeof engine.setFraming !== "function") {
+      if (typeof engine.frameFullBody === "function") engine.frameFullBody();
+    } else {
+      syncFraming();
+    }
   } catch (e) { }
 }
 
@@ -1200,6 +1231,7 @@ function wireVoice() {
     onSpeakEnd: function (reason) {
       if (!voiceActive()) return;
       setFaceTalking(false);
+      if (greetingActive) { finishAutoGreeting(); return; }
       setStatus(voiceEndEmo || "idle");
       // Successful spoken replies (reason "" or "interrupted") return to the
       // hands-free loop; a hard TTS failure surfaces as confused (not silent).
@@ -1356,6 +1388,10 @@ function endCall() {
   syncControls();
 }
 
+// Device voice ids differ, so the native layer resolves semantic gender requests
+// against tts.voices (female first, 1.08f pitch fallback on a single-voice engine).
+function nativeVoiceRequest() { return prefs.voiceKey === "marcus" ? "male" : "female"; }
+
 // Native TTS for the in-app call: real engine start/end + bounded level drive
 // the same face channel used by server TTS. The site's server TTS still wins on
 // desktop; this is the Android WebView fallback that makes speech audible.
@@ -1369,7 +1405,7 @@ function speakNativeReply(text, endEmo) {
   };
   try {
     if (nativeBridge.ttsSpeakV2 && typeof nativeBridge.ttsSpeakV2 === "function") {
-      return !!nativeBridge.ttsSpeakV2(String(text), null, {
+      return !!nativeBridge.ttsSpeakV2(String(text), nativeVoiceRequest(), {
         onStart: function () { setStatus("speaking"); setFaceTalking(true); },
         onLevel: function (level) {
           if (stateKey === "speaking") applyNativeSpeechEvent("level", level);
@@ -1377,7 +1413,7 @@ function speakNativeReply(text, endEmo) {
         onEnd: done,
       });
     }
-    return !!nativeBridge.ttsSpeak(String(text), null, done);
+    return !!nativeBridge.ttsSpeak(String(text), nativeVoiceRequest(), done);
   } catch (e) { done(); return false; }
 }
 
@@ -1437,6 +1473,98 @@ function startVoiceSession() {
   }
 }
 
+// ── one-switch auto-wake (in-app companion) ────────────────────────────────
+// Settings → Companion's ON switch (and a programmatic setVisible(true)) arms
+// every capability in one step, waves + smiles, speaks first, and opens the mic
+// only on the greeting's REAL TTS onEnd. Reuses VMCloudVoice / native TTS V2 /
+// CompanionAsr / VMCloudVision — no second voice or brain pipeline.
+function enableAutoCapabilities() {
+  prefs.awake = true;
+  prefs.voiceFirst = true;
+  prefs.muted = false;
+  savePrefs();
+  try {
+    if (window.VMNative && window.VMNative.screen &&
+        typeof window.VMNative.screen.promptOnce === "function") {
+      window.VMNative.screen.promptOnce();
+    }
+  } catch (e) { /* browser or older shell: no Accessibility prompt */ }
+  if (window.VMCloudVision && !prefs.visionOn) setVision(true);
+  wireInAppNativeAsr();
+  maybePromptAccess();
+  syncControls();
+}
+
+function armListeningAfterGreeting() {
+  if (!accessAllowed()) { maybePromptAccess(); return; }
+  if (nativeAsrAvailable()) {
+    nativeCallActive = true;
+    wireInAppNativeAsr();
+    syncControls();
+    resumeNativeListening(0);
+  } else {
+    startVoiceSession();
+  }
+}
+
+function finishAutoGreeting() {
+  if (!greetingActive) return;
+  greetingActive = false;
+  setFaceTalking(false);
+  setStatus("idle");
+  armListeningAfterGreeting();
+  syncFraming();
+}
+
+function speakGreeting() {
+  voiceEndEmo = "happy";
+  if (nativeBridge && typeof nativeBridge.ttsSpeakV2 === "function") {
+    let finished = false;
+    const finish = (ok) => {
+      if (finished) return;
+      finished = true;
+      if (ok) { finishAutoGreeting(); return; }
+      // A failed native greeting falls back through the SAME hosted voice path.
+      greetingActive = true;
+      if (window.VMCloudVoice) { speakText(GREETING_TEXT, "happy"); return; }
+      finishAutoGreeting();
+    };
+    try {
+      const started = !!nativeBridge.ttsSpeakV2(GREETING_TEXT, nativeVoiceRequest(), {
+        onStart: function () { setStatus("speaking", "happy", true); setFaceTalking(true); syncFraming(); },
+        onLevel: function (level) {
+          if (stateKey === "speaking" && engine && engine.face) {
+            try { engine.face.setTalkLevel(Math.max(0, Math.min(1, Number(level) || 0))); } catch (e) { }
+          }
+        },
+        onEnd: function (ok) { finish(ok !== false); },
+      });
+      if (!started) finish(false);
+    } catch (e) { finish(false); }
+    return true;
+  }
+  if (window.VMCloudVoice) {
+    greetingActive = true;
+    return speakText(GREETING_TEXT, "happy");
+  }
+  finishAutoGreeting();
+  return false;
+}
+
+function startAutoWake() {
+  if (autoWakeStarted || autoWakePending) return;
+  autoWakeStarted = true;
+  greetingActive = true;
+  enableAutoCapabilities();
+  setStatus("greeting", "happy", true);
+  // setStatus selected the real waving clip; settle into happy while she speaks.
+  window.setTimeout(function () {
+    if (!greetingActive) return;
+    try { if (engine) engine.trigger("happy"); } catch (e) { }
+  }, 900);
+  speakGreeting();
+}
+
 // ── voice-interaction state (sleep / wake) ────────────────────────────────
 // Prepares a hands-free "wake" lifecycle without ever faking an always-on mic.
 // "Awake" is the default. sleep() stops listening and silences speech and
@@ -1465,7 +1593,7 @@ function wake() {
   savePrefs();
   syncControls();
   paintStatus();
-  if (accessAllowed() && !prefs.muted) startVoiceSession();
+  if (accessAllowed() && !prefs.muted) startAutoWake();
 }
 
 // ── screen awareness (permission-first, VMCloudVision) ────────────────────
@@ -1809,7 +1937,17 @@ function toggleChat() {
 function setVisible(on) {
   prefs.visible = !!on;
   savePrefs();
-  if (on) show(); else hide();
+  if (on) {
+    // The Settings "Show companion" switch is the in-app one-switch edge.
+    // The pending flag stops show()'s normal auto-listen from opening the mic
+    // before the greeting has finished.
+    autoWakePending = true;
+    Promise.resolve(show()).then(function () { autoWakePending = false; startAutoWake(); });
+  } else {
+    hide();
+    autoWakeStarted = false;
+    greetingActive = false;
+  }
   syncControls();
 }
 
@@ -1844,7 +1982,8 @@ function setCharName(name) {
 }
 
 function setVoiceKey(key) {
-  prefs.voiceKey = (key && ["marcus", "elena", "angelina"].indexOf(key) !== -1) ? key : "";
+  prefs.voiceKey = (key && ["marcus", "elena", "angelina"].indexOf(key) !== -1)
+    ? key : DEFAULTS.voiceKey;
   savePrefs();
   syncControls();
 }
@@ -1904,7 +2043,7 @@ function getProps() {
     userPlaced: prefs.userPlaced === true,
     awake: prefs.awake !== false,
     charName: prefs.charName || DEFAULTS.charName,
-    voiceKey: prefs.voiceKey || "",
+    voiceKey: prefs.voiceKey || DEFAULTS.voiceKey,
     visionOn: !!prefs.visionOn,
     muted: !!prefs.muted,
     voiceFirst: prefs.voiceFirst !== false,
@@ -1968,7 +2107,7 @@ async function show() {
   // First time here: offer the access prompt. After consent we never auto-listen
   // until the user accepts OR manually presses the mic.
   maybePromptAccess();
-  if (accessAllowed() && !prefs.muted) startVoiceSession();
+  if (accessAllowed() && !prefs.muted && !autoWakePending) startVoiceSession();
 }
 
 function hide() {
@@ -1979,6 +2118,9 @@ function hide() {
   if (nativeBridge && nativeBridge.asrCancel) { try { nativeBridge.asrCancel(); } catch (e) { } }
   clearResumeTimer();
   guidanceActive = false;
+  greetingActive = false;
+  autoWakeStarted = false;
+  autoWakePending = false;
   if (window.VMCloudVoice) { try { window.VMCloudVoice.stop(); } catch (e) { } }
   setFaceTalking(false);
   const el = $id("vmVrmCompanion");
@@ -1998,7 +2140,12 @@ function setMode(mode, opts) {
   savePrefs();
   setDataset();
   if (prefs.mode === "vrm") {
-    show();
+    if (opts.fromUser) autoWakePending = true;
+    Promise.resolve(show()).then(function () {
+      if (!opts.fromUser) return;
+      autoWakePending = false;
+      startAutoWake();
+    });
   } else {
     hide();
     // Roll back to the legacy Cloud character: clear the inline pin above and
@@ -2039,7 +2186,12 @@ window.vmVrmCompanion = {
   isMuted: function () { return !!prefs.muted; },
   startVoiceSession: startVoiceSession,
   accessDecision: accessDecision,
-  allowAccess: function () { setAccessDecision("allowed"); hideAccessPrompt(); startVoiceSession(); },
+  allowAccess: function () {
+    setAccessDecision("allowed");
+    hideAccessPrompt();
+    if (autoWakeStarted && !greetingActive) armListeningAfterGreeting();
+    else startAutoWake();
+  },
   declineAccess: function () { setAccessDecision("declined"); hideAccessPrompt(); setStatus("idle"); },
   walkTo: walkTo,
   guide: guide,

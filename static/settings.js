@@ -835,7 +835,7 @@ var VM_PERSONA_VOICES = {
     { key: "marcus", label: "Marcus", defaultVoice: "guy" },
     { key: "elena", label: "Elena", defaultVoice: "aria" },
     { key: "angelina", label: "Angelina", defaultVoice: "jenny" },
-    { key: "companion", label: "Companion", defaultVoice: "christopher" },
+    { key: "companion", label: "Companion", defaultVoice: "jenny" },
   ],
   voices: [
     { id: "guy", label: "Guy", gender: "male", server: "en-US-GuyNeural", default: true, preset: "deep" },
@@ -1242,7 +1242,7 @@ function vmPersonaVoicesCard() {
 
   // Current assignments
   var mainVoiceId = saved.marcus || saved.elena || saved.angelina || "guy";
-  var companionVoiceId = saved.companion || "christopher";
+  var companionVoiceId = saved.companion || _vmDefaultCompanionPersonaVoice();
   var mainEntry = _personaVoiceById(mainVoiceId);
   var compEntry = _personaVoiceById(companionVoiceId);
 

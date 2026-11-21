@@ -5,6 +5,7 @@ import android.os.Handler
 import android.os.Looper
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
+import android.speech.tts.Voice
 import java.util.Locale
 import kotlin.math.PI
 import kotlin.math.sin
@@ -46,7 +47,7 @@ class SystemTts(context: Context) {
     private val appContext = context.applicationContext
     private var tts: TextToSpeech? = null
     private var ready = false
-    private var pending: Pair<String, ((Boolean) -> Unit)>? = null
+    private var pending: Triple<String, String?, ((Boolean) -> Unit)>? = null
 
     /** Called when an utterance actually finishes (or fails). */
     private var onDone: ((Boolean) -> Unit)? = null
@@ -80,7 +81,7 @@ class SystemTts(context: Context) {
             })
             val queued = pending
             pending = null
-            if (queued != null) speak(queued.first, null, queued.second)
+            if (queued != null) speak(queued.first, queued.second, queued.third)
         }
     }
 
@@ -96,15 +97,10 @@ class SystemTts(context: Context) {
         init()
         if (!ready) {
             // Engine still initialising: queue the one utterance we care about.
-            pending = clean to done
+            pending = Triple(clean, voiceId, done)
             return
         }
-        if (voiceId != null) {
-            try {
-                val match = tts?.voices?.firstOrNull { it.name.equals(voiceId, ignoreCase = true) }
-                if (match != null) tts?.voice = match
-            } catch (e: Exception) { /* keep the default voice */ }
-        }
+        selectVoice(voiceId)
         onDone = done
         val id = "vm-" + System.currentTimeMillis()
         val result = try {
@@ -113,6 +109,71 @@ class SystemTts(context: Context) {
             TextToSpeech.ERROR
         }
         if (result == TextToSpeech.ERROR) finish(false)
+    }
+
+    /**
+     * Resolves a semantic request ("female" / "male" / a profile name) against
+     * the voices the device actually reports. A natural female voice wins over
+     * the engine default; when the engine exposes no female voice (common on a
+     * single-voice device) the pitch is nudged to 1.08f so the companion no
+     * longer sounds like the default male voice. Everything stays inside the
+     * ONE native TextToSpeech engine.
+     */
+    private fun selectVoice(requested: String?) {
+        val engine = tts ?: return
+        val token = requested?.trim().orEmpty()
+        val wantFemale = isFemaleVoiceRequest(token)
+        val wantMale = isMaleVoiceRequest(token)
+        try {
+            val voices = engine.voices?.toList().orEmpty()
+            var chosen: Voice? = null
+            if (token.isNotEmpty()) {
+                chosen = voices.firstOrNull { it.name.equals(token, ignoreCase = true) }
+                // Only profile-style tokens use substring matching: "male" must
+                // never pick a voice whose name merely contains "female".
+                if (chosen == null && !wantFemale && !wantMale) {
+                    chosen = voices.firstOrNull { it.name.contains(token, ignoreCase = true) }
+                }
+            }
+            if (chosen == null && wantFemale) {
+                chosen = voices.firstOrNull { isFemaleVoice(it) && isEnglishVoice(it) }
+                    ?: voices.firstOrNull { isFemaleVoice(it) }
+            }
+            if (chosen == null && wantMale) {
+                chosen = voices.firstOrNull { !isFemaleVoice(it) && isEnglishVoice(it) }
+                    ?: voices.firstOrNull { !isFemaleVoice(it) }
+            }
+            if (chosen != null) {
+                engine.voice = chosen
+                engine.setPitch(1.0f)
+            } else if (wantFemale) {
+                // Single/default-voice engine: no female sample is available.
+                engine.setPitch(1.08f)
+            } else {
+                engine.setPitch(1.0f)
+            }
+        } catch (e: Exception) {
+            if (wantFemale) {
+                try { engine.setPitch(1.08f) } catch (ignored: Exception) { /* keep engine default */ }
+            }
+        }
+    }
+
+    private fun isEnglishVoice(voice: Voice): Boolean =
+        try { voice.locale.language.equals("en", ignoreCase = true) }
+        catch (e: Exception) { false }
+
+    /** Best-effort female detection across common Android/Google voice names. */
+    private fun isFemaleVoice(voice: Voice): Boolean {
+        val name = try { voice.name.lowercase(Locale.US) } catch (e: Exception) { return false }
+        if (name.contains("female") || name.contains("woman") || name.contains("girl")) return true
+        if (name.contains("male")) return false
+        val hints = listOf(
+            "zira", "hazel", "samantha", "victoria", "serena", "moira", "tessa",
+            "karen", "susan", "michelle", "stefanie", "kate", "amelie", "catherine",
+            "aria", "jenny", "elena", "angelina", "sfg", "tpf", "smtf", "f00", "f01"
+        )
+        return hints.any { name.contains(it) }
     }
 
     fun stop() {
@@ -159,6 +220,23 @@ class SystemTts(context: Context) {
     fun voiceIdForProfile(profile: String?): String? = mapProfileToVoice(profile)
 
     companion object {
+        /** Semantic voice request used by the web surfaces and the greeting. */
+        fun voiceRequestForProfile(profile: String?): String? = when ((profile ?: "").trim().lowercase()) {
+            "marcus" -> "male"
+            "elena", "angelina", "companion" -> "female"
+            else -> null
+        }
+
+        fun isFemaleVoiceRequest(request: String?): Boolean = when ((request ?: "").trim().lowercase()) {
+            "female", "feminine", "elena", "angelina", "companion" -> true
+            else -> false
+        }
+
+        fun isMaleVoiceRequest(request: String?): Boolean = when ((request ?: "").trim().lowercase()) {
+            "male", "masculine", "marcus" -> true
+            else -> false
+        }
+
         /**
          * Best-effort mapping from a companion voice profile to an installed
          * Android TTS voice id. These ids are the common "local" en-US voices on

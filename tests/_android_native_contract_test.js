@@ -37,8 +37,14 @@ function eq(got, want, name) {
 function makeEnv(bridge, opts) {
   opts = opts || {};
   const win = bridge ? { VmAndroidBridge: bridge } : {};
+  const store = {};
   const sandbox = {
     window: win,
+    localStorage: {
+      getItem: (k) => (Object.prototype.hasOwnProperty.call(store, k) ? store[k] : null),
+      setItem: (k, v) => { store[k] = String(v); },
+      removeItem: (k) => { delete store[k]; },
+    },
     JSON,
     Date,
     Number,
@@ -187,6 +193,31 @@ function currentBridge(over) {
   eq(env.win.VMNative.has("overlayRegion"), false, "no shim means no capabilities");
   eq(env.win.VMNative.overlayRegion.set(176, 270).reason, "unsupported",
      "the browser path skips the region call");
+}
+
+// ── 8. screen context is optional; Accessibility settings open only once ────
+{
+  const settingsCalls = [];
+  const env = makeEnv(currentBridge({
+    screenContextSupported: () => false,
+    screenContextSettings: () => { settingsCalls.push(true); },
+    screenContextJson: () => '{"ok":false,"reason":"permission"}',
+  }));
+  const screen = env.win.VMNative.screen;
+  check(!!screen, "the helper exposes the screen bridge");
+  eq(screen.supported(), false, "a disabled Accessibility service is reported honestly");
+  eq(screen.context().ok, false, "a denied screen context is contained");
+  eq(env.run("window.VMNative.screen.promptOnce()"), true, "the first prompt is issued");
+  eq(settingsCalls.length, 1, "Accessibility settings open exactly once");
+  eq(env.run("window.VMNative.screen.promptOnce()"), false, "the prompt is not repeated");
+  eq(settingsCalls.length, 1, "a second prompt makes no native call");
+}
+
+// ── 9. a browser with no native screen bridge degrades cleanly ──────────────
+{
+  const env = makeEnv(null);
+  eq(env.win.VMNative.screen.supported(), false, "browser screen support is false");
+  eq(env.run("window.VMNative.screen.promptOnce()"), false, "browser never prompts");
 }
 
 console.log(JSON.stringify({ passed: passes, failed: failures }));

@@ -262,7 +262,9 @@ FREE_VOICE_MAP = {
     "marcus":   "en-US-GuyNeural",
     "angelina": "en-US-JennyNeural",
     "elena":    "en-US-AriaNeural",
-    "companion": "en-US-ChristopherNeural",
+    # The companion is a natural female persona by default. Legacy callers that
+    # still say "companion" now resolve to Elena's Edge voice, never Christopher.
+    "companion": "en-US-AriaNeural",
 }
 FREE_DEFAULT_KEY = "companion"
 FREE_MAX_CHARS = int(os.getenv("TTS_FREE_MAX_CHARS", "1200"))

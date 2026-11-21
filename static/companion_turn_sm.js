@@ -1,7 +1,12 @@
 /*
  * companion_turn_sm.js — the HANDS-FREE turn state machine.
  *
- *   IDLE → WAKING → LISTENING → PROCESSING → SPEAKING → LISTENING → …
+ *   IDLE → GREETING → SPEAKING → LISTENING → PROCESSING → SPEAKING → …
+ *       ↘ WAKING → LISTENING → …   (the original tap-to-start path)
+ *
+ * AUTO_START is the one-switch startup path: the page enables its capabilities,
+ * plays the waving/happy greeting, speaks it through the SAME speak effect as any
+ * other reply, and the real TTS onEnd (SPEAK_END) opens the microphone.
  *
  * Pure reducer: send(event) -> { state, effects: [...] }. It owns NO DOM, NO
  * timers and NO network — the overlay page fires events (tap, end-of-speech,
@@ -48,6 +53,7 @@
 
   var STATES = {
     IDLE: "idle",
+    GREETING: "greeting",
     WAKING: "waking",
     LISTENING: "listening",
     PROCESSING: "processing",
@@ -57,6 +63,7 @@
 
   var EFFECTS = {
     WAKE: "wake",                 // play the wake-up animation
+    GREET: "greet",               // waving + happy greeting animation (startup only)
     START_LISTEN: "start-listen", // open the microphone (STT path chosen by the page)
     STOP_LISTEN: "stop-listen",   // close the microphone
     TRANSCRIBE: "transcribe",     // blob -> POST /api/editing/transcribe (Groq Whisper)
@@ -158,12 +165,40 @@
 
       switch (state) {
         case STATES.IDLE:
-          if (ev.type === "TAP") {
+          if (ev.type === "AUTO_START") {
+            // One switch starts everything: greet first, then listen on TTS end.
+            // The page has already enabled its capabilities before sending this.
+            sessionActive = true;
+            failures = 0;
+            next = STATES.GREETING;
+            effects.push({ type: EFFECTS.GREET });
+            effects.push({ type: EFFECTS.SPEAK, reply: String(ev.reply || "") });
+          } else if (ev.type === "TAP") {
             // One tap starts the hands-free session: wake, then listen.
             sessionActive = true;
             failures = 0;
             next = STATES.WAKING;
             effects.push({ type: EFFECTS.WAKE });
+          }
+          break;
+
+        case STATES.GREETING:
+          // The greeting is an ordinary spoken turn. Its real TTS onEnd is the
+          // ONLY thing that opens the microphone, so zero taps are required.
+          if (ev.type === "SPEAK_END") {
+            if (sessionActive) {
+              next = STATES.LISTENING;
+              effects.push({ type: EFFECTS.START_LISTEN });
+            } else {
+              next = STATES.IDLE;
+            }
+          } else if (ev.type === "SPEAK_ERR") {
+            next = hardFail(effects, "tts");
+          } else if (ev.type === "SPEAK_TIMEOUT") {
+            effects.push({ type: EFFECTS.STOP_SPEAK });
+            next = hardFail(effects, "tts");
+          } else if (ev.type === "STOP" || ev.type === "TAP") {
+            next = endSession(effects, "stopped");
           }
           break;
 
@@ -304,5 +339,5 @@
     };
   }
 
-  return { STATES: STATES, EFFECTS: EFFECTS, create: create, version: 2 };
+  return { STATES: STATES, EFFECTS: EFFECTS, create: create, version: 3 };
 });

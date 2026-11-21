@@ -4,7 +4,8 @@
 // will execute. Prints a JSON summary and exits non-zero on failure.
 //
 // The contract under test:
-//   IDLE --TAP--> WAKING --WAKE_DONE--> LISTENING --speech--> PROCESSING
+//   IDLE --AUTO_START--> GREETING --SPEAK_END--> LISTENING (one-switch startup)
+//        --TAP--> WAKING --WAKE_DONE--> LISTENING --speech--> PROCESSING
 //        --reply--> SPEAKING --SPEAK_END--> LISTENING (the hands-free loop)
 // Every failure path must land in a usable state, and the failure budget must
 // be BOUNDED so a dead microphone can never spin the loop forever.
@@ -69,6 +70,26 @@ function awake(f) {
   eq(JSON.stringify(effTypes(r)), JSON.stringify([EFFECTS.START_LISTEN]),
      "the loop reopens the microphone, with nothing else");
   check(f.sessionActive, "the session is still running after the first reply");
+}
+
+// ── 1b. one-switch startup: greet first, listen only on real TTS end ───────
+{
+  const f = make();
+  const greeting = "Hi! I'm right here—how can I help you today?";
+  let r = f.send({ type: "AUTO_START", reply: greeting });
+  eq(r.state, STATES.GREETING, "AUTO_START enters the greeting state");
+  eq(JSON.stringify(effTypes(r)), JSON.stringify([EFFECTS.GREET, EFFECTS.SPEAK]),
+     "the greeting plays its wave/happy animation and speaks through the ONE speak effect");
+  eq(effOf(r, EFFECTS.SPEAK).reply, greeting, "the exact greeting is spoken");
+  check(f.sessionActive, "AUTO_START opens a hands-free session");
+
+  r = f.send({ type: "SPEAK_END" });
+  eq(r.state, STATES.LISTENING, "the greeting's real TTS end opens the microphone");
+  eq(JSON.stringify(effTypes(r)), JSON.stringify([EFFECTS.START_LISTEN]),
+     "no mic is opened before the greeting finishes");
+
+  r = f.send({ type: "STOP" });
+  eq(r.state, STATES.IDLE, "the auto-started session can still be stopped");
 }
 
 // ── 2. the loop keeps going for several turns ─────────────────────────────
