@@ -133,8 +133,52 @@ const Addons = ctx.window.VMRichRenderAddons;
 
   const fileHtml = R.render('[[FILE_CARD: Weekly Report | PDF | 18.4 KB | /api/files/download/abc?token=xyz]]');
   assert('FILE_CARD renders dark download card', fileHtml.indexOf('vm-file-card') !== -1 && fileHtml.indexOf('Weekly Report') !== -1, fileHtml.slice(0, 260));
-  assert('FILE_CARD has working download target', fileHtml.indexOf('data-download-url="/api/files/download/abc?token=xyz"') !== -1 && fileHtml.indexOf('>Download<') !== -1, fileHtml.slice(0, 300));
+  assert('FILE_CARD has working icon-only download target',
+    fileHtml.indexOf('data-download-url="/api/files/download/abc?token=xyz"') !== -1 &&
+    fileHtml.indexOf('title="Download"') !== -1 &&
+    fileHtml.indexOf('aria-label="Download"') !== -1 &&
+    fileHtml.indexOf('vm-download-icon') !== -1 &&
+    fileHtml.indexOf('>Download<') === -1, fileHtml.slice(0, 340));
   assert('FILE_CARD shows metadata', fileHtml.indexOf('PDF') !== -1 && fileHtml.indexOf('18.4 KB') !== -1, fileHtml.slice(0, 260));
+
+  const iconHtml = ctx.window.VMDownloadIconSvg();
+  const fileButton = {
+    innerHTML: iconHtml,
+    style: { pointerEvents: '' },
+    attrs: { 'data-download-url': '/api/files/download/abc?token=xyz', 'data-download-name': 'weekly report.pdf' },
+    classList: {
+      flags: {},
+      add(name) { this.flags[name] = true; },
+      remove(name) { delete this.flags[name]; },
+      contains(name) { return !!this.flags[name]; }
+    },
+    getAttribute(name) { return this.attrs[name] || ''; },
+    setAttribute(name, value) { this.attrs[name] = String(value); }
+  };
+  const fileRoot = { querySelectorAll(sel) { return sel.indexOf('data-download-url') !== -1 ? [fileButton] : []; } };
+  ctx.window.VMFormatRichBubble(fileRoot);
+  calls.fetch.length = 0;
+  fileButton.onclick({ stopPropagation() {} });
+  assert('FILE_CARD click replaces icon with circular spinner',
+    fileButton.innerHTML.indexOf('vm-download-spinner') !== -1 &&
+    fileButton.classList.contains('vm-downloading') &&
+    fileButton.style.pointerEvents === 'none' &&
+    fileButton.getAttribute('aria-busy') === 'true',
+    fileButton.innerHTML.slice(0, 200));
+  for (let i = 0; i < 100 && fileButton.__vmDownloadActive; i++) {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  assert('FILE_CARD restores icon after download settles',
+    fileButton.innerHTML === iconHtml &&
+    !fileButton.classList.contains('vm-downloading') &&
+    fileButton.style.pointerEvents === '' &&
+    fileButton.getAttribute('aria-busy') === 'false',
+    fileButton.innerHTML.slice(0, 200));
+  assert('FILE_CARD spinner still fetches signed download',
+    calls.fetch.length === 1 && calls.fetch[0].url === '/api/files/download/abc?token=xyz', JSON.stringify(calls.fetch));
+  calls.fetch.length = 0;
+  calls.anchors.length = 0;
+  calls.objectUrls.length = 0;
 
   const badgeHtml = R.render('[[BADGE: Cards | blue]] [[BADGE: Copy boxes | green]] [[BADGE: Example | amber]]');
   assert('BADGE renders soft tinted pills', badgeHtml.indexOf('vm-badge-blue') !== -1 && badgeHtml.indexOf('vm-badge-green') !== -1 && badgeHtml.indexOf('vm-badge-amber') !== -1, badgeHtml.slice(0, 300));

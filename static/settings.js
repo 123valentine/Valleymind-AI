@@ -1,5 +1,60 @@
 ﻿// ΓöÇΓöÇ Settings System ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
 
+// Shared icon-only download controls. The same SVG/spinner pair is used by the
+// media library, the image viewer, generated image cards and FILE_CARD buttons
+// so every download looks identical in the PWA and Android WebView.
+var VM_DOWNLOAD_ICON_SVG = '<svg class="vm-download-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
+var VM_DOWNLOAD_SPINNER_SVG = '<svg class="vm-download-spinner" width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle class="vm-spinner-track" cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2.5"/><circle class="vm-spinner-arc" cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2.5" stroke-dasharray="28 28" stroke-linecap="round"/></svg>';
+
+function VMDownloadIconSvg() { return VM_DOWNLOAD_ICON_SVG; }
+function VMDownloadSpinnerSvg() { return VM_DOWNLOAD_SPINNER_SVG; }
+function VMEscapeHtmlAttr(value) {
+  return String(value == null ? "" : value)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+}
+
+function VMSetAttribute(el, name, value) {
+  if (!el) return;
+  if (typeof el.setAttribute === "function") el.setAttribute(name, value);
+  else el[name] = value;
+}
+
+// Show the circular spinner for the whole fetch/blob/native handoff plus a short
+// settle, then restore the original icon. Safe for buttons and anchors.
+function VMWithDownloadSpinner(button, action) {
+  if (!button || button.__vmDownloadActive) return Promise.resolve(false);
+  var originalHtml = button.innerHTML;
+  var originalPointerEvents = button.style ? button.style.pointerEvents : "";
+  button.__vmDownloadActive = true;
+  button.innerHTML = VM_DOWNLOAD_SPINNER_SVG;
+  if (button.classList && typeof button.classList.add === "function") button.classList.add("vm-downloading");
+  if (button.style) button.style.pointerEvents = "none";
+  VMSetAttribute(button, "aria-busy", "true");
+
+  var settle = new Promise(function (resolve) { setTimeout(resolve, 450); });
+  function restore(result) {
+    button.innerHTML = originalHtml;
+    if (button.style) button.style.pointerEvents = originalPointerEvents;
+    if (button.classList && typeof button.classList.remove === "function") button.classList.remove("vm-downloading");
+    VMSetAttribute(button, "aria-busy", "false");
+    button.__vmDownloadActive = false;
+    return result;
+  }
+  return Promise.resolve()
+    .then(function () { return typeof action === "function" ? action() : true; })
+    .catch(function () { return false; })
+    .then(function (result) { return settle.then(function () { return restore(result); }); },
+          function () { return restore(false); });
+}
+
+if (typeof window !== "undefined") {
+  window.VMDownloadIconSvg = VMDownloadIconSvg;
+  window.VMDownloadSpinnerSvg = VMDownloadSpinnerSvg;
+  window.VMWithDownloadSpinner = VMWithDownloadSpinner;
+  window.VMEscapeHtmlAttr = VMEscapeHtmlAttr;
+}
+
 var SETTINGS_SECTIONS = [
   { id: "account",       label: "Account" },
   { id: "interests",     label: "Interests & Goals" },
@@ -2136,7 +2191,7 @@ function renderMediaSection(container) {
       var images = d.images || [];
       var videos = d.videos || [];
       var imageHtml = images.length > 0 ? images.map(function (img) {
-        return '<div style="position:relative;border-radius:10px;overflow:hidden;border:1px solid rgba(255,255,255,0.06);background:rgba(15,23,42,0.5);"><img src="' + img.url + '" alt="' + img.name + '" style="width:100%;height:140px;object-fit:cover;display:block;" loading="lazy"><div style="padding:6px 8px;display:flex;align-items:center;justify-content:space-between;background:rgba(2,6,23,0.6);"><span style="color:#94a3b8;font-size:9px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100px;">' + img.name + '</span><div style="display:flex;gap:4px;"><a href="' + img.url + '" download style="background:none;border:none;color:#00d4ff;cursor:pointer;font-size:12px;text-decoration:none;" title="Download">DL</a><button onclick="deleteMedia(\'' + img.url + '\')" style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:12px;padding:0;" title="Delete">&times;</button></div></div></div>';
+        return '<div style="position:relative;border-radius:10px;overflow:hidden;border:1px solid rgba(255,255,255,0.06);background:rgba(15,23,42,0.5);"><img src="' + img.url + '" alt="' + img.name + '" style="width:100%;height:140px;object-fit:cover;display:block;" loading="lazy"><div style="padding:6px 8px;display:flex;align-items:center;justify-content:space-between;background:rgba(2,6,23,0.6);"><span style="color:#94a3b8;font-size:9px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100px;">' + img.name + '</span><div style="display:flex;gap:4px;"><button type="button" class="vm-icon-download vm-media-download" data-download-url="' + img.url + '" data-download-name="' + VMEscapeHtmlAttr(img.name || 'valleymind-image.png') + '" title="Download" aria-label="Download">' + VMDownloadIconSvg() + '</button><button onclick="deleteMedia(\'' + img.url + '\')" style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:12px;padding:0;" title="Delete">&times;</button></div></div></div>';
       }).join("") : null;
       container.innerHTML = _SH.sectionHeader("Media Library", "All your generated images and videos in one place") +
         _SH.card("Images", imageHtml ? '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;">' + imageHtml + '</div>' : '<p style="color:#475569;font-size:12px;">No images yet. Generated images will appear here automatically.</p>') +

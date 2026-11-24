@@ -17,6 +17,19 @@
   var TOKEN_END = "\uFFFA";
   var copySeq = 0;
 
+  var FALLBACK_DOWNLOAD_ICON = '<svg class="vm-download-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
+  var FALLBACK_DOWNLOAD_SPINNER = '<svg class="vm-download-spinner" width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle class="vm-spinner-track" cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2.5"/><circle class="vm-spinner-arc" cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2.5" stroke-dasharray="28 28" stroke-linecap="round"/></svg>';
+
+  function downloadIconSvg() {
+    return typeof window.VMDownloadIconSvg === "function"
+      ? window.VMDownloadIconSvg() : FALLBACK_DOWNLOAD_ICON;
+  }
+
+  function downloadSpinnerSvg() {
+    return typeof window.VMDownloadSpinnerSvg === "function"
+      ? window.VMDownloadSpinnerSvg() : FALLBACK_DOWNLOAD_SPINNER;
+  }
+
   window.__VM_RICH_COPY_TEXT = window.__VM_RICH_COPY_TEXT || {};
 
   function escapeHtml(value) {
@@ -124,8 +137,8 @@
     var meta = escapeHtml(format.toUpperCase() + (size ? " • " + size : ""));
     var icon = escapeHtml(format.slice(0, 4).toUpperCase() || "FILE");
     var button = url
-      ? '<button type="button" class="vm-file-download" data-download-url="' + escapeHtml(url) + '" data-download-name="' + escapeHtml(title + "." + format.toLowerCase()) + '">Download</button>'
-      : '<button type="button" class="vm-file-download" disabled>Unavailable</button>';
+      ? '<button type="button" class="vm-file-download vm-icon-download" title="Download" aria-label="Download" data-download-url="' + escapeHtml(url) + '" data-download-name="' + escapeHtml(title + "." + format.toLowerCase()) + '">' + downloadIconSvg() + '</button>'
+      : '<button type="button" class="vm-file-download vm-icon-download" title="Download unavailable" aria-label="Download unavailable" disabled>' + downloadIconSvg() + '</button>';
     return '<div class="vm-file-card" data-vm-card="file">' +
       '<div class="vm-file-icon">' + icon + '</div>' +
       '<div class="vm-file-body">' +
@@ -303,6 +316,41 @@
     return Promise.resolve(true);
   }
 
+  function setAttr(el, name, value) {
+    if (!el) return;
+    if (typeof el.setAttribute === "function") el.setAttribute(name, value);
+    else el[name] = value;
+  }
+
+  // Replace the icon with a circular spinner for the full download handoff plus
+  // a short settle, then restore the original icon. This covers FILE_CARD
+  // buttons and any generated image/media button carrying data-download-url.
+  function downloadWithSpinner(button, url, name) {
+    if (!button || button.__vmDownloadActive) return;
+    var originalHtml = button.innerHTML;
+    var originalPointerEvents = button.style ? button.style.pointerEvents : "";
+    button.__vmDownloadActive = true;
+    button.innerHTML = downloadSpinnerSvg();
+    if (button.classList && typeof button.classList.add === "function") button.classList.add("vm-downloading");
+    if (button.style) button.style.pointerEvents = "none";
+    setAttr(button, "aria-busy", "true");
+
+    var settle = new Promise(function (resolve) { setTimeout(resolve, 450); });
+    function restore(result) {
+      button.innerHTML = originalHtml;
+      if (button.style) button.style.pointerEvents = originalPointerEvents;
+      if (button.classList && typeof button.classList.remove === "function") button.classList.remove("vm-downloading");
+      setAttr(button, "aria-busy", "false");
+      button.__vmDownloadActive = false;
+      return result;
+    }
+    Promise.resolve()
+      .then(function () { return downloadFile(url, name); })
+      .catch(function () { return false; })
+      .then(function (result) { return settle.then(function () { return restore(result); }); },
+            function () { return restore(false); });
+  }
+
   function buttonFeedback(button, copied) {
     if (!button) return;
     button.textContent = copied ? "✓ Copied!" : "Copy failed";
@@ -334,7 +382,8 @@
         node.__vmRichActionBound = true;
         node.onclick = function (event) {
           if (event && typeof event.stopPropagation === "function") event.stopPropagation();
-          downloadFile(attr(this, "data-download-url"), attr(this, "data-download-name"));
+          if (this.__vmDownloadActive) return;
+          downloadWithSpinner(this, attr(this, "data-download-url"), attr(this, "data-download-name"));
         };
       }
     }
@@ -375,7 +424,12 @@
         var copyId = attr(node, "data-copy-id");
         var downloadUrl = attr(node, "data-download-url");
         if (copyId || downloadUrl) {
-          if (!node.__vmRichActionBound) bindActions(node.parentNode || document);
+          if (!node.__vmRichActionBound) {
+            bindActions(node.parentNode || document);
+            // The document listener runs after the button's own onclick in the
+            // bubble path, so invoke the freshly bound handler on first click.
+            if (typeof node.onclick === "function") node.onclick(event);
+          }
           return;
         }
         node = node.parentNode;
@@ -399,6 +453,9 @@
     copyText: copyText,
     downloadFile: downloadFile,
     formatBubble: formatBubble,
+    downloadWithSpinner: downloadWithSpinner,
+    downloadIconSvg: downloadIconSvg,
+    downloadSpinnerSvg: downloadSpinnerSvg,
     languageLabel: languageLabel,
     badgeHtml: badgeHtml,
     copyBoxHtml: copyBoxHtml,

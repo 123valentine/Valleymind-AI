@@ -434,7 +434,35 @@ def _build_xlsx(doc: dict[str, Any]) -> bytes:
     sheet = workbook.active
     sheet.title = re.sub(r"[\[\]:*?/\\]", "-", doc["title"])[:31] or "ValleyMind"
 
+    def write_overview(target) -> None:
+        target["A1"] = doc["title"]
+        target["A1"].font = Font(bold=True, size=14)
+        row_num = 2
+        if doc["subtitle"]:
+            target.cell(row=row_num, column=1, value=doc["subtitle"])
+            row_num += 1
+        for paragraph in doc["paragraphs"]:
+            row_num += 1
+            cell = target.cell(row=row_num, column=1, value=paragraph)
+            cell.alignment = Alignment(wrap_text=True, vertical="top")
+        for section in doc["sections"]:
+            row_num += 1
+            target.cell(row=row_num, column=1, value=section["heading"] or "Section").font = Font(bold=True)
+            for paragraph in section.get("paragraphs", []):
+                row_num += 1
+                target.cell(row=row_num, column=1, value=paragraph).alignment = Alignment(wrap_text=True, vertical="top")
+            for bullet in section.get("bullets", []):
+                row_num += 1
+                target.cell(row=row_num, column=1, value=f"- {bullet}")
+        for bullet in doc["bullets"]:
+            row_num += 1
+            target.cell(row=row_num, column=1, value=f"- {bullet}")
+        target.column_dimensions["A"].width = 100
+
     if doc["headers"]:
+        # Keep the dataset as the active sheet for spreadsheet/CSV semantics,
+        # but preserve headings and explanatory prose on a second sheet so an
+        # XLSX export contains the whole generated document.
         sheet.append(doc["headers"])
         for cell in sheet[1]:
             cell.font = Font(bold=True, color="FFFFFF")
@@ -449,30 +477,10 @@ def _build_xlsx(doc: dict[str, Any]) -> bytes:
                 widths[idx] = min(42, max(widths.get(idx, 10), len(str(cell.value or "")) + 2))
         for idx, width in widths.items():
             sheet.column_dimensions[get_column_letter(idx)].width = width
+        overview = workbook.create_sheet("Overview")
+        write_overview(overview)
     else:
-        sheet.append([doc["title"]])
-        sheet["A1"].font = Font(bold=True, size=14)
-        row_num = 2
-        if doc["subtitle"]:
-            sheet.cell(row=row_num, column=1, value=doc["subtitle"])
-            row_num += 1
-        for paragraph in doc["paragraphs"]:
-            row_num += 1
-            cell = sheet.cell(row=row_num, column=1, value=paragraph)
-            cell.alignment = Alignment(wrap_text=True, vertical="top")
-        for section in doc["sections"]:
-            row_num += 1
-            sheet.cell(row=row_num, column=1, value=section["heading"] or "Section").font = Font(bold=True)
-            for paragraph in section.get("paragraphs", []):
-                row_num += 1
-                sheet.cell(row=row_num, column=1, value=paragraph).alignment = Alignment(wrap_text=True, vertical="top")
-            for bullet in section.get("bullets", []):
-                row_num += 1
-                sheet.cell(row=row_num, column=1, value=f"- {bullet}")
-        for bullet in doc["bullets"]:
-            row_num += 1
-            sheet.cell(row=row_num, column=1, value=f"- {bullet}")
-        sheet.column_dimensions["A"].width = 80
+        write_overview(sheet)
 
     buffer = io.BytesIO()
     workbook.save(buffer)

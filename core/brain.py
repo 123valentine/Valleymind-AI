@@ -568,7 +568,11 @@ def _detect_file_request(message: str) -> dict | None:
 
 
 def _file_input_text(message: str, history: list | None, limit: int = 4) -> str:
-    """Use explicit user content, otherwise export the latest assistant answer."""
+    """Return source material supplied by the user or an earlier assistant turn.
+
+    This is *source material* for drafting, never the final file body: the
+    content pipeline always writes a complete document from it.
+    """
     text = str(message or "").strip()
     explicit = re.search(
         r"(?:content\s*:|text\s*:|about\s+|containing\s+|with\s+(?:this|these|the following)\s*)",
@@ -586,6 +590,230 @@ def _file_input_text(message: str, history: list | None, limit: int = 4) -> str:
     if prior:
         return "\n\n".join(reversed(prior[-limit:]))
     return text
+
+
+_FILE_LEADING_ACTION_RE = re.compile(
+    r"^\s*(?:please\s+|kindly\s+)?"
+    r"(?:create|make|generate|build|export|save|give|send|download|prepare|write|convert|attach)"
+    r"(?:\s+(?:me|us))?(?:\s+(?:a|an|the))?\s+",
+    re.IGNORECASE,
+)
+_FILE_NAMED_TITLE_RE = re.compile(
+    r"(?:called|titled|named)\s+[\"']?([^\"'\n,]{2,60})[\"']?",
+    re.IGNORECASE,
+)
+_FILE_FORMAT_CLEAN_RE = re.compile(
+    r"\b(?:" + "|".join(re.escape(word) for word, _ in _FILE_FORMAT_WORDS) + r")\b",
+    re.IGNORECASE,
+)
+_FILE_AS_FORMAT_CLEAN_RE = re.compile(
+    r"\b(?:as|in)\s+(?:a|an|the)?\s*(?:"
+    + "|".join(re.escape(word) for word, _ in _FILE_FORMAT_WORDS)
+    + r")\b",
+    re.IGNORECASE,
+)
+_FILE_GENERIC_CLEAN_RE = re.compile(
+    r"\b(?:downloadable|download|file|link|attachment|copy)\b",
+    re.IGNORECASE,
+)
+_FILE_TOPIC_CONNECTOR_RE = re.compile(
+    r"^\s*(?:about|on|regarding|for|covering|summarizing|summarising|explaining|"
+    r"describing|with|containing)\s+",
+    re.IGNORECASE,
+)
+_FILE_COMPARISON_RE = re.compile(
+    r"\b(?:compare|comparison|versus|vs\.?|compared\s+with|differences?\s+between|"
+    r"best|top|rankings?|prices?|rates?|scores?|releases?)\b",
+    re.IGNORECASE,
+)
+_FILE_CONTENT_FENCE_RE = re.compile(
+    r"^\s*```(?:markdown|md|text|txt|plain)?\s*\n([\s\S]*?)\n```\s*$",
+    re.IGNORECASE,
+)
+_FILE_DRAFT_PREAMBLE_RE = re.compile(
+    r"^\s*(?:sure[,!]?\s*)?(?:here(?:'s|\s+is))\s+"
+    r"(?:the\s+)?(?:document|content|file|draft|write[- ]?up)\s*[:.\-–—]?\s*\n?",
+    re.IGNORECASE,
+)
+
+
+def _file_topic_from_message(message: str, fmt: str, history: list | None) -> str:
+    """Strip the file action wrapper so the LLM drafts about the real subject."""
+    text = _FILE_LEADING_ACTION_RE.sub("", str(message or "").strip())
+    text = _FILE_NAMED_TITLE_RE.sub(" ", text)
+    text = _FILE_AS_FORMAT_CLEAN_RE.sub(" ", text)
+    text = _FILE_FORMAT_CLEAN_RE.sub(" ", text)
+    text = _FILE_GENERIC_CLEAN_RE.sub(" ", text)
+    text = _FILE_TOPIC_CONNECTOR_RE.sub("", text)
+    text = re.sub(r"\s+", " ", text).strip(" \t\r\n.,:;-–—")
+    if text.lower() in {"this", "these", "it", "that", "the following"} or len(text) < 3:
+        source = _file_input_text(message, history, limit=2).strip()
+        if source and source != str(message or "").strip() and len(source) >= 3:
+            text = source
+    if len(text) < 3:
+        text = f"the requested {str(fmt or 'document').upper()} document"
+    return text[:500]
+
+
+def _file_context_text(history: list | None, message: str, limit: int = 8) -> str:
+    """Compact, bounded conversation context for the drafting prompt."""
+    current = str(message or "").strip()
+    lines: list[str] = []
+    for msg in reversed(list(history or [])[-limit * 2:]):
+        role = str(msg.get("role", "") or "user")
+        content = str(msg.get("content", "") or "").strip()
+        if not content or "[[FILE_CARD:" in content:
+            continue
+        if role == "user" and content == current:
+            continue
+        lines.append(f"{role.capitalize()}: {content[:500]}")
+        if len(lines) >= limit:
+            break
+    return "\n".join(reversed(lines))[:4000]
+
+
+def _file_needs_live_grounding(topic: str) -> bool:
+    """True only for current-fact or comparison subjects, not generic drafting."""
+    text = str(topic or "").strip()
+    return bool(_needs_forced_live_search(text) or _FILE_COMPARISON_RE.search(text))
+
+
+def _file_live_context(topic: str) -> tuple[str, list]:
+    """Fetch bounded live evidence for a file topic when it needs grounding."""
+    if not _file_needs_live_grounding(topic):
+        return "", []
+    try:
+        si = SourceIntelligence()
+        package = si.research_with_fetch(topic, research_domain="general")
+        context = str(getattr(package, "evidence", None) and package.to_context_string() or "")
+        sources = list(getattr(package, "to_frontend_metadata", lambda: [])() or [])
+        if context and context != str(LIVE_DATA_UNAVAILABLE):
+            return context[:7000], sources[:6]
+    except Exception as exc:
+        print(f"[FILE GEN] Live grounding research failed: {_short_error_detail(str(exc))}")
+    try:
+        context = _fetch_live_context_force(topic)
+        if context and context != str(LIVE_DATA_UNAVAILABLE):
+            return context[:7000], []
+    except Exception as exc:
+        print(f"[FILE GEN] Live search fallback failed: {_short_error_detail(str(exc))}")
+    return "", []
+
+
+def _extract_llm_document(raw: str) -> str:
+    """Extract a Markdown document from raw or lightly wrapped LLM output."""
+    text = str(raw or "").strip()
+    if not text:
+        return ""
+    if text.startswith("{") or text.startswith("```json"):
+        candidate = text.replace("```json", "").replace("```", "").strip()
+        try:
+            parsed = json.loads(candidate)
+            if isinstance(parsed, dict):
+                text = str(
+                    parsed.get("document") or parsed.get("reply")
+                    or parsed.get("content") or parsed.get("text") or ""
+                ).strip()
+        except (ValueError, TypeError):
+            pass
+    fence = _FILE_CONTENT_FENCE_RE.match(text)
+    if fence:
+        text = fence.group(1).strip()
+    text = strip_animation_tags(text).strip()
+    text = _FILE_DRAFT_PREAMBLE_RE.sub("", text).strip()
+    return text
+
+
+def _is_substantive_file_content(content: str, message: str) -> bool:
+    """Reject prompt echoes and thin drafts before they reach a file writer."""
+    text = str(content or "").strip()
+    if not text or text == str(message or "").strip() or len(text) < 400:
+        return False
+    headings = len(re.findall(r"^\s{0,3}#{1,6}\s+\S", text, re.MULTILINE))
+    bullets = len(re.findall(r"^\s*(?:[-*•]|\d+[.)])\s+\S", text, re.MULTILINE))
+    table_rows = sum(
+        1 for line in text.splitlines()
+        if line.lstrip().startswith("|") and line.rstrip().endswith("|")
+    )
+    return headings >= 2 or (bullets >= 4 and table_rows >= 4)
+
+
+def _fallback_file_content(topic: str, fmt: str, title: str, context: str, live: str) -> str:
+    """Deterministic, structured draft used only when every LLM provider fails."""
+    evidence = (live or context or "").strip()
+    evidence_note = (
+        "Use the supplied context below as the factual anchor for this draft:\n\n"
+        + evidence[:1600]
+        if evidence else
+        "No live research was needed for this subject; the analysis below is framed "
+        "as a practical planning document rather than a claim of current facts."
+    )
+    return f"""## Executive summary
+
+This document provides a working brief on {topic}. It is organised so a reader can move from the background to practical decisions without needing a separate explanation. The emphasis is on clarity, actionable detail, and a balanced view of the opportunities and constraints involved.
+
+{evidence_note}
+
+## Background and scope
+
+The subject of this document is {topic}. The scope covers the setting in which it arises, the main factors that shape it, and the choices available to the people responsible for it. Where a claim depends on changing information, the document distinguishes between durable principles and details that should be rechecked before decisions are made.
+
+- Define the decision or outcome the document is meant to support.
+- Identify who will act on the recommendations and what authority they have.
+- Separate confirmed context from assumptions that still need validation.
+- Record the time horizon so recommendations remain interpretable later.
+
+## Analysis
+
+A useful analysis of {topic} starts with the forces that are already visible and then considers how they interact. The strongest approach is to examine the current position, the pressures that could change it, and the practical levers available. This avoids treating a single factor as the whole explanation and makes it easier to see where a small intervention could have a disproportionate effect.
+
+The most important considerations are usually not the most obvious ones. Process quality, timing, incentives, and the availability of reliable evidence often determine whether a sound idea produces a useful result. Each recommendation below is therefore paired with an owner, a measurable outcome, and a review point.
+
+- Establish a baseline before making changes.
+- Test the highest-impact assumption with the smallest reasonable effort.
+- Keep a short list of unresolved questions visible to decision-makers.
+- Review results against the baseline rather than against anecdotes.
+
+## Recommendations
+
+Treat the recommendations as a staged plan rather than a single commitment. Start with actions that are reversible and cheap to verify, then move to larger changes once the early evidence is clear. Keep communication short and specific so that every participant understands what changed, why it changed, and how success will be judged.
+
+1. Confirm the objective and agree on two or three measures of success.
+2. Gather the minimum evidence needed to reduce the largest uncertainty.
+3. Run a bounded first pass and document what happened.
+4. Decide whether to scale, revise, or stop based on the recorded result.
+5. Schedule a follow-up review with a named owner and a fixed date.
+
+## Risks and mitigations
+
+| Risk | Early signal | Mitigation | Owner | Priority |
+|---|---|---|---|---|
+| Unclear objective | Stakeholders describe different outcomes | Write a one-sentence objective and get explicit agreement | Sponsor | High |
+| Weak evidence | Decisions rely on anecdotes | Record sources and date-stamp every assumption | Analyst | High |
+| Scope creep | New work added without removing anything | Maintain an explicit out-of-scope list | Lead | Medium |
+| Slow feedback | No review date is scheduled | Set a short review cycle with visible metrics | Lead | Medium |
+| Poor adoption | Users bypass the new process | Involve affected users before the rollout | Manager | High |
+| Overstated certainty | Claims ignore uncertainty | Label assumptions and recheck time-sensitive facts | Analyst | Medium |
+| Unowned actions | Tasks have no named owner | Assign one owner per action before approval | Sponsor | High |
+| Hidden dependency | Work stalls on an external input | Map dependencies and add an escalation path | Lead | Medium |
+
+## Implementation roadmap
+
+Begin with a short discovery phase, followed by a bounded pilot and a documented review. Each phase should end with a decision that is recorded in plain language. If the evidence is mixed, prefer a narrower revision over a broad rollout; if the result is clear, scale deliberately and keep monitoring the original measures.
+
+- **Phase 1 — Align:** confirm the objective, owner, and measures.
+- **Phase 2 — Validate:** test the riskiest assumption with bounded evidence.
+- **Phase 3 — Pilot:** run the smallest useful version and capture results.
+- **Phase 4 — Scale:** expand only what the pilot evidence supports.
+- **Phase 5 — Review:** compare outcomes with the baseline and record lessons.
+
+## Key takeaways
+
+- {title} is best handled as a sequence of evidence-backed decisions.
+- The first review should happen early enough to change course cheaply.
+- Every recommendation needs an owner, a measure, and a review date.
+- Time-sensitive statements should be rechecked before they are treated as settled fact.
+"""
 
 
 # Direct, time-sensitive factual questions must never depend on the LLM search
@@ -2770,15 +2998,94 @@ class MarcusBrain:
             print(f"[ERROR] Title generation failed: {exc}")
             return ""
 
-    def _file_generation_reply(self, cid: str, message: str, timestamp: str, file_request: dict) -> str:
-        """Generate a real file locally and return a reply with a FILE_CARD wire block."""
-        fmt = str(file_request.get("format") or "txt")
-        title = str(file_request.get("title") or f"ValleyMind {fmt.upper()} Export")
+    def _generate_structured_file_content(
+        self,
+        cid: str,
+        message: str,
+        fmt: str,
+        title: str,
+    ) -> tuple[str, dict]:
+        """Draft a complete document before any file bytes are written.
+
+        File requests used to echo the user's instruction straight into the
+        file. This step separates the subject from the wrapper, optionally
+        grounds current/comparison subjects in live search evidence, and asks
+        the LLM cluster for a full Markdown payload with sections, bullets and
+        a data table. If every provider fails, a structured built-in draft is
+        used instead of the prompt itself.
+        """
         try:
             history = self.memory.get_chat(cid) or []
         except Exception:
             history = []
-        content = _file_input_text(message, history)
+        topic = _file_topic_from_message(message, fmt, history)
+        context = _file_context_text(history, message)
+        live_context, sources = _file_live_context(topic)
+        grounded = bool(live_context)
+
+        system_prompt = (
+            "You are the document drafting engine for ValleyMind-AI. Write the "
+            "COMPLETE body of a ready-to-use document, not a chat reply. Return "
+            "only Markdown: no preamble, no closing note, no code fences, no JSON, "
+            "no wire tags and no animation tags. Never repeat, quote, or merely "
+            "rephrase the user's instruction; write the actual document it asks for. "
+            "Structure the document with an opening overview paragraph and at least "
+            "four clear '## ' section headings. Under each heading write detailed "
+            "explanatory paragraphs and a bullet list with specific, concrete points. "
+            "Include a '## Key takeaways' section and one Markdown table with a header "
+            "row and at least six substantive data rows. For XLSX and CSV the table "
+            "must be a well-formed dataset with consistent columns. Do not invent "
+            "precise current figures: when live context is supplied, use only those "
+            "facts; otherwise use sound general knowledge and label assumptions "
+            "clearly. Aim for 900-1400 words of useful content."
+        )
+        parts = [
+            f"Document title: {title}",
+            f"Requested format: {str(fmt or 'txt').upper()}",
+            f"Subject to cover: {topic}",
+        ]
+        if context:
+            parts += ["", "Relevant conversation context (use it to tailor the draft):", context]
+        if live_context:
+            parts += [
+                "",
+                "Verified live research context (use these facts where relevant):",
+                live_context[:6000],
+            ]
+        parts += ["", "Write the complete document now."]
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": "\n".join(parts)},
+        ]
+
+        try:
+            raw, meta = _call_llm_cluster(messages, timeout=45)
+            content = _extract_llm_document(raw)
+            if not _is_substantive_file_content(content, message):
+                raise RuntimeError("LLM returned a thin draft or prompt echo")
+            return content, {
+                "grounded": grounded,
+                "provider": _served_by(meta or {}),
+                "sources": sources,
+            }
+        except Exception as exc:
+            print(
+                "[FILE GEN] Structured drafting unavailable ("
+                + _short_error_detail(str(exc))
+                + "); using built-in structured draft"
+            )
+            content = _fallback_file_content(topic, fmt, title, context, live_context)
+            return content, {
+                "grounded": grounded,
+                "provider": "local-fallback",
+                "sources": sources,
+            }
+
+    def _file_generation_reply(self, cid: str, message: str, timestamp: str, file_request: dict) -> str:
+        """Draft structured content, generate a real file and return a FILE_CARD."""
+        fmt = str(file_request.get("format") or "txt")
+        title = str(file_request.get("title") or f"ValleyMind {fmt.upper()} Export")
+        content, content_meta = self._generate_structured_file_content(cid, message, fmt, title)
         try:
             meta = _generate_real_file(content, fmt, title=title)
             card = _make_file_card(meta, title)
@@ -2793,6 +3100,10 @@ class MarcusBrain:
         self.last_animation = resolve_animation_state("success")
         state = self._metadata(False, True, "local")
         state["detected_route"] = "file_generation"
+        state["file_content_provider"] = content_meta.get("provider", "")
+        state["file_content_grounded"] = bool(content_meta.get("grounded"))
+        if content_meta.get("sources"):
+            state["sources"] = list(content_meta["sources"])
         self.last_response_meta = state
         try:
             self.memory.add_message(cid, "assistant", reply, timestamp)
@@ -2862,11 +3173,12 @@ class MarcusBrain:
             # ── Shared activity indicator: begin processing ─────────────
             _emit_activity("general", "processing", detail="Starting request")
 
-            # Real file requests bypass search/LLM entirely so the download is
-            # produced even when external providers are unavailable.
+            # File requests go through a dedicated drafting step first: live
+            # grounding when needed, otherwise the LLM plus chat context. The
+            # generated document is then written to a real downloadable file.
             file_request = _detect_file_request(message)
             if file_request:
-                _emit_activity("general", "preparing_response", detail=f"Creating {file_request['format'].upper()} file")
+                _emit_activity("general", "preparing_response", detail=f"Drafting {file_request['format'].upper()} content")
                 return self._file_generation_reply(cid, message, timestamp, file_request)
 
             live_ctx = ""
@@ -3112,13 +3424,14 @@ class MarcusBrain:
                 except Exception as exc:
                     print(f"[ERROR] Auto-title failed: {exc}")
 
-            # Generate real downloadable files before search/LLM so the FILE_CARD
-            # always reaches the PWA and Android WebView with a working link.
+            # Draft complete content before writing the real file so the
+            # FILE_CARD reaches the PWA/Android WebView with a working link and
+            # a substantive document behind it.
             file_request = _detect_file_request(message)
             if file_request:
                 yield {"thinking_process": {
                     "step": "generating_file",
-                    "label": f"Creating your {file_request['format'].upper()} file...",
+                    "label": f"Drafting your {file_request['format'].upper()} content...",
                 }}
                 reply = self._file_generation_reply(cid, message, timestamp, file_request)
                 yield reply
