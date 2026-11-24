@@ -4,6 +4,7 @@ import re
 import threading
 import time
 from datetime import datetime
+from typing import Optional
 
 import requests
 
@@ -12,6 +13,7 @@ from core.activity_v2 import get_current_session, track_activity
 from core.activity_adapters import WebSearchAdapter, MemoryAdapter, ProviderAdapter
 from core.character import load_character_profile
 from core.config import PROJECT_ROOT, get_config
+from core.file_gen import file_card as _make_file_card, generate_file as _generate_real_file
 from core.external_apis import (
     classify_research_intent,
     _search_general_web,
@@ -383,6 +385,10 @@ FORMAT RULES (choose the right format; keep these in one consistent style):
 - Pros/cons → two short bullet lists or a two-column table.
 - Report/research → title, summary, sections, key points, sources.
 - Code → fenced code block with the language specified.
+- Prompts, templates, configurations, and long copyable snippets → wrap them in [[COPY_BOX: Short Title | content]] or a language-tagged fenced code block, never plain unstyled text.
+- Category/type tags (Cards, Copy boxes, Thumbnails, Tables, Sections, Example) → emit inline [[BADGE: Label | blue|green|purple|amber|gray]] pills.
+- Visual multi-item roundups (features, files, options) → emit [[THUMB_GRID: Title | Subtitle | icon; Title | Subtitle | icon]] so the UI shows rounded thumbnail cards.
+- File/download requests (PDF, Word, Excel, CSV, text, markdown, ZIP, "export this as a file", "give me a download link") → keep the text to one short sentence. The app attaches a real Download Card automatically; never invent or describe a fake link.
 - Math → clean notation.
 - Warnings/notes → a short highlighted note line.
 - Never use code fences for tables or ordinary text. Never output dash-line "tables". Never print markdown symbols as decoration. Never pad answers with filler.
@@ -511,6 +517,75 @@ def _wants_entity_list(message: str) -> bool:
     """True for list/name/mention/recommend/rank requests about named entities."""
     text = str(message or "")
     return bool(_ENTITY_LIST_SIGNAL_RE.search(text) and _ENTITY_SUBJECT_RE.search(text))
+
+
+# ── Real downloadable file requests ────────────────────────────────────────
+_FILE_ACTION_RE = re.compile(
+    r"\b(?:create|make|generate|build|export|save|give|send|download|prepare|write|convert|attach)\b",
+    re.IGNORECASE,
+)
+_FILE_FORMAT_WORDS = (
+    ("pdf", "pdf"), ("word", "docx"), ("docx", "docx"), ("doc", "docx"),
+    ("xlsx", "xlsx"), ("xls", "xlsx"), ("excel", "xlsx"),
+    ("spreadsheet", "xlsx"), ("sheet", "xlsx"), ("csv", "csv"),
+    ("markdown", "md"), ("md", "md"), ("text", "txt"), ("txt", "txt"),
+    ("zip", "zip"),
+)
+_FILE_FORMAT_RE = re.compile(
+    r"(?<![a-z])(?:" + "|".join(re.escape(word) for word, _ in _FILE_FORMAT_WORDS) + r")(?![a-z])",
+    re.IGNORECASE,
+)
+_FILE_LINK_RE = re.compile(
+    r"\b(?:download(?:able)?(?:\s+(?:file|link|copy))?|file\s+link|link\s+to\s+(?:the\s+)?file|as\s+(?:a|an)\s+file|attachment)\b",
+    re.IGNORECASE,
+)
+_FILE_EXPORT_RE = re.compile(
+    r"\b(?:export|convert|save|generate|create|make|give|send|download|attach)\b",
+    re.IGNORECASE,
+)
+
+
+def _detect_file_request(message: str) -> dict | None:
+    """Detect explicit requests for a real downloadable file."""
+    text = str(message or "").strip()
+    if not text:
+        return None
+    fmt_match = _FILE_FORMAT_RE.search(text)
+    fmt = ""
+    if fmt_match:
+        word = fmt_match.group(0).lower()
+        fmt = next(target for source, target in _FILE_FORMAT_WORDS if source == word)
+    generic = bool(_FILE_LINK_RE.search(text))
+    if not fmt and not generic:
+        return None
+    if fmt and not (_FILE_ACTION_RE.search(text) or generic or re.search(r"\bas\s+(?:a|an)\b", text, re.I)):
+        return None
+    if generic and not _FILE_EXPORT_RE.search(text) and not fmt:
+        return None
+    named = re.search(r"(?:called|titled|named)\s+[\"']?([^\"'\n,]{2,60})", text, re.I)
+    title = named.group(1).strip() if named else f"ValleyMind {fmt.upper() if fmt else 'File'} Export"
+    return {"format": fmt or "txt", "title": title}
+
+
+def _file_input_text(message: str, history: list | None, limit: int = 4) -> str:
+    """Use explicit user content, otherwise export the latest assistant answer."""
+    text = str(message or "").strip()
+    explicit = re.search(
+        r"(?:content\s*:|text\s*:|about\s+|containing\s+|with\s+(?:this|these|the following)\s*)",
+        text, re.IGNORECASE,
+    )
+    if explicit and text[explicit.end():].strip():
+        return text[explicit.end():].strip()
+    prior = []
+    for msg in (history or [])[-limit * 2:]:
+        if str(msg.get("role", "")) != "assistant":
+            continue
+        content = str(msg.get("content", "") or "").strip()
+        if content and "[[FILE_CARD:" not in content:
+            prior.append(content)
+    if prior:
+        return "\n\n".join(reversed(prior[-limit:]))
+    return text
 
 
 # Direct, time-sensitive factual questions must never depend on the LLM search
@@ -2695,6 +2770,40 @@ class MarcusBrain:
             print(f"[ERROR] Title generation failed: {exc}")
             return ""
 
+    def _file_generation_reply(self, cid: str, message: str, timestamp: str, file_request: dict) -> str:
+        """Generate a real file locally and return a reply with a FILE_CARD wire block."""
+        fmt = str(file_request.get("format") or "txt")
+        title = str(file_request.get("title") or f"ValleyMind {fmt.upper()} Export")
+        try:
+            history = self.memory.get_chat(cid) or []
+        except Exception:
+            history = []
+        content = _file_input_text(message, history)
+        try:
+            meta = _generate_real_file(content, fmt, title=title)
+            card = _make_file_card(meta, title)
+        except Exception as exc:
+            print(f"[FILE GEN] Brain generation failed: {exc}")
+            return "I couldn't create that file right now. Please try again."
+        label = {
+            "pdf": "PDF", "docx": "Word", "xlsx": "Excel", "csv": "CSV",
+            "txt": "text", "md": "Markdown", "zip": "ZIP",
+        }.get(fmt, fmt.upper())
+        reply = f"Done — I created your {label} file. Tap Download below.\n\n{card}"
+        self.last_animation = resolve_animation_state("success")
+        state = self._metadata(False, True, "local")
+        state["detected_route"] = "file_generation"
+        self.last_response_meta = state
+        try:
+            self.memory.add_message(cid, "assistant", reply, timestamp)
+        except Exception as exc:
+            print(f"[ERROR] Memory add_message (file card) failed: {exc}")
+        try:
+            self.memory.save_memory()
+        except Exception as exc:
+            print(f"[ERROR] Memory save after file card failed: {exc}")
+        return reply
+
     def respond(self, message: str, chat_id: str = "", image_data: str = "", mongo_history: list = None, persist_image_data: bool = True, route=None) -> str:
         try:
             self.memory.reload()
@@ -2752,6 +2861,13 @@ class MarcusBrain:
 
             # ── Shared activity indicator: begin processing ─────────────
             _emit_activity("general", "processing", detail="Starting request")
+
+            # Real file requests bypass search/LLM entirely so the download is
+            # produced even when external providers are unavailable.
+            file_request = _detect_file_request(message)
+            if file_request:
+                _emit_activity("general", "preparing_response", detail=f"Creating {file_request['format'].upper()} file")
+                return self._file_generation_reply(cid, message, timestamp, file_request)
 
             live_ctx = ""
             search_note = ""
@@ -2995,6 +3111,19 @@ class MarcusBrain:
                         self.memory.set_title(cid, title)
                 except Exception as exc:
                     print(f"[ERROR] Auto-title failed: {exc}")
+
+            # Generate real downloadable files before search/LLM so the FILE_CARD
+            # always reaches the PWA and Android WebView with a working link.
+            file_request = _detect_file_request(message)
+            if file_request:
+                yield {"thinking_process": {
+                    "step": "generating_file",
+                    "label": f"Creating your {file_request['format'].upper()} file...",
+                }}
+                reply = self._file_generation_reply(cid, message, timestamp, file_request)
+                yield reply
+                yield {"animation": self.last_animation}
+                return
 
             # ── Early recovery detection for UI status ──────────────
             _recovery_detected = False

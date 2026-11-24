@@ -3687,6 +3687,10 @@ window.VMAddCodeCopyButtons = function (bub) {
     for (var i = 0; i < blocks.length; i++) {
       var pre = blocks[i];
       if (pre.classList && pre.classList.contains("vm-code-formatted")) continue;
+      // vm_richrender.js owns dark code cards; don't add a second absolute
+      // copy button inside those cards.
+      if (pre.classList && pre.classList.contains("vm-code-card-body")) continue;
+      if (pre.parentNode && pre.parentNode.classList && pre.parentNode.classList.contains("vm-code-card")) continue;
       if (pre.classList) pre.classList.add("vm-code-formatted");
       pre.style.position = "relative";
       var btn = document.createElement("button");
@@ -3699,11 +3703,18 @@ window.VMAddCodeCopyButtons = function (bub) {
         b.onclick = function () {
           var code = p.querySelector("code");
           var text = code ? (code.textContent || code.innerText || "") : (p.textContent || "");
-          if (!navigator || !navigator.clipboard) return;
-          navigator.clipboard.writeText(text).then(function () {
-            b.textContent = "Copied!";
+          function reset(ok) {
+            b.textContent = ok ? "Copied!" : "Copy";
             setTimeout(function () { b.textContent = "Copy"; }, 1200);
-          }, function () { b.textContent = "Copy"; });
+          }
+          // Prefer the shared helper so Android WebView gets an execCommand
+          // fallback when navigator.clipboard is unavailable.
+          if (typeof window.VMCopyText === "function") {
+            window.VMCopyText(text).then(reset, function () { reset(false); });
+            return;
+          }
+          if (!navigator || !navigator.clipboard || !navigator.clipboard.writeText) { reset(false); return; }
+          navigator.clipboard.writeText(text).then(function () { reset(true); }, function () { reset(false); });
         };
       })(pre, btn);
       pre.appendChild(btn);
@@ -3875,11 +3886,16 @@ window.VMEnrichCopyboxes = function (bub) {
       (function (el, pre, btn) {
         btn.addEventListener("click", function (e) {
           e.stopPropagation();
-          if (!navigator || !navigator.clipboard) return;
-          navigator.clipboard.writeText(pre.textContent).then(function () {
-            btn.textContent = "Copied!";
+          function reset(ok) {
+            btn.textContent = ok ? "Copied!" : "Copy";
             setTimeout(function () { btn.textContent = "Copy"; }, 1200);
-          }, function () { btn.textContent = "Copy"; });
+          }
+          if (typeof window.VMCopyText === "function") {
+            window.VMCopyText(pre.textContent).then(reset, function () { reset(false); });
+            return;
+          }
+          if (!navigator || !navigator.clipboard || !navigator.clipboard.writeText) { reset(false); return; }
+          navigator.clipboard.writeText(pre.textContent).then(function () { reset(true); }, function () { reset(false); });
         }, false);
       })(el, pre, btn);
       // Rebuild: pre + button

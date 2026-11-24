@@ -20,7 +20,7 @@ from pathlib import Path
 from threading import Lock, Thread
 from urllib.parse import quote
 
-from flask import Flask, Response, jsonify, redirect, request, send_from_directory, session, stream_with_context
+from flask import Flask, Response, jsonify, redirect, request, send_file, send_from_directory, session, stream_with_context
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from core.activity_v2 import (
@@ -43,6 +43,7 @@ from core.vision import get_vision_service
 from core.tts import speak_marcus
 from core.video_dispatcher import get_video_dispatcher
 from core import ai_builder
+from core import file_gen
 from core import template_library as tpllib
 import core.template_render as tr
 import core.provider_manager as pm
@@ -1145,6 +1146,47 @@ def tts_file(filename):
     except Exception as exc:
         print(f"[TTS] R2 serve miss for {filename}: {exc}")
     return ("not found", 404)
+
+
+@app.route("/api/files/generate", methods=["POST"])
+def api_files_generate():
+    """Generate a real downloadable file from a chat/client payload."""
+    data = request.get_json(silent=True) or {}
+    content = data.get("content", "")
+    if content in (None, ""):
+        content = data.get("text", "")
+    fmt = str(data.get("format") or data.get("file_type") or "txt")
+    title = str(data.get("title") or "ValleyMind Export")
+    filename = str(data.get("filename") or "")
+    try:
+        meta = file_gen.generate_file(content, fmt, title=title, filename=filename)
+    except Exception as exc:
+        print(f"[FILE GEN] Generation failed: {exc}")
+        return jsonify({"status": "error", "error": str(exc)}), 500
+    return jsonify({
+        "status": "success",
+        **meta,
+        "file_card": file_gen.file_card(meta),
+    })
+
+
+@app.route("/api/files/download/<file_id>", methods=["GET"])
+def api_files_download(file_id):
+    """Serve generated files as real attachments with a signed download token."""
+    try:
+        path, meta = file_gen.get_file(file_id, request.args.get("token", ""))
+    except PermissionError:
+        return jsonify({"status": "error", "error": "Invalid or missing download token."}), 403
+    except FileNotFoundError:
+        return jsonify({"status": "error", "error": "File not found."}), 404
+    return send_file(
+        path,
+        as_attachment=True,
+        download_name=meta["filename"],
+        mimetype=meta["mimetype"],
+        conditional=True,
+        max_age=0,
+    )
 
 
 @app.route("/api/tts", methods=["POST"])

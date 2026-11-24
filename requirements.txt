@@ -23,4 +23,5 @@ edge-tts
 pypdf
 python-docx
 openpyxl
+reportlab
 python-pptx
