@@ -148,6 +148,22 @@
     '</div>';
   }
 
+  function imageCardHtml(body) {
+    var parts = String(body || "").split("|").map(function (part) { return String(part || "").trim(); });
+    var url = safeUrl(parts[0]);
+    if (!url) return "";
+    var alt = parts[1] || "Generated image";
+    var fileName = parts[2] || "valleymind_image.png";
+    return '<div class="vm-image-card vm-chat-media-card" data-vm-card="image" style="position:relative;display:inline-block;max-width:100%;margin:8px 0;border-radius:14px;overflow:hidden;border:1px solid rgba(148,163,184,0.28);background:#f8fafc;">' +
+      '<img src="' + escapeHtml(url) + '" alt="' + escapeHtml(alt) + '" loading="lazy" style="display:block;max-width:100%;width:100%;height:auto;">' +
+      '<button type="button" class="vm-file-download vm-icon-download vm-media-download" title="Download" aria-label="Download" ' +
+        'data-download-url="' + escapeHtml(url) + '" data-download-name="' + escapeHtml(fileName) + '" ' +
+        'style="position:absolute;right:10px;bottom:10px;width:36px;height:36px;display:flex;align-items:center;justify-content:center;border-radius:50%;border:1px solid rgba(255,255,255,0.45);background:rgba(15,23,42,0.72);color:#fff;cursor:pointer;">' +
+        downloadIconSvg() +
+      '</button>' +
+    '</div>';
+  }
+
   function thumbGridHtml(body) {
     var items = String(body || "").split(/;|\r?\n/).map(function (item) { return item.trim(); }).filter(Boolean);
     if (!items.length) return "";
@@ -187,6 +203,12 @@
     var store = [];
     var prepared = String(text);
 
+    prepared = prepared.replace(/\[\[IMAGE_CARD:\s*([\s\S]*?)\]\]/gi, function (match, body) {
+      var card = imageCardHtml(body);
+      if (!card) return "";
+      store.push(card);
+      return tokenFor(store.length - 1);
+    });
     prepared = prepared.replace(/\[\[FILE_CARD:\s*([\s\S]*?)\]\]/gi, function (match, body) {
       store.push(fileCardHtml(body));
       return tokenFor(store.length - 1);
@@ -441,9 +463,32 @@
   if (selector && typeof selector.select === "function") {
     var originalSelect = selector.select;
     selector.select = function (text) {
-      if (text && /\[\[(?:FILE_CARD|COPY_BOX|BADGE|THUMB_GRID):/i.test(String(text))) return "rich";
+      if (text && /\[\[(?:IMAGE_CARD|FILE_CARD|COPY_BOX|BADGE|THUMB_GRID):/i.test(String(text))) return "rich";
       return originalSelect.call(selector, text);
     };
+  }
+
+  // Ordinary prose must never become a bordered monospace copy box. The
+  // legacy VMAutoCopyReady heuristic wraps any short question/reply, so it is
+  // disabled here (after index.html has declared it). Copy UI remains limited
+  // to explicit fenced code and [[COPY_BOX: ...]] blocks above.
+  function disableAutomaticCopyBoxes() {
+    try {
+      window.VMLooksLikeCopyableMessage = function () { return false; };
+      window.VMAutoCopyReady = function () { return false; };
+    } catch (e) {}
+  }
+  if (typeof document !== "undefined") {
+    if (document.readyState === "loading" && typeof document.addEventListener === "function") {
+      document.addEventListener("DOMContentLoaded", disableAutomaticCopyBoxes, false);
+    } else {
+      disableAutomaticCopyBoxes();
+    }
+    if (typeof window.addEventListener === "function") {
+      window.addEventListener("load", disableAutomaticCopyBoxes, false);
+    }
+  } else {
+    disableAutomaticCopyBoxes();
   }
 
   window.VMCopyText = copyText;
@@ -459,6 +504,7 @@
     languageLabel: languageLabel,
     badgeHtml: badgeHtml,
     copyBoxHtml: copyBoxHtml,
+    imageCardHtml: imageCardHtml,
     fileCardHtml: fileCardHtml,
     thumbGridHtml: thumbGridHtml
   };

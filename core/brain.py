@@ -2364,6 +2364,7 @@ _pending_asset_requests: dict[str, dict] = {}
 
 _SKIP_QUESTIONS_RE = re.compile(
     r"\b(?:create|make|generate|build|do|go|proceed|start)\s+it\s+now\b|"
+    r"\b(?:generate|create|make|build|do)\s+now\b|"
     r"\bskip\s+(?:the\s+)?questions?\b|\bno\s+questions?\b|"
     r"\bwithout\s+questions?\b|\bjust\s+(?:create|make|generate|do)\s+it\b",
     re.IGNORECASE,
@@ -2474,7 +2475,7 @@ def asset_clarification_message(message: str, kind: str, fmt: str = "") -> str:
             "Suggestions: I can add a comparison table, or a tree/hierarchy "
             "breakdown if the subject has levels."
         ),
-        "image": "Suggestions: I can lean into a specific style or mood, and lock the aspect ratio (16:9, 1:1 or 9:16).",
+        "image": "Suggestions: I can set the style and lighting, place the subject in a clear setting or pose, and lock the aspect ratio (16:9, 1:1 or 9:16).",
         "video": "Suggestions: I can set the mood and pacing, and choose a 16:9 landscape or 9:16 vertical format.",
     }
     questions = {
@@ -2485,8 +2486,8 @@ def asset_clarification_message(message: str, kind: str, fmt: str = "") -> str:
         ),
         "image": (
             "1. What style or mood should it have?\n"
-            "2. Which aspect ratio do you want?\n"
-            "3. Should it include any text, or be purely visual?"
+            "2. What setting or pose should the subject be in?\n"
+            "3. Which aspect ratio do you want — 16:9, 1:1 or 9:16?"
         ),
         "video": (
             "1. What mood and pacing should the clip have?\n"
@@ -2521,11 +2522,23 @@ def asset_generation_copy(kind: str, message: str = "", fmt: str = "") -> tuple[
         intro = "Here's the image I created from your direction — I kept the subject, style and composition focused on your brief."
     else:
         intro = "Here's the video I created from your direction — I shaped the scene and pacing around your brief."
-    followups = (
-        "Want me to change a section, add a comparison table or a tree breakdown, "
-        "or export it in another format? Would a matching visual or a shorter "
-        "version for a different audience help?"
-    )
+    if str(kind).lower() == "image":
+        followups = (
+            "Want me to try a different style or lighting, change the background "
+            "or pose, or adjust the aspect ratio? Would you prefer a tighter crop "
+            "or a softer, more cinematic version?"
+        )
+    elif str(kind).lower() == "video":
+        followups = (
+            "Want me to change the pacing or lighting, try a different setting, "
+            "or adjust the format? Would you prefer a shorter loop or a wider scene?"
+        )
+    else:
+        followups = (
+            "Want me to change a section, add a comparison table or a tree breakdown, "
+            "or export it in another format? Would a matching visual or a shorter "
+            "version for a different audience help?"
+        )
     return _privacy_guard(intro), _privacy_guard(followups)
 
 

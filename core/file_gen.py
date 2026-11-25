@@ -71,6 +71,16 @@ _HEADING_RE = re.compile(r"^\s{0,3}(#{1,6})\s+(.*)$")
 _TREE_GLYPH_RE = re.compile(r"[├└┌┐┘│─]")
 _INLINE_MARKUP_RE = re.compile(r"\*\*(.+?)\*\*|\*(?!\s)([^*\n]+?)(?<!\s)\*|`([^`\n]+)`")
 
+# Bright editorial palette shared by PDFs and embedded PNG visuals. Dark
+# colours are reserved for text only — never for section or callout fills.
+PDF_INK = "#1e293b"
+PDF_HEADING = "#0369a1"
+PDF_TABLE_HEADER = "#f1f5f9"
+PDF_GRID = "#cbd5e1"
+PDF_CALLOUT = "#f8fafc"
+PDF_ACCENT = "#0284c7"
+PDF_DARK_FILL_BLOCKLIST = ("#0f172a", "#111827", "#1e293b", "#0f766e", "#0f3f3c")
+
 
 def _plain(value: Any) -> str:
     """Remove Markdown emphasis markers while keeping the visible text."""
@@ -177,6 +187,7 @@ def normalize_content(content: Any, title: str = "") -> dict[str, Any]:
         "headers": [],
         "rows": [],
         "trees": [],
+        "charts": [],
         "raw": "",
         "files": [],
     }
@@ -226,6 +237,17 @@ def normalize_content(content: Any, title: str = "") -> dict[str, Any]:
                 lines = [line for line in str(tree).splitlines() if line.strip()]
                 if lines:
                     doc["trees"].append({"heading": "", "lines": [_clean(line) for line in lines]})
+        for chart in content.get("charts") or []:
+            if isinstance(chart, dict):
+                doc["charts"].append({
+                    "type": _clean(chart.get("type") or "bar").lower(),
+                    "title": _clean(chart.get("title")) or "Comparison",
+                    "labels": [_clean(v) for v in (chart.get("labels") or []) if _clean(v)],
+                    "values": [_clean(v) for v in (chart.get("values") or []) if _clean(v)],
+                    "lines": [_clean(v) for v in (chart.get("lines") or []) if _clean(v)],
+                })
+            elif _clean(chart):
+                doc["charts"].append({"type": "architecture", "title": "Structure map", "labels": [], "values": [], "lines": [_clean(chart)]})
         files = content.get("files")
         if isinstance(files, dict):
             doc["files"] = [{"name": _clean(k), "content": _clean(v)} for k, v in files.items()]
@@ -461,13 +483,197 @@ def _pdf_fonts():
     return "Helvetica", "Helvetica-Bold", False
 
 
+def _chart_font(size: int):
+    """Best-effort TrueType font for embedded PNG charts."""
+    try:
+        from PIL import ImageFont
+    except Exception:
+        return None
+    candidates = [
+        "C:/Windows/Fonts/segoeui.ttf",
+        "C:/Windows/Fonts/arial.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    ]
+    for path in candidates:
+        try:
+            return ImageFont.truetype(path, size)
+        except Exception:
+            continue
+    try:
+        return ImageFont.load_default()
+    except Exception:
+        return None
+
+
+def _chart_number(value: Any) -> float | None:
+    text = re.sub(r"[^0-9.\-]", "", _plain(value))
+    if not text or text in {"-", ".", "-."}:
+        return None
+    try:
+        return float(text)
+    except (TypeError, ValueError):
+        return None
+
+
+def _pdf_chart_specs(doc: dict[str, Any]) -> list[dict[str, Any]]:
+    """Collect explicit charts, then infer them from metrics or hierarchies."""
+    specs: list[dict[str, Any]] = []
+    for raw in doc.get("charts") or []:
+        if not isinstance(raw, dict):
+            continue
+        kind = _plain(raw.get("type") or "bar").lower()
+        item = {
+            "title": _plain(raw.get("title")) or "Comparison",
+            "labels": [_plain(v) for v in (raw.get("labels") or []) if _plain(v)],
+            "values": [_chart_number(v) for v in (raw.get("values") or [])],
+            "lines": [_plain(v) for v in (raw.get("lines") or []) if _plain(v)],
+            "kind": "architecture" if kind in {"tree", "architecture", "diagram", "hierarchy"} else "bar",
+        }
+        item["values"] = [v for v in item["values"] if v is not None]
+        if item["kind"] == "architecture" and not item["lines"]:
+            for tree in doc.get("trees") or []:
+                item["lines"].extend(tree.get("lines") or [])
+        if item["kind"] == "bar" and not item["values"]:
+            headers = doc.get("headers") or []
+            rows = doc.get("rows") or []
+            for col in range(1, len(headers)):
+                values = [_chart_number(row[col]) for row in rows if len(row) > col]
+                values = [v for v in values if v is not None]
+                if len(values) >= 2:
+                    item["values"] = values
+                    item["labels"] = [_plain(row[0]) for row in rows if row]
+                    break
+        if item["kind"] == "architecture" and item["lines"] or item["kind"] == "bar" and len(item["values"]) >= 2:
+            specs.append(item)
+    if specs:
+        return specs
+
+    headers = doc.get("headers") or []
+    rows = doc.get("rows") or []
+    if headers and len(rows) >= 2:
+        for col in range(1, len(headers)):
+            values = [_chart_number(row[col]) for row in rows if len(row) > col]
+            values = [v for v in values if v is not None]
+            if len(values) >= 2:
+                labels = [_plain(row[0]) or f"Item {i + 1}" for i, row in enumerate(rows)]
+                specs.append({
+                    "title": f"{_plain(headers[col])} comparison",
+                    "labels": labels[:len(values)],
+                    "values": values,
+                    "lines": [],
+                    "kind": "bar",
+                })
+                break
+    trees = doc.get("trees") or []
+    if trees:
+        lines: list[str] = []
+        for tree in trees:
+            lines.extend(tree.get("lines") or [])
+        if lines:
+            specs.append({
+                "title": _plain(trees[0].get("heading")) or "Structure map",
+                "labels": [],
+                "values": [],
+                "lines": lines,
+                "kind": "architecture",
+            })
+    return specs
+
+
+def _draw_bar_chart(spec: dict[str, Any]) -> io.BytesIO:
+    from PIL import Image as PilImage
+    from PIL import ImageDraw
+
+    labels = (spec.get("labels") or [])[:10] or [f"Item {i + 1}" for i in range(len(spec.get("values") or []))]
+    values = (spec.get("values") or [])[:10]
+    width, height = 900, 420
+    image = PilImage.new("RGB", (width, height), "white")
+    draw = ImageDraw.Draw(image)
+    title_font = _chart_font(22)
+    label_font = _chart_font(15)
+    value_font = _chart_font(14)
+    draw.text((36, 24), _plain(spec.get("title")) or "Comparison metrics", fill=PDF_HEADING, font=title_font)
+    plot_top, plot_bottom = 80, height - 70
+    max_value = max(values) if values else 1
+    max_value = max(max_value, 1.0)
+    for tick in range(5):
+        y = plot_bottom - (plot_bottom - plot_top) * tick / 4
+        draw.line((90, y, width - 40, y), fill=PDF_GRID, width=1)
+        draw.text((30, y - 8), f"{max_value * tick / 4:.0f}", fill=PDF_INK, font=value_font)
+    slot = (width - 150) / max(len(values), 1)
+    bar_width = max(18, min(64, slot * 0.55))
+    for index, value in enumerate(values):
+        x = 105 + index * slot
+        bar_height = (plot_bottom - plot_top) * (value / max_value)
+        draw.rectangle((x, plot_bottom - bar_height, x + bar_width, plot_bottom), fill=PDF_ACCENT)
+        caption = _plain(labels[index])[:18]
+        draw.text((x, plot_bottom + 12), caption, fill=PDF_INK, font=label_font)
+        draw.text((x, plot_bottom - bar_height - 24), f"{value:g}", fill=PDF_HEADING, font=value_font)
+    stream = io.BytesIO()
+    image.save(stream, format="PNG")
+    stream.seek(0)
+    return stream
+
+
+def _draw_architecture_chart(spec: dict[str, Any]) -> io.BytesIO:
+    from PIL import Image as PilImage
+    from PIL import ImageDraw
+
+    width, height = 900, 460
+    image = PilImage.new("RGB", (width, height), "white")
+    draw = ImageDraw.Draw(image)
+    title_font = _chart_font(22)
+    node_font = _chart_font(15)
+    draw.text((36, 24), _plain(spec.get("title")) or "Structure map", fill=PDF_HEADING, font=title_font)
+    nodes: list[tuple[int, str]] = []
+    for raw_line in spec.get("lines") or []:
+        line = str(raw_line)
+        indent = len(line) - len(line.lstrip(" ├└│─┌┐┘+`|"))
+        label = re.sub(r"[├└│─┌┐┘+`|]", " ", line)
+        label = re.sub(r"\s+", " ", label).strip(" .*•")
+        if label:
+            nodes.append((min(3, indent // 4), label[:32]))
+    nodes = nodes[:8]
+    last_by_level: dict[int, tuple[int, int]] = {}
+    for index, (level, label) in enumerate(nodes):
+        x = 50 + level * 215
+        y = 78 + index * 44
+        box = (x, y, x + 190, y + 34)
+        prior = last_by_level.get(max(0, level - 1))
+        if level and prior:
+            draw.line((prior[1], prior[0] + 17, box[0], box[1] + 17), fill=PDF_GRID, width=2)
+        if hasattr(draw, "rounded_rectangle"):
+            draw.rounded_rectangle(box, radius=8, fill=PDF_CALLOUT, outline=PDF_ACCENT, width=2)
+        else:
+            draw.rectangle(box, fill=PDF_CALLOUT, outline=PDF_ACCENT, width=2)
+        draw.text((x + 10, y + 9), label, fill=PDF_INK, font=node_font)
+        last_by_level[level] = (y, box[2])
+    stream = io.BytesIO()
+    image.save(stream, format="PNG")
+    stream.seek(0)
+    return stream
+
+
+def _pdf_visual_images(doc: dict[str, Any]) -> list[tuple[str, io.BytesIO]]:
+    images: list[tuple[str, io.BytesIO]] = []
+    for spec in _pdf_chart_specs(doc):
+        try:
+            if spec.get("kind") == "architecture":
+                images.append((spec.get("title") or "Structure map", _draw_architecture_chart(spec)))
+            else:
+                images.append((spec.get("title") or "Comparison metrics", _draw_bar_chart(spec)))
+        except Exception:
+            continue
+    return images
+
+
 def _build_pdf(doc: dict[str, Any]) -> bytes:
     from reportlab.lib import colors
     from reportlab.lib.enums import TA_LEFT
     from reportlab.lib.pagesizes import letter
     from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
     from reportlab.lib.units import inch
-    from reportlab.platypus import ListFlowable, ListItem, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+    from reportlab.platypus import Image, ListFlowable, ListItem, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
     tree_font, _tree_bold_font, unicode_ok = _pdf_fonts()
     body_font = "Helvetica"
@@ -486,23 +692,27 @@ def _build_pdf(doc: dict[str, Any]) -> bytes:
     styles = getSampleStyleSheet()
     title_style = ParagraphStyle(
         "VMTitle", parent=styles["Title"], fontName=body_font, fontSize=20, leading=25,
-        textColor=colors.HexColor("#111827"), alignment=TA_LEFT, spaceAfter=10,
+        textColor=colors.HexColor(PDF_INK), alignment=TA_LEFT, spaceAfter=10,
     )
     heading_style = ParagraphStyle(
         "VMHeading", parent=styles["Heading2"], fontName=body_font, fontSize=14, leading=18,
-        textColor=colors.HexColor("#0f766e"), spaceBefore=10, spaceAfter=5,
+        textColor=colors.HexColor(PDF_HEADING), spaceBefore=10, spaceAfter=5,
     )
     body_style = ParagraphStyle(
         "VMBody", parent=styles["BodyText"], fontName=body_font, fontSize=11, leading=16,
-        textColor=colors.HexColor("#1f2937"), spaceAfter=6,
+        textColor=colors.HexColor(PDF_INK), spaceAfter=6,
     )
     table_header_style = ParagraphStyle(
         "VMTableHeader", parent=body_style, fontName=bold_font_name, fontSize=10, leading=13,
-        textColor=colors.white, spaceAfter=0,
+        textColor=colors.HexColor(PDF_INK), spaceAfter=0,
+    )
+    caption_style = ParagraphStyle(
+        "VMCaption", parent=body_style, fontName=body_font, fontSize=9, leading=12,
+        textColor=colors.HexColor(PDF_HEADING), spaceAfter=4,
     )
     tree_style = ParagraphStyle(
         "VMTree", parent=body_style, fontName=tree_font, fontSize=9.5, leading=13,
-        textColor=colors.HexColor("#0f3f3c"), spaceAfter=0,
+        textColor=colors.HexColor(PDF_INK), spaceAfter=0,
     )
 
     def para(text: Any, style=body_style, font: str = body_font, mono: bool = False) -> Paragraph:
@@ -535,9 +745,9 @@ def _build_pdf(doc: dict[str, Any]) -> bytes:
             )
             callout_table = Table([[callout]], colWidths=[pdf.width], hAlign="LEFT")
             callout_table.setStyle(TableStyle([
-                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f1f5f9")),
-                ("BOX", (0, 0), (-1, -1), 1, colors.HexColor("#0f766e")),
-                ("LINEBEFORE", (0, 0), (0, -1), 3, colors.HexColor("#0f766e")),
+                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor(PDF_CALLOUT)),
+                ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor(PDF_GRID)),
+                ("LINEBEFORE", (0, 0), (0, -1), 3, colors.HexColor(PDF_ACCENT)),
                 ("LEFTPADDING", (0, 0), (-1, -1), 10),
                 ("RIGHTPADDING", (0, 0), (-1, -1), 8),
                 ("TOPPADDING", (0, 0), (-1, -1), 7),
@@ -555,11 +765,11 @@ def _build_pdf(doc: dict[str, Any]) -> bytes:
         table_data += [[para(cell) for cell in row] for row in doc["rows"]]
         table = Table(table_data, hAlign="LEFT", repeatRows=1)
         table.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0f766e")),
-            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor(PDF_TABLE_HEADER)),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor(PDF_INK)),
             ("FONTNAME", (0, 0), (-1, 0), bold_font_name),
-            ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#cbd5e1")),
-            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f1f5f9")]),
+            ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor(PDF_GRID)),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor(PDF_CALLOUT)]),
             ("VALIGN", (0, 0), (-1, -1), "TOP"),
             ("LEFTPADDING", (0, 0), (-1, -1), 7),
             ("RIGHTPADDING", (0, 0), (-1, -1), 7),
@@ -567,6 +777,22 @@ def _build_pdf(doc: dict[str, Any]) -> bytes:
             ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
         ]))
         story += [Spacer(1, 8), table]
+    for caption, png_stream in _pdf_visual_images(doc):
+        try:
+            from PIL import Image as PILImage
+            with PILImage.open(png_stream) as embedded:
+                ratio = embedded.height / float(embedded.width or 1)
+            png_stream.seek(0)
+        except Exception:
+            continue
+        image_width = min(pdf.width, 470)
+        image_height = image_width * ratio
+        story += [
+            Spacer(1, 10),
+            para(caption, caption_style),
+            Image(png_stream, width=image_width, height=image_height),
+            Spacer(1, 8),
+        ]
     if len(story) == 1:
         story.append(para("Generated by ValleyMind-AI."))
     pdf.build(story)

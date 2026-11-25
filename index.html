@@ -7442,71 +7442,19 @@ function VMSuggestConversationalActions(text) {
     }
 }
 
-/* â”€â”€ Automatic copy-ready presentation
-   When an AI response looks like a message the user would copy and send
-   (WhatsApp reply, SMS, email, DM), wrap it in a copy box automatically.
-   Does not wrap ordinary conversational text or long structured answers.
-   Respects user preferences: prefer_copy_ready, communication_style,
-   and prefer_concise.  Explicit current intent (MODE B / reply_mode) always
-   takes priority over saved preferences.
+/* ── Copy UI is explicit only ────────────────────────────────────────────
+   Bordered monospace Copy boxes are reserved for fenced code blocks and
+   [[COPY_BOX: ...]] blocks handled by vm_richrender.js. The old heuristic
+   wrapped ordinary short conversational replies, which made image summaries
+   and follow-up questions look like code. Keep the names as safe no-ops so
+   older call sites still work without changing rendered prose.
    --------------------------------------------------------------------- */
 function VMLooksLikeCopyableMessage(text, userPrefs) {
-    if (!text || typeof text !== "string") return false;
-    var t = text.trim();
-    // Too long = not a quick message
-    if (t.length > 500) return false;
-    // Already has copybox or complex formatting = skip
-    if (t.indexOf("<vm-copybox") !== -1 || t.indexOf("<pre") !== -1 || t.indexOf("<table") !== -1 || t.indexOf("<h1") !== -1) return false;
-    // If the user prefers concise/direct answers, be more willing to wrap
-    var prefs = userPrefs || window._userPreferences || {};
-    var commStyle = (prefs.communication_style || "");
-    if (Array.isArray(commStyle)) commStyle = commStyle.join(" ");
-    var wantsConcise = /concise|brief|short|direct|terse/i.test(commStyle);
-    var wantsCopyReady = prefs.prefer_copy_ready === "true" || prefs.prefer_copy_ready === true;
-    var wantsFormal = /formal|professional|business/i.test(commStyle);
-    // Looks like a message: short, conversational, may have greeting/sign-off
-    var msgMarkers = /^(hi|hello|hey|thanks|thank you|sorry|yes|no|ok|sure|i['’]m|can you|could you|would you|please)/i.test(t);
-    var hasQuestion = t.indexOf("?") !== -1;
-    var lineCount = t.split(/\r?\n/).filter(function (l) { return l.trim().length > 0; }).length;
-    var hasGreetingOrSignoff = /^(hi|hello|hey|good morning|good afternoon|good evening|dear|hi there)/i.test(t) || /(thanks|thank you|best|regards|sincerely|cheers|bye|goodbye)$/i.test(t.trim().split(/\r?\n/).pop() || "");
-    // Copy-ready signals: message-like structure, short, conversational
-    var looksLikeMessage = (msgMarkers || hasQuestion || hasGreetingOrSignoff) && lineCount <= 8;
-    // If user prefers concise/direct, lower the threshold slightly
-    var threshold = wantsConcise ? 7 : 6;
-    if (lineCount > threshold) return false;
-    // User preference override: if they explicitly want copy-ready, be more permissive
-    if (wantsCopyReady) return looksLikeMessage;
-    return looksLikeMessage;
+    return false;
 }
 
 function VMAutoCopyReady(bubbleEl, fullText) {
-    if (!bubbleEl || !fullText) return;
-    if (!VMLooksLikeCopyableMessage(fullText, window._userPreferences)) return;
-    var bub = bubbleEl.querySelector(".bubble") || bubbleEl;
-    if (!bub || bub.querySelector(".vm-copybox")) return;
-    // Wrap existing content in a copybox
-    var inner = bub.innerHTML;
-    bub.innerHTML = "";
-    var box = document.createElement("div");
-    box.className = "vm-copybox";
-    box.style.cssText = "display:flex;gap:8px;align-items:flex-start;margin:8px 0;border:1px solid rgba(0,212,255,0.25);border-radius:8px;background:rgba(0,212,255,0.06);overflow:hidden;";
-    var pre = document.createElement("pre");
-    pre.style.cssText = "margin:0;flex:1;min-width:0;padding:10px 12px;font:13px ui-monospace,SFMono-Regular,Menlo,monospace;color:#c8d3e8;overflow:auto;white-space:pre-wrap;word-break:break-word;";
-    pre.textContent = fullText;
-    var btn = document.createElement("button");
-    btn.textContent = "Copy";
-    btn.style.cssText = "flex:0 0 auto;background:rgba(0,212,255,0.15);border:1px solid rgba(0,212,255,0.35);color:#00d4ff;padding:6px 10px;border-radius:6px;font-size:12px;cursor:pointer;";
-    btn.onclick = function (ev) {
-        ev.stopPropagation();
-        if (!navigator || !navigator.clipboard) return;
-        navigator.clipboard.writeText(pre.textContent).then(function () {
-            btn.textContent = "Copied!";
-            setTimeout(function () { btn.textContent = "Copy"; }, 1200);
-        }, function () { btn.textContent = "Copy"; });
-    };
-    box.appendChild(pre);
-    box.appendChild(btn);
-    bub.appendChild(box);
+    return false;
 }
 
 /* â”€â”€ Proactive suggestion chips
@@ -8548,7 +8496,7 @@ function VMEnsureLiveAssistantBubble(thinkingEl, regenCtx) {
    message body. The final render turns them into formatted cards. */
 function VMStreamCardSafeText(text) {
     var s = String(text == null ? "" : text);
-    var marker = /\[\[(?:CARD|ENTITY):/gi;
+    var marker = /\[\[(?:CARD|ENTITY|IMAGE_CARD):/gi;
     var spans = [];
     var m;
     while ((m = marker.exec(s)) !== null) {

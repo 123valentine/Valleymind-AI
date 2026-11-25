@@ -3681,7 +3681,7 @@ window.VMPresentationSelector = (function () {
     // even when no other markdown is present.
     if (/\[choice:\s/i.test(t) || /\[circle:\s/i.test(t)) return "interactive";
 
-    if (/\[card:\s/i.test(t) || /\[copybox:\s/i.test(t) || /\[\[CARD:/i.test(t)) return "rich";
+    if (/\[card:\s/i.test(t) || /\[copybox:\s/i.test(t) || /\[\[(?:CARD|IMAGE_CARD):/i.test(t)) return "rich";
 
     // Mathematical expressions ($$, $$, \\(, \\[, $...$).
     if (/\$\$|\\\(|\\\[|\$[A-Za-z]/.test(t)) return "math";

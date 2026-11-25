@@ -2629,6 +2629,26 @@ def _asset_chat_history(user_id: str, chat_id: str) -> list:
         return []
 
 
+def _image_card_markup(image_url: str, alt: str = "Generated image") -> str:
+    """Structured block rendered by vm_richrender.js as a real image card."""
+    url = str(image_url or "").strip().replace("\n", " ").replace("|", "%7C")
+    if not url:
+        return ""
+    label = str(alt or "Generated image").strip().replace("\n", " ").replace("|", "/") or "Generated image"
+    return f"[[IMAGE_CARD: {url} | {label} | valleymind_image.png]]"
+
+
+def _image_reply_copy(message: str, image_url: str, revised_prompt: str = "") -> str:
+    """Conversational copy plus an embedded, downloadable generated image."""
+    intro, followups = asset_generation_copy("image", message)
+    card = _image_card_markup(image_url, revised_prompt or "Generated image")
+    parts = [intro]
+    if card:
+        parts.append(card)
+    parts.append(followups)
+    return _privacy_guard("\n\n".join(part for part in parts if part))
+
+
 def _prepare_asset_request(user_id: str, chat_id: str, message: str, kind: str):
     """Merge a clarification answer or ask 2-3 questions before generating."""
     key = asset_request_key(user_id, chat_id)
@@ -2901,8 +2921,7 @@ def _dispatch_image_json(user_id, message, chat_id, image_data):
         return jsonify({"status": "error", "message": "Image generated but could not be saved. Please try again."}), 500
     _embed_media_exchange(user_id, message, "image", chat_id)
 
-    intro, followups = asset_generation_copy("image", message)
-    reply_copy = _privacy_guard(f"{intro}\n\n{followups}")
+    reply_copy = _image_reply_copy(message, stored_url, revised)
     _persist_chat_message(
         user_id, chat_id, "assistant",
         f"{reply_copy}\n\n[Image: {stored_url}]", image_url=stored_url,
@@ -2989,14 +3008,14 @@ def _dispatch_image_stream(user_id, message, chat_id, image_data):
         _embed_media_exchange(user_id, message, "image", resolved_chat_id)
 
         yield f"data: {json.dumps({'image_url': stored_url, 'revised_prompt': revised})}\n\n"
-        final_copy = _privacy_guard(f"{intro}\n\n{followups}")
+        final_copy = _image_reply_copy(message, stored_url, revised)
         yield f"data: {json.dumps({'reply': final_copy})}\n\n"
 
         if marcus:
             try:
                 marcus.memory.add_message(
                     resolved_chat_id, "assistant",
-                    f"{intro}\n\n{followups}\n\n[Image: {stored_url}]", image_url=stored_url,
+                    f"{final_copy}\n\n[Image: {stored_url}]", image_url=stored_url,
                 )
             except Exception:
                 pass
@@ -3169,8 +3188,7 @@ def _dispatch_multi_json(user_id, message, chat_id, image_data):
 
     # ── 3. Persist ────────────────────────────────────────────────────
     if image_url:
-        intro, followups = asset_generation_copy("image", message)
-        asset_copy = _privacy_guard(f"{intro}\n\n{followups}")
+        asset_copy = _image_reply_copy(message, image_url, revised)
         text_reply = _privacy_guard(f"{text_reply}\n\n{asset_copy}".strip())
     assistant_content = text_reply
     if image_url:
@@ -3274,8 +3292,7 @@ def _dispatch_multi_stream(user_id, message, chat_id, image_data):
             stored_url = media_record["local_path"] if media_record else image_url
 
             yield f"data: {json.dumps({'image_url': stored_url, 'revised_prompt': revised})}\n\n"
-            intro, followups = asset_generation_copy("image", message)
-            asset_copy = _privacy_guard(f"{intro}\n\n{followups}")
+            asset_copy = _image_reply_copy(message, stored_url, revised)
             yield f"data: {json.dumps({'token': asset_copy})}\n\n"
 
             if marcus:
@@ -3694,6 +3711,15 @@ def api_generate_image():
         if not prompt:
             return jsonify({"status": "error", "message": "Please describe the image you want to create."}), 400
 
+        prompt, clarification = _prepare_asset_request(user_id, "", prompt, "image")
+        if clarification:
+            return jsonify({
+                "status": "success",
+                "detected_route": "asset_clarification",
+                "reply": clarification,
+                "text": clarification,
+            })
+
         config = get_config()
         api_key = config.gemini_api_key
 
@@ -3716,12 +3742,12 @@ def api_generate_image():
         image_url = result.data["image_url"]
         print(f"[IMAGE] Success — url={image_url} provider={result.provider_name} latency={result.latency_ms:.0f}ms")
 
-        intro, followups = asset_generation_copy("image", prompt)
-        reply_copy = _privacy_guard(f"{intro}\n\n{followups}")
+        revised = str(result.data.get("revised_prompt") or "")
+        reply_copy = _image_reply_copy(prompt, image_url, revised)
         return jsonify({
             "status": "success",
             "image_url": image_url,
-            "revised_prompt": result.data.get("revised_prompt", ""),
+            "revised_prompt": revised,
             "reply": reply_copy,
             "text": reply_copy,
         })

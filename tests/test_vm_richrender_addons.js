@@ -116,6 +116,28 @@ const Addons = ctx.window.VMRichRenderAddons;
 (async function () {
   assert('addons installed on renderer', !!Addons && typeof R.render === 'function');
 
+  const proseHtml = R.render('Here is the image I created. Want me to try a different style or lighting?');
+  assert('ordinary prose has no bordered copy card',
+    proseHtml.indexOf('vm-code-card') === -1 &&
+    proseHtml.indexOf('vm-copy-card') === -1 &&
+    proseHtml.indexOf('⧉ Copy') === -1,
+    proseHtml.slice(0, 260));
+  assert('automatic copy-box wrapping is disabled', ctx.window.VMAutoCopyReady({}, proseHtml) === false);
+
+  const imageHtml = R.render('[[IMAGE_CARD: /api/images/gen-1.png | Generated image | valleymind_image.png]]');
+  assert('image card renders a real image element',
+    /<img\s[^>]*src="\/api\/images\/gen-1\.png"/.test(imageHtml) &&
+    imageHtml.indexOf('vm-image-card') !== -1,
+    imageHtml.slice(0, 320));
+  assert('image card uses icon-only circular download button with spinner support',
+    imageHtml.indexOf('data-download-url="/api/images/gen-1.png"') !== -1 &&
+    imageHtml.indexOf('vm-icon-download') !== -1 &&
+    imageHtml.indexOf('title="Download"') !== -1 &&
+    imageHtml.indexOf('aria-label="Download"') !== -1 &&
+    imageHtml.indexOf('vm-download-icon') !== -1 &&
+    imageHtml.indexOf('>Download<') === -1,
+    imageHtml.slice(0, 420));
+
   const codeHtml = R.render('```python\nprint("hello")\n```');
   assert('fenced code becomes dark code card', codeHtml.indexOf('vm-code-card') !== -1 && codeHtml.indexOf('vm-fenced-code') !== -1, codeHtml.slice(0, 240));
   assert('fenced code card shows language label', codeHtml.indexOf('>Python<') !== -1, codeHtml.slice(0, 240));

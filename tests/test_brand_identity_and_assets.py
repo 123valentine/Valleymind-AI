@@ -212,9 +212,8 @@ def test_under_specified_asset_requests_pause_with_two_to_three_questions():
         assert "1." in message and "2." in message and "3." in message
         assert "create it now" in message
     assert not needs_asset_clarification("make an image, create it now", "image")
-    assert not needs_asset_clarification(
-        "make a cinematic 16:9 video with a slow mood and no text", "video"
-    )
+    assert not needs_asset_clarification("generate now — a 3D companion", "image")
+    assert not needs_asset_clarification("make a cinematic 16:9 video with a slow mood and no text", "video")
     assert not needs_asset_clarification(
         "make a document with three sections, a comparison table and a clear audience", "file"
     )
@@ -246,6 +245,41 @@ def test_asset_generation_copy_exists_for_images_and_videos():
         assert "Here's the" in intro
         assert "?" in followups
         assert len(re.findall(r"\?", followups)) >= 2
+
+
+def test_vague_image_request_asks_style_setting_and_aspect_ratio():
+    message = "Generate an image of the ValleyMind-AI 3D companion."
+    assert needs_asset_clarification(message, "image")
+    clarification = asset_clarification_message(message, "image")
+    lowered = clarification.lower()
+    assert "style" in lowered
+    assert "setting" in lowered and "pose" in lowered
+    assert "aspect ratio" in lowered
+    assert "create it now" in lowered
+
+
+def test_image_followups_are_image_specific_not_document_boilerplate():
+    _intro, followups = asset_generation_copy("image", "a 3D companion")
+    lowered = followups.lower()
+    assert "style" in lowered
+    assert "lighting" in lowered
+    assert "background" in lowered
+    assert "aspect ratio" in lowered
+    for forbidden in ("comparison table", "tree breakdown", "another format", "tree"):
+        assert forbidden not in lowered
+    assert len(re.findall(r"\?", followups)) >= 2
+
+
+def test_image_reply_embeds_downloadable_image_card():
+    from app import _image_reply_copy
+
+    reply = _image_reply_copy(
+        "a 3D companion", "/api/images/gen-1.png", "A friendly 3D companion"
+    )
+    assert "[[IMAGE_CARD: /api/images/gen-1.png | A friendly 3D companion" in reply
+    assert "valleymind_image.png" in reply
+    assert "comparison table" not in reply.lower()
+    assert "tree breakdown" not in reply.lower()
 
 
 # ── Rich PDF/DOCX rendering ─────────────────────────────────────────────────

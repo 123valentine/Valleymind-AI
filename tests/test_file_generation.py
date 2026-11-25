@@ -4,6 +4,7 @@ import io
 import re
 import zipfile
 from datetime import datetime
+from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
@@ -132,6 +133,37 @@ def test_generate_pdf_with_styled_document_content():
     assert "Weekly Report" in text
     assert "Revenue grew steadily" in text
     assert "Revenue" in text
+
+
+def test_pdf_uses_bright_editorial_palette_without_dark_fills():
+    source = Path(file_gen.__file__).read_text(encoding="utf-8")
+    assert 'HexColor(PDF_INK)' in source
+    assert 'HexColor(PDF_HEADING)' in source
+    assert 'HexColor(PDF_TABLE_HEADER)' in source
+    assert 'HexColor(PDF_GRID)' in source
+    assert 'HexColor(PDF_CALLOUT)' in source
+    for forbidden in ('HexColor("#111827")', 'HexColor("#0f766e")', 'HexColor("#0f3f3c")'):
+        assert forbidden not in source
+
+
+def test_pdf_embeds_png_visual_for_comparison_metrics_and_hierarchy():
+    payload = {
+        "title": "Platform snapshot",
+        "headers": ["Area", "Score"],
+        "rows": [["Chat", "82"], ["Images", "67"], ["Videos", "91"]],
+        "trees": [{
+            "heading": "Platform map",
+            "lines": ["├── Chat", "│   └── Creative tools", "└── Companion"],
+        }],
+    }
+    meta = file_gen.generate_file(payload, "pdf", title="Platform snapshot")
+    data = _bytes(meta)
+    assert data.startswith(b"%PDF-")
+    assert b"/Subtype /Image" in data
+    assert b"/PNG" in data or b"FlateDecode" in data
+    text = "\n".join(page.extract_text() or "" for page in PdfReader(io.BytesIO(data)).pages)
+    assert "Platform snapshot" in text
+    assert "Score comparison" in text or "Structure map" in text
 
 
 def test_generate_docx_with_headings_bullets_and_table():
