@@ -179,6 +179,45 @@ def test_generate_docx_with_headings_bullets_and_table():
     assert document.tables[0].cell(1, 1).text == "120"
 
 
+def test_pdf_normalizes_problem_glyphs_and_formats_bold_bullets():
+    payload = {
+        "title": "Glyph\u2011safe report",
+        "headers": ["Field", "Note"],
+        "rows": [["Owner", "A\u00a0B\u200b\u2019quoted\u201d"]],
+        "bullets": [
+            "**Bold item** with \u2011dash and \u00a0space",
+            "*Italic item* and \u2026 ellipsis",
+        ],
+    }
+    meta = file_gen.generate_file(payload, "pdf", title="Glyph safe report")
+    text = "\n".join(
+        page.extract_text() or ""
+        for page in PdfReader(io.BytesIO(_bytes(meta))).pages
+    )
+    for bad in ("\u2011", "\u00a0", "\u202f", "\u200b", "\u2019", "\u201d", "\u2026", "**", "\u25a0"):
+        assert bad not in text, f"unexpected glyph {bad!r} in PDF: {text[:400]}"
+    assert "Bold item" in text
+    assert "Italic item" in text
+    # Styling is applied through ReportLab inline tags, not raw asterisks.
+    assert file_gen._pdf_markup("**Bold item**") == "<b>Bold item</b>"
+    assert file_gen._pdf_markup("*Italic item*") == "<i>Italic item</i>"
+
+
+def test_docx_normalizes_glyphs_and_keeps_bold_runs():
+    payload = {
+        "title": "Clean export",
+        "bullets": ["**Bold item** with \u00adsoft and \u2011hard hyphen"],
+    }
+    meta = file_gen.generate_file(payload, "word", title="Clean export")
+    document = DocxDocument(io.BytesIO(_bytes(meta)))
+    paragraphs = document.paragraphs
+    text = "\n".join(p.text for p in paragraphs)
+    for bad in ("\u00ad", "\u2011", "**", "\u25a0"):
+        assert bad not in text, f"unexpected glyph {bad!r} in DOCX: {text[:400]}"
+    bold_runs = [r.text for p in paragraphs for r in p.runs if r.bold]
+    assert "Bold item" in bold_runs
+
+
 def test_generate_xlsx_with_table_rows():
     meta = file_gen.generate_file(SAMPLE, "excel", title="Weekly Report")
     assert meta["format"] == "xlsx"

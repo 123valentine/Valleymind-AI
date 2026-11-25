@@ -153,6 +153,16 @@ const Addons = ctx.window.VMRichRenderAddons;
   assert('COPY_BOX keeps content and copy button', copyHtml.indexOf('Write a short haiku about Lagos') !== -1 && copyHtml.indexOf('⧉ Copy') !== -1, copyHtml.slice(0, 260));
   assert('COPY_BOX does not leak wire syntax', copyHtml.indexOf('[[COPY_BOX:') === -1, copyHtml);
 
+  const plainProseHtml = R.render('That sounds like a lot. Here is what I would do first: take a breath, then reply when you are ready.');
+  assert('ordinary prose stays plain', plainProseHtml.indexOf('vm-copy-card') === -1 && plainProseHtml.indexOf('vm-code-card') === -1, plainProseHtml.slice(0, 260));
+  const recipientReplyHtml = R.render('Quick tip: keep it short.\n\n[[COPY_BOX: Reply | Got it, thanks for letting me know!]]');
+  assert('recipient reply renders as its own copy card',
+    recipientReplyHtml.indexOf('vm-copy-card') !== -1 && recipientReplyHtml.indexOf('Got it, thanks for letting me know!') !== -1,
+    recipientReplyHtml.slice(0, 300));
+  assert('recipient reply card does not wrap the advice',
+    recipientReplyHtml.indexOf('Quick tip: keep it short.') !== -1,
+    recipientReplyHtml.slice(0, 300));
+
   const fileHtml = R.render('[[FILE_CARD: Weekly Report | PDF | 18.4 KB | /api/files/download/abc?token=xyz]]');
   assert('FILE_CARD renders dark download card', fileHtml.indexOf('vm-file-card') !== -1 && fileHtml.indexOf('Weekly Report') !== -1, fileHtml.slice(0, 260));
   assert('FILE_CARD has working icon-only download target',

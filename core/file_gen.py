@@ -19,6 +19,7 @@ import re
 import secrets
 import tempfile
 import threading
+import unicodedata
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -66,10 +67,46 @@ MIME_TYPES = {
 
 _FILE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{8,80}$")
 _INVALID_NAME_RE = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
-_BULLET_RE = re.compile(r"^\s*(?:[-*•]|\d+[.)])\s+")
+_BULLET_RE = re.compile(r"^\s*(?:[-*\u2022]|\d+[.)])\s+")
 _HEADING_RE = re.compile(r"^\s{0,3}(#{1,6})\s+(.*)$")
 _TREE_GLYPH_RE = re.compile(r"[├└┌┐┘│─]")
-_INLINE_MARKUP_RE = re.compile(r"\*\*(.+?)\*\*|\*(?!\s)([^*\n]+?)(?<!\s)\*|`([^`\n]+)`")
+
+# ReportLab's built-in Helvetica has no glyphs for most of these characters,
+# which show up as black "tofu" squares in generated PDFs.  NFKC folds the
+# compatibility forms (NBSP, narrow NBSP, non-breaking hyphen, ligatures),
+# while the explicit map removes default-ignorable zero-width characters and
+# translates smart punctuation to plain ASCII.
+_UNICODE_ASCII_MAP = dict.fromkeys(
+    (0x00AD, 0x200B, 0x200C, 0x200D, 0x2060, 0xFEFF), ""
+)
+_UNICODE_ASCII_MAP.update({
+    0x00A0: " ",   # non-breaking space
+    0x202F: " ",   # narrow non-breaking space
+    0x2011: "-",   # non-breaking hyphen
+    0x2010: "-",   # hyphen
+    0x2012: "-",   # figure dash
+    0x2015: "-",   # horizontal bar
+    0x2013: "-",   # en dash
+    0x2014: "-",   # em dash
+    0x2212: "-",   # minus sign
+    0x2018: "'", 0x2019: "'", 0x201A: "'", 0x201B: "'",
+    0x201C: '"', 0x201D: '"', 0x201E: '"', 0x201F: '"',
+    0x00AB: '"', 0x00BB: '"', 0x2039: "<", 0x203A: ">",
+    0x2026: "...",  # ellipsis
+    0x2022: "-",   # bullet (list markers are handled by ListFlowable)
+})
+_UNICODE_ASCII_TRANSLATION = str.maketrans(_UNICODE_ASCII_MAP)
+
+# Bold/italic/code with an optional triple marker for bold+italic.  The
+# patterns deliberately disallow leading/trailing whitespace so a stray "*"
+# used as decoration is not swallowed as emphasis.
+_INLINE_MARKUP_RE = re.compile(
+    r"\*\*\*(?P<bolditalic>.+?)\*\*\*"
+    r"|\*\*(?P<bold>.+?)\*\*"
+    r"|\*(?!\s)(?P<italic>[^*\n]+?)(?<!\s)\*"
+    r"|`(?P<code>[^`\n]+)`",
+    re.DOTALL,
+)
 
 # Bright editorial palette shared by PDFs and embedded PNG visuals. Dark
 # colours are reserved for text only — never for section or callout fills.
@@ -82,39 +119,63 @@ PDF_ACCENT = "#0284c7"
 PDF_DARK_FILL_BLOCKLIST = ("#0f172a", "#111827", "#1e293b", "#0f766e", "#0f3f3c")
 
 
+def _ascii_safe(value: Any) -> str:
+    """Fold text to glyphs Helvetica and other bundled fonts can always draw."""
+    text = unicodedata.normalize("NFKC", str(value or ""))
+    return text.translate(_UNICODE_ASCII_TRANSLATION)
+
+
 def _plain(value: Any) -> str:
     """Remove Markdown emphasis markers while keeping the visible text."""
-    text = _clean(value)
-    text = _INLINE_MARKUP_RE.sub(
-        lambda m: next((part for part in m.groups() if part is not None), ""), text
-    )
-    return re.sub(r"[ \t]{2,}", " ", text).strip()
+    visible = "".join(segment[0] for segment in _rich_segments(value))
+    return re.sub(r"[ \t]{2,}", " ", visible).strip()
 
 
-def _rich_segments(value: Any) -> list[tuple[str, bool, bool, bool]]:
+def _rich_segments(
+    value: Any, _depth: int = 0
+) -> list[tuple[str, bool, bool, bool]]:
     """Split text into (text, bold, italic, code) segments for styled output."""
-    text = _clean(value)
+    text = _ascii_safe(value)
     segments: list[tuple[str, bool, bool, bool]] = []
     cursor = 0
+
+    def append_text(chunk: str, bold: bool, italic: bool, code: bool) -> None:
+        if not chunk:
+            return
+        if not code:
+            # Unmatched emphasis markers must never reach a PDF or DOCX as
+            # raw "**" decoration.
+            chunk = chunk.replace("**", "")
+        segments.append((chunk, bold, italic, code))
+
     for match in _INLINE_MARKUP_RE.finditer(text):
-        if match.start() > cursor:
-            segments.append((text[cursor:match.start()], False, False, False))
-        bold, italic, code = match.groups()
-        if bold is not None:
-            segments.append((bold, True, False, False))
+        append_text(text[cursor:match.start()], False, False, False)
+        bolditalic = match.group("bolditalic")
+        bold = match.group("bold")
+        italic = match.group("italic")
+        code = match.group("code")
+        if bolditalic is not None:
+            inner = (_rich_segments(bolditalic, _depth + 1) if _depth < 3
+                     else [(bolditalic, False, False, False)])
+            segments.extend((p, True, True, c) for p, b, i, c in inner)
+        elif bold is not None:
+            inner = (_rich_segments(bold, _depth + 1) if _depth < 3
+                     else [(bold, False, False, False)])
+            segments.extend((p, True, i, c) for p, b, i, c in inner)
         elif italic is not None:
-            segments.append((italic, False, True, False))
+            inner = (_rich_segments(italic, _depth + 1) if _depth < 3
+                     else [(italic, False, False, False)])
+            segments.extend((p, b, True, c) for p, b, i, c in inner)
         elif code is not None:
-            segments.append((code, False, False, True))
+            append_text(code, False, False, True)
         cursor = match.end()
-    if cursor < len(text):
-        segments.append((text[cursor:], False, False, False))
+    append_text(text[cursor:], False, False, False)
     return segments or [(text, False, False, False)]
 
 
 def _xml_escape(value: str) -> str:
     return (
-        str(value or "")
+        _ascii_safe(value)
         .replace("&", "&amp;")
         .replace("<", "&lt;")
         .replace(">", "&gt;")
@@ -160,7 +221,7 @@ def _clean(value: Any) -> str:
         return ", ".join(_clean(v) for v in value)
     if isinstance(value, dict):
         return ", ".join(f"{k}: {_clean(v)}" for k, v in value.items())
-    return str(value).strip()
+    return _ascii_safe(value).strip()
 
 
 def _table_lines_to_rows(lines: list[str]) -> tuple[list[str], list[list[str]]]:

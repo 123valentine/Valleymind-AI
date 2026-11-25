@@ -2352,7 +2352,7 @@
 
   /* Copyable text box (commands, prompts, keys). */
   .bubble.ai-rich .vm-copybox,
-  .bubble.ai-rich vm-copybox{ display:flex; gap:8px; align-items:center; margin:8px 0; border:1px solid rgba(148,163,184,0.14); border-radius:8px; background:#04070f; overflow:hidden; }
+  .bubble.ai-rich vm-copybox{ display:flex; gap:8px; align-items:center; margin:8px 0; border:1px solid rgba(148,163,184,0.14); border-radius:8px; background:#04070f; overflow:hidden; max-width:100%; box-sizing:border-box; }
   .bubble.ai-rich .vm-copybox pre,
   .bubble.ai-rich vm-copybox pre{ margin:0; flex:1; min-width:0; padding:10px 12px; font:13px ui-monospace,SFMono-Regular,Menlo,monospace; color:#c8d3e8; overflow:auto; white-space:pre-wrap; word-break:break-word; }
   .bubble.ai-rich .vm-copybox button,
@@ -3500,6 +3500,30 @@ body[data-vm-companion="cloud"] #vmVrmCompanion { display: none !important; }
       padding: 8px 12px !important;
       min-height: 36px;
     }
+  }
+
+  /* Chat edge safety: keep every bubble and copy box inside the screen on
+     phones. The padded #messages rail owns the 14-16px side margin, so child
+     cards only need to respect that width instead of adding their own. */
+  .assistant-message,
+  .user-message,
+  .assistant-message .bubble,
+  .user-message .bubble,
+  .vm-code-card,
+  .vm-copy-card,
+  .vm-copybox,
+  vm-copybox,
+  .bubble.ai-rich > *{ max-width:100%; box-sizing:border-box; }
+  @media (max-width: 640px) {
+    #messages{ padding:22px 16px !important; max-width:100%; box-sizing:border-box; }
+    .user-message{ max-width:86%; margin-left:auto; margin-right:0; }
+    .user-message .bubble{ max-width:100%; box-sizing:border-box; }
+    .assistant-message{ max-width:100%; margin-left:0; margin-right:0; box-sizing:border-box; }
+    .assistant-message .bubble{ max-width:100%; box-sizing:border-box; }
+    .bubble.ai-rich .vm-code-card,
+    .bubble.ai-rich .vm-copy-card,
+    .bubble.ai-rich .vm-copybox,
+    .bubble.ai-rich vm-copybox{ max-width:100%; box-sizing:border-box; overflow:hidden; }
   }
 </style>
 
@@ -6382,6 +6406,38 @@ function _stopMsgAudio() {
     _msgAudioBtn = null;
 }
 
+/* Read-Aloud must start on the assistant's answer, never on status chrome.
+   Clone the bubble, drop activity/thinking/copy UI nodes, then strip any
+   status phrasing that survived as plain text. */
+function _vmSpeakableText(root) {
+    if (!root) return "";
+    var clone;
+    try { clone = root.cloneNode(true); }
+    catch (e) { return String(root.textContent || "").trim(); }
+    var skipSelector = [
+        ".vm-activity", ".vm-activity-inline", "[data-vm-activity]",
+        ".thinking-indicator", "[data-thinking]", "[data-status-el]",
+        "[data-no-tts]", "[aria-hidden='true']",
+        ".vm-code-card-head", ".vm-code-card-copy", ".vm-copybox button",
+        ".msg-toolbar", ".vm-sources-bar", "script", "style"
+    ].join(",");
+    try {
+        var noise = clone.querySelectorAll(skipSelector);
+        for (var i = noise.length - 1; i >= 0; i--) {
+            if (noise[i].parentNode) noise[i].parentNode.removeChild(noise[i]);
+        }
+    } catch (e) {}
+    var text = clone.innerText || clone.textContent || "";
+    return String(text)
+        .replace(/^\s*(?:Thinking|Researching|Searching(?: the web)?|Preparing|Generating|Checking|Looking up|Finding)(?:\s*(?:\.\.\.|\u2026))?\s*$/gim, "")
+        .replace(/^\s*(?:Step\s*\d+(?:\s*(?:of|\/)\s*\d+)?|\d+\s*(?:of|\/)\s*\d+)\b[^\n]*$/gim, "")
+        .replace(/\[\[(?:COPY_BOX|BADGE|ENTITY|CARD|IMAGE_CARD)[^\]]*\]\]/g, " ")
+        .replace(/\[(?:ANIM|EMO):[^\]]*\]/g, " ")
+        .replace(/[ \t]{2,}/g, " ")
+        .replace(/\n{3,}/g, "\n\n")
+        .trim();
+}
+
 window.toggleVoicePlayback = async function (btn) {
     var el = getPersonaPlayer();
     // Clicking the button that is currently speaking stops it and resets cleanly
@@ -6395,7 +6451,7 @@ window.toggleVoicePlayback = async function (btn) {
 
     var wrapper = btn && btn.closest ? btn.closest('.assistant-message') : null;
     var bubble = wrapper ? wrapper.querySelector('.bubble') : null;
-    var text = bubble ? bubble.textContent.trim() : '';
+    var text = _vmSpeakableText(bubble);
     if (!text) return;
 
     // ONE shared hooks object drives the button no matter which engine speaks:
@@ -8334,6 +8390,9 @@ function addThinkingIndicator() {
     const div = document.createElement("div");
     div.className = "self-start";
     div.dataset.thinking = "true";
+    // Status chrome is never part of the spoken answer.
+    div.dataset.noTts = "true";
+    div.setAttribute("aria-hidden", "true");
     // Explicit assistant-side placement: the indicator must sit left with the
     // AI column even if the `.self-start` utility is ever renamed.
     div.style.alignSelf = "flex-start";
@@ -8349,6 +8408,10 @@ function addThinkingIndicator() {
     // Mount the new unified activity UI component into this container.
     const tracker = new window.ValleyMindActivity.ActivityTrackerUI();
     tracker.mount(div);
+    if (tracker.rootEl) {
+        tracker.rootEl.dataset.noTts = "true";
+        tracker.rootEl.setAttribute("aria-hidden", "true");
+    }
     // Attach tracker so SSE stream can feed activity events into it.
     div._vmActivity = tracker;
     return div;
@@ -14159,7 +14222,9 @@ window.send = async function () {
                 /* ---- LAYER 2: INTENT â†’ STATUS BUBBLE (never leaks into chat) ---- */
                 if (evt.intent) {
                     if (!statusIndicator) {
-                        removeThinkingIndicator(thinking);
+                        // Keep the thinking/activity indicator mounted through
+                        // every intermediate routing and tool step. Only the
+                        // first visible reply token (or final render) clears it.
                         if (evt.intent === "generating_image") {
                             showImageGenSkeleton();
                             statusIndicator = document.getElementById("imgGenSkeletonWrapper");
@@ -14167,6 +14232,8 @@ window.send = async function () {
                             var statusDiv = document.createElement("div");
                             statusDiv.className = "assistant-message";
                             statusDiv.dataset.statusEl = "true";
+                            statusDiv.dataset.noTts = "true";
+                            statusDiv.setAttribute("aria-hidden", "true");
                             var statusBubble = document.createElement("div");
                             statusBubble.className = "bubble";
                             statusBubble.style.cssText = "color:#94a3b8;font-style:italic;";
@@ -14244,10 +14311,13 @@ window.send = async function () {
                         var _rb = statusIndicator.querySelector(".bubble");
                         if (_rb) _rb.textContent = _recoveryText;
                     } else {
-                        removeThinkingIndicator(thinking);
+                        // Recovery is another intermediate status: the thinking
+                        // indicator stays visible until reply text renders.
                         var _rd = document.createElement("div");
                         _rd.className = "assistant-message";
                         _rd.dataset.statusEl = "true";
+                        _rd.dataset.noTts = "true";
+                        _rd.setAttribute("aria-hidden", "true");
                         var _rb2 = document.createElement("div");
                         _rb2.className = "bubble";
                         _rb2.style.cssText = "color:#94a3b8;font-style:italic;";

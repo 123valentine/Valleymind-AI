@@ -140,6 +140,19 @@ def test_canonical_identity_is_in_every_persona_prompt():
     assert "You are Angelina" in _chat_prompt_for(SimpleNamespace(name="Angelina"))
 
 
+def test_copy_box_prompt_is_explicit_only_and_recipient_aware():
+    prompt = _CHAT_SYSTEM_PROMPT
+    assert "Ordinary replies" in prompt
+    assert "NEVER put them in a bordered copy box" in prompt
+    assert "[[COPY_BOX: Reply | ...]]" in prompt
+    assert "help me reply to this" in prompt
+    assert "WhatsApp/DM/text messages" in prompt
+    assert "Never use [[COPY_BOX:]] for ordinary text" in prompt
+    assert "keep any advice for the user in plain prose outside the box" in prompt
+    # The old blanket rule that boxed every prompt/template/config is gone.
+    assert "configurations, and long copyable snippets" not in prompt
+
+
 def test_identity_reply_carries_full_public_history_without_private_data():
     reply = valleymind_identity_reply()
     for fact in (
