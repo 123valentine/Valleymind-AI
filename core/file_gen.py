@@ -68,6 +68,48 @@ _FILE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{8,80}$")
 _INVALID_NAME_RE = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 _BULLET_RE = re.compile(r"^\s*(?:[-*•]|\d+[.)])\s+")
 _HEADING_RE = re.compile(r"^\s{0,3}(#{1,6})\s+(.*)$")
+_TREE_GLYPH_RE = re.compile(r"[├└┌┐┘│─]")
+_INLINE_MARKUP_RE = re.compile(r"\*\*(.+?)\*\*|\*(?!\s)([^*\n]+?)(?<!\s)\*|`([^`\n]+)`")
+
+
+def _plain(value: Any) -> str:
+    """Remove Markdown emphasis markers while keeping the visible text."""
+    text = _clean(value)
+    text = _INLINE_MARKUP_RE.sub(
+        lambda m: next((part for part in m.groups() if part is not None), ""), text
+    )
+    return re.sub(r"[ \t]{2,}", " ", text).strip()
+
+
+def _rich_segments(value: Any) -> list[tuple[str, bool, bool, bool]]:
+    """Split text into (text, bold, italic, code) segments for styled output."""
+    text = _clean(value)
+    segments: list[tuple[str, bool, bool, bool]] = []
+    cursor = 0
+    for match in _INLINE_MARKUP_RE.finditer(text):
+        if match.start() > cursor:
+            segments.append((text[cursor:match.start()], False, False, False))
+        bold, italic, code = match.groups()
+        if bold is not None:
+            segments.append((bold, True, False, False))
+        elif italic is not None:
+            segments.append((italic, False, True, False))
+        elif code is not None:
+            segments.append((code, False, False, True))
+        cursor = match.end()
+    if cursor < len(text):
+        segments.append((text[cursor:], False, False, False))
+    return segments or [(text, False, False, False)]
+
+
+def _xml_escape(value: str) -> str:
+    return (
+        str(value or "")
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace("\n", "<br/>")
+    )
 
 
 def _storage_dir() -> Path:
@@ -134,6 +176,7 @@ def normalize_content(content: Any, title: str = "") -> dict[str, Any]:
         "sections": [],
         "headers": [],
         "rows": [],
+        "trees": [],
         "raw": "",
         "files": [],
     }
@@ -169,6 +212,20 @@ def normalize_content(content: Any, title: str = "") -> dict[str, Any]:
                 if parsed:
                     doc["headers"] = _clean(content.get("headers")) and [_clean(h) for h in (content.get("headers") or [])] or parsed[0]
                     doc["rows"] = parsed[1:] if not content.get("headers") else parsed
+        trees = content.get("trees") or []
+        for tree in trees:
+            if isinstance(tree, dict):
+                lines = tree.get("lines") or tree.get("content") or tree.get("text") or []
+                if isinstance(lines, str):
+                    lines = [line for line in lines.splitlines() if line.strip()]
+                heading = _clean(tree.get("heading") or tree.get("title"))
+                lines = [_clean(line) for line in lines if _clean(line)]
+                if lines:
+                    doc["trees"].append({"heading": heading, "lines": lines})
+            elif _clean(tree):
+                lines = [line for line in str(tree).splitlines() if line.strip()]
+                if lines:
+                    doc["trees"].append({"heading": "", "lines": [_clean(line) for line in lines]})
         files = content.get("files")
         if isinstance(files, dict):
             doc["files"] = [{"name": _clean(k), "content": _clean(v)} for k, v in files.items()]
@@ -181,7 +238,7 @@ def normalize_content(content: Any, title: str = "") -> dict[str, Any]:
                     })
                 else:
                     doc["files"].append({"name": f"file-{len(doc['files']) + 1}.txt", "content": _clean(item)})
-        if not doc["paragraphs"] and not doc["bullets"] and not doc["sections"] and not doc["rows"] and raw:
+        if not doc["paragraphs"] and not doc["bullets"] and not doc["sections"] and not doc["rows"] and not doc["trees"] and raw:
             doc["paragraphs"] = [p.strip() for p in re.split(r"\n\s*\n", raw) if p.strip()]
         return doc
 
@@ -204,6 +261,7 @@ def normalize_content(content: Any, title: str = "") -> dict[str, Any]:
         return doc
 
     table_lines: list[str] = []
+    tree_lines: list[str] = []
     para_buffer: list[str] = []
     current_section: dict[str, Any] | None = None
 
@@ -227,15 +285,30 @@ def normalize_content(content: Any, title: str = "") -> dict[str, Any]:
                 para_buffer.extend(table_lines)
             table_lines.clear()
 
+    def flush_tree() -> None:
+        if tree_lines:
+            doc["trees"].append({
+                "heading": "",
+                "lines": [line.rstrip() for line in tree_lines],
+            })
+            tree_lines.clear()
+
     for line in text.split("\n"):
         if not line.strip():
             flush_para()
             flush_table()
+            flush_tree()
+            continue
+        if _TREE_GLYPH_RE.search(line):
+            flush_para()
+            flush_table()
+            tree_lines.append(line)
             continue
         heading = _HEADING_RE.match(line)
         if heading:
             flush_para()
             flush_table()
+            flush_tree()
             heading_text = _clean(heading.group(2))
             if not doc["paragraphs"] and not doc["bullets"] and not doc["sections"] and doc["title"] == "ValleyMind Export":
                 doc["title"] = heading_text
@@ -245,68 +318,147 @@ def normalize_content(content: Any, title: str = "") -> dict[str, Any]:
             continue
         if line.lstrip().startswith("|") and line.rstrip().endswith("|"):
             flush_para()
+            flush_tree()
             table_lines.append(line)
             continue
         bullet = _BULLET_RE.match(line)
         if bullet:
             flush_para()
             flush_table()
+            flush_tree()
             item = _clean(line[bullet.end():])
             if current_section is not None:
                 current_section["bullets"].append(item)
             else:
                 doc["bullets"].append(item)
             continue
+        flush_tree()
         para_buffer.append(line)
 
     flush_para()
     flush_table()
-    if not doc["paragraphs"] and not doc["bullets"] and not doc["sections"] and not doc["rows"]:
+    flush_tree()
+    if not doc["paragraphs"] and not doc["bullets"] and not doc["sections"] and not doc["rows"] and not doc["trees"]:
         doc["paragraphs"] = [text]
     return doc
 
 
 def _plain_text(doc: dict[str, Any]) -> str:
-    lines = [doc["title"]]
+    lines = [_plain(doc["title"])]
     if doc["subtitle"]:
-        lines += ["", doc["subtitle"]]
+        lines += ["", _plain(doc["subtitle"])]
     for paragraph in doc["paragraphs"]:
-        lines += ["", paragraph]
+        lines += ["", _plain(paragraph)]
     for section in doc["sections"]:
-        lines += ["", section["heading"] or "Section"]
+        lines += ["", _plain(section["heading"] or "Section")]
         for paragraph in section.get("paragraphs", []):
-            lines += ["", paragraph]
+            lines += ["", _plain(paragraph)]
         for bullet in section.get("bullets", []):
-            lines.append(f"- {bullet}")
+            lines.append(f"- {_plain(bullet)}")
+    for tree in doc.get("trees") or []:
+        if tree.get("heading"):
+            lines += ["", _plain(tree["heading"])]
+        lines += ["", *[_plain(line) for line in tree.get("lines", [])]]
     if doc["bullets"]:
         lines += ["", "Key points"]
-        lines += [f"- {bullet}" for bullet in doc["bullets"]]
+        lines += [f"- {_plain(bullet)}" for bullet in doc["bullets"]]
     if doc["headers"]:
-        lines += ["", " | ".join(doc["headers"])]
-        lines += [" | ".join(row) for row in doc["rows"]]
+        lines += ["", " | ".join(_plain(cell) for cell in doc["headers"])]
+        lines += [" | ".join(_plain(cell) for cell in row) for row in doc["rows"]]
     return "\n".join(line for line in lines if line is not None).strip() + "\n"
 
 
 def _markdown_text(doc: dict[str, Any]) -> str:
-    lines = [f"# {doc['title']}"]
+    lines = [f"# {_plain(doc['title'])}"]
     if doc["subtitle"]:
-        lines += ["", f"*{doc['subtitle']}*"]
+        lines += ["", _plain(doc["subtitle"])]
     for paragraph in doc["paragraphs"]:
-        lines += ["", paragraph]
+        lines += ["", _plain(paragraph)]
     for section in doc["sections"]:
         if section["heading"]:
-            lines += ["", f"## {section['heading']}"]
+            lines += ["", f"## {_plain(section['heading'])}"]
         for paragraph in section.get("paragraphs", []):
-            lines += ["", paragraph]
+            lines += ["", _plain(paragraph)]
         for bullet in section.get("bullets", []):
-            lines.append(f"- {bullet}")
+            lines.append(f"- {_plain(bullet)}")
+    for tree in doc.get("trees") or []:
+        if tree.get("heading"):
+            lines += ["", f"## {_plain(tree['heading'])}"]
+        lines += ["", *[_plain(line) for line in tree.get("lines", [])]]
     if doc["bullets"]:
         lines += ["", "## Key points"]
-        lines += [f"- {bullet}" for bullet in doc["bullets"]]
+        lines += [f"- {_plain(bullet)}" for bullet in doc["bullets"]]
     if doc["headers"]:
-        lines += ["", "| " + " | ".join(doc["headers"]) + " |", "|" + "|".join(["---"] * len(doc["headers"])) + "|"]
-        lines += ["| " + " | ".join(row) + " |" for row in doc["rows"]]
+        lines += ["", "| " + " | ".join(_plain(cell) for cell in doc["headers"]) + " |",
+                  "|" + "|".join(["---"] * len(doc["headers"])) + "|"]
+        lines += ["| " + " | ".join(_plain(cell) for cell in row) + " |" for row in doc["rows"]]
     return "\n".join(lines).strip() + "\n"
+
+
+def _pdf_markup(text: Any, font_name: str = "", mono: bool = False) -> str:
+    """Convert Markdown emphasis into ReportLab inline markup."""
+    parts: list[str] = []
+    for segment, bold, italic, code in _rich_segments(text):
+        safe = _xml_escape(segment)
+        if mono or code:
+            face = font_name or "Courier"
+            safe = f'<font face="{face}">{safe}</font>'
+        if bold:
+            safe = f"<b>{safe}</b>"
+        if italic:
+            safe = f"<i>{safe}</i>"
+        parts.append(safe)
+    return "".join(parts) or "&nbsp;"
+
+
+def _pdf_tree_line(line: str, unicode_ok: bool) -> str:
+    """Keep box-drawing glyphs when the font supports them, else use ASCII."""
+    if unicode_ok:
+        return line
+    return (line
+            .replace("├──", "|--").replace("└──", "`--")
+            .replace("├", "+").replace("└", "+")
+            .replace("│", "|").replace("─", "-"))
+
+
+def _pdf_fonts():
+    """Register a Unicode font when available so tree glyphs render cleanly."""
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+
+    try:
+        import reportlab
+        reportlab_fonts = Path(reportlab.__file__).resolve().parent / "fonts"
+    except Exception:
+        reportlab_fonts = Path("")
+
+    candidates = [
+        (reportlab_fonts / "DejaVuSans.ttf", reportlab_fonts / "DejaVuSans-Bold.ttf"),
+        (Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+         Path("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf")),
+        (Path("C:/Windows/Fonts/consola.ttf"), Path("C:/Windows/Fonts/consolab.ttf")),
+        (reportlab_fonts / "Vera.ttf", reportlab_fonts / "VeraBd.ttf"),
+    ]
+    try:
+        pdfmetrics.getFont("VMUnicode")
+        return "VMUnicode", "VMUnicode-Bold", True
+    except Exception:
+        pass
+    for regular, bold in candidates:
+        try:
+            if not regular.is_file():
+                continue
+            pdfmetrics.registerFont(TTFont("VMUnicode", str(regular)))
+            bold_path = bold if bold.is_file() else regular
+            pdfmetrics.registerFont(TTFont("VMUnicode-Bold", str(bold_path)))
+            pdfmetrics.registerFontFamily(
+                "VMUnicode", normal="VMUnicode", bold="VMUnicode-Bold",
+                italic="VMUnicode", boldItalic="VMUnicode-Bold",
+            )
+            return "VMUnicode", "VMUnicode-Bold", True
+        except Exception:
+            continue
+    return "Helvetica", "Helvetica-Bold", False
 
 
 def _build_pdf(doc: dict[str, Any]) -> bytes:
@@ -317,11 +469,14 @@ def _build_pdf(doc: dict[str, Any]) -> bytes:
     from reportlab.lib.units import inch
     from reportlab.platypus import ListFlowable, ListItem, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
+    tree_font, _tree_bold_font, unicode_ok = _pdf_fonts()
+    body_font = "Helvetica"
+    bold_font_name = "Helvetica-Bold"
     buffer = io.BytesIO()
     pdf = SimpleDocTemplate(
         buffer,
         pagesize=letter,
-        title=doc["title"],
+        title=_plain(doc["title"]),
         author="ValleyMind-AI",
         leftMargin=0.8 * inch,
         rightMargin=0.8 * inch,
@@ -330,24 +485,28 @@ def _build_pdf(doc: dict[str, Any]) -> bytes:
     )
     styles = getSampleStyleSheet()
     title_style = ParagraphStyle(
-        "VMTitle", parent=styles["Title"], fontSize=20, leading=25,
+        "VMTitle", parent=styles["Title"], fontName=body_font, fontSize=20, leading=25,
         textColor=colors.HexColor("#111827"), alignment=TA_LEFT, spaceAfter=10,
     )
     heading_style = ParagraphStyle(
-        "VMHeading", parent=styles["Heading2"], fontSize=14, leading=18,
+        "VMHeading", parent=styles["Heading2"], fontName=body_font, fontSize=14, leading=18,
         textColor=colors.HexColor("#0f766e"), spaceBefore=10, spaceAfter=5,
     )
     body_style = ParagraphStyle(
-        "VMBody", parent=styles["BodyText"], fontSize=11, leading=16,
+        "VMBody", parent=styles["BodyText"], fontName=body_font, fontSize=11, leading=16,
         textColor=colors.HexColor("#1f2937"), spaceAfter=6,
     )
     table_header_style = ParagraphStyle(
-        "VMTableHeader", parent=body_style, fontSize=10, leading=13,
-        textColor=colors.white, fontName="Helvetica-Bold", spaceAfter=0,
+        "VMTableHeader", parent=body_style, fontName=bold_font_name, fontSize=10, leading=13,
+        textColor=colors.white, spaceAfter=0,
+    )
+    tree_style = ParagraphStyle(
+        "VMTree", parent=body_style, fontName=tree_font, fontSize=9.5, leading=13,
+        textColor=colors.HexColor("#0f3f3c"), spaceAfter=0,
     )
 
-    def para(text: str, style=body_style) -> Paragraph:
-        return Paragraph(str(text or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\n", "<br/>"), style)
+    def para(text: Any, style=body_style, font: str = body_font, mono: bool = False) -> Paragraph:
+        return Paragraph(_pdf_markup(text, font, mono), style)
 
     story: list[Any] = [para(doc["title"], title_style)]
     if doc["subtitle"]:
@@ -365,6 +524,27 @@ def _build_pdf(doc: dict[str, Any]) -> bytes:
                 [ListItem(para(bullet), leftIndent=12) for bullet in section["bullets"]],
                 bulletType="bullet", start="•", leftIndent=18,
             ))
+    for tree in doc.get("trees") or []:
+        if tree.get("heading"):
+            story.append(para(tree["heading"], heading_style))
+        lines = [_pdf_tree_line(line, unicode_ok) for line in tree.get("lines", [])]
+        if lines:
+            callout = Paragraph(
+                "<br/>".join(_pdf_markup(line, tree_font, mono=True) for line in lines),
+                tree_style,
+            )
+            callout_table = Table([[callout]], colWidths=[pdf.width], hAlign="LEFT")
+            callout_table.setStyle(TableStyle([
+                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f1f5f9")),
+                ("BOX", (0, 0), (-1, -1), 1, colors.HexColor("#0f766e")),
+                ("LINEBEFORE", (0, 0), (0, -1), 3, colors.HexColor("#0f766e")),
+                ("LEFTPADDING", (0, 0), (-1, -1), 10),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+                ("TOPPADDING", (0, 0), (-1, -1), 7),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ]))
+            story += [Spacer(1, 6), callout_table, Spacer(1, 8)]
     if doc["bullets"]:
         story.append(ListFlowable(
             [ListItem(para(bullet), leftIndent=12) for bullet in doc["bullets"]],
@@ -377,7 +557,7 @@ def _build_pdf(doc: dict[str, Any]) -> bytes:
         table.setStyle(TableStyle([
             ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0f766e")),
             ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTNAME", (0, 0), (-1, 0), bold_font_name),
             ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#cbd5e1")),
             ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f1f5f9")]),
             ("VALIGN", (0, 0), (-1, -1), "TOP"),
@@ -393,33 +573,84 @@ def _build_pdf(doc: dict[str, Any]) -> bytes:
     return buffer.getvalue()
 
 
+def _docx_shade_cell(cell, fill: str = "F1F5F9") -> None:
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+
+    tc_pr = cell._tc.get_or_add_tcPr()
+    shd = tc_pr.find(qn("w:shd"))
+    if shd is None:
+        shd = OxmlElement("w:shd")
+        tc_pr.append(shd)
+    shd.set(qn("w:fill"), fill)
+
+
+def _add_rich_paragraph(paragraph, text: Any, mono: bool = False) -> None:
+    from docx.shared import Pt
+
+    segments = _rich_segments(text)
+    if not segments:
+        return
+    for segment, bold, italic, code in segments:
+        if not segment:
+            continue
+        run = paragraph.add_run(segment)
+        run.bold = bold
+        run.italic = italic
+        if mono or code:
+            run.font.name = "Consolas"
+            run.font.size = Pt(9.5)
+
+
 def _build_docx(doc: dict[str, Any]) -> bytes:
     from docx import Document
+    from docx.shared import RGBColor
 
     document = Document()
-    document.add_heading(doc["title"], level=0)
+    title_paragraph = document.add_paragraph(style="Title")
+    _add_rich_paragraph(title_paragraph, doc["title"])
     if doc["subtitle"]:
-        document.add_paragraph(doc["subtitle"])
+        _add_rich_paragraph(document.add_paragraph(), doc["subtitle"])
     for paragraph in doc["paragraphs"]:
-        document.add_paragraph(paragraph)
+        _add_rich_paragraph(document.add_paragraph(), paragraph)
     for section in doc["sections"]:
         if section["heading"]:
-            document.add_heading(section["heading"], level=2)
+            _add_rich_paragraph(document.add_paragraph(style="Heading 2"), section["heading"])
         for paragraph in section.get("paragraphs", []):
-            document.add_paragraph(paragraph)
+            _add_rich_paragraph(document.add_paragraph(), paragraph)
         for bullet in section.get("bullets", []):
-            document.add_paragraph(bullet, style="List Bullet")
+            _add_rich_paragraph(document.add_paragraph(style="List Bullet"), bullet)
     for bullet in doc["bullets"]:
-        document.add_paragraph(bullet, style="List Bullet")
+        _add_rich_paragraph(document.add_paragraph(style="List Bullet"), bullet)
+    for tree in doc.get("trees") or []:
+        if tree.get("heading"):
+            _add_rich_paragraph(document.add_paragraph(style="Heading 2"), tree["heading"])
+        lines = tree.get("lines") or []
+        if lines:
+            callout = document.add_table(rows=1, cols=1)
+            callout.style = "Table Grid"
+            cell = callout.cell(0, 0)
+            _docx_shade_cell(cell)
+            for index, line in enumerate(lines):
+                paragraph = cell.paragraphs[0] if index == 0 else cell.add_paragraph()
+                paragraph.paragraph_format.space_after = 0
+                _add_rich_paragraph(paragraph, line, mono=True)
     if doc["headers"]:
         table = document.add_table(rows=1, cols=len(doc["headers"]))
         table.style = "Table Grid"
         for idx, header in enumerate(doc["headers"]):
-            table.rows[0].cells[idx].text = header
+            cell = table.rows[0].cells[idx]
+            _docx_shade_cell(cell, "0F766E")
+            paragraph = cell.paragraphs[0]
+            for segment, _bold, _italic, _code in _rich_segments(header):
+                run = paragraph.add_run(segment)
+                run.bold = True
+                run.font.color.rgb = RGBColor(255, 255, 255)
         for row in doc["rows"]:
             cells = table.add_row().cells
-            for idx, cell in enumerate(row[:len(cells)]):
-                cells[idx].text = cell
+            for idx, cell_text in enumerate(row[:len(cells)]):
+                paragraph = cells[idx].paragraphs[0]
+                _add_rich_paragraph(paragraph, cell_text)
     buffer = io.BytesIO()
     document.save(buffer)
     return buffer.getvalue()
@@ -432,44 +663,51 @@ def _build_xlsx(doc: dict[str, Any]) -> bytes:
 
     workbook = Workbook()
     sheet = workbook.active
-    sheet.title = re.sub(r"[\[\]:*?/\\]", "-", doc["title"])[:31] or "ValleyMind"
+    sheet.title = re.sub(r"[\[\]:*?/\\]", "-", _plain(doc["title"]))[:31] or "ValleyMind"
 
     def write_overview(target) -> None:
-        target["A1"] = doc["title"]
+        target["A1"] = _plain(doc["title"])
         target["A1"].font = Font(bold=True, size=14)
         row_num = 2
         if doc["subtitle"]:
-            target.cell(row=row_num, column=1, value=doc["subtitle"])
+            target.cell(row=row_num, column=1, value=_plain(doc["subtitle"]))
             row_num += 1
         for paragraph in doc["paragraphs"]:
             row_num += 1
-            cell = target.cell(row=row_num, column=1, value=paragraph)
+            cell = target.cell(row=row_num, column=1, value=_plain(paragraph))
             cell.alignment = Alignment(wrap_text=True, vertical="top")
         for section in doc["sections"]:
             row_num += 1
-            target.cell(row=row_num, column=1, value=section["heading"] or "Section").font = Font(bold=True)
+            target.cell(row=row_num, column=1, value=_plain(section["heading"] or "Section")).font = Font(bold=True)
             for paragraph in section.get("paragraphs", []):
                 row_num += 1
-                target.cell(row=row_num, column=1, value=paragraph).alignment = Alignment(wrap_text=True, vertical="top")
+                target.cell(row=row_num, column=1, value=_plain(paragraph)).alignment = Alignment(wrap_text=True, vertical="top")
             for bullet in section.get("bullets", []):
                 row_num += 1
-                target.cell(row=row_num, column=1, value=f"- {bullet}")
+                target.cell(row=row_num, column=1, value=f"- {_plain(bullet)}")
+        for tree in doc.get("trees") or []:
+            if tree.get("heading"):
+                row_num += 1
+                target.cell(row=row_num, column=1, value=_plain(tree["heading"])).font = Font(bold=True)
+            for line in tree.get("lines", []):
+                row_num += 1
+                target.cell(row=row_num, column=1, value=_plain(line))
         for bullet in doc["bullets"]:
             row_num += 1
-            target.cell(row=row_num, column=1, value=f"- {bullet}")
+            target.cell(row=row_num, column=1, value=f"- {_plain(bullet)}")
         target.column_dimensions["A"].width = 100
 
     if doc["headers"]:
         # Keep the dataset as the active sheet for spreadsheet/CSV semantics,
         # but preserve headings and explanatory prose on a second sheet so an
         # XLSX export contains the whole generated document.
-        sheet.append(doc["headers"])
+        sheet.append([_plain(cell) for cell in doc["headers"]])
         for cell in sheet[1]:
             cell.font = Font(bold=True, color="FFFFFF")
             cell.fill = PatternFill("solid", fgColor="0F766E")
             cell.alignment = Alignment(vertical="center")
         for row in doc["rows"]:
-            sheet.append([cell for cell in row])
+            sheet.append([_plain(cell) for cell in row])
         sheet.freeze_panes = "A2"
         widths: dict[int, int] = {}
         for row in sheet.iter_rows():
@@ -491,8 +729,8 @@ def _build_csv(doc: dict[str, Any]) -> bytes:
     output = io.StringIO(newline="")
     writer = csv.writer(output)
     if doc["headers"]:
-        writer.writerow(doc["headers"])
-        writer.writerows(doc["rows"])
+        writer.writerow([_plain(cell) for cell in doc["headers"]])
+        writer.writerows([[_plain(cell) for cell in row] for row in doc["rows"]])
     else:
         for line in _plain_text(doc).splitlines():
             writer.writerow([line])
@@ -523,7 +761,7 @@ def _build_zip(content: Any, title: str) -> tuple[bytes, str]:
                 stem, ext = os.path.splitext(name)
                 name = f"{stem}-{len(seen) + 1}{ext}"
             seen.add(name)
-            archive.writestr(name, str(item.get("content") or ""))
+            archive.writestr(name, _plain(item.get("content") or ""))
         archive.writestr("README.txt", f"{doc['title']}\n\nGenerated by ValleyMind-AI.\n")
     return buffer.getvalue(), _safe_filename(title, "zip")
 
@@ -563,14 +801,14 @@ def generate_file(content: Any = "", format: str = "txt", title: str = "ValleyMi
             "md": lambda d: _markdown_text(d).encode("utf-8"),
         }
         payload = builders[fmt](doc)
-        default_name = _safe_filename(filename or doc["title"], fmt)
+        default_name = _safe_filename(filename or _plain(doc["title"]), fmt)
 
     path.write_bytes(payload)
     size_bytes = len(payload)
     meta = {
         "file_id": file_id,
         "token": token,
-        "title": _clean(title) or default_name,
+        "title": _plain(title) or default_name,
         "filename": _safe_filename(filename or default_name, fmt),
         "format": fmt,
         "mimetype": MIME_TYPES.get(fmt) or mimetypes.guess_type(str(path))[0] or "application/octet-stream",
@@ -620,7 +858,7 @@ def get_file(file_id: str, token: str = "") -> tuple[Path, dict[str, Any]]:
 
 def file_card(meta: dict[str, Any], title: str = "") -> str:
     """Build the structured wire block understood by vm_richrender.js."""
-    label = re.sub(r"\s*\|\s*", " / ", _clean(title or meta.get("title") or meta.get("filename")))
+    label = re.sub(r"\s*\|\s*", " / ", _plain(title or meta.get("title") or meta.get("filename")))
     fmt = str(meta.get("format") or "txt").upper()
     size = f"{meta.get('size_kb', 0.1)} KB"
     url = str(meta.get("download_url") or "")

@@ -376,5 +376,6 @@ def test_stream_video_dispatch_uses_state_generator():
     start = src.index("def _dispatch_video_stream(")
     end = src.index("def _build_image_user_context(", start)
     block = src[start:end]
-    assert "stream_with_context(_stream_video_state(state, resolved_chat_id))" in block
+    assert "stream_with_context(_stream_video_state(" in block
+    assert "message=message" in block
     assert "generate()" not in block

@@ -282,7 +282,10 @@ def test_brain_file_reply_emits_file_card(monkeypatch):
 def test_stream_respond_yields_realtime_file_card(monkeypatch):
     _patch_llm(monkeypatch, [])
     brain = _brain_with_fake_memory()
-    events = list(brain.stream_respond("create a CSV called Q3 Metrics", chat_id="chat-2"))
+    events = list(brain.stream_respond(
+        "create a CSV called Q3 Metrics, create it now",
+        chat_id="chat-2",
+    ))
     event_types = [type(event).__name__ for event in events]
     assert "dict" in event_types and "str" in event_types
     reply = next(event for event in events if isinstance(event, str) and "[[FILE_CARD:" in event)
@@ -293,7 +296,7 @@ def test_stream_respond_yields_realtime_file_card(monkeypatch):
 def test_respond_routes_file_request_through_drafting(monkeypatch):
     _patch_llm(monkeypatch, [])
     brain = _brain_with_fake_memory()
-    reply = brain.respond("create a PDF called Respond Report", chat_id="chat-3")
+    reply = brain.respond("create a PDF called Respond Report, create it now", chat_id="chat-3")
     assert "[[FILE_CARD: Respond Report | PDF | " in reply
     assert "/api/files/download/" in reply
     assert brain.memory.messages[-1]["role"] == "assistant"
@@ -365,11 +368,17 @@ def test_respond_and_stream_use_llm_drafting(monkeypatch):
     _patch_llm(monkeypatch, captured)
     brain = _brain_with_fake_memory()
 
-    reply = brain.respond("create a PDF about quarterly revenue operations", chat_id="llm-respond")
+    reply = brain.respond(
+        "create a PDF about quarterly revenue operations with sections and a table, create it now",
+        chat_id="llm-respond",
+    )
     assert "[[FILE_CARD:" in reply
     assert len(captured) == 1
 
-    events = list(brain.stream_respond("create a CSV about quarterly revenue operations", chat_id="llm-stream"))
+    events = list(brain.stream_respond(
+        "create a CSV about quarterly revenue operations with six data rows, create it now",
+        chat_id="llm-stream",
+    ))
     assert any(isinstance(event, str) and "[[FILE_CARD:" in event for event in events)
     assert len(captured) == 2
     assert all("quarterly revenue operations" in messages[-1]["content"] for messages in captured)

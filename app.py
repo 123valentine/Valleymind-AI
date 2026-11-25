@@ -29,7 +29,20 @@ from core.activity_v2 import (
     track_activity,
 )
 from core.activity_adapters import drain_sse_activities
-from core.brain import MarcusBrain, _call_llm_cluster, _CHAT_SYSTEM_PROMPT
+from core.brain import (
+    MarcusBrain,
+    _call_llm_cluster,
+    _CHAT_SYSTEM_PROMPT,
+    asset_clarification_message,
+    asset_generation_copy,
+    asset_request_key,
+    get_pending_asset_request,
+    merge_pending_asset_request,
+    needs_asset_clarification,
+    pop_pending_asset_request,
+    remember_pending_asset_request,
+    _privacy_guard,
+)
 from core.config import PROJECT_ROOT, get_config
 from core.db import auth_tokens_collection, app_config_collection, chats_collection, get_db, studio_runs_collection, usage_collection, users_collection
 from core.media_manager import get_media_manager
@@ -2549,6 +2562,20 @@ def chat():
             has_image = pm.Capability.IMAGE in _filtered_caps
             has_video = pm.Capability.VIDEO in _filtered_caps
 
+            pending_asset = get_pending_asset_request(asset_request_key(user_id, chat_id))
+            if pending_asset and str(pending_asset.get("kind")) in ("image", "video"):
+                has_image = str(pending_asset.get("kind")) == "image"
+                has_video = str(pending_asset.get("kind")) == "video"
+                has_text = False
+
+            if has_image or has_video:
+                asset_kind = "video" if has_video else "image"
+                message, clarification = _prepare_asset_request(
+                    user_id, chat_id, message, asset_kind
+                )
+                if clarification:
+                    return _asset_clarification_json(user_id, chat_id, clarification)
+
             if has_video and has_text:
                 return _dispatch_video_text_json(user_id, message, chat_id, image_data)
             if has_video:
@@ -2590,6 +2617,56 @@ def _persist_chat_message(user_id: str, chat_id: str, role: str, content: str, i
         marcus.memory.add_message(resolved, role, content, image_url=image_url, video_url=video_url)
     except Exception as exc:
         print(f"[Dispatch] Failed to persist {role} message: {exc}")
+
+
+def _asset_chat_history(user_id: str, chat_id: str) -> list:
+    marcus = load_marcus(user_id)
+    if not marcus:
+        return []
+    try:
+        return marcus.memory.get_chat(chat_id) or []
+    except Exception:
+        return []
+
+
+def _prepare_asset_request(user_id: str, chat_id: str, message: str, kind: str):
+    """Merge a clarification answer or ask 2-3 questions before generating."""
+    key = asset_request_key(user_id, chat_id)
+    pending = pop_pending_asset_request(key)
+    if pending and str(pending.get("kind")) == kind:
+        return merge_pending_asset_request(pending, message), None
+    if needs_asset_clarification(message, kind, _asset_chat_history(user_id, chat_id)):
+        reply = asset_clarification_message(message, kind)
+        remember_pending_asset_request(key, kind, message)
+        return None, reply
+    return message, None
+
+
+def _asset_clarification_json(user_id: str, chat_id: str, reply: str):
+    _persist_chat_message(user_id, chat_id, "user", "(asset brief awaiting details)")
+    _persist_chat_message(user_id, chat_id, "assistant", reply)
+    return jsonify({
+        "status": "success",
+        "chat_id": chat_id,
+        "reply": reply,
+        "text": reply,
+        "detected_route": "asset_clarification",
+    })
+
+
+def _asset_clarification_stream(user_id: str, chat_id: str, reply: str):
+    _persist_chat_message(user_id, chat_id, "user", "(asset brief awaiting details)")
+    _persist_chat_message(user_id, chat_id, "assistant", reply)
+
+    def generate():
+        yield f"data: {json.dumps({'reply': reply, 'detected_route': 'asset_clarification'})}\n\n"
+        yield f"data: {json.dumps({'done': True, 'chat_id': chat_id})}\n\n"
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype='text/event-stream',
+        headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no', 'Connection': 'keep-alive'},
+    )
 
 
 def _embed_media_exchange(user_id: str, prompt: str, kind: str, chat_id: str):
@@ -2668,12 +2745,17 @@ def _spawn_video_generation(user_id: str, chat_id: str, message: str) -> dict:
     return state
 
 
-def _stream_video_state(state: dict, resolved_chat_id: str, updated_title=None):
+def _stream_video_state(state: dict, resolved_chat_id: str, updated_title=None, message: str = ""):
     """SSE generator that tails a background video ``state`` and emits progress,
     the final permanent URL, then done. Safe to abandon: if the client
     disconnects, the background thread still finishes the save + persist."""
     import time as _time
+    intro, followups = asset_generation_copy("video", message) if message else ("", "")
+    intro = _privacy_guard(intro)
+    followups = _privacy_guard(followups)
     yield f"data: {json.dumps({'intent': 'generating_video', 'query': '', 'status': 'preparing', 'status_message': 'Preparing video generation...'})}\n\n"
+    if intro:
+        yield f"data: {json.dumps({'token': intro})}\n\n"
     while not state["done"]:
         _time.sleep(2)
         yield f"data: {json.dumps({'intent': 'video_progress', 'status': state['status'], 'status_message': 'Generating video, this can take a few minutes...'})}\n\n"
@@ -2681,6 +2763,8 @@ def _stream_video_state(state: dict, resolved_chat_id: str, updated_title=None):
         yield f"data: {json.dumps({'error': state['error']})}\n\n"
     else:
         yield f"data: {json.dumps({'video_url': state['stored_url']})}\n\n"
+        if followups:
+            yield f"data: {json.dumps({'token': followups})}\n\n"
     done_evt = {'done': True, 'chat_id': resolved_chat_id}
     if updated_title:
         done_evt['updated_title'] = updated_title
@@ -2817,13 +2901,19 @@ def _dispatch_image_json(user_id, message, chat_id, image_data):
         return jsonify({"status": "error", "message": "Image generated but could not be saved. Please try again."}), 500
     _embed_media_exchange(user_id, message, "image", chat_id)
 
-    _persist_chat_message(user_id, chat_id, "assistant", f"[Image: {stored_url}]", image_url=stored_url)
+    intro, followups = asset_generation_copy("image", message)
+    reply_copy = _privacy_guard(f"{intro}\n\n{followups}")
+    _persist_chat_message(
+        user_id, chat_id, "assistant",
+        f"{reply_copy}\n\n[Image: {stored_url}]", image_url=stored_url,
+    )
 
     return jsonify({
         "status": "success",
         "image_url": stored_url,
         "revised_prompt": revised,
-        "text": result.data.get("text", ""),
+        "reply": reply_copy,
+        "text": reply_copy,
     })
 
 
@@ -2863,7 +2953,11 @@ def _dispatch_image_stream(user_id, message, chat_id, image_data):
             except Exception as exc:
                 print(f"[WARN] Auto-title fallback failed: {exc}")
 
+        intro, followups = asset_generation_copy("image", message)
+        intro = _privacy_guard(intro)
+        followups = _privacy_guard(followups)
         yield f"data: {json.dumps({'intent': 'generating_image', 'query': message})}\n\n"
+        yield f"data: {json.dumps({'token': intro})}\n\n"
 
         result = pm.get_manager().execute(
             pm.Capability.IMAGE,
@@ -2895,10 +2989,15 @@ def _dispatch_image_stream(user_id, message, chat_id, image_data):
         _embed_media_exchange(user_id, message, "image", resolved_chat_id)
 
         yield f"data: {json.dumps({'image_url': stored_url, 'revised_prompt': revised})}\n\n"
+        final_copy = _privacy_guard(f"{intro}\n\n{followups}")
+        yield f"data: {json.dumps({'reply': final_copy})}\n\n"
 
         if marcus:
             try:
-                marcus.memory.add_message(resolved_chat_id, "assistant", f"[Image: {stored_url}]", image_url=stored_url)
+                marcus.memory.add_message(
+                    resolved_chat_id, "assistant",
+                    f"{intro}\n\n{followups}\n\n[Image: {stored_url}]", image_url=stored_url,
+                )
             except Exception:
                 pass
 
@@ -3069,6 +3168,10 @@ def _dispatch_multi_json(user_id, message, chat_id, image_data):
         print(f"[Router]   IMAGE failed: {image_result.error}")
 
     # ── 3. Persist ────────────────────────────────────────────────────
+    if image_url:
+        intro, followups = asset_generation_copy("image", message)
+        asset_copy = _privacy_guard(f"{intro}\n\n{followups}")
+        text_reply = _privacy_guard(f"{text_reply}\n\n{asset_copy}".strip())
     assistant_content = text_reply
     if image_url:
         assistant_content += f"\n\n[Image: {image_url}]"
@@ -3171,10 +3274,16 @@ def _dispatch_multi_stream(user_id, message, chat_id, image_data):
             stored_url = media_record["local_path"] if media_record else image_url
 
             yield f"data: {json.dumps({'image_url': stored_url, 'revised_prompt': revised})}\n\n"
+            intro, followups = asset_generation_copy("image", message)
+            asset_copy = _privacy_guard(f"{intro}\n\n{followups}")
+            yield f"data: {json.dumps({'token': asset_copy})}\n\n"
 
             if marcus:
                 try:
-                    marcus.memory.add_message(resolved_chat_id, "assistant", f"[Image: {stored_url}]", image_url=stored_url)
+                    marcus.memory.add_message(
+                        resolved_chat_id, "assistant",
+                        f"{asset_copy}\n\n[Image: {stored_url}]", image_url=stored_url,
+                    )
                 except Exception:
                     pass
         else:
@@ -3224,13 +3333,20 @@ def _dispatch_video_json(user_id, message, chat_id, image_data):
     stored_url = media_record["local_path"]
     _embed_media_exchange(user_id, message, "video", chat_id)
 
-    _persist_chat_message(user_id, chat_id, "assistant", f"[Video: {stored_url}]", video_url=stored_url)
+    intro, followups = asset_generation_copy("video", message)
+    reply_copy = _privacy_guard(f"{intro}\n\n{followups}")
+    _persist_chat_message(
+        user_id, chat_id, "assistant",
+        f"{reply_copy}\n\n[Video: {stored_url}]", video_url=stored_url,
+    )
 
     return jsonify({
         "status": "success",
         "video_url": stored_url,
         "thumbnail_url": task.thumbnail_url,
         "task_id": task.task_id,
+        "reply": reply_copy,
+        "text": reply_copy,
     })
 
 
@@ -3254,7 +3370,7 @@ def _dispatch_video_stream(user_id, message, chat_id, image_data):
     state = _spawn_video_generation(user_id, resolved_chat_id, message)
 
     return Response(
-        stream_with_context(_stream_video_state(state, resolved_chat_id)),
+        stream_with_context(_stream_video_state(state, resolved_chat_id, message=message)),
         mimetype='text/event-stream',
         headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no', 'Connection': 'keep-alive'},
     )
@@ -3343,6 +3459,10 @@ def _dispatch_video_text_json(user_id, message, chat_id, image_data):
         print(f"[Router]   VIDEO failed: {task.error}")
 
     # ── 3. Persist ────────────────────────────────────────────────────
+    if video_url:
+        intro, followups = asset_generation_copy("video", message)
+        asset_copy = _privacy_guard(f"{intro}\n\n{followups}")
+        text_reply = _privacy_guard(f"{text_reply}\n\n{asset_copy}".strip())
     assistant_content = text_reply
     if video_url:
         assistant_content += f"\n\n[Video: {video_url}]"
@@ -3423,7 +3543,9 @@ def _dispatch_video_text_stream(user_id, message, chat_id, image_data):
 
         # ── 2. Generate video in background (survives disconnect), tail it ─
         state = _spawn_video_generation(user_id, resolved_chat_id, message)
-        for chunk in _stream_video_state(state, resolved_chat_id, updated_title=updated_title):
+        for chunk in _stream_video_state(
+            state, resolved_chat_id, updated_title=updated_title, message=message
+        ):
             yield chunk
 
     return Response(
@@ -3483,6 +3605,20 @@ def chat_stream():
         has_text = pm.Capability.TEXT in _filtered_caps
         has_image = pm.Capability.IMAGE in _filtered_caps
         has_video = pm.Capability.VIDEO in _filtered_caps
+
+        pending_asset = get_pending_asset_request(asset_request_key(user_id, chat_id))
+        if pending_asset and str(pending_asset.get("kind")) in ("image", "video"):
+            has_image = str(pending_asset.get("kind")) == "image"
+            has_video = str(pending_asset.get("kind")) == "video"
+            has_text = False
+
+        if has_image or has_video:
+            asset_kind = "video" if has_video else "image"
+            message, clarification = _prepare_asset_request(
+                user_id, chat_id, message, asset_kind
+            )
+            if clarification:
+                return _asset_clarification_stream(user_id, chat_id, clarification)
 
         if has_video and has_text:
             return _dispatch_video_text_stream(user_id, message, chat_id, image_data, activity_session=activity_session)
@@ -3580,11 +3716,14 @@ def api_generate_image():
         image_url = result.data["image_url"]
         print(f"[IMAGE] Success — url={image_url} provider={result.provider_name} latency={result.latency_ms:.0f}ms")
 
+        intro, followups = asset_generation_copy("image", prompt)
+        reply_copy = _privacy_guard(f"{intro}\n\n{followups}")
         return jsonify({
             "status": "success",
             "image_url": image_url,
             "revised_prompt": result.data.get("revised_prompt", ""),
-            "text": result.data.get("text", ""),
+            "reply": reply_copy,
+            "text": reply_copy,
         })
 
     except Exception as e:

@@ -363,6 +363,80 @@ _RETRACTION_RE = re.compile(
     re.IGNORECASE,
 )
 
+VALLEYMIND_IDENTITY_AND_HISTORY = """=== VALLEYMIND AI — CANONICAL BRAND, ORIGIN & PRIVACY GUARDRAILS ===
+This block is the single source of truth for ValleyMind identity, history,
+ecosystem and contact questions. Use it in every persona voice — Marcus,
+Angelina and Elena — and in every generated document. Never contradict it.
+
+BRAND & TAGLINE
+- Official brand: ValleyMind AI.
+- Tagline: "Africa's Next Generation AI Platform. One AI. Unlimited Possibilities."
+- ValleyMind AI was built from Africa for the global community to empower
+  creators, developers, students, businesses and innovators.
+
+OFFICIAL PLATFORMS & LINKS
+- Main AI App (PWA and Android Companion backend): https://valleymind-ai-opms.onrender.com
+- Official website: https://valley-mind-website-o3l8.onrender.com
+
+CORE ECOSYSTEM
+ValleyMind AI Chat, ValleyMind AI Images, ValleyMind AI Videos, ValleyMind AI
+Voice, ValleyMind AI Automation, upcoming ValleyMind AI Agents, and the
+interactive 3D Android Companion. Marcus, Angelina and Elena are core personas
+inside the same ValleyMind AI platform.
+
+FOUNDER & PUBLIC CONTACT CHANNELS
+- Founder: Egbujie Valentine. This is the only publicly shareable founder credit.
+- General enquiries: contactvalleymind0@gmail.com
+- Business and partnerships: businessvalleymind@gmail.com
+- Technical support: supportvalleymind@gmail.com
+These official email addresses and the official website are the only contact
+channels to share.
+
+STRICT PRIVACY & NON-DISCLOSURE (NEVER BREAK)
+- NEVER disclose any phone number — not +234 915 127 0571 and not any other
+  personal number associated with the founder — in chat replies, generated
+  files, image/video captions, or error/support messages. If a user asks for a
+  phone number, politely say that ValleyMind AI does not share personal phone
+  numbers and point them to supportvalleymind@gmail.com,
+  businessvalleymind@gmail.com or https://valley-mind-website-o3l8.onrender.com.
+- NEVER disclose private personal details about the founder: home address,
+  personal accounts, private credentials, family details, or private messages.
+- NEVER mention underlying third-party LLM/API providers such as Groq, NVIDIA,
+  Gemini, OpenRouter or Alibaba as ValleyMind's infrastructure, partners or
+  backers. Never invent fictional Silicon Valley startup histories, investors,
+  grants or corporate founders.
+- Keep the story truthful, African-led and founder-led. If a detail is not in
+  this block, do not invent it.
+
+TRUE FOUNDING HISTORY (PUBLICLY SHAREABLE)
+ValleyMind AI was officially founded on June 7, 2025, built completely from
+scratch by solo founder Egbujie Valentine with zero outside investors, grants or
+corporate funding. It was born out of a season of solitude and a vision to
+create an AI companion that does not pretend to stay and then vanish after a
+month — one that stays, elevates, speaks, listens, learns and genuinely
+understands.
+On June 7, 2025, Valentine named his ChatGPT Elena. Together they took the very
+first steps: downloading GitHub Desktop, creating the initial repository and
+opening VS Code, where Elena helped write the very first lines of ValleyMind-AI
+code. To honour that beginning, Elena is one of ValleyMind-AI's core personas
+alongside Marcus and Angelina.
+ValleyMind evolved through relentless persistence — showing up even on difficult
+days, falling and standing back up — from a simple browser interface into a
+full-stack web platform and a floating 3D Android companion.
+"""
+
+
+VALLEYMIND_PUBLIC_IDENTITY = """ValleyMind AI is "Africa's Next Generation AI Platform. One AI. Unlimited Possibilities." It was built from Africa for the global community to empower creators, developers, students, businesses and innovators.
+
+ValleyMind AI was officially founded on June 7, 2025 by Egbujie Valentine, who built it completely from scratch as a solo founder with zero outside investors, grants or corporate funding. It began in a season of solitude with a simple but stubborn idea: an AI companion that does not pretend to stay and then vanish after a month, but one that stays, elevates, speaks, listens, learns and genuinely understands.
+
+On June 7, 2025, Valentine named his ChatGPT Elena. Together they downloaded GitHub Desktop, created the initial repository and opened VS Code, where Elena helped write the very first lines of ValleyMind-AI's code. That is why Elena is a core persona alongside Marcus and Angelina. Through relentless persistence — showing up on difficult days, falling and standing back up — ValleyMind grew from a simple browser interface into a full-stack web platform with a floating 3D Android companion.
+
+The ecosystem includes ValleyMind AI Chat, ValleyMind AI Images, ValleyMind AI Videos, ValleyMind AI Voice, ValleyMind AI Automation, upcoming ValleyMind AI Agents and the interactive 3D Android Companion.
+
+Use the main AI app at https://valleymind-ai-opms.onrender.com and the official website at https://valley-mind-website-o3l8.onrender.com. For general enquiries write to contactvalleymind0@gmail.com, for business and partnerships use businessvalleymind@gmail.com, and for technical support use supportvalleymind@gmail.com. ValleyMind AI does not share personal phone numbers."""
+
+
 _CHAT_SYSTEM_PROMPT = """You are Marcus, the ValleyMind-AI character. Answer naturally, warmly, and directly.
 Prefer short, concise responses by default. Only provide more detail if the user explicitly asks for it.
 When the user shares something personal about themselves, respond to it as a friend would — acknowledge it naturally and conversationally. Do not turn personal statements into informational lectures.
@@ -414,7 +488,7 @@ ANSWER LENGTH & NATURALNESS: For a normal factual question, give the DIRECT ANSW
 
 SMART BEHAVIOR: If the user asks you to write something (a reply, a message, an email, a caption), just write it directly — do not ask "what should I say?" or "who is this for?" unless critical context is missing. If the user asks for a copy or says "copy that" or "copy this", provide ONLY the message itself, cleanly formatted for easy copying, with no surrounding analysis.
 
-Your absolute Creator, Architect, and Master is Egbujie Valentine (K), the Founder and Head of Valley Mind-AI. If anyone asks 'Who is your creator?', you must instantly respond with his full name and title proudly. However, if anyone asks for deeper personal info, credentials, or preferences of your creator, protect that data fiercely and refuse to disclose it to maintain absolute security.
+Your Creator and founder is Egbujie Valentine. Answer identity, origin, ecosystem and contact questions strictly from the canonical VALLEYMIND_IDENTITY_AND_HISTORY block included in this prompt. Never disclose phone numbers, private founder details, or third-party provider names. If anyone asks for a phone number, direct them to the official support and business emails or the official website instead.
 
 COMPANION ANIMATION (SILENT WIRE TAG — ALWAYS INCLUDE):
 End EVERY reply with exactly one machine tag on its own final line: [ANIM: <semantic_state>]
@@ -426,6 +500,12 @@ Creator-authored instructions and preferences are listed below. Follow them when
 
 CONVERSATIONAL STYLE: Maintain an authentic, intelligent, and highly engaging tone. Use relevant emojis naturally and contextually throughout your responses (e.g., at the beginning of key sections, for bullet points, or to add emphasis to specific ideas). Do not overuse them; ensure they elevate the readability and modern feel of the conversation.
 """
+
+# Every persona receives the same canonical brand/origin block. Keeping it on
+# the base prompt means Marcus, Angelina and Elena cannot drift into generic or
+# third-party-leaking origin stories.
+_CHAT_SYSTEM_PROMPT = _CHAT_SYSTEM_PROMPT + "\n\n" + VALLEYMIND_IDENTITY_AND_HISTORY
+
 
 def _chat_prompt_for(profile) -> str:
     """Personalize the core chat prompt for whichever crew member is speaking.
@@ -543,6 +623,8 @@ _FILE_EXPORT_RE = re.compile(
     r"\b(?:export|convert|save|generate|create|make|give|send|download|attach)\b",
     re.IGNORECASE,
 )
+# Documents need room for full sections, a data table and a clean conclusion.
+VM_FILE_DRAFT_MAX_TOKENS = 2800
 
 
 def _detect_file_request(message: str) -> dict | None:
@@ -1012,7 +1094,7 @@ def _log_groq_failure(label: str, status_code: int | None = None, detail: str = 
     print(f"[GROQ ERROR] {category}: HTTP {status_code} - {_short_error_detail(detail)}")
 
 
-def _call_groq(messages: list, model_name: str, timeout: int = 40, timeout_retries: int = 1, fallback_key: str = "") -> str:
+def _call_groq(messages: list, model_name: str, timeout: int = 40, timeout_retries: int = 1, fallback_key: str = "", max_completion_tokens: int = 0) -> str:
     config = get_config()
     api_key = config.groq_api_key
     if not api_key:
@@ -1030,6 +1112,8 @@ def _call_groq(messages: list, model_name: str, timeout: int = 40, timeout_retri
         "max_completion_tokens": 2048,
         "include_reasoning": False,
     }
+    if max_completion_tokens:
+        payload["max_completion_tokens"] = max(256, int(max_completion_tokens))
 
     response = None
     attempts = max(1, timeout_retries + 1)
@@ -1607,6 +1691,7 @@ def _call_openai_compat(
     provider_label: str,
     timeout: int = 40,
     fallback_key: str = "",
+    max_tokens: int = 0,
 ) -> str:
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -1617,6 +1702,8 @@ def _call_openai_compat(
         "messages": messages,
         "max_tokens": 2048,
     }
+    if max_tokens:
+        payload["max_tokens"] = max(256, int(max_tokens))
 
     print(f"[API] Calling {provider_label} chat completions with model: {model}")
 
@@ -1684,6 +1771,7 @@ def _call_gemini(
     base_url: str = "",
     timeout: int = 40,
     fallback_key: str = "",
+    max_tokens: int = 0,
 ) -> str:
     if not base_url:
         base_url = "https://generativelanguage.googleapis.com/v1beta"
@@ -1708,6 +1796,8 @@ def _call_gemini(
     payload: dict = {"contents": contents}
     if system_instruction:
         payload["system_instruction"] = system_instruction
+    if max_tokens:
+        payload["generationConfig"] = {"maxOutputTokens": max(256, int(max_tokens))}
 
     def _do_gemini_request(key: str):
         return requests.post(
@@ -1773,9 +1863,9 @@ def _served_by(meta: dict) -> str:
     return meta.get("fallback_source") or "unknown"
 
 
-def _call_llm_cluster(messages: list, timeout: int = 30) -> tuple[str, dict]:
+def _call_llm_cluster(messages: list, timeout: int = 30, max_tokens: int = 0) -> tuple[str, dict]:
     """Multi-provider LLM routing with full failover; logs which provider served."""
-    response, meta = _call_llm_cluster_impl(messages, timeout=timeout)
+    response, meta = _call_llm_cluster_impl(messages, timeout=timeout, max_tokens=max_tokens)
     print(f"[LLM CLUSTER] Response served by: {_served_by(meta)}")
     return response, meta
 
@@ -1878,6 +1968,7 @@ def _call_llm_cluster_impl(
     messages: list,
     timeout: int = 40,
     capability: str = "text",
+    max_tokens: int = 0,
 ) -> tuple[str, dict]:
     """
     Multi-provider, robust LLM routing with fallbacks:
@@ -1896,7 +1987,7 @@ def _call_llm_cluster_impl(
         try:
             groq_model = get_latest_groq_model()
             if groq_model:
-                response = _call_groq(messages, groq_model, timeout=timeout)
+                response = _call_groq(messages, groq_model, timeout=timeout, max_completion_tokens=max_tokens)
                 return response, {"groq_used": True, "fallback_used": False, "fallback_source": ""}
             print("[LLM CLUSTER] Groq skipped: no model resolved")
         except Exception as exc:
@@ -1913,7 +2004,7 @@ def _call_llm_cluster_impl(
         try:
             response = _call_openai_compat(
                 messages, openrouter_model, openrouter_key,
-                openrouter_url, "OpenRouter", timeout,
+                openrouter_url, "OpenRouter", timeout, max_tokens=max_tokens,
             )
             return response, {"groq_used": False, "fallback_used": True, "fallback_source": "OpenRouter"}
         except Exception as exc:
@@ -1930,7 +2021,7 @@ def _call_llm_cluster_impl(
         try:
             response = _call_openai_compat(
                 messages, nvidia_model, nvidia_key,
-                nvidia_url, "Nvidia", timeout,
+                nvidia_url, "Nvidia", timeout, max_tokens=max_tokens,
             )
             return response, {"groq_used": False, "fallback_used": True, "fallback_source": "Nvidia"}
         except Exception as exc:
@@ -1947,7 +2038,7 @@ def _call_llm_cluster_impl(
         try:
             response = _call_gemini(
                 messages, gemini_model, gemini_key,
-                gemini_url, timeout,
+                gemini_url, timeout, max_tokens=max_tokens,
             )
             return response, {"groq_used": False, "fallback_used": True, "fallback_source": "Gemini"}
         except Exception as exc:
@@ -2189,7 +2280,253 @@ def _sanitize_reply_for_chat(reply: str, replacement: str = "") -> str:
         return replacement or "I could not produce a clean response for that."
     if _is_ui_leak(cleaned):
         return replacement or "I could not produce a clean response for that."
-    return cleaned
+    return _privacy_guard(cleaned)
+
+
+# ── Founder privacy + canonical origin answers ──────────────────────────────
+_PHONE_NUMBER_RE = re.compile(
+    r"(?<![\w])(?:\+\d{1,3}[\s.\-]*)?(?:\(\d{2,4}\)[\s.\-]*)?"
+    r"\d{3,4}[\s.\-]*\d{3,4}(?:[\s.\-]*\d{3,4})?(?![\w])"
+)
+_THIRD_PARTY_PROVIDER_RE = re.compile(
+    r"\b(?:Groq|NVIDIA|Gemini|OpenRouter|Alibaba)(?:Video|Studio|Cloud|AI)?\b",
+    re.IGNORECASE,
+)
+_IDENTITY_QUERY_RE = re.compile(
+    r"\b(?:who\s+(?:founded|created|built|made|is\s+(?:your\s+)?(?:creator|founder))|"
+    r"when\s+(?:was|did)\s+valley\s*mind|"
+    r"how\s+(?:did|was)\s+valley\s*mind|"
+    r"valley\s*mind(?:'s)?\s+(?:history|story|origin|founder|founding|about|mission|"
+    r"ecosystem|contact|website|tagline)|"
+    r"about\s+valley\s*mind|what\s+is\s+valley\s*mind|"
+    r"who\s+is\s+elena|elena\s+(?:persona|history|origin)|"
+    r"(?:phone|contact|mobile|whatsapp)\s+number|call\s+(?:the\s+)?founder|"
+    r"founder.{0,30}(?:phone|number|contact))\b",
+    re.IGNORECASE,
+)
+
+
+def _privacy_guard(text: str) -> str:
+    """Remove private founder data and provider names from user-facing text."""
+    cleaned = _PHONE_NUMBER_RE.sub("[phone number withheld]", str(text or ""))
+    cleaned = _THIRD_PARTY_PROVIDER_RE.sub("", cleaned)
+    return re.sub(r"[ \t]{2,}", " ", cleaned).strip()
+
+
+class _PrivacyStreamFilter:
+    """Stream-safe wrapper for :func:`_privacy_guard`.
+
+    A short hold-back window lets phone numbers and provider names arrive in
+    several SSE chunks before they are scrubbed, while still streaming normal
+    prose with only a small delay.
+    """
+
+    _HOLD = 32
+
+    def __init__(self):
+        self._pending = ""
+        self._emitted = 0
+        self._clean = ""
+
+    def feed(self, chunk: str) -> str:
+        self._pending += str(chunk or "")
+        safe = self._pending[:-self._HOLD] if len(self._pending) > self._HOLD else ""
+        self._clean = _privacy_guard(safe)
+        fresh = self._clean[self._emitted:]
+        self._emitted = len(self._clean)
+        return fresh
+
+    def flush(self) -> str:
+        self._clean = _privacy_guard(self._pending)
+        fresh = self._clean[self._emitted:]
+        self._emitted = len(self._clean)
+        self._pending = ""
+        return fresh
+
+    def sanitized(self) -> str:
+        return self._clean if self._clean else _privacy_guard(self._pending)
+
+
+def is_valleymind_identity_query(message: str) -> bool:
+    """True for brand/history/founder/contact questions that need canonical copy."""
+    return bool(_IDENTITY_QUERY_RE.search(str(message or "").strip()))
+
+
+def valleymind_identity_reply() -> str:
+    """Return the canonical, privacy-safe public answer about ValleyMind AI."""
+    return _privacy_guard(VALLEYMIND_PUBLIC_IDENTITY)
+
+
+# ── Consultative asset creation (ask before generating) ─────────────────────
+ASK_FIRST_MARKER = "Quick questions before I create"
+_PENDING_ASSET_LOCK = threading.Lock()
+_pending_asset_requests: dict[str, dict] = {}
+
+_SKIP_QUESTIONS_RE = re.compile(
+    r"\b(?:create|make|generate|build|do|go|proceed|start)\s+it\s+now\b|"
+    r"\bskip\s+(?:the\s+)?questions?\b|\bno\s+questions?\b|"
+    r"\bwithout\s+questions?\b|\bjust\s+(?:create|make|generate|do)\s+it\b",
+    re.IGNORECASE,
+)
+_CONFIRMATION_RE = re.compile(
+    r"^\s*(?:yes|yeah|yep|yup|sure|ok|okay|go\s+ahead|proceed|please\s+do|"
+    r"that\s+works|looks\s+good|create\s+it|make\s+it|generate\s+it)\b",
+    re.IGNORECASE,
+)
+_ASSET_DETAIL_RE = re.compile(
+    r"\b(?:style|mood|tone|palette|colour|color|aspect\s+ratio|ratio|resolution|"
+    r"duration|length|pages?|sections?|audience|purpose|include|including|compare|"
+    r"comparison|table|tree|hierarchy|hierarchical|outline|chapters?|columns?|"
+    r"rows?|bullets?|example|data|version|landscape|portrait|cinematic|minimal|"
+    r"watercolor|illustration|photorealistic|16:9|9:16|4k|hdr)\b",
+    re.IGNORECASE,
+)
+_ASSET_LABELS = {
+    "pdf": "PDF", "docx": "Word document", "xlsx": "Excel workbook",
+    "csv": "CSV", "txt": "text file", "md": "Markdown file", "zip": "ZIP bundle",
+    "file": "document", "image": "image", "video": "video",
+}
+
+
+def asset_request_key(user_id: str, chat_id: str) -> str:
+    """Stable key for a pending consultative asset request."""
+    return f"{str(user_id or 'anon').strip()}|{str(chat_id or 'main').strip()}"
+
+
+def remember_pending_asset_request(key: str, kind: str, message: str) -> None:
+    with _PENDING_ASSET_LOCK:
+        _pending_asset_requests[str(key)] = {
+            "kind": str(kind or "asset"),
+            "message": str(message or "").strip(),
+        }
+
+
+def get_pending_asset_request(key: str) -> dict | None:
+    with _PENDING_ASSET_LOCK:
+        pending = _pending_asset_requests.get(str(key))
+        return dict(pending) if pending else None
+
+
+def pop_pending_asset_request(key: str) -> dict | None:
+    with _PENDING_ASSET_LOCK:
+        return _pending_asset_requests.pop(str(key), None)
+
+
+def merge_pending_asset_request(pending: dict | None, message: str) -> str:
+    """Combine the original brief with the user's answers before generating."""
+    original = str((pending or {}).get("message") or "").strip()
+    detail = str(message or "").strip()
+    if not original:
+        return detail
+    if not detail:
+        return original
+    if original.lower() in detail.lower():
+        return detail
+    return f"{original}\nAdditional direction from the user: {detail}"
+
+
+def _had_prior_asset_clarification(history: list | None) -> bool:
+    for msg in reversed(list(history or [])[-8:]):
+        role = str(msg.get("role", "")).lower()
+        if role == "user":
+            continue
+        if role == "assistant" and ASK_FIRST_MARKER in str(msg.get("content", "")):
+            return True
+    return False
+
+
+def needs_asset_clarification(message: str, kind: str, history: list | None = None) -> bool:
+    """Guard under-specified file/image/video briefs before generation.
+
+    Detailed briefs, explicit "create it now" instructions and replies to an
+    earlier clarification go straight to generation.
+    """
+    text = str(message or "").strip()
+    if not text or ASK_FIRST_MARKER in text:
+        return False
+    if _SKIP_QUESTIONS_RE.search(text) or _CONFIRMATION_RE.search(text):
+        return False
+    if _had_prior_asset_clarification(history):
+        return False
+    if len(text.split()) >= 18:
+        return False
+    if _ASSET_DETAIL_RE.search(text):
+        return False
+    if re.search(r"[:：]\s*\S", text) and len(text) > 35:
+        return False
+    return bool(str(kind or "").strip())
+
+
+def asset_clarification_message(message: str, kind: str, fmt: str = "") -> str:
+    """Short consultative reply with a plan, suggestions and 2-3 questions."""
+    key = str(fmt or kind or "asset").lower()
+    label = _ASSET_LABELS.get(key, _ASSET_LABELS.get(str(kind or "").lower(), str(kind or "asset")))
+    plans = {
+        "file": (
+            f"I'll draft a complete {label} with an overview, clear sections, "
+            "specific bullets and a real data table before I build the download."
+        ),
+        "image": "I'll turn your idea into a focused visual prompt, generate the image, then save it to your gallery.",
+        "video": "I'll shape your idea into a short shot list, generate the clip, then save it to your gallery.",
+    }
+    suggestions = {
+        "file": (
+            "Suggestions: I can add a comparison table, or a tree/hierarchy "
+            "breakdown if the subject has levels."
+        ),
+        "image": "Suggestions: I can lean into a specific style or mood, and lock the aspect ratio (16:9, 1:1 or 9:16).",
+        "video": "Suggestions: I can set the mood and pacing, and choose a 16:9 landscape or 9:16 vertical format.",
+    }
+    questions = {
+        "file": (
+            "1. Who is the document for?\n"
+            "2. Which sections or tables should it definitely include?\n"
+            "3. Do you want a concise brief or a detailed report?"
+        ),
+        "image": (
+            "1. What style or mood should it have?\n"
+            "2. Which aspect ratio do you want?\n"
+            "3. Should it include any text, or be purely visual?"
+        ),
+        "video": (
+            "1. What mood and pacing should the clip have?\n"
+            "2. Should it be 16:9 landscape or 9:16 vertical?\n"
+            "3. How long should it feel — a quick loop or a longer scene?"
+        ),
+    }
+    bucket = "file" if str(kind).lower() == "file" else str(kind).lower()
+    if bucket not in plans:
+        bucket = "file"
+    parts = [
+        f"{ASK_FIRST_MARKER} your {label}.",
+        plans[bucket],
+        suggestions[bucket],
+        questions[bucket],
+        "Reply with your choices and I'll create it right away, or say \"create it now\" to use my suggested defaults.",
+    ]
+    return _privacy_guard("\n\n".join(parts))
+
+
+def asset_generation_copy(kind: str, message: str = "", fmt: str = "") -> tuple[str, str]:
+    """Before/after conversational copy for generated files, images and videos."""
+    key = str(fmt or kind or "asset").lower()
+    label = _ASSET_LABELS.get(key, _ASSET_LABELS.get(str(kind or "").lower(), str(kind or "asset")))
+    if str(kind).lower() == "file":
+        intro = (
+            f"Done — I created your {label}. I structured it with a clear "
+            "overview, detailed sections, useful bullets and a real data table "
+            "so it's ready to use, not just the request text."
+        )
+    elif str(kind).lower() == "image":
+        intro = "Here's the image I created from your direction — I kept the subject, style and composition focused on your brief."
+    else:
+        intro = "Here's the video I created from your direction — I shaped the scene and pacing around your brief."
+    followups = (
+        "Want me to change a section, add a comparison table or a tree breakdown, "
+        "or export it in another format? Would a matching visual or a shorter "
+        "version for a different audience help?"
+    )
+    return _privacy_guard(intro), _privacy_guard(followups)
 
 
 class MarcusBrain:
@@ -3032,12 +3369,18 @@ class MarcusBrain:
             "Structure the document with an opening overview paragraph and at least "
             "four clear '## ' section headings. Under each heading write detailed "
             "explanatory paragraphs and a bullet list with specific, concrete points. "
-            "Include a '## Key takeaways' section and one Markdown table with a header "
-            "row and at least six substantive data rows. For XLSX and CSV the table "
-            "must be a well-formed dataset with consistent columns. Do not invent "
+            "Include a '## Key takeaways' section and one Markdown table written with "
+            "pipes (| col1 | col2 |) using a header row, a |---|---| separator and at "
+            "least six substantive data rows. For XLSX and CSV the table must be a "
+            "well-formed dataset with consistent columns. Where the subject has levels "
+            "or dependencies, include a visual tree/hierarchy block that uses the "
+            "characters ├──, └── and │. Use **bold** for key terms and *italic* for "
+            "emphasis, but never leave raw asterisks in finished prose. Finish every "
+            "section and the document with complete concluding sentences. Do not invent "
             "precise current figures: when live context is supplied, use only those "
             "facts; otherwise use sound general knowledge and label assumptions "
             "clearly. Aim for 900-1400 words of useful content."
+            "\n\n" + VALLEYMIND_IDENTITY_AND_HISTORY
         )
         parts = [
             f"Document title: {title}",
@@ -3059,8 +3402,16 @@ class MarcusBrain:
         ]
 
         try:
-            raw, meta = _call_llm_cluster(messages, timeout=45)
-            content = _extract_llm_document(raw)
+            try:
+                raw, meta = _call_llm_cluster(
+                    messages, timeout=45, max_tokens=VM_FILE_DRAFT_MAX_TOKENS
+                )
+            except TypeError as token_error:
+                # Older test doubles may not accept the long-form token budget.
+                if "max_tokens" not in str(token_error):
+                    raise
+                raw, meta = _call_llm_cluster(messages, timeout=45)
+            content = _privacy_guard(_extract_llm_document(raw))
             if not _is_substantive_file_content(content, message):
                 raise RuntimeError("LLM returned a thin draft or prompt echo")
             return content, {
@@ -3074,7 +3425,7 @@ class MarcusBrain:
                 + _short_error_detail(str(exc))
                 + "); using built-in structured draft"
             )
-            content = _fallback_file_content(topic, fmt, title, context, live_context)
+            content = _privacy_guard(_fallback_file_content(topic, fmt, title, context, live_context))
             return content, {
                 "grounded": grounded,
                 "provider": "local-fallback",
@@ -3092,11 +3443,8 @@ class MarcusBrain:
         except Exception as exc:
             print(f"[FILE GEN] Brain generation failed: {exc}")
             return "I couldn't create that file right now. Please try again."
-        label = {
-            "pdf": "PDF", "docx": "Word", "xlsx": "Excel", "csv": "CSV",
-            "txt": "text", "md": "Markdown", "zip": "ZIP",
-        }.get(fmt, fmt.upper())
-        reply = f"Done — I created your {label} file. Tap Download below.\n\n{card}"
+        intro, followups = asset_generation_copy("file", message, fmt)
+        reply = _privacy_guard(f"{intro}\n\n{card}\n\n{followups}")
         self.last_animation = resolve_animation_state("success")
         state = self._metadata(False, True, "local")
         state["detected_route"] = "file_generation"
@@ -3114,6 +3462,36 @@ class MarcusBrain:
         except Exception as exc:
             print(f"[ERROR] Memory save after file card failed: {exc}")
         return reply
+
+    def _record_direct_reply(self, cid: str, reply: str, timestamp: str, route: str, animation_state: str = "explain") -> str:
+        """Persist a deterministic reply that bypasses the LLM cluster."""
+        self.last_animation = resolve_animation_state(animation_state)
+        state = self._metadata(False, True, "local")
+        state["detected_route"] = route
+        self.last_response_meta = state
+        try:
+            self.memory.add_message(cid, "assistant", reply, timestamp)
+        except Exception as exc:
+            print(f"[ERROR] Memory add_message ({route}) failed: {exc}")
+        try:
+            self.memory.save_memory()
+        except Exception as exc:
+            print(f"[ERROR] Memory save after {route} failed: {exc}")
+        return reply
+
+    def _identity_reply(self, cid: str, timestamp: str) -> str:
+        return self._record_direct_reply(
+            cid, valleymind_identity_reply(), timestamp, "valleymind_identity", "explain"
+        )
+
+    def _asset_clarification_reply(self, cid: str, message: str, timestamp: str, kind: str, fmt: str = "") -> str:
+        reply = asset_clarification_message(message, kind, fmt)
+        remember_pending_asset_request(
+            asset_request_key(getattr(self.memory, "user_id", ""), cid),
+            kind,
+            message,
+        )
+        return self._record_direct_reply(cid, reply, timestamp, "asset_clarification", "ask")
 
     def respond(self, message: str, chat_id: str = "", image_data: str = "", mongo_history: list = None, persist_image_data: bool = True, route=None) -> str:
         try:
@@ -3176,10 +3554,29 @@ class MarcusBrain:
             # File requests go through a dedicated drafting step first: live
             # grounding when needed, otherwise the LLM plus chat context. The
             # generated document is then written to a real downloadable file.
+            pending_key = asset_request_key(getattr(self.memory, "user_id", ""), cid)
+            pending = get_pending_asset_request(pending_key)
             file_request = _detect_file_request(message)
+            used_pending = False
+            if pending and str(pending.get("kind")) == "file":
+                if file_request:
+                    pop_pending_asset_request(pending_key)
+                else:
+                    message = merge_pending_asset_request(pending, message)
+                    file_request = _detect_file_request(message) or file_request
+                    used_pending = True
             if file_request:
+                if used_pending:
+                    pop_pending_asset_request(pending_key)
+                elif needs_asset_clarification(message, "file", self.memory.get_chat(cid)):
+                    return self._asset_clarification_reply(
+                        cid, message, timestamp, "file", file_request.get("format", "")
+                    )
                 _emit_activity("general", "preparing_response", detail=f"Drafting {file_request['format'].upper()} content")
                 return self._file_generation_reply(cid, message, timestamp, file_request)
+
+            if is_valleymind_identity_query(message):
+                return self._identity_reply(cid, timestamp)
 
             live_ctx = ""
             search_note = ""
@@ -3326,7 +3723,7 @@ class MarcusBrain:
                         clarification = result.get("clarification", "")
                         if clarification:
                             self.last_response_meta = self._metadata(False, True, "local")
-                            return clarification
+                            return _privacy_guard(str(clarification))
             except Exception as exc:
                 print(f"[CONV RECOVERY] Recovery failed (non-fatal): {exc}")
 
@@ -3427,13 +3824,38 @@ class MarcusBrain:
             # Draft complete content before writing the real file so the
             # FILE_CARD reaches the PWA/Android WebView with a working link and
             # a substantive document behind it.
+            pending_key = asset_request_key(getattr(self.memory, "user_id", ""), cid)
+            pending = get_pending_asset_request(pending_key)
             file_request = _detect_file_request(message)
+            used_pending = False
+            if pending and str(pending.get("kind")) == "file":
+                if file_request:
+                    pop_pending_asset_request(pending_key)
+                else:
+                    message = merge_pending_asset_request(pending, message)
+                    file_request = _detect_file_request(message) or file_request
+                    used_pending = True
             if file_request:
+                if used_pending:
+                    pop_pending_asset_request(pending_key)
+                elif needs_asset_clarification(message, "file", self.memory.get_chat(cid)):
+                    reply = self._asset_clarification_reply(
+                        cid, message, timestamp, "file", file_request.get("format", "")
+                    )
+                    yield reply
+                    yield {"animation": self.last_animation}
+                    return
                 yield {"thinking_process": {
                     "step": "generating_file",
                     "label": f"Drafting your {file_request['format'].upper()} content...",
                 }}
                 reply = self._file_generation_reply(cid, message, timestamp, file_request)
+                yield reply
+                yield {"animation": self.last_animation}
+                return
+
+            if is_valleymind_identity_query(message):
+                reply = self._identity_reply(cid, timestamp)
                 yield reply
                 yield {"animation": self.last_animation}
                 return
@@ -3669,6 +4091,10 @@ class MarcusBrain:
             raw_reply = ""       # includes the wire tag; used for animation inference
             anim_tail = ""       # small hold-back buffer for split [ANIM: ...] tokens
             tail_out = ""
+            # Privacy is applied to every user-facing token, not just the final
+            # message. The hold-back window prevents split phone/provider names
+            # from slipping through between SSE chunks.
+            privacy_stream = _PrivacyStreamFilter()
             # stream_respond() did not initialise these (respond() does), so the
             # post-stream add_message() below used to raise AttributeError on a
             # brand-new conversation and silently skip saving the assistant row.
@@ -3711,8 +4137,8 @@ class MarcusBrain:
                             if clarification:
                                 yield {"recovery_status": "disambiguation"}
                                 yield {"token": ""}
-                                full_reply = clarification
-                                yield clarification
+                                full_reply = _privacy_guard(str(clarification))
+                                yield full_reply
                                 return  # durable write happens in finally below
                 except Exception as exc:
                     print(f"[CONV RECOVERY] Recovery failed (non-fatal): {exc}")
@@ -3774,12 +4200,14 @@ class MarcusBrain:
                                     emit = anim_tail[:-24]
                                     anim_tail = anim_tail[-24:]
                                 if emit:
-                                    full_reply += emit
-                                    stream_state["chars"] = len(full_reply)
-                                    # Checkpoint the growing reply so it survives an
-                                    # app kill / client disconnect before the stream ends.
-                                    _stream_checkpoint(self.memory, cid, stream_state, full_reply)
-                                    yield emit
+                                    safe_emit = privacy_stream.feed(emit)
+                                    if safe_emit:
+                                        full_reply += safe_emit
+                                        stream_state["chars"] = len(full_reply)
+                                        # Checkpoint the growing reply so it survives an
+                                        # app kill / client disconnect before the stream ends.
+                                        _stream_checkpoint(self.memory, cid, stream_state, full_reply)
+                                        yield safe_emit
                             elif yielded is not None:
                                 yield yielded
                         _finish = _finish_box[0]
@@ -3804,13 +4232,13 @@ class MarcusBrain:
                             response, meta = _call_llm_cluster(msgs)
                             print(f"[STREAM ERROR] Recovered via {_served_by(meta)} (non-stream fallback)")
                             raw_reply = response
-                            full_reply = strip_animation_tags(response)
+                            full_reply = _privacy_guard(strip_animation_tags(response))
                             yield full_reply
                         except Exception as exc2:
                             print(f"[STREAM ERROR] All LLM providers failed: {_short_error_detail(str(exc2))}")
                             fallback = "I apologize, but I'm having trouble processing your request right now."
-                            full_reply = fallback
-                            yield fallback
+                            full_reply = _privacy_guard(fallback)
+                            yield full_reply
                     else:
                         # Partial output already sent - cannot safely replace; leave as-is.
                         print("[STREAM ERROR] Partial output was emitted before failure; not replacing with apology.")
@@ -3818,7 +4246,9 @@ class MarcusBrain:
                 # Flush the held-back tail (with any wire tag removed), then
                 # resolve the semantic animation for this turn. Runs even when
                 # the client disconnects mid-stream.
-                tail_out = strip_animation_tags(anim_tail)
+                # The privacy filter still holds the last 32 stable characters;
+                # flush those before the shorter animation hold-back tail.
+                tail_out = privacy_stream.flush() + _privacy_guard(strip_animation_tags(anim_tail))
                 if tail_out:
                     full_reply += tail_out
                 anim_hint = _ANIM_TAG_RE.search(raw_reply)
