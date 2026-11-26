@@ -1210,10 +1210,7 @@ function renderCompanionInto(container) {
       '</div>') +
     _SH.card("Tasks", '<p style="color:#94a3b8;font-size:12px;margin:0 0 12px;line-height:1.5;">ValleyMind can carry out multi-step tasks in the app ΓÇö say something like \u201copen the Studio\u201d or \u201cscroll down\u201d. It only acts on what you allow here, and anything impactful asks for your confirmation first.</p>' +
       '<div style="display:flex;flex-direction:column;">' + permRows + '</div>' +
-      '<div style="margin-top:14px;border-top:1px solid rgba(255,255,255,0.06);padding-top:12px;">' + taskPanel + '</div>' +
-      '<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">' +
-      _SH.btn("Open chat", "vmCompanionOpenChat()") +
-      '</div>') +
+      '<div style="margin-top:14px;border-top:1px solid rgba(255,255,255,0.06);padding-top:12px;">' + taskPanel + '</div>') +
     '<p style="color:#475569;font-size:11px;margin-top:4px;">Status: <span id="vmCompanionStatusLine">' + escapeCompanionAttr(p.statusLabel) + '</span></p>';
 
   // Reflect any selected-state classes the module owns, then bind the inline
@@ -1631,7 +1628,6 @@ function vmCompanionResetHome() { var vm = _vmCompanion(); if (vm) vm.home(); }
 // The task panel renders inline in this section, so "opening tasks" just
 // re-renders Companion (kept as a named entry point for the module surface).
 function vmCompanionOpenTasks() { refreshCompanionSettings(); }
-function vmCompanionOpenChat() { var vm = _vmCompanion(); if (vm) { vm.toggleChat(); closeSettings(); } }
 function vmCompanionTogglePerm(el, name) {
   var vm = _vmCompanion(); if (!vm) return;
   var perms = (vm.getTaskPermissions() || []).slice();
@@ -1834,12 +1830,6 @@ function vmCompanionToggleOutsideFromWorkspace() {
   var t = document.getElementById("vmSetDesktopVisible");
   var btn = document.getElementById("vmCompanionOutsideBtn");
   var on = t ? !t.checked : !(btn && btn.getAttribute("aria-pressed") === "true");
-  // Launching outside the app collapses the in-stage Call/End/Mute/Screen/Send
-  // bar first: on a phone that bar must never remain over the room controls.
-  if (on && typeof window !== "undefined" && window.vmVrmCompanion &&
-      typeof window.vmVrmCompanion.collapseChat === "function") {
-    try { window.vmVrmCompanion.collapseChat(); } catch (e) { }
-  }
   vmCompanionSetDesktopVisible(on);
 }
 // Loopback control calls retry a few times: the helper may be mid-startup, or

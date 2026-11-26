@@ -33,8 +33,8 @@ const DEFAULTS = {
   dock: "br",        // "br" | "bl" | "tr" | "tl" (used until the avatar is moved)
   x: null,           // manual position (px) once placed (floating overlay)
   y: null,
-  // The Studio stage pins the same node with !important geometry. Its manual
-  // placement is a transform offset from the centred layout position.
+  // The Studio stage lays out the same node. Its manual placement is a plain
+  // transform offset from the centred layout position.
   stageX: null,
   stageY: null,
   userPlaced: false, // true once the user drags the avatar; the manual position is preferred
@@ -42,7 +42,6 @@ const DEFAULTS = {
   charName: "ValleyMind", // display name (shown in Settings; keeps CJK glyphs intact)
   voiceKey: "elena", // female companion default; "marcus" remains an explicit opt-in
   visionOn: false,   // user preference: attach screen context to the brain
-  chatOpen: false,
   taskOpen: false,   // task panel visibility (opened from Settings / auto on confirm)
   taskPermissions: [], // granted task permissions (vision/scroll/navigate/click/type)
   muted: false,      // hands-free voice off (auto-listen + spoken replies suppressed)
@@ -124,6 +123,57 @@ const STATUS_BEHAVIOUR = {
 // States that must stay locked to one clip until the driver changes them.
 // Transient accents just nudge the auto state machine and settle to idle.
 const DRIVEN = new Set(["listening", "thinking", "speaking", "working"]);
+
+// The six Studio controls map to REAL engine behaviours. `gesture()` accepts
+// both the short button word and the canonical status/behaviour, so a stale
+// caller using "wave" still reaches the same waving clip + bone fallback.
+const GESTURE_STATUS = {
+  wave: "waving", waving: "waving",
+  nod: "nodding", nodding: "nodding",
+  point: "pointing", pointing: "pointing",
+  think: "thinking", thinking: "thinking",
+};
+
+// A VRMA fetch is a network round-trip. These bounded, procedurally animated
+// bone poses make the gesture visible on the FIRST tap; the real clip takes over
+// as soon as it resolves. They only touch raw VRM humanoid bones (never the
+// face/viseme channel, never a second mixer).
+const GESTURE_FALLBACKS = {
+  waving: {
+    ms: 2600, oscHz: 2.6,
+    bones: {
+      rightUpperArm: { x: -0.18, z: -0.62 },
+      rightLowerArm: { x: -0.20, z: -0.52 },
+      rightHand: { z: 0.18, waveZ: 0.42 },
+      head: { y: 0.10 },
+    },
+  },
+  nodding: {
+    ms: 1900, oscHz: 1.8,
+    bones: {
+      neck: { x: 0.08, waveX: 0.10 },
+      head: { x: 0.20, waveX: 0.22 },
+    },
+  },
+  pointing: {
+    ms: 2400, oscHz: 0.8,
+    bones: {
+      rightUpperArm: { x: -0.52, z: -0.58 },
+      rightLowerArm: { x: -0.30, z: -0.12 },
+      rightHand: { x: 0.12, z: 0.10 },
+      head: { y: 0.10 },
+    },
+  },
+  thinking: {
+    ms: 2800, oscHz: 0.6,
+    bones: {
+      rightUpperArm: { x: -0.40, z: -0.30 },
+      rightLowerArm: { x: -0.92, z: -0.18 },
+      rightHand: { x: 0.28, z: 0.20 },
+      head: { y: 0.16, z: 0.13 },
+    },
+  },
+};
 
 const EMOTION_STATUS = {
   neutral: "idle",
@@ -255,6 +305,7 @@ let uiBuilt = false;
 let resumeTimer = null;   // delayed hands-free re-listen (cleared on stop/hide/mute)
 let walkRaf = 0;          // explicit guidance walk handle (cancel on hide/stop)
 let guidanceActive = false; // one explicit UI-guidance step owns the body clip
+let gestureFallback = null; // temporary bone pose while a VRMA clip downloads
 
 let lastEngineLog = "";
 
@@ -349,7 +400,21 @@ function resolveStatus(status, explicit) {
 function setStatus(status, expression, explicit) {
   const s = resolveStatus(status, !!explicit);
   if (s === stateKey && engine && engine.status.stage === "ready") {
+    // A repeated deliberate gesture must replay, not be swallowed as a no-op.
+    if (explicit && s !== "idle") {
+      clearAccentTimer();
+      const repeated = STATUS_BEHAVIOUR[s];
+      if (repeated && repeated !== "idle") {
+        fireBodyClip(repeated);
+        const reaction = s;
+        accentTimer = setTimeout(() => {
+          accentTimer = null;
+          if (stateKey === reaction && !busy) setStatus("idle");
+        }, 3200);
+      }
+    }
     paintStatus();
+    syncStageControls();
     return;
   }
   clearAccentTimer();
@@ -375,13 +440,13 @@ function setStatus(status, expression, explicit) {
     if (DRIVEN.has(s)) {
       // listening / thinking / speaking / working hold their clip until an
       // event changes the state; no auto-cycling can interrupt them.
-      engine.trigger(behaviour);
+      fireBodyClip(behaviour);
     } else if (s === "idle") {
       // A real idle clip (breathing/blinking) held until an event changes it.
       engine.trigger("idle");
     } else if (behaviour && behaviour !== "idle") {
       // A momentary conversational/guidance accent plays once, then settles.
-      engine.trigger(behaviour);
+      fireBodyClip(behaviour);
       const reaction = s;
       accentTimer = setTimeout(() => {
         accentTimer = null;
@@ -390,6 +455,7 @@ function setStatus(status, expression, explicit) {
     }
   }
   paintStatus();
+  syncStageControls();
 }
 
 function paintStatus() {
@@ -397,6 +463,173 @@ function paintStatus() {
   // the line inside Settings → Companion, updated only while it is on screen.
   const line = $id("vmCompanionStatusLine");
   if (line) line.textContent = STATUS_LABEL[stateKey] || stateKey;
+}
+
+// ── explicit gestures: real VRMA first, smooth bone fallback immediately ───
+// The engine owns the .vrma clips, but a first tap can happen before a clip has
+// been fetched. These helpers animate the actual VRM humanoid bones for that
+// short window, then release them to the real animation. No second engine,
+// mixer, face channel or timer chain is introduced.
+function humanBoneNode(vrm, name) {
+  const humanoid = vrm && vrm.humanoid;
+  if (!humanoid) return null;
+  const getters = ["getRawBoneNode", "getNormalizedBoneNode"];
+  for (const getter of getters) {
+    try {
+      if (typeof humanoid[getter] === "function") {
+        const node = humanoid[getter](name);
+        if (node) return node;
+      }
+    } catch (e) { /* try the next accessor */ }
+  }
+  try {
+    for (const b of (humanoid.humanBones || [])) {
+      if (b && (b.name === name || b.bone === name)) {
+        const node = b.node || b.boneNode || null;
+        if (node) return node;
+      }
+    }
+  } catch (e) { /* fall through to a scene lookup */ }
+  try {
+    if (vrm.scene && typeof vrm.scene.getObjectByName === "function") {
+      return vrm.scene.getObjectByName(name) || null;
+    }
+  } catch (e) { /* no bones available */ }
+  return null;
+}
+
+function gestureClipReady(eng, behaviour) {
+  if (!eng || !eng.clipCache) return false;
+  const pool = (eng.manifest && eng.manifest.behaviours && eng.manifest.behaviours[behaviour]) || [];
+  return pool.some((name) => eng.clipCache.has(name));
+}
+
+function restoreGestureBones(f) {
+  for (const item of (f && f.bones) || []) {
+    try {
+      item.node.rotation.set(item.base.x, item.base.y, item.base.z, item.base.order);
+    } catch (e) { /* a bone may have been detached mid-gesture */ }
+  }
+}
+
+function applyGestureFrame(f, now) {
+  const spec = GESTURE_FALLBACKS[f.behaviour];
+  if (!spec) return false;
+  const elapsed = Math.max(0, now - f.start);
+  const enter = Math.min(1, elapsed / 140);
+  const leave = Math.min(1, Math.max(0, (spec.ms - elapsed) / 260));
+  let amount = Math.max(0, Math.min(enter, leave));
+  if (f.releasing) amount *= Math.max(0, 1 - (now - f.releaseAt) / 180);
+  if (elapsed >= spec.ms || amount <= 0) {
+    restoreGestureBones(f);
+    if (gestureFallback === f) gestureFallback = null;
+    return false;
+  }
+  const wave = Math.sin((elapsed / 1000) * Math.PI * 2 * (spec.oscHz || 1));
+  for (const item of f.bones) {
+    const pose = spec.bones[item.name];
+    try {
+      item.node.rotation.set(
+        item.base.x + ((pose.x || 0) + (pose.waveX || 0) * wave) * amount,
+        item.base.y + ((pose.y || 0) + (pose.waveY || 0) * wave) * amount,
+        item.base.z + ((pose.z || 0) + (pose.waveZ || 0) * wave) * amount,
+        item.base.order
+      );
+    } catch (e) { /* keep the remaining bones moving */ }
+  }
+  return true;
+}
+
+function runGestureFallbackFrame() {
+  const f = gestureFallback;
+  if (!f) return;
+  f.raf = 0;
+  if (applyGestureFrame(f, Date.now())) {
+    f.raf = requestAnimationFrame(runGestureFallbackFrame);
+  }
+}
+
+function cancelGestureFallback(restore) {
+  const f = gestureFallback;
+  if (!f) return;
+  if (f.raf) {
+    try { cancelAnimationFrame(f.raf); } catch (e) { }
+    f.raf = 0;
+  }
+  if (restore) restoreGestureBones(f);
+  gestureFallback = null;
+}
+
+function releaseGestureFallback() {
+  const f = gestureFallback;
+  if (!f || f.releasing) return;
+  f.releasing = true;
+  f.releaseAt = Date.now();
+}
+
+function startGestureFallback(behaviour) {
+  const spec = GESTURE_FALLBACKS[behaviour];
+  if (!spec || !engine || !engine.vrm) return false;
+  cancelGestureFallback(true);
+  const bones = [];
+  for (const name of Object.keys(spec.bones)) {
+    const node = humanBoneNode(engine.vrm, name);
+    if (!node || !node.rotation || typeof node.rotation.set !== "function") continue;
+    const r = node.rotation;
+    bones.push({
+      name: name, node: node,
+      base: { x: r.x, y: r.y, z: r.z, order: r.order },
+    });
+  }
+  if (!bones.length) return false;
+  const now = Date.now();
+  const f = {
+    // Backdate by the ramp so the first frame is already a full, visible pose.
+    behaviour: behaviour, bones: bones, start: now - 140,
+    raf: 0, releasing: false, releaseAt: 0,
+  };
+  gestureFallback = f;
+  // Pose on the tap itself; RAF then smooths the wave/nod over the full clip gap.
+  applyGestureFrame(f, now);
+  if (gestureFallback === f && typeof requestAnimationFrame === "function") {
+    f.raf = requestAnimationFrame(runGestureFallbackFrame);
+  }
+  return true;
+}
+
+function playVrmGesture(behaviour) {
+  const spec = GESTURE_FALLBACKS[behaviour];
+  if (!spec) {
+    if (!engine || typeof engine.trigger !== "function") return false;
+    try { return engine.trigger(behaviour); } catch (e) { return false; }
+  }
+  if (engine && !gestureClipReady(engine, behaviour)) startGestureFallback(behaviour);
+  if (!engine || typeof engine.trigger !== "function") {
+    startGestureFallback(behaviour);
+    return Promise.resolve(false);
+  }
+  let played;
+  try { played = engine.trigger(behaviour); }
+  catch (e) { played = false; }
+  return Promise.resolve(played).then((ok) => {
+    if (ok) releaseGestureFallback();
+    else if (!gestureFallback || gestureFallback.behaviour !== behaviour) startGestureFallback(behaviour);
+    return !!ok;
+  }).catch(() => {
+    if (!gestureFallback || gestureFallback.behaviour !== behaviour) startGestureFallback(behaviour);
+    return false;
+  });
+}
+
+function fireBodyClip(behaviour) {
+  let p;
+  if (!engine || typeof engine.trigger !== "function") {
+    p = GESTURE_FALLBACKS[behaviour] ? playVrmGesture(behaviour) : false;
+  } else {
+    p = GESTURE_FALLBACKS[behaviour] ? playVrmGesture(behaviour) : engine.trigger(behaviour);
+  }
+  if (p && typeof p.catch === "function") p.catch(function () { });
+  return p;
 }
 
 // ── overlay geometry (size / position / dock / drag / Home) ───────────────
@@ -449,11 +682,11 @@ function refit() {
 }
 
 // ── workspace-scoped geometry ───────────────────────────────────────────────
-// The Studio stage reuses this same node but pins it with CSS !important, so
-// inline left/top cannot move it there. Drag is expressed as a transform from
-// its natural centred position and clamped to the STAGE (not the viewport).
-// The same helpers keep the avatar below the reserved call-bar padding and
-// inside the stage after resize/rotation.
+// The Studio stage reuses this same node as a normal stage member. Drag is a
+// transform from its natural centred position (no !important conflict) and is
+// clamped to the STAGE, not the viewport.
+// The same helpers keep the avatar inside the stage's real padding (including
+// the mobile safe-top inset) after resize/rotation.
 const STAGE_DRAG_PAD = 8;
 
 function stagedWorkspace() {
@@ -563,7 +796,7 @@ function dockOffsets(dock) {
 function applyPosition() {
   const staged = stagedWorkspace();
   if (staged) {
-    // CSS !important owns top/left here; only the transform offset is ours.
+    // The stage owns top/left here; only the transform offset is ours.
     const c = clampStageOffset(
       prefs.stageX != null ? prefs.stageX : 0,
       prefs.stageY != null ? prefs.stageY : 0
@@ -657,27 +890,45 @@ function wireDrag() {
   el._vmDragWired = true;
   el.style.touchAction = "none";
   const stage = $id("vmCompanionStage");
+  // Touch listeners MUST be non-passive: without preventDefault() the mobile
+  // browser scrolls/pans the workspace and cancels the gesture before it moves.
+  const passiveFalse = { passive: false };
 
-  const begin = (e) => {
-    // The wrapper and the stage both see pointerdown (canvas → wrapper →
-    // stage); handle it once no matter which one the browser reports first.
-    if (e.__vmCompanionDragHandled) return;
-    e.__vmCompanionDragHandled = true;
-    if (e.button != null && e.button !== 0) return;
+  function touchPoint(list, identifier) {
+    if (!list) return null;
+    for (let i = 0; i < list.length; i++) {
+      if (identifier == null || (list[i] && list[i].identifier === identifier)) return list[i];
+    }
+    return null;
+  }
+  function touchIdentifier(id) {
+    return Number(String(id).replace(/^touch:/, ""));
+  }
+
+  const begin = (e, point, id, touch) => {
+    // Whichever event arrives first (touch or pointer) owns this finger. This
+    // also prevents a synthetic pointerdown from restarting a live touch drag.
+    if (dragState) return;
+    if (!touch) {
+      if (e.__vmCompanionDragHandled) return;
+      e.__vmCompanionDragHandled = true;
+      if (e.button != null && e.button !== 0) return;
+    }
     const ctx = stagedWorkspace();
     if (e.currentTarget === stage && (!ctx || (!el.contains(e.target) && e.target !== el))) return;
-    // The chat/call bar is a live child: typing and Mic/Call/Send must never be
-    // interpreted as a drag or a tap-to-toggle.
-    const chat = $id("vmVrmCompanionChat");
-    if (chat && chat.contains && chat.contains(e.target)) return;
+    const p = point || e;
+    if (typeof p.clientX !== "number" || typeof p.clientY !== "number") return;
     const r = el.getBoundingClientRect();
     dragState = {
-      id: e.pointerId, dx: e.clientX - r.left, dy: e.clientY - r.top,
-      sx: e.clientX, sy: e.clientY, t: Date.now(), moved: false,
-      staged: !!ctx,
+      id: id != null ? id : e.pointerId,
+      dx: p.clientX - r.left, dy: p.clientY - r.top,
+      sx: p.clientX, sy: p.clientY, t: Date.now(), moved: false,
+      staged: !!ctx, touch: !!touch,
     };
-    try { el.setPointerCapture(e.pointerId); } catch (err) {
-      try { if (e.target && e.target.setPointerCapture) e.target.setPointerCapture(e.pointerId); } catch (err2) { }
+    if (!touch) {
+      try { el.setPointerCapture(dragState.id); } catch (err) {
+        try { if (e.target && e.target.setPointerCapture) e.target.setPointerCapture(dragState.id); } catch (err2) { }
+      }
     }
     cancelWalk();
     if (el.classList) el.classList.add("vm-companion-dragging");
@@ -685,13 +936,21 @@ function wireDrag() {
     if (e.cancelable) e.preventDefault();
   };
 
-  el.addEventListener("pointerdown", begin);
-  if (stage && stage.addEventListener) stage.addEventListener("pointerdown", begin);
+  const beginPointer = (e) => begin(e, e, e.pointerId, false);
+  const beginTouch = (e) => {
+    if (dragState) return;
+    const t = touchPoint(e.changedTouches, null);
+    if (!t) return;
+    begin(e, t, "touch:" + t.identifier, true);
+  };
 
-  const move = (e) => {
-    if (!dragState || (e.pointerId != null && e.pointerId !== dragState.id)) return;
+  const move = (e, point, id) => {
+    const eventId = id != null ? id : e.pointerId;
+    if (!dragState || eventId !== dragState.id) return;
+    const p = point || e;
+    if (typeof p.clientX !== "number" || typeof p.clientY !== "number") return;
     if (!dragState.moved &&
-      Math.abs(e.clientX - dragState.sx) + Math.abs(e.clientY - dragState.sy) > 4) {
+      Math.abs(p.clientX - dragState.sx) + Math.abs(p.clientY - dragState.sy) > 4) {
       dragState.moved = true;
     }
     if (!dragState.moved) return;
@@ -702,8 +961,8 @@ function wireDrag() {
       if (!ctx) return;
       const base = stageBaseRect(el);
       const c = clampStageOffset(
-        e.clientX - dragState.dx - base.left,
-        e.clientY - dragState.dy - base.top
+        p.clientX - dragState.dx - base.left,
+        p.clientY - dragState.dy - base.top
       );
       if (!c) return;
       dragTargetX = c.x;
@@ -711,17 +970,30 @@ function wireDrag() {
     } else {
       const w = el.offsetWidth || 120;
       const h = el.offsetHeight || 120;
-      dragTargetX = Math.max(0, Math.min((window.innerWidth || 1280) - w, e.clientX - dragState.dx));
-      dragTargetY = Math.max(0, Math.min((window.innerHeight || 800) - h, e.clientY - dragState.dy));
+      dragTargetX = Math.max(0, Math.min((window.innerWidth || 1280) - w, p.clientX - dragState.dx));
+      dragTargetY = Math.max(0, Math.min((window.innerHeight || 800) - h, p.clientY - dragState.dy));
       el.style.right = "auto";
       el.style.bottom = "auto";
     }
     if (!dragRaf) dragRaf = requestAnimationFrame(runDragFrame);
   };
 
-  const end = (e) => {
-    if (!dragState || (e.pointerId != null && e.pointerId !== dragState.id)) return;
-    const wasTap = !dragState.moved && (Date.now() - dragState.t) < 400;
+  const movePointer = (e) => {
+    if (dragState && dragState.touch) return;
+    move(e, e, e.pointerId);
+  };
+  const moveTouch = (e) => {
+    if (!dragState || !dragState.touch) return;
+    const t = touchPoint(e.changedTouches, touchIdentifier(dragState.id));
+    if (!t) return;
+    if (e.cancelable) e.preventDefault();
+    move(e, t, dragState.id);
+  };
+
+  const end = (e, point, id) => {
+    const eventId = id != null ? id : e.pointerId;
+    if (!dragState || eventId !== dragState.id) return;
+    if (e.cancelable && dragState.touch) e.preventDefault();
     if (dragState.moved) {
       // Settle exactly on the final clamped target before persisting so the
       // stored position matches where the avatar actually comes to rest.
@@ -741,24 +1013,48 @@ function wireDrag() {
       }
       prefs.userPlaced = true;
       savePrefs();
-    } else if (wasTap) {
-      toggleChat();
     }
+    // Tapping the character does nothing: the removed inner box must never
+    // reappear from a stage tap.
     stopDragFrame();
     dragState = null;
     if (el.classList) el.classList.remove("vm-companion-dragging");
     el.style.cursor = "grab";
   };
 
+  const endPointer = (e) => {
+    if (dragState && dragState.touch) return;
+    end(e, e, e.pointerId);
+  };
+  const endTouch = (e) => {
+    if (!dragState || !dragState.touch) return;
+    const t = touchPoint(e.changedTouches, touchIdentifier(dragState.id));
+    if (!t) return;
+    end(e, t, dragState.id);
+  };
+
+  el.addEventListener("pointerdown", beginPointer);
+  el.addEventListener("touchstart", beginTouch, passiveFalse);
+  if (stage && stage.addEventListener) {
+    stage.addEventListener("pointerdown", beginPointer);
+    stage.addEventListener("touchstart", beginTouch, passiveFalse);
+  }
+
   // Window-level listeners keep the gesture alive outside the canvas/wrapper;
   // el-level listeners are kept for engines where window capture is unavailable.
-  el.addEventListener("pointermove", move);
-  el.addEventListener("pointerup", end);
-  el.addEventListener("pointercancel", end);
+  el.addEventListener("pointermove", movePointer);
+  el.addEventListener("pointerup", endPointer);
+  el.addEventListener("pointercancel", endPointer);
+  el.addEventListener("touchmove", moveTouch, passiveFalse);
+  el.addEventListener("touchend", endTouch, passiveFalse);
+  el.addEventListener("touchcancel", endTouch, passiveFalse);
   if (window.addEventListener) {
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", end);
-    window.addEventListener("pointercancel", end);
+    window.addEventListener("pointermove", movePointer);
+    window.addEventListener("pointerup", endPointer);
+    window.addEventListener("pointercancel", endPointer);
+    window.addEventListener("touchmove", moveTouch, passiveFalse);
+    window.addEventListener("touchend", endTouch, passiveFalse);
+    window.addEventListener("touchcancel", endTouch, passiveFalse);
   }
 }
 
@@ -777,23 +1073,7 @@ function onViewportChange() {
 window.addEventListener("resize", onViewportChange);
 window.addEventListener("orientationchange", onViewportChange);
 
-// ── chat UI ───────────────────────────────────────────────────────────────
-function paintTranscript() {
-  const log = $id("vmVrmCompanionLog");
-  if (!log) return;
-  let html = "";
-  for (const t of transcript) {
-    html += '<div class="vmvrm-msg ' + t.role + '">' +
-      '<div class="vmvrm-msg-role">' + (t.role === "user" ? "You" : "Companion") + "</div>" +
-      '<div class="vmvrm-msg-body">' + escapeHtml(t.text) + "</div></div>";
-  }
-  if (!transcript.length) {
-    html += '<div class="vmvrm-msg ai"><div class="vmvrm-msg-body dim">Say hello — this runs on your existing ValleyMind brain and memory.</div></div>';
-  }
-  log.innerHTML = html;
-  log.scrollTop = log.scrollHeight;
-}
-
+// ── in-memory turn log (no on-character chat UI any more) ─────────────────
 function escapeHtml(s) {
   return String(s == null ? "" : s)
     .replace(/&/g, "&amp;").replace(/</g, "&lt;")
@@ -803,7 +1083,6 @@ function escapeHtml(s) {
 function pushChat(role, text) {
   transcript.push({ role: role, text: text, ts: Date.now() });
   if (transcript.length > 40) transcript.shift();
-  paintTranscript();
 }
 
 // ── brain plumbing (the SAME endpoints the Cloud companion uses) ──────────
@@ -1132,7 +1411,9 @@ function stop() {
   ++voiceTurn;
   busy = false;
   clearResumeTimer();
+  cancelGestureFallback(true);
   if (window.VMCloudVoice) { try { window.VMCloudVoice.stop(); } catch (e) { } }
+  stopNativeSpeech();
   setFaceTalking(false);
   setStatus("idle");
 }
@@ -1162,14 +1443,6 @@ function resumeListening() {
     if (window.VMCloudVoice.isListening()) return;
     try { window.VMCloudVoice.start(); } catch (e) { }
   }, VOICE_ECHO_GUARD_MS);
-}
-
-function sendFromInput() {
-  const input = $id("vmVrmCompanionInput");
-  if (!input) return;
-  const text = input.value;
-  input.value = "";
-  send(text);
 }
 
 // ── task execution layer (safe, permissioned, observable) ─────────────────
@@ -1475,6 +1748,14 @@ function wireNativeSpeech() {
 // -> listen again; it only stops on End / Mute / hide.
 const nativeBridge = (window.vmCompanionAndroid && typeof window.vmCompanionAndroid.setVisible === "function")
   ? window.vmCompanionAndroid : null;
+
+// The native TTS engine is a separate audio owner from VMCloudVoice, so every
+// stop/mute/hide path must silence it explicitly as well. One bridge, one call.
+function stopNativeSpeech() {
+  if (!nativeBridge || typeof nativeBridge.ttsStop !== "function") return;
+  try { nativeBridge.ttsStop(); } catch (e) { }
+}
+
 let nativeCallActive = false;
 let nativeAsrWired = false;
 let nativeAsrRetry = null;
@@ -1586,24 +1867,6 @@ function speakNativeReply(text, endEmo) {
   } catch (e) { done(); return false; }
 }
 
-function toggleVoice() {
-  if (!window.VMCloudVoice) return;
-  if (!window.VMCloudVoice.supported()) {
-    setStatus("confused");
-    logLine("Voice input isn't supported in this browser.");
-    return;
-  }
-  if (window.VMCloudVoice.isListening()) {
-    const spoken = window.VMCloudVoice.takeTranscript();
-    window.VMCloudVoice.stopListening();
-    clearResumeTimer();
-    if (String(spoken || "").trim().length >= 2) send(String(spoken).trim());
-    return;
-  }
-  stop();
-  try { window.VMCloudVoice.start(); } catch (e) { }
-}
-
 // Always-available mute for hands-free voice (the Settings-friendly escape
 // hatch). Muting silences in-progress speech and stops auto-listening without
 // revoking first-use access; unmuting resumes the hands-free loop on access.
@@ -1612,9 +1875,11 @@ function toggleMute() {
   savePrefs();
   if (prefs.muted) {
     if (window.VMCloudVoice) { try { window.VMCloudVoice.stop(); } catch (e) { } }
+    stopNativeSpeech();
     clearNativeAsrRetry();
     if (nativeBridge && nativeBridge.asrCancel) { try { nativeBridge.asrCancel(); } catch (e) { } }
     clearResumeTimer();
+    cancelGestureFallback(true);
     setFaceTalking(false);
     setStatus("idle");
   } else if (nativeCallActive && nativeAsrAvailable()) {
@@ -1640,6 +1905,29 @@ function startVoiceSession() {
   if (!window.VMCloudVoice.isListening()) {
     try { window.VMCloudVoice.start(); } catch (e) { }
   }
+}
+
+// The Studio stage's "Voice + lip-sync" control. This is only a thin edge onto
+// the ONE existing voice/brain pipeline: wire the hooks and the native speech
+// events, then open the platform's real recognizer. Recognized speech goes
+// through send() -> speakText()/speakNativeReply(), whose amplitude listener
+// drives the SAME engine.face channel (aa/oh/ou) while TTS is playing.
+function startStageVoice() {
+  wireVoice();
+  wireNativeSpeech();
+  maybePromptAccess();
+  if (!voiceActive() || prefs.muted || !accessAllowed() || !isAwake()) {
+    syncControls();
+    return false;
+  }
+  if (nativeAsrAvailable()) {
+    wireInAppNativeAsr();
+    startCall();
+  } else {
+    startVoiceSession();
+  }
+  syncControls();
+  return true;
 }
 
 // ── one-switch auto-wake (in-app companion) ────────────────────────────────
@@ -2032,30 +2320,41 @@ function syncControls() {
   for (const c of chips) {
     c.classList.toggle("on", c.getAttribute("data-skin") === (prefs.skin || ""));
   }
-  const callBtn = $id("vmVrmCompanionCallBtn");
-  if (callBtn) callBtn.classList.toggle("on", nativeCallActive);
-  const muteBtn = $id("vmVrmCompanionMuteBtn");
-  if (muteBtn) {
-    muteBtn.classList.toggle("on", !!prefs.muted);
-    muteBtn.textContent = prefs.muted ? "Unmute" : "Mute";
-  }
+  syncStageControls();
   syncTaskPermControls();
   paintStatus();
+}
+
+// The six Studio controls are the only companion controls. The voice button is
+// active while the real mic/native recognizer is open or TTS is speaking; the
+// mute button mirrors the persisted mute gate. No inner call bar is involved.
+function syncStageControls() {
+  let voiceOn = nativeCallActive || stateKey === "speaking";
+  try {
+    voiceOn = voiceOn || !!(window.VMCloudVoice &&
+      typeof window.VMCloudVoice.isListening === "function" && window.VMCloudVoice.isListening());
+  } catch (e) { /* voice API not loaded yet */ }
+  const voiceBtn = $id("vmCompanionStageVoiceBtn");
+  if (voiceBtn) {
+    voiceBtn.classList.toggle("on", voiceOn);
+    voiceBtn.classList.toggle("active", voiceOn);
+    voiceBtn.setAttribute("aria-pressed", voiceOn ? "true" : "false");
+  }
+  const muteBtn = $id("vmCompanionStageMuteBtn");
+  if (muteBtn) {
+    muteBtn.classList.toggle("on", !!prefs.muted);
+    muteBtn.classList.toggle("active", !!prefs.muted);
+    muteBtn.setAttribute("aria-pressed", prefs.muted ? "true" : "false");
+  }
 }
 
 function buildUI() {
   if (uiBuilt) return;
   uiBuilt = true;
 
-  on($id("vmVrmCompanionSend"), "click", sendFromInput);
-  on($id("vmVrmCompanionInput"), "keydown", (e) => { if (e.key === "Enter") sendFromInput(); });
-  on($id("vmVrmCompanionMicBtn"), "click", toggleVoice);
-  on($id("vmVrmCompanionCallBtn"), "click", startCall);
-  on($id("vmVrmCompanionEndBtn"), "click", endCall);
-  on($id("vmVrmCompanionMuteBtn"), "click", toggleMute);
-  on($id("vmVrmCompanionScreenBtn"), "click", toggleVision);
-
-  // Direct manipulation: drag to reposition, tap to open the chat panel.
+  // The six Stage controls live in index.html and call the public API directly
+  // (startStageVoice / toggleMute / gesture). There is no inner chat/call box to
+  // bind here; the canvas only drags and never opens one.
   wireDrag();
 
   // First-use access prompt (Allow / Not now). Distinct consent from task
@@ -2091,49 +2390,9 @@ function applySkin(name) {
 }
 
 // ── main-settings surface ─────────────────────────────────────────────────
-// The companion has no attached controls any more; the main sidebar's
-// Settings → Companion section drives it exclusively through these methods
-// (wired in static/settings.js), so nothing about the character can be
-// changed only from a hidden popover.
-// The Call / End / Mute / Screen / Send bar lives inside the shared chat panel.
-// In the Studio stage it gets a reserved top band instead of floating over the
-// header, workspace tabs, controls or the outside-app button on small screens.
-function syncChatClearance() {
-  const el = $id("vmVrmCompanion");
-  const panel = $id("vmVrmCompanionChat");
-  const stage = $id("vmCompanionStage");
-  const open = !!(panel && panel.classList && panel.classList.contains("open"));
-  const staged = !!(el && el.classList && el.classList.contains("vm-companion-staged"));
-  const active = open && staged;
-  if (el && el.classList) {
-    if (active) el.classList.add("vm-companion-chat-open");
-    else el.classList.remove("vm-companion-chat-open");
-  }
-  if (stage && stage.classList) {
-    if (active) stage.classList.add("vm-companion-call-active");
-    else stage.classList.remove("vm-companion-call-active");
-  }
-  // Let the new CSS geometry settle, then re-frame and re-clamp the transform.
-  setTimeout(function () { refit(); clampPosition(); }, 0);
-}
-
-function toggleChat() {
-  prefs.chatOpen = !prefs.chatOpen;
-  savePrefs();
-  const panel = $id("vmVrmCompanionChat");
-  if (panel) panel.classList.toggle("open", prefs.chatOpen);
-  syncChatClearance();
-  syncControls();
-}
-
-// Explicit collapse used by the workspace's outside-app button: close the call
-// bar before handing control to the external window so no mobile control row is
-// left sitting over the workspace buttons.
-function collapseChat() {
-  if (!prefs.chatOpen) { syncChatClearance(); return; }
-  toggleChat();
-}
-
+// The companion has no attached controls any more. The six Studio stage buttons
+// and the main sidebar's Settings → Companion section drive it exclusively
+// through this public API (wired in static/settings.js).
 function setVisible(on) {
   prefs.visible = !!on;
   savePrefs();
@@ -2188,8 +2447,8 @@ function setVoiceKey(key) {
   syncControls();
 }
 
-// Programmatic screen-context switch (the Settings toggle). The chat "Screen"
-// button keeps using toggleVision(); both converge on prefs.visionOn.
+// Programmatic screen-context switch (the Settings toggle). All surfaces
+// converge on prefs.visionOn; there is no separate screen button on the stage.
 function setVision(on) {
   const want = !!on;
   if (want && window.VMCloudVision && window.VMCloudVision.getState() !== "active") {
@@ -2294,9 +2553,6 @@ async function show() {
   // phone after the window shrank or rotated): pull it back into view.
   clampPosition();
   syncControls();
-  const chatPanel = $id("vmVrmCompanionChat");
-  if (chatPanel) chatPanel.classList.toggle("open", !!prefs.chatOpen);
-  syncChatClearance();
   initTasks();
   renderTask();
   const eng = await getEngine();
@@ -2320,27 +2576,26 @@ function hide() {
   clearNativeAsrRetry();
   if (nativeBridge && nativeBridge.asrCancel) { try { nativeBridge.asrCancel(); } catch (e) { } }
   clearResumeTimer();
+  cancelGestureFallback(true);
   guidanceActive = false;
   greetingActive = false;
   autoWakeStarted = false;
   autoWakePending = false;
   if (window.VMCloudVoice) { try { window.VMCloudVoice.stop(); } catch (e) { } }
+  stopNativeSpeech();
   setFaceTalking(false);
   const el = $id("vmVrmCompanion");
   if (el) {
     el.style.display = "none";
-    if (el.classList) {
-      el.classList.remove("vm-companion-chat-open");
-      el.classList.remove("vm-companion-dragging");
-    }
+    if (el.classList) el.classList.remove("vm-companion-dragging");
   }
-  const stage = $id("vmCompanionStage");
-  if (stage && stage.classList) stage.classList.remove("vm-companion-call-active");
   if (engine) engine.setRendering(false);
 }
 
 function cleanup() {
+  cancelGestureFallback(true);
   if (window.VMCloudVoice) { try { window.VMCloudVoice.stop(); } catch (e) { } }
+  stopNativeSpeech();
   hide();
 }
 
@@ -2387,6 +2642,17 @@ function maybeAutoShow() {
   }
 }
 
+// One-shot, real-clip gestures from the six Studio controls. The button words
+// (wave/nod/point/think) are accepted as aliases for the canonical statuses,
+// which fire the corresponding VRMA behaviour with a bone fallback if needed.
+function gesture(name) {
+  const raw = String(name || "").toLowerCase();
+  const key = GESTURE_STATUS[raw] || raw;
+  if (!STATUS_BEHAVIOUR[key]) return false;
+  setStatus(key, undefined, true); // explicit caller request, never an idle shuffle
+  return true;
+}
+
 // ── window hooks exposed to the classic-script app shell ─────────────────
 window.vmVrmCompanionShow = show;
 window.vmVrmCompanionCleanup = cleanup;
@@ -2405,6 +2671,7 @@ window.vmVrmCompanion = {
   toggleMute: toggleMute,
   isMuted: function () { return !!prefs.muted; },
   startVoiceSession: startVoiceSession,
+  startStageVoice: startStageVoice,
   accessDecision: accessDecision,
   allowAccess: function () {
     setAccessDecision("allowed");
@@ -2418,13 +2685,10 @@ window.vmVrmCompanion = {
   // ── main-settings surface (wired by static/settings.js) ──────────────────
   getProps: getProps,
   syncControls: syncControls,
-  syncChatClearance: syncChatClearance,
-  collapseChat: collapseChat,
   show: show,
   hide: hide,
   isVisible: isVisible,
   setVisible: setVisible,
-  toggleChat: toggleChat,
   openTaskPanel: openTaskPanel,
   toggleTaskPanel: toggleTaskPanel,
   wireTaskControls: wireTaskControls,
@@ -2465,16 +2729,7 @@ window.vmVrmCompanion = {
     return true;
   },
   clearGuidanceHighlight: clearGuidanceHighlight,
-  /**
-   * One-shot, real-clip gestures: waving (hello), pointing (look at this),
-   * guiding (walk with me). They hold the clip briefly, then return to idle.
-   */
-  gesture: function (name) {
-    const key = String(name || "").toLowerCase();
-    if (!STATUS_BEHAVIOUR[key]) return false;
-    setStatus(key, undefined, true); // explicit caller request, never an idle shuffle
-    return true;
-  },
+  gesture: gesture,
   applySpeechEvent: applyNativeSpeechEvent,
   setRendering: function (on) { if (engine) engine.setRendering(!!on); },
   // ── task execution layer surface ─────────────────────────────────────────

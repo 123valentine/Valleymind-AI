@@ -49,15 +49,23 @@ class VrmCompanionStaticTests(unittest.TestCase):
     # ── overlay exists in the app shell ────────────────────────────────────
     def test_overlay_markup_present(self):
         html = self._html()
-        # Clean floating avatar: a bare canvas plus the optional chat panel.
-        # No status chip, no clip/debug label, no task dashboard.
+        # Clean avatar: a bare canvas. Voice, mute and gesture controls are the
+        # six real Studio stage buttons; there is no embedded chat/call box.
         for marker in (
             'id="vmVrmCompanion"',
             'id="vmVrmCompanionCanvas"',
-            'id="vmVrmCompanionChat"',
-            'id="vmVrmCompanionInput"',
+            'id="vmCompanionStageVoiceBtn"',
+            'id="vmCompanionStageMuteBtn"',
+            'data-vm-stage-control="voice"',
+            'data-vm-stage-control="mute"',
         ):
             self.assertIn(marker, html, f"missing overlay element {marker}")
+        for gone in (
+            'id="vmVrmCompanionChat"', 'id="vmVrmCompanionInput"',
+            'id="vmVrmCompanionCallBtn"', 'id="vmVrmCompanionSend"',
+            'vmvrm-chat', 'vm-companion-chat-open', 'vm-companion-call-active',
+        ):
+            self.assertNotIn(gone, html, f"embedded chat/call box still present: {gone}")
 
     def test_enclosing_chrome_is_removed(self):
         html = self._html()
@@ -238,16 +246,34 @@ class VrmCompanionStaticTests(unittest.TestCase):
 
     def test_voice_button_and_mute_control(self):
         html = self._html()
-        # The idle status/mute chip was removed from the avatar; the mic still
-        # has its dedicated button, and mute lives in Settings → Companion.
+        # The idle status/mute chip and the inner call bar were removed from the
+        # avatar. Voice + mute are real Studio stage buttons that drive the SAME
+        # VMCloudVoice/native bridge pipeline, with visible active state.
         self.assertNotIn('id="vmVrmCompanionStatus"', html)
         self.assertNotIn(".vmvrm-pill", html)
-        self.assertIn('id="vmVrmCompanionMicBtn"', html)
+        self.assertIn('id="vmCompanionStageVoiceBtn"', html)
+        self.assertIn('id="vmCompanionStageMuteBtn"', html)
+        self.assertIn('onclick="vmCompanionStageVoice()"', html)
+        self.assertIn('onclick="vmCompanionStageMute()"', html)
         js = self._companion()
+        self.assertIn("function startStageVoice()", js)
         self.assertIn("function toggleMute()", js)
         self.assertIn("function setMuted(", js)
-        # Muting also stops an in-flight side effect (speech + schedules).
+        self.assertIn("function syncStageControls()", js)
+        self.assertIn('aria-pressed', js)
+        self.assertIn('"active"', js)
+        # One recognizer/TTS pipeline: the stage control only wires the existing
+        # hooks and opens the platform's real recognizer.
+        self.assertIn("wireVoice()", js)
+        self.assertIn("wireNativeSpeech()", js)
+        self.assertIn("nativeAsrAvailable()", js)
+        self.assertIn("startCall()", js)
+        self.assertIn("startVoiceSession()", js)
+        self.assertNotIn("new SpeechRecognition", js)
+        self.assertNotIn("speechSynthesis.speak", js)
+        # Muting silences both audio owners and stops an in-flight side effect.
         self.assertIn("window.VMCloudVoice.stop()", js)
+        self.assertIn("stopNativeSpeech()", js)
         self.assertIn("clearResumeTimer()", js)
         settings = self._settings()
         self.assertIn("vmCompanionSetMuted", settings)
@@ -553,23 +579,45 @@ class VrmCompanionPhase1Tests(unittest.TestCase):
     def test_drag_repositions_and_marks_user_preferred(self):
         js = self._companion()
         self.assertIn("function wireDrag(", js)
-        self.assertIn('"pointerdown"', js)
-        self.assertIn('"pointermove"', js)
+        for event in ("pointerdown", "pointermove", "pointerup", "pointercancel",
+                      "touchstart", "touchmove", "touchend", "touchcancel"):
+            self.assertIn('"' + event + '"', js)
+        self.assertIn("{ passive: false }", js)
+        self.assertIn("e.preventDefault()", js)
         self.assertIn("prefs.userPlaced = true", js)
+        self.assertIn("prefs.stageX", js)
+        self.assertIn("prefs.stageY", js)
         # Position is persisted; a drag cancels any explicit guidance walk (there
         # is no autonomous roaming timer left to pause).
         self.assertIn("cancelWalk();", js)
         self.assertNotIn("clearRoamTimer()", js)
         # Home / dock / reset clear the manual-placement lock.
         self.assertGreaterEqual(js.count("prefs.userPlaced = false"), 3)
-        # A press inside the chat panel is never a drag/tap.
-        self.assertIn("chat.contains(e.target)", js)
+        # No CSS !important may fight the translate3d drag offset.
+        html = self._html()
+        staged = html[html.index('#vmVrmCompanion.vm-companion-staged {'):
+                      html.index('.vm-companion-stage {', html.index('#vmVrmCompanion.vm-companion-staged {'))]
+        self.assertIn('transform: translate3d(var(--vm-stage-x, 0px), var(--vm-stage-y, 0px), 0)', staged)
+        self.assertNotIn('transform: translate3d(var(--vm-stage-x, 0px), var(--vm-stage-y, 0px), 0) !important', staged)
+        self.assertNotIn('position: relative !important', staged)
+        self.assertIn('position: relative;', staged)
 
-    def test_tap_opens_existing_chat_not_a_new_control(self):
+    def test_tap_never_reopens_an_inner_control_box(self):
         js = self._companion()
-        # The discreet touch control surface reuses the EXISTING chat panel.
-        self.assertIn("toggleChat();", js)
-        self.assertIn("function toggleChat(", js)
+        html = self._html()
+        # The removed inner chat/call box has no toggle surface left anywhere.
+        for gone in ("toggleChat", "collapseChat", "syncChatClearance",
+                     "vmVrmCompanionChat", "vm-companion-chat-open"):
+            self.assertNotIn(gone, js)
+            self.assertNotIn(gone, html)
+        self.assertIn("Tapping the character does nothing", js)
+        # The four gestures are real engine behaviours with immediate fallback.
+        for gesture in ("waving", "nodding", "pointing", "thinking"):
+            self.assertIn(gesture + ":", js)
+        self.assertIn("const GESTURE_STATUS = {", js)
+        self.assertIn("const GESTURE_FALLBACKS = {", js)
+        self.assertIn("engine.trigger(behaviour)", js)
+        self.assertIn("releaseGestureFallback()", js)
 
     # ── persistence across views (no duplication / no teardown) ─────────────
     def test_visible_over_internal_fullscreen_views(self):

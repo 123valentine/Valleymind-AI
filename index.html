@@ -1482,13 +1482,14 @@
     box-shadow:inset 0 1px 0 rgba(255,255,255,0.05), 0 24px 60px rgba(0,0,0,0.28);
   }
   .vm-companion-stage-hint { color:#64748b; font-size:13px; text-align:center; padding:20px; }
-  /* The shared overlay becomes a normal, non-floating stage member here. CSS
-     !important wins over the module's inline dock/size geometry. */
+  /* The shared overlay becomes a normal, non-floating stage member here. Only
+     size/layer geometry needs to win over inline values; position and top/left
+     stay un-important so the transform drag is the sole offset. */
   .vm-companion-staged {
-    position:relative !important; z-index:2 !important;
+    position:relative; z-index:2 !important;
     width:min(100%,560px) !important; height:min(52vh,460px) !important;
-    min-height:320px !important; top:auto !important; right:auto !important;
-    bottom:auto !important; left:auto !important; margin:0 auto;
+    min-height:320px !important; top:auto; right:auto;
+    bottom:auto; left:auto; margin:0 auto;
     pointer-events:auto !important; border-radius:18px; overflow:visible;
   }
   .vm-companion-controls {
@@ -3043,26 +3044,14 @@
      character is not active. Boot is lazy -- the WebGL engine only starts
      once this overlay is actually shown. -->
 <div id="vmVrmCompanion" role="region" aria-label="ValleyMind VRM companion"
-     style="display:none; position:fixed; top:auto; right:18px; bottom:auto; left:auto; z-index:100000; pointer-events:none;">
+     style="display:none; top:auto; right:18px; bottom:auto; left:auto; z-index:100000; pointer-events:none;">
   <!-- The avatar floats directly on the app background: no card, background,
-       border, shadow, badge or debug label. Only the alpha-composited character
-       is visible, and pointer events pass through so it never blocks the app
-       beneath it. The only interactive surface is the optional chat panel.
-       There is no on-screen task dashboard any more — task diagnostics live in
-       Settings → Companion, and tasks are driven by voice. -->
+       border, shadow, badge, debug label or embedded control box. Only the
+       alpha-composited character is visible, and pointer events pass through so
+       it never blocks the app beneath it. Voice, mute and gestures are driven by
+       the six real Studio stage buttons; task diagnostics live in Settings →
+       Companion. -->
   <canvas id="vmVrmCompanionCanvas" aria-hidden="true"></canvas>
-  <div class="vmvrm-chat" id="vmVrmCompanionChat">
-    <div class="vmvrm-chat-log" id="vmVrmCompanionLog"></div>
-    <div class="vmvrm-chat-row">
-      <input type="text" id="vmVrmCompanionInput" placeholder="Message ValleyMind…" maxlength="2000" autocomplete="off" aria-label="Message the VRM companion">
-      <button type="button" class="vmvrm-mini-btn" id="vmVrmCompanionMicBtn" title="Voice input">Mic</button>
-      <button type="button" class="vmvrm-mini-btn" id="vmVrmCompanionCallBtn" title="Live Companion Call — hands-free voice, auto-resumes until End or Mute">Call</button>
-      <button type="button" class="vmvrm-mini-btn" id="vmVrmCompanionEndBtn" title="End the live call">End</button>
-      <button type="button" class="vmvrm-mini-btn" id="vmVrmCompanionMuteBtn" title="Mute / unmute hands-free listening">Mute</button>
-      <button type="button" class="vmvrm-mini-btn" id="vmVrmCompanionScreenBtn" title="Screen context (asks for permission)">Screen</button>
-      <button type="button" class="vmvrm-mini-btn primary" id="vmVrmCompanionSend" title="Send">Send</button>
-    </div>
-  </div>
 </div>
 <!-- First-use companion access prompt. This is the user's own consent screen
      (distinct from consequential-action approvals and from the browser's mic
@@ -3081,7 +3070,7 @@
 </div>
 <style>
 #vmVrmCompanion {
-    position: fixed !important;
+    position: fixed;
     /* Above the full-screen internal views (Help & Learn / Settings at 99999)
        so the companion stays present while the user moves between views; it
        remains below the app's own transient modal dialogs (100001+) and the
@@ -3105,8 +3094,8 @@
 }
 #vmVrmCompanionCanvas {
     display: block; width: 100%; height: 100%;
-    /* Direct manipulation: drag to reposition, tap to open chat. Everything
-       outside the avatar still passes through to the app. */
+    /* Direct manipulation: drag to reposition. Everything outside the avatar
+       still passes through to the app; tapping never opens a control box. */
     pointer-events: auto;
     touch-action: none;
     cursor: grab;
@@ -3124,33 +3113,6 @@
 .vmvrm-mini-btn:hover { background: rgba(30, 41, 59, 0.9); color: #e2e8f0; }
 .vmvrm-mini-btn.primary { background: rgba(14, 116, 144, 0.75); border-color: rgba(56, 189, 248, 0.5); color: #e0f7ff; }
 .vmvrm-mini-btn.on { box-shadow: inset 0 0 0 1px rgba(56, 189, 248, 0.8); }
-.vmvrm-chat {
-    display: none;
-    position: absolute; bottom: 100%; margin-bottom: 8px;
-    right: 0; width: 300px; max-height: 54vh;
-    background: rgba(8, 12, 24, 0.96);
-    border: 1px solid rgba(148, 163, 184, 0.3);
-    border-radius: 10px;
-    z-index: 3;
-    pointer-events: auto;
-}
-.vmvrm-chat.open { display: block; }
-.vmvrm-chat-log { height: 168px; overflow-y: auto; padding: 8px 10px; }
-.vmvrm-msg { margin: 0 0 8px; font-size: 12px; line-height: 1.4; color: #e2e8f0; }
-.vmvrm-msg-role { font-size: 9px; opacity: 0.55; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 1px; }
-.vmvrm-msg.user .vmvrm-msg-role { color: #7dd3fc; }
-.vmvrm-msg-body { white-space: pre-wrap; word-break: break-word; }
-.vmvrm-msg-body.dim { color: #9aa7b8; font-style: italic; }
-.vmvrm-chat-row { display: flex; gap: 6px; padding: 8px; border-top: 1px solid rgba(148, 163, 184, 0.15); }
-.vmvrm-chat-row input {
-    flex: 1; min-width: 0;
-    background: rgba(15, 23, 42, 0.85);
-    color: #e2e8f0;
-    border: 1px solid rgba(148, 163, 184, 0.3);
-    border-radius: 7px;
-    padding: 5px 8px;
-    font-size: 12px;
-}
 .vmvrm-skins { display: flex; gap: 6px; flex-wrap: wrap; }
 .vmvrm-swatch {
     width: 26px; height: 26px; border-radius: 50%;
@@ -3165,12 +3127,17 @@
 }
 .vmvrm-mode button.on { box-shadow: inset 0 0 0 1px rgba(56, 189, 248, 0.8); color: #a5d8ff; }
 
-  /* Studio 3D Companion stage. The shared overlay is pinned by the workspace
-     CSS above, so dragging is a transform from its natural centred position
-     (inline top/left are overridden there by !important). The wrapper itself
-     stays pointer-transparent: only the WebGL canvas and chat surface opt in,
-     so neither swallows a drag or blocks a workspace button. */
+  /* Studio 3D Companion stage. The shared overlay becomes a normal stage member
+     (see .vm-companion-staged above); dragging is an un-important transform from
+     its natural centred position. No transform/position !important competes with
+     that offset. The wrapper stays pointer-transparent: only the WebGL canvas
+     opts in, so a drag never blocks a workspace button. */
   #vmVrmCompanion.vm-companion-staged {
+    /* ID+class wins over the base #vmVrmCompanion rule without !important, so
+       the staged avatar is a normal flex child and translate3d is its only
+       offset. No transform/position !important competes with the drag. */
+    position: relative;
+    top: auto; right: auto; bottom: auto; left: auto;
     pointer-events: none !important;
     touch-action: none !important;
     transform: translate3d(var(--vm-stage-x, 0px), var(--vm-stage-y, 0px), 0);
@@ -3184,32 +3151,13 @@
   #vmVrmCompanion.vm-companion-dragging #vmVrmCompanionCanvas { cursor: grabbing !important; }
 
   /* Clean layers: the stage owns its own stacking context, and every control
-     outside it sits above the stage. The call bar is therefore clipped inside
-     the stage and can never cover header, tabs, voice/animation buttons,
-     close/back navigation or the Companion Outside App button. */
+     outside it sits above the stage. There is no inner box to clip or reserve
+     space for; the six stage buttons are the only companion controls. */
   .vm-companion-stage { isolation:isolate; z-index:1; padding:12px; }
   .vm-companion-head { position:relative; z-index:5; }
   .vm-companion-controls { position:relative; z-index:5; pointer-events:auto; }
   #studioOverlay .gallery-header { position:relative; z-index:20; }
   #vmWsTabbar { position:relative; z-index:10; }
-  #vmVrmCompanion.vm-companion-staged .vmvrm-chat {
-    left:0; right:0; width:auto; max-width:100%;
-    bottom:calc(100% + 10px); margin-bottom:0;
-    max-height:min(220px, 34vh); z-index:4;
-  }
-  #vmVrmCompanion.vm-companion-staged .vmvrm-chat-log { height:min(120px, 18vh); }
-  #vmVrmCompanion.vm-companion-staged .vmvrm-chat-row { flex-wrap:wrap; }
-  /* Active call toolbar: reserve real space above the avatar instead of
-     letting the bar float over the room controls on a phone. */
-  .vm-companion-stage.vm-companion-call-active {
-    align-items:flex-end;
-    padding-top:176px;
-    min-height:560px;
-  }
-  #vmVrmCompanion.vm-companion-staged.vm-companion-chat-open {
-    height:min(34vh, 300px) !important;
-    min-height:200px !important;
-  }
   @media (max-width:700px) {
     .vm-companion-workspace {
       --vm-companion-safe-top: 64px;
@@ -3219,21 +3167,11 @@
     .vm-companion-head h2 { font-size:20px; }
     .vm-companion-head p { font-size:12px; }
     .vm-companion-stage { min-height:400px; border-radius:18px; padding:10px; }
-    .vm-companion-stage.vm-companion-call-active { padding-top:160px; min-height:540px; }
     #vmVrmCompanion.vm-companion-staged {
       width:100% !important;
       height:min(44vh, 340px) !important;
       min-height:220px !important;
     }
-    #vmVrmCompanion.vm-companion-staged.vm-companion-chat-open {
-      height:min(30vh, 240px) !important;
-      min-height:180px !important;
-    }
-    #vmVrmCompanion.vm-companion-staged .vmvrm-chat { bottom:calc(100% + 8px); }
-    #vmVrmCompanion.vm-companion-staged .vmvrm-chat-log { height:84px; }
-    #vmVrmCompanion.vm-companion-staged .vmvrm-chat-row { gap:5px; }
-    #vmVrmCompanion.vm-companion-staged .vmvrm-mini-btn { padding:5px 7px; font-size:10px; }
-    #vmVrmCompanion.vm-companion-staged .vmvrm-chat-row input { padding:5px 7px; font-size:12px; }
     .vm-companion-controls {
       gap:8px; padding:12px;
       padding-bottom:calc(12px + env(safe-area-inset-bottom));
@@ -3275,7 +3213,6 @@
    is constrained here, and the floating chat shrinks to the screen. */
 @media (max-width: 760px) {
     #vmVrmCompanion { width: 46vw; max-width: 230px; }
-    .vmvrm-chat { width: min(300px, 86vw); right: 0; }
 }
 /* First-use access prompt (clean, non-blocking, dark + light safe). */
 #vmCompanionAccess {
@@ -4542,8 +4479,8 @@ body[data-vm-companion="cloud"] #vmVrmCompanion { display: none !important; }
         <div class="vm-companion-stage-hint" id="vmCompanionStageHint">Mounting your companion…</div>
       </div>
       <div class="vm-companion-controls" aria-label="3D companion controls">
-        <button type="button" class="vm-companion-btn" onclick="vmCompanionStageVoice()">Voice + lip-sync</button>
-        <button type="button" class="vm-companion-btn" onclick="vmCompanionStageMute()">Mute / unmute</button>
+        <button type="button" class="vm-companion-btn" id="vmCompanionStageVoiceBtn" data-vm-stage-control="voice" aria-pressed="false" onclick="vmCompanionStageVoice()">Voice + lip-sync</button>
+        <button type="button" class="vm-companion-btn" id="vmCompanionStageMuteBtn" data-vm-stage-control="mute" aria-pressed="false" onclick="vmCompanionStageMute()">Mute / unmute</button>
         <button type="button" class="vm-companion-btn" onclick="vmCompanionStageAnimation('waving')">Wave</button>
         <button type="button" class="vm-companion-btn" onclick="vmCompanionStageAnimation('nodding')">Nod</button>
         <button type="button" class="vm-companion-btn" onclick="vmCompanionStageAnimation('pointing')">Point</button>
@@ -10061,15 +9998,14 @@ function vmCompanionMountWorkspace() {
     if (!stage || !avatar) return;
     if (avatar.parentNode !== stage) stage.appendChild(avatar);
     avatar.classList.add("vm-companion-staged");
-    // The stage owns the geometry (see .vm-companion-staged !important). Clear
-    // the floating overlay's viewport pins so only the stage transform drives
-    // dragging; the old dock values are still saved in the companion prefs.
+    // The stage owns the geometry (see .vm-companion-staged). Clear the floating
+    // overlay's viewport pins so only the un-important transform drag moves her;
+    // the old dock values are still saved in the companion prefs.
     ["left", "top", "right", "bottom"].forEach(function (prop) {
         avatar.style[prop] = "auto";
     });
     var hint = document.getElementById("vmCompanionStageHint");
     if (hint) hint.style.display = "none";
-    try { if (window.vmVrmCompanion && typeof window.vmVrmCompanion.syncChatClearance === "function") window.vmVrmCompanion.syncChatClearance(); } catch (e) {}
     try { if (typeof window.vmVrmCompanionShow === "function") window.vmVrmCompanionShow(); } catch (e) {}
     try { if (window.vmVrmCompanion && typeof window.vmVrmCompanion.refit === "function") window.vmVrmCompanion.refit(); } catch (e) {}
 }
@@ -10078,23 +10014,20 @@ function vmCompanionUnmountWorkspace() {
     if (!avatar || !avatar.classList || !avatar.classList.contains("vm-companion-staged")) return;
     try { if (typeof window.vmVrmCompanionHide === "function") window.vmVrmCompanionHide(); } catch (e) {}
     avatar.classList.remove("vm-companion-staged");
-    avatar.classList.remove("vm-companion-chat-open");
     avatar.classList.remove("vm-companion-dragging");
-    var stage = document.getElementById("vmCompanionStage");
-    if (stage && stage.classList) stage.classList.remove("vm-companion-call-active");
     document.body.appendChild(avatar);
     avatar.style.display = "none";
     var hint = document.getElementById("vmCompanionStageHint");
     if (hint) hint.style.display = "";
 }
 function vmCompanionStageVoice() {
-    try { if (window.vmVrmCompanion && typeof window.vmVrmCompanion.startVoiceSession === "function") window.vmVrmCompanion.startVoiceSession(); } catch (e) {}
+    try { if (window.vmVrmCompanion && typeof window.vmVrmCompanion.startStageVoice === "function") window.vmVrmCompanion.startStageVoice(); } catch (e) {}
 }
 function vmCompanionStageMute() {
     try { if (window.vmVrmCompanion && typeof window.vmVrmCompanion.toggleMute === "function") window.vmVrmCompanion.toggleMute(); } catch (e) {}
 }
 function vmCompanionStageAnimation(name) {
-    try { if (window.vmVrmCompanion && typeof window.vmVrmCompanion.applyStatus === "function") window.vmVrmCompanion.applyStatus(name); } catch (e) {}
+    try { if (window.vmVrmCompanion && typeof window.vmVrmCompanion.gesture === "function") window.vmVrmCompanion.gesture(name); } catch (e) {}
 }
 
 // â”€â”€ Workspace switcher (unified creative suite, no page reload) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
