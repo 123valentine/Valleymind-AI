@@ -17,8 +17,10 @@ from core.brain import (
     MarcusBrain,
     VALLEYMIND_IDENTITY_AND_HISTORY,
     _CHAT_SYSTEM_PROMPT,
+    _PrivacyStreamFilter,
     _chat_prompt_for,
     _detect_file_request,
+    _privacy_guard,
     asset_clarification_message,
     asset_generation_copy,
     needs_asset_clarification,
@@ -212,6 +214,50 @@ def test_llm_replies_and_streams_are_privacy_scrubbed(monkeypatch):
     assert "NVIDIA" not in reply
     assert "Gemini" not in reply
     assert "support" in reply
+
+
+def test_privacy_guard_preserves_binary_math_timestamps_and_years():
+    text = (
+        "Binary 11011011; ratio 3/4; timestamp 12:34:56 on 2025-06-07 "
+        "(year 2025). Version 12345678 is stable."
+    )
+    cleaned = _privacy_guard(text)
+    assert cleaned == text
+    for fact in ("11011011", "3/4", "12:34:56", "2025-06-07", "2025", "12345678"):
+        assert fact in cleaned
+    assert "[phone number withheld]" not in cleaned
+
+
+def test_privacy_guard_blocks_only_founder_phone_and_explicit_contacts():
+    for leaked in (
+        "+234 915 127 0571",
+        "+2349151270571",
+        "09151270571",
+        "915-127-0571",
+    ):
+        cleaned = _privacy_guard("Call the founder at " + leaked + " today.")
+        assert "915" not in cleaned
+        assert "0571" not in cleaned
+        assert "[phone number withheld]" in cleaned
+    explicit = _privacy_guard("Phone: 080 1234 5678 or WhatsApp +1 415 555 0132")
+    assert "080 1234 5678" not in explicit
+    assert "+1 415 555 0132" not in explicit
+    assert explicit.count("[phone number withheld]") == 2
+
+
+def test_privacy_stream_filter_flushes_without_clipping_words():
+    stream = _PrivacyStreamFilter()
+    chunks = [
+        stream.feed("Intro text that is long enough here "),
+        stream.feed("NVID"),
+        stream.feed("IA "),
+        stream.feed("developers build the companion."),
+        stream.flush(),
+    ]
+    combined = "".join(chunks)
+    assert "NVIDIA" not in combined
+    assert "developers build the companion." in combined
+    assert combined.startswith("Intro text that is long enough here ")
 
 
 # ── Consultative asset creation and follow-ups ──────────────────────────────

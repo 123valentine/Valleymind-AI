@@ -171,6 +171,25 @@ def strip_animation_tags_preserve_space(text: str) -> str:
     """
     return _EMO_TAG_RE.sub("", _ANIM_TAG_RE.sub("", str(text or "")))
 
+
+# A streamed [ANIM: ...] / [EMO: ...] tag may be split across several deltas.
+# Hold back only a bracket that still looks like the start of such a tag; all
+# other text (including the first token) can go straight to the client.
+_PARTIAL_ANIM_TAG_RE = re.compile(
+    r"\[\s*(?:A|AN|ANI|ANIM|E|EM|EMO|EMOT|EMOTI|EMOTIO|EMOTION)?\s*"
+    r"(?::\s*[\w\s-]*)?$",
+    re.IGNORECASE,
+)
+
+
+def _animation_safe_split(text: str) -> int:
+    """Index before which no incomplete companion control tag can hide."""
+    for match in re.finditer(r"\[", text):
+        if _PARTIAL_ANIM_TAG_RE.fullmatch(text[match.start():]):
+            return match.start()
+    return len(text)
+
+
 # ── Streaming persistence checkpoints ──────────────────────────────
 # The client renders tokens as they arrive, but the assistant row used to be
 # written only after the stream finished. If Android killed the WebView (or the
@@ -2287,14 +2306,141 @@ def _sanitize_reply_for_chat(reply: str, replacement: str = "") -> str:
 
 
 # ── Founder privacy + canonical origin answers ──────────────────────────────
-_PHONE_NUMBER_RE = re.compile(
-    r"(?<![\w])(?:\+\d{1,3}[\s.\-]*)?(?:\(\d{2,4}\)[\s.\-]*)?"
-    r"\d{3,4}[\s.\-]*\d{3,4}(?:[\s.\-]*\d{3,4})?(?![\w])"
+# Redact ONLY the founder's real contact number (and its local forms). A broad
+# "any long digit run" phone regex used to eat binary values, timestamps and
+# years, so numeric content is never treated as a phone number unless it is the
+# known founder number or sits in an explicit phone-contact disclosure.
+_FOUNDER_PHONE_RE = re.compile(
+    r"(?<!\w)(?:\+234[\s.\-]*0?915[\s.\-]*127[\s.\-]*0571|0?915[\s.\-]*127[\s.\-]*0571)(?!\w)",
+    re.IGNORECASE,
+)
+_PHONE_CONTACT_RE = re.compile(
+    r"\b(?:phone|mobile|cell|whatsapp|telephone|tel|call|contact|reach|text|sms)\b"
+    r"(?:\s+(?:number|no\.?|is|at|on|me|us|the\s+founder))?"
+    r"[^.\n]{0,32}?"
+    r"(?P<number>(?:\+\d{1,3}[\s.\-]*)?(?:\(\d{2,4}\)[\s.\-]*)?"
+    r"(?:\d{3,4}[\s.\-]+\d{3,4}(?:[\s.\-]+\d{3,4})?|\d{10,11}))(?!\w)",
+    re.IGNORECASE,
+)
+_NON_PHONE_NUMERIC_RE = re.compile(
+    r"^\d{4}[\s.\-/]+\d{1,2}[\s.\-/]+\d{1,4}$|^\d{1,2}:\d{2}(?::\d{2})?$"
 )
 _THIRD_PARTY_PROVIDER_RE = re.compile(
     r"\b(?:Groq|NVIDIA|Gemini|OpenRouter|Alibaba)(?:Video|Studio|Cloud|AI)?\b",
     re.IGNORECASE,
 )
+
+# Stream-safe emission needs to know which trailing fragments are still allowed
+# to grow into a secret. Only these seeds are held back; ordinary prose (and
+# ordinary numbers) is emitted as soon as it arrives so first-token latency and
+# crash-time checkpoints stay unchanged.
+_PROVIDER_BASES = ("groq", "nvidia", "gemini", "openrouter", "alibaba")
+_CONTACT_KEYWORD_RE = re.compile(
+    r"\b(?:phone|mobile|cell|whatsapp|telephone|tel|call|contact|reach|text|sms)\b",
+    re.IGNORECASE,
+)
+_WORD_RE = re.compile(r"[A-Za-z]+")
+_FOUNDER_PHONE_FORMS = (
+    "+234 915 127 0571",
+    "+234.915.127.0571",
+    "+234-915-127-0571",
+    "+2349151270571",
+    "09151270571",
+    "9151270571",
+    "915 127 0571",
+    "915.127.0571",
+    "915-127-0571",
+)
+_FOUNDER_PHONE_PREFIXES = frozenset(
+    form[:length].lower()
+    for form in _FOUNDER_PHONE_FORMS
+    for length in range(1, len(form) + 1)
+)
+
+
+def _numeric_span_end(text: str, start: int) -> int:
+    """End index of the number-like run beginning at ``start``."""
+    index, size = start, len(text)
+    while index < size:
+        char = text[index]
+        if char.isdigit() or char in "+-.()":
+            index += 1
+            continue
+        if char in " \t":
+            lookahead = index
+            while lookahead < size and text[lookahead] in " \t":
+                lookahead += 1
+            if lookahead < size and (
+                text[lookahead].isdigit() or text[lookahead] in "+-.()"
+            ):
+                index = lookahead
+                continue
+        break
+    return index
+
+
+def _is_founder_phone_prefix(segment: str) -> bool:
+    """True when ``segment`` could still grow into the founder's phone number."""
+    key = segment.strip().lower().rstrip(" \t.-+()")
+    return bool(key) and any(prefix.startswith(key)
+                             for prefix in _FOUNDER_PHONE_PREFIXES)
+
+
+def _contact_terminator(text: str, start: int) -> int | None:
+    """Find the first sentence boundary after an explicit contact keyword."""
+    index, size = start, len(text)
+    while index < size:
+        char = text[index]
+        if char.isdigit() or char == "+":
+            index = _numeric_span_end(text, index)
+            continue
+        if char in ".!?\n":
+            # A period inside a dotted phone number is not a boundary.
+            if char != "." or index + 1 >= size or not (
+                text[index + 1].isdigit() or text[index + 1] in "+-.()"
+            ):
+                return index + 1
+        index += 1
+    return None
+
+
+def _safe_emit_split(text: str) -> int:
+    """Largest prefix of ``text`` that cannot become a privacy-sensitive match."""
+    index, size = 0, len(text)
+    while index < size:
+        contact = _CONTACT_KEYWORD_RE.match(text, index)
+        if contact:
+            boundary = _contact_terminator(text, contact.end())
+            if boundary is None:
+                return contact.start()
+            index = boundary
+            continue
+
+        char = text[index]
+        if char.isdigit() or char == "+":
+            end = _numeric_span_end(text, index)
+            if end >= size or _is_founder_phone_prefix(text[index:end]):
+                return index
+            index = end
+            continue
+
+        if char.isalpha():
+            word_match = _WORD_RE.match(text, index)
+            word = word_match.group(0) if word_match else char
+            end = index + len(word)
+            lowered = word.lower()
+            if lowered in _PROVIDER_BASES or any(
+                base.startswith(lowered) for base in _PROVIDER_BASES
+            ):
+                # A complete provider is safe: sanitising removes it. A partial
+                # provider at the very end must wait for the remaining letters.
+                if end >= size and lowered not in _PROVIDER_BASES:
+                    return index
+            index = end
+            continue
+
+        index += 1
+    return size
 _IDENTITY_QUERY_RE = re.compile(
     r"\b(?:who\s+(?:founded|created|built|made|is\s+(?:your\s+)?(?:creator|founder))|"
     r"when\s+(?:was|did)\s+valley\s*mind|"
@@ -2309,45 +2455,83 @@ _IDENTITY_QUERY_RE = re.compile(
 )
 
 
-def _privacy_guard(text: str) -> str:
-    """Remove private founder data and provider names from user-facing text."""
-    cleaned = _PHONE_NUMBER_RE.sub("[phone number withheld]", str(text or ""))
+def _withhold_phone_contact(match: "re.Match") -> str:
+    """Keep an explicit contact disclosure's wording, withhold just the number."""
+    number = match.group("number")
+    if _NON_PHONE_NUMERIC_RE.match(number):
+        return match.group(0)
+    prefix = match.group(0)[: match.start("number") - match.start()]
+    return prefix + "[phone number withheld]"
+
+
+def _privacy_guard(text: str, *, strip_output: bool = True) -> str:
+    """Remove private founder data and provider names from user-facing text.
+
+    ``strip_output=False`` is used by the streaming filter so held-back
+    whitespace survives chunk boundaries; one-shot callers keep the original
+    trimmed result.
+    """
+    cleaned = _FOUNDER_PHONE_RE.sub("[phone number withheld]", str(text or ""))
+    cleaned = _PHONE_CONTACT_RE.sub(_withhold_phone_contact, cleaned)
     cleaned = _THIRD_PARTY_PROVIDER_RE.sub("", cleaned)
-    return re.sub(r"[ \t]{2,}", " ", cleaned).strip()
+    cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
+    return cleaned.strip() if strip_output else cleaned
 
 
 class _PrivacyStreamFilter:
     """Stream-safe wrapper for :func:`_privacy_guard`.
 
-    A short hold-back window lets phone numbers and provider names arrive in
-    several SSE chunks before they are scrubbed, while still streaming normal
-    prose with only a small delay.
+    Only fragments that could still grow into a founder phone number, an
+    explicit phone disclosure, or a third-party provider name are held back.
+    Everything else is emitted immediately, so the first SSE token reaches the
+    client (and the checkpoint) without delay. Emission is driven by the
+    common prefix of cumulative sanitized snapshots, so if a late chunk does
+    reveal a secret only the corrected suffix is re-emitted — never a clipped
+    copy of earlier text such as "lopers" instead of "developers".
     """
-
-    _HOLD = 32
 
     def __init__(self):
         self._pending = ""
-        self._emitted = 0
-        self._clean = ""
+        self._raw_emitted = ""
+        self._stable = ""
+        self._out = ""
+
+    @staticmethod
+    def _sanitize(text: str) -> str:
+        return _privacy_guard(text, strip_output=False)
+
+    def _emit_suffix(self, stable: str) -> str:
+        common = 0
+        for left, right in zip(stable, self._out):
+            if left != right:
+                break
+            common += 1
+        fresh = stable[common:]
+        self._stable = stable
+        self._out = stable
+        return fresh
+
+    def _push(self, piece: str) -> str:
+        combined = self._raw_emitted + piece
+        fresh = self._emit_suffix(self._sanitize(combined))
+        self._raw_emitted = combined
+        return fresh
 
     def feed(self, chunk: str) -> str:
         self._pending += str(chunk or "")
-        safe = self._pending[:-self._HOLD] if len(self._pending) > self._HOLD else ""
-        self._clean = _privacy_guard(safe)
-        fresh = self._clean[self._emitted:]
-        self._emitted = len(self._clean)
-        return fresh
+        split = _safe_emit_split(self._pending)
+        if split <= 0:
+            return ""
+        piece = self._pending[:split]
+        self._pending = self._pending[split:]
+        return self._push(piece)
 
     def flush(self) -> str:
-        self._clean = _privacy_guard(self._pending)
-        fresh = self._clean[self._emitted:]
-        self._emitted = len(self._clean)
-        self._pending = ""
-        return fresh
+        piece, self._pending = self._pending, ""
+        return self._push(piece)
 
     def sanitized(self) -> str:
-        return self._clean if self._clean else _privacy_guard(self._pending)
+        return self._out + self._sanitize(self._pending)
 
 
 def is_valleymind_identity_query(message: str) -> bool:
@@ -4207,14 +4391,15 @@ class MarcusBrain:
                                 _seg += yielded
                                 raw_reply += yielded
                                 # The companion's [ANIM: ...] wire tag can arrive
-                                # split across SSE chunks. Hold back a short tail,
-                                # strip complete tags, then emit only stable text so
-                                # the control tag never reaches chat or TTS.
+                                # split across SSE chunks. Strip complete tags,
+                                # then hold back only a still-open tag prefix so
+                                # ordinary text (and the first token) is emitted
+                                # immediately instead of waiting for a 24-char
+                                # tail buffer.
                                 anim_tail = strip_animation_tags_preserve_space(anim_tail + yielded)
-                                emit = ""
-                                if len(anim_tail) > 24:
-                                    emit = anim_tail[:-24]
-                                    anim_tail = anim_tail[-24:]
+                                anim_split = _animation_safe_split(anim_tail)
+                                emit = anim_tail[:anim_split]
+                                anim_tail = anim_tail[anim_split:]
                                 if emit:
                                     safe_emit = privacy_stream.feed(emit)
                                     if safe_emit:
@@ -4239,6 +4424,11 @@ class MarcusBrain:
                         if _finish == "length" and _seg.strip() and _cont_n >= _max_cont:
                             yield {"truncated": True, "finish_reason": "length"}
                         break
+                except GeneratorExit:
+                    # The client disconnected. The finally block below still
+                    # flushes and finalizes the durable reply — do not let the
+                    # provider's GeneratorExit escape through the SSE endpoint.
+                    return
                 except Exception as exc:
                     print(f"[STREAM ERROR] LLM stream failed: {_short_error_detail(str(exc))}")
                     # Try next provider once with the non-streaming cluster before apologizing,
@@ -4262,8 +4452,9 @@ class MarcusBrain:
                 # Flush the held-back tail (with any wire tag removed), then
                 # resolve the semantic animation for this turn. Runs even when
                 # the client disconnects mid-stream.
-                # The privacy filter still holds the last 32 stable characters;
-                # flush those before the shorter animation hold-back tail.
+                # The privacy filter may still hold a partial phone/provider
+                # fragment; flush it before the animation tail so no punctuation
+                # or word boundary is lost.
                 tail_out = privacy_stream.flush() + _privacy_guard(strip_animation_tags(anim_tail))
                 if tail_out:
                     full_reply += tail_out

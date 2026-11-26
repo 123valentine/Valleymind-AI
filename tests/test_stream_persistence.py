@@ -125,6 +125,16 @@ class StreamPersistenceTest(unittest.TestCase):
         self.assertEqual(rows[1]["role"], "assistant")
         self.assertEqual(rows[1]["content"], first_half)
 
+    def test_split_animation_tag_never_reaches_the_client(self):
+        tokens = ["Hello ", "[AN", "IM: wave]", " world."]
+        out = self._stream_with(tokens)
+        streamed = "".join(t for t in out if isinstance(t, str))
+        assert "[ANIM" not in streamed
+        assert "Hello" in streamed and "world." in streamed
+        rows = self._durable_messages()
+        assert "[ANIM" not in rows[1]["content"]
+        assert "world." in rows[1]["content"]
+
     def test_recovery_clarification_is_durable(self):
         class _AmbiguousRecovery:
             def resolve(self, *args, **kwargs):

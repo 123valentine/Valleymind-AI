@@ -1788,14 +1788,48 @@ function _vmCompanionDiag(stage, detail) {
   }
 }
 
+function _vmCompanionDesktopNodes(selector) {
+  if (!document || typeof document.querySelectorAll !== "function") return [];
+  try { return Array.prototype.slice.call(document.querySelectorAll(selector) || []); }
+  catch (e) { return []; }
+}
+function _vmCompanionHasDesktopControls() {
+  return !!(document.getElementById("vmSetDesktopVisible") ||
+    (typeof document.querySelector === "function" && document.querySelector("[data-vm-desktop-toggle]")));
+}
 function vmCompanionDesktopPref(label, color) {
   var el = document.getElementById("vmCompanionDesktopStatus");
-  if (el) { el.textContent = label; el.style.color = color || "#475569"; }
+  var statusNodes = el ? [el] : [];
+  statusNodes = statusNodes.concat(_vmCompanionDesktopNodes("[data-vm-desktop-status]")
+    .filter(function (node) { return node !== el; }));
+  statusNodes.forEach(function (node) {
+    node.textContent = label;
+    if (node.style) node.style.color = color || "#475569";
+  });
   _vmCompanionDiag("status", { label: label, warn: color === "#f59e0b" });
 }
 function vmCompanionSetDesktopToggle(on) {
+  on = !!on;
   var t = document.getElementById("vmSetDesktopVisible");
-  if (t) t.checked = !!on;
+  if (t) t.checked = on;
+  // The dedicated Studio workspace exposes the SAME state through a launch
+  // button. Keep it in sync with the Settings toggle and native broadcasts.
+  _vmCompanionDesktopNodes("[data-vm-desktop-toggle]").forEach(function (node) {
+    if (node.setAttribute) node.setAttribute("aria-pressed", on ? "true" : "false");
+    if (node.classList) {
+      node.classList.toggle("on", on);
+      node.classList.toggle("active", on);
+    }
+    if (node.tagName && String(node.tagName).toLowerCase() === "button") {
+      node.textContent = on ? "Companion Outside App \u2014 On" : "Companion Outside App";
+    }
+  });
+}
+function vmCompanionToggleOutsideFromWorkspace() {
+  var t = document.getElementById("vmSetDesktopVisible");
+  var btn = document.getElementById("vmCompanionOutsideBtn");
+  var on = t ? !t.checked : !(btn && btn.getAttribute("aria-pressed") === "true");
+  vmCompanionSetDesktopVisible(on);
 }
 // Loopback control calls retry a few times: the helper may be mid-startup, or
 // Windows may briefly stall a loopback connection. Without this, a single blip
@@ -1815,7 +1849,7 @@ function _vmCompanionFetch(path, opts) {
   return attempt(attempts);
 }
 function vmCompanionRefreshDesktopState() {
-  if (!document.getElementById("vmSetDesktopVisible")) return;
+  if (!_vmCompanionHasDesktopControls()) return;
   _vmCompanionDiag("panel-refresh");
   var ctrl = vmCompanionControl();
   if (ctrl.kind === "unsupported") {

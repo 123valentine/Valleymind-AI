@@ -424,8 +424,47 @@
     }
   }
 
+  // KaTeX/MathJax may be blocked offline. Convert common LaTeX math to readable
+  // Unicode so \frac and \boxed never appear as raw backslash text. KaTeX's own
+  // output is left untouched: it no longer contains the delimiter markers.
+  function texToUnicode(src) {
+    return String(src || "")
+      .replace(/\\(?:dfrac|tfrac|frac)\s*\{([^{}]*)\}\s*\{([^{}]*)\}/g, "($1)/($2)")
+      .replace(/\\boxed\s*\{([^{}]*)\}/g, "⟦$1⟧")
+      .replace(/\\sqrt\s*\{([^{}]*)\}/g, "√$1")
+      .replace(/\\times/g, "×")
+      .replace(/\\cdot/g, "·")
+      .replace(/\\divide/g, "÷")
+      .replace(/\\pm/g, "±")
+      .replace(/\\le/g, "≤").replace(/\\ge/g, "≥")
+      .replace(/\\ne/g, "≠").replace(/\\approx/g, "≈")
+      .replace(/\\pi/g, "π").replace(/\\theta/g, "θ").replace(/\\alpha/g, "α").replace(/\\beta/g, "β")
+      .replace(/\\infty/g, "∞").replace(/\\sum/g, "∑").replace(/\\int/g, "∫")
+      .replace(/\\left|\\right|\\,/g, "")
+      .replace(/\\\^/g, "^").replace(/\\_/g, "_")
+      .replace(/\\([A-Za-z]+)/g, "$1")
+      .replace(/[{}]/g, "");
+  }
+
+  function renderMathFallback(bub) {
+    if (!bub || typeof bub.innerHTML !== "string") return;
+    if (bub.dataset && bub.dataset.vmMathDone === "1") return;
+    var html = bub.innerHTML;
+    if (!/(?:\$\$[\s\S]+?\$\$|\\\[[\s\S]+?\\\]|\$[^$\n]+?\$)/.test(html)) return;
+    html = html.replace(/(\$\$[\s\S]+?\$\$|\\\[[\s\S]+?\\\]|\$[^$\n]+?\$)/g, function (whole) {
+      var inner = whole
+        .replace(/^\$\$|\$\$$/g, "")
+        .replace(/^\\\[|\\\]$/g, "")
+        .replace(/^\$|\$$/g, "");
+      return '<span class="vm-math vm-math-fallback">' + escapeHtml(texToUnicode(decodeHtml(inner))) + '</span>';
+    });
+    bub.innerHTML = html;
+    if (bub.dataset) bub.dataset.vmMathDone = "1";
+  }
+
   function formatBubble(bub) {
     if (!bub || typeof bub.querySelectorAll !== "function") return;
+    try { renderMathFallback(bub); } catch (e) {}
     try { highlightCode(bub); } catch (e) {}
     try { bindActions(bub); } catch (e) {}
   }

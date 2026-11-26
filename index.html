@@ -1459,6 +1459,55 @@
   .vm-ws-panel { display:none; flex:1; min-height:0; flex-direction:column; animation:sdViewIn 0.28s ease both; }
   .vm-ws-panel.active { display:flex; }
 
+  /* ── 3D Companion workspace (the dedicated home for the VRM stage) ── */
+  .vm-companion-workspace {
+    flex:1; min-height:0; display:flex; flex-direction:column; gap:18px;
+    padding:28px 32px 32px; overflow-y:auto;
+  }
+  .vm-companion-head { flex-shrink:0; }
+  .vm-companion-kicker {
+    color:#22d3ee; font-family:'Space Grotesk',sans-serif; font-size:10px;
+    font-weight:700; letter-spacing:0.18em; text-transform:uppercase;
+  }
+  .vm-companion-head h2 {
+    margin:6px 0 6px; color:#f8fafc; font-family:'Space Grotesk',sans-serif;
+    font-size:24px; line-height:1.2;
+  }
+  .vm-companion-head p { margin:0; color:#94a3b8; font-size:13px; line-height:1.6; max-width:640px; }
+  .vm-companion-stage {
+    position:relative; flex:1; min-height:420px; display:flex; align-items:center;
+    justify-content:center; overflow:hidden; border-radius:24px;
+    background:radial-gradient(circle at 50% 65%, rgba(14,165,233,0.16), transparent 58%), rgba(2,6,23,0.55);
+    border:1px solid rgba(148,163,184,0.16);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,0.05), 0 24px 60px rgba(0,0,0,0.28);
+  }
+  .vm-companion-stage-hint { color:#64748b; font-size:13px; text-align:center; padding:20px; }
+  /* The shared overlay becomes a normal, non-floating stage member here. CSS
+     !important wins over the module's inline dock/size geometry. */
+  .vm-companion-staged {
+    position:relative !important; z-index:2 !important;
+    width:min(100%,560px) !important; height:min(52vh,460px) !important;
+    min-height:320px !important; top:auto !important; right:auto !important;
+    bottom:auto !important; left:auto !important; margin:0 auto;
+    pointer-events:auto !important; border-radius:18px; overflow:visible;
+  }
+  .vm-companion-controls {
+    flex-shrink:0; display:flex; flex-wrap:wrap; gap:10px; align-items:center;
+    padding:14px 16px; border-radius:16px; background:rgba(255,255,255,0.04);
+    border:1px solid rgba(255,255,255,0.08);
+  }
+  .vm-companion-btn {
+    border:1px solid rgba(148,163,184,0.3); border-radius:999px; cursor:pointer;
+    background:rgba(15,23,42,0.85); color:#cbd5e1; padding:8px 14px;
+    font-family:'Space Grotesk',sans-serif; font-size:12px; font-weight:700;
+  }
+  .vm-companion-btn:hover { color:#f8fafc; border-color:rgba(56,189,248,0.55); }
+  .vm-companion-btn.on, .vm-companion-btn.active {
+    color:#083344; border-color:#22d3ee; background:#22d3ee;
+  }
+  .vm-companion-outside { margin-left:auto; }
+  .vm-companion-status { color:#94a3b8; font-size:12px; }
+
   /* â”€â”€ Coming Soon workspace (glassmorphism, dark + light safe) â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
   .vm-cs { position:relative; flex:1; min-height:0; display:flex; align-items:center; justify-content:center; padding:28px 20px; overflow:hidden; }
   .vm-cs-orb { position:absolute; border-radius:50%; filter:blur(70px); pointer-events:none; }
@@ -4027,6 +4076,7 @@ body[data-vm-companion="cloud"] #vmVrmCompanion { display: none !important; }
     <button class="vm-ws-tab" data-ws="roundtable" onclick="vmWsGo('roundtable')"><i data-lucide="users"></i> Round Table</button>
     <button class="vm-ws-tab" data-ws="music" onclick="vmWsGo('music')"><i data-lucide="music"></i> Music Studio</button>
     <button class="vm-ws-tab" data-ws="editing" onclick="vmWsGo('editing')"><i data-lucide="scissors"></i> Massive Editing</button>
+    <button class="vm-ws-tab" data-ws="companion" id="vmWsTabCompanion" onclick="vmWsGo('companion')"><i data-lucide="bot"></i> 3D Companion</button>
     <button class="vm-ws-tab" data-ws="analytics" id="vmWsTabAnalytics" onclick="vmWsGo('analytics')" style="display:none"><i data-lucide="bar-chart-3"></i> Analytics</button>
   </nav>
 
@@ -4397,6 +4447,35 @@ body[data-vm-companion="cloud"] #vmVrmCompanion { display: none !important; }
 
   <div class="vm-ws-panel" data-ws-panel="analytics" id="vmWsPanelAnalytics">
     <div id="studioAnalyticsView"></div>
+  </div>
+
+  <!-- ── Workspace: 3D Companion ───────────────────────────────────────────
+       The one permanent in-app home for the interactive VRM body. The same
+       #vmVrmCompanion node used by the old floating overlay is mounted here,
+       so there is still exactly one engine, one brain and one voice pipeline. -->
+  <div class="vm-ws-panel" data-ws-panel="companion" id="vmWsPanelCompanion">
+    <div class="vm-companion-workspace">
+      <header class="vm-companion-head">
+        <span class="vm-companion-kicker">Studio companion</span>
+        <h2>3D Companion</h2>
+        <p>Your VRM companion lives here — voice, lip-sync and animation controls included. Use the launch button below to send the same character outside the app on Android.</p>
+      </header>
+      <div class="vm-companion-stage" id="vmCompanionStage" aria-label="Interactive 3D companion stage">
+        <div class="vm-companion-stage-hint" id="vmCompanionStageHint">Mounting your companion…</div>
+      </div>
+      <div class="vm-companion-controls" aria-label="3D companion controls">
+        <button type="button" class="vm-companion-btn" onclick="vmCompanionStageVoice()">Voice + lip-sync</button>
+        <button type="button" class="vm-companion-btn" onclick="vmCompanionStageMute()">Mute / unmute</button>
+        <button type="button" class="vm-companion-btn" onclick="vmCompanionStageAnimation('waving')">Wave</button>
+        <button type="button" class="vm-companion-btn" onclick="vmCompanionStageAnimation('nodding')">Nod</button>
+        <button type="button" class="vm-companion-btn" onclick="vmCompanionStageAnimation('pointing')">Point</button>
+        <button type="button" class="vm-companion-btn" onclick="vmCompanionStageAnimation('thinking')">Think</button>
+        <button type="button" class="vm-companion-btn vm-companion-outside" id="vmCompanionOutsideBtn"
+                data-vm-desktop-toggle="true" aria-pressed="false"
+                onclick="vmCompanionToggleOutsideFromWorkspace()">Companion Outside App</button>
+        <span class="vm-companion-status" id="vmCompanionWorkspaceDesktopStatus" data-vm-desktop-status>Checking…</span>
+      </div>
+    </div>
   </div>
 
   <!-- â”€â”€ Workspace: Massive Editing €” instruction-driven AI edit tool. The UI is
@@ -5036,9 +5115,12 @@ if (isVisible) {
         if (typeof window.vmCloudCharacterShow === "function") {
             try { window.vmCloudCharacterShow(); } catch (e) { console.warn("[cloudcharacter] show failed:", e); }
         }
-        // VRM desktop companion (mutually exclusive with the Cloud companion):
-        // dispatches by the persisted character mode and shows/hides itself.
-        if (typeof window.vmVrmCompanionDispatch === "function") {
+        // VRM companion is gated to its dedicated Studio workspace. The old
+        // auth-time dispatch floated her over chat; now it only runs when the
+        // workspace stage is actually mounted.
+        if (typeof window.vmVrmCompanionDispatch === "function" &&
+            typeof window.vmCompanionWorkspaceActive === "function" &&
+            window.vmCompanionWorkspaceActive()) {
             try { window.vmVrmCompanionDispatch(); } catch (e) { console.warn("[vrmcompanion] dispatch failed:", e); }
         }
         // Persistent Cloud companion: only when the VRM companion is not active.
@@ -8537,6 +8619,9 @@ function VMEnsureLiveAssistantBubble(thinkingEl, regenCtx) {
         wrapper.className = "assistant-message";
         container.appendChild(wrapper);
     }
+    // A live stream must be identifiable even before its first token lands, so
+    // completion/finalization can reuse this wrapper instead of appending one.
+    if (wrapper.dataset) wrapper.dataset.vmStreamAssistant = "true";
     var bubble = wrapper.querySelector(".bubble");
     if (!bubble) {
         bubble = document.createElement("div");
@@ -8590,6 +8675,26 @@ function VMSetLiveAssistantText(bubble, text) {
         bubble.appendChild(span);
     }
     span.textContent = VMStreamCardSafeText(text);
+}
+
+/* Finalize an SSE reply in place. The completion event is authoritative: it
+   REPLACES the partial stream text, never appends a second assistant wrapper.
+   Calling it again with the same text is harmless (idempotent). */
+function VMFinalizeStreamedAssistant(wrapper, text) {
+    if (!wrapper) return null;
+    var bubble = wrapper.querySelector ? wrapper.querySelector(".bubble") : null;
+    if (!bubble) {
+        bubble = document.createElement("div");
+        bubble.className = "bubble";
+        wrapper.insertBefore(bubble, wrapper.firstChild);
+    }
+    var span = document.createElement("span");
+    span.className = "vm-stream-text";
+    span.textContent = String(text == null ? "" : text);
+    bubble.textContent = "";
+    bubble.appendChild(span);
+    if (wrapper.dataset) wrapper.dataset.vmFinalized = "1";
+    return { wrapper: wrapper, bubble: bubble, span: span };
 }
 
 /* ── Shared activity indicator ─────────────────────────────────────
@@ -9862,6 +9967,47 @@ function openStudio() {
     if (typeof vmGuideMaybeShow === "function") vmGuideMaybeShow("studio");
 }
 
+// ── Dedicated 3D Companion workspace ──────────────────────────────────────
+// The VRM overlay is shared: it is mounted into this workspace only when the
+// user opens the card, and returned to (hidden in) the app shell otherwise.
+// Chat and the general Studio views therefore never float her over bubbles or
+// the workspace tab bar by default.
+window.vmCompanionWorkspaceActive = function () {
+    var stage = document.getElementById("vmCompanionStage");
+    var avatar = document.getElementById("vmVrmCompanion");
+    return !!(stage && avatar && typeof stage.contains === "function" && stage.contains(avatar));
+};
+function vmCompanionMountWorkspace() {
+    var stage = document.getElementById("vmCompanionStage");
+    var avatar = document.getElementById("vmVrmCompanion");
+    if (!stage || !avatar) return;
+    if (avatar.parentNode !== stage) stage.appendChild(avatar);
+    avatar.classList.add("vm-companion-staged");
+    var hint = document.getElementById("vmCompanionStageHint");
+    if (hint) hint.style.display = "none";
+    try { if (typeof window.vmVrmCompanionShow === "function") window.vmVrmCompanionShow(); } catch (e) {}
+    try { if (window.vmVrmCompanion && typeof window.vmVrmCompanion.refit === "function") window.vmVrmCompanion.refit(); } catch (e) {}
+}
+function vmCompanionUnmountWorkspace() {
+    var avatar = document.getElementById("vmVrmCompanion");
+    if (!avatar || !avatar.classList || !avatar.classList.contains("vm-companion-staged")) return;
+    try { if (typeof window.vmVrmCompanionHide === "function") window.vmVrmCompanionHide(); } catch (e) {}
+    avatar.classList.remove("vm-companion-staged");
+    document.body.appendChild(avatar);
+    avatar.style.display = "none";
+    var hint = document.getElementById("vmCompanionStageHint");
+    if (hint) hint.style.display = "";
+}
+function vmCompanionStageVoice() {
+    try { if (window.vmVrmCompanion && typeof window.vmVrmCompanion.startVoiceSession === "function") window.vmVrmCompanion.startVoiceSession(); } catch (e) {}
+}
+function vmCompanionStageMute() {
+    try { if (window.vmVrmCompanion && typeof window.vmVrmCompanion.toggleMute === "function") window.vmVrmCompanion.toggleMute(); } catch (e) {}
+}
+function vmCompanionStageAnimation(name) {
+    try { if (window.vmVrmCompanion && typeof window.vmVrmCompanion.applyStatus === "function") window.vmVrmCompanion.applyStatus(name); } catch (e) {}
+}
+
 // â”€â”€ Workspace switcher (unified creative suite, no page reload) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function vmWsGo(ws) {
     document.querySelectorAll(".vm-ws-tab").forEach(function (t) {
@@ -9885,6 +10031,12 @@ function vmWsGo(ws) {
     if (ws !== "cloud" && typeof vmCloudOnHide === "function") vmCloudOnHide();
     if (ws === "editing" && typeof VMEditing !== "undefined" && VMEditing.onShow) VMEditing.onShow();
     if (ws === "editing" && typeof vmGuideMaybeShow === "function") vmGuideMaybeShow("editing");
+    if (ws === "companion") {
+        vmCompanionMountWorkspace();
+        if (typeof vmCompanionRefreshDesktopState === "function") vmCompanionRefreshDesktopState();
+    } else {
+        vmCompanionUnmountWorkspace();
+    }
 }
 
 function closeStudio() {
@@ -10268,7 +10420,7 @@ function sdRenderHome() {
         '<div class="sd-hero">' +
             '<div class="sd-hero-badge">' + studioIcon("sparkles", 13) + ' Creative Suite</div>' +
             '<h1 class="sd-hero-title">Make something <span class="sd-hero-accent">incredible</span></h1>' +
-            '<p class="sd-hero-sub">Your AI creative suite €” cut, edit, generate and publish from one place.</p>' +
+            '<p class="sd-hero-sub">Your AI creative suite — cut, edit, generate and publish from one place.</p>' +
             '<div class="sd-hero-actions">' +
                 '<button class="sd-go" onclick="studioShowClassic()">' + studioIcon("clapperboard", 16) + ' New Project</button>' +
                 '<button class="sd-go ghost" onclick="studioTab(\'templates\')">' + studioIcon("layout-template", 16) + ' Browse Templates</button>' +
@@ -14445,6 +14597,7 @@ window.send = async function () {
                 else if (evt.text !== undefined && evt.text !== null) chunkText = evt.text;
                 else if (evt.delta !== undefined && evt.delta !== null) chunkText = evt.delta;
                 if (chunkText !== null) {
+                    if (streamDone) continue; // completion already owns the final text
                     var tok = String(chunkText);
                     // A whitespace-only delta is a real token. Dropping a lone
                     // space glues streamed words ("toillegal", "Ifyou").
@@ -14487,7 +14640,15 @@ window.send = async function () {
                         fullReply = String(finalText);
                         _vmPendingAssistantText = fullReply;
                     }
-                    if (bubbleEl && fullReply) VMSetLiveAssistantText(bubbleEl.querySelector(".bubble"), fullReply);
+                    if (bubbleEl && fullReply) {
+                        VMFinalizeStreamedAssistant(bubbleEl, fullReply);
+                    } else if (fullReply) {
+                        var doneLive = VMEnsureLiveAssistantBubble(thinking, _regenCtx);
+                        if (doneLive) {
+                            bubbleEl = doneLive.wrapper;
+                            VMFinalizeStreamedAssistant(bubbleEl, fullReply);
+                        }
+                    }
                     /* Some streams attach source evidence to the completion event. */
                     if (Array.isArray(evt.sources) && evt.sources.length) streamSources = evt.sources;
                     if (Array.isArray(evt.source_metadata) && evt.source_metadata.length) {
@@ -14511,25 +14672,32 @@ window.send = async function () {
             if (thinking && thinking._vmActivity) thinking._vmActivity.abort("Request interrupted");
         }
 
-        /* If the stream delivered only a final reply (no chunks), render it now. */
+        /* If the stream delivered only a final reply (no chunks), finalize the
+           live wrapper rather than calling addMessage() (which appended a
+           duplicate assistant bubble). */
         if (!bubbleEl && !streamError && fullReply) {
-            addMessage(fullReply, "ai");
-            var msgsC = document.getElementById("messages");
-            bubbleEl = msgsC ? msgsC.lastElementChild : null;
+            var finalLive = VMEnsureLiveAssistantBubble(thinking, _regenCtx);
+            if (finalLive) bubbleEl = finalLive.wrapper;
+        }
+        if (bubbleEl && !streamError && fullReply &&
+            !(bubbleEl.dataset && bubbleEl.dataset.vmFinalized === "1")) {
+            VMFinalizeStreamedAssistant(bubbleEl, fullReply);
         }
 
         /* Every completed assistant reply must show the full bottom action bar
-           (Copy / Speak / Share / reactions / Regenerate). addMessage() already
-           adds it for restored replies; live streamed replies get it here. */
-        if (bubbleEl && !streamError && fullReply) {
+           (Copy / Speak / Share / reactions / Regenerate) exactly once. */
+        if (bubbleEl && !streamError && fullReply &&
+            !(bubbleEl.dataset && bubbleEl.dataset.vmToolbarDone === "1")) {
             try { VMEnsureAssistantToolbar(bubbleEl, messageStore.length); } catch (e) {}
+            if (bubbleEl.dataset) bubbleEl.dataset.vmToolbarDone = "1";
         }
 
         /* Enrich the finished reply, then put the activity tracker back above it.
            VMEnrichAssistantReply replaces bubble.innerHTML, so the tracker root
            must be detached first or the clickable step drawer would be lost. */
         var _vmActivityRoot = (thinking && thinking._vmActivity) ? thinking._vmActivity.rootEl : null;
-        if (bubbleEl && !streamError && fullReply) {
+        if (bubbleEl && !streamError && fullReply &&
+            !(bubbleEl.dataset && bubbleEl.dataset.vmEnriched === "1")) {
             var _bub = bubbleEl.querySelector(".bubble");
             if (_bub) {
                 if (_vmActivityRoot && _vmActivityRoot.parentNode === _bub) _bub.removeChild(_vmActivityRoot);
@@ -14546,6 +14714,7 @@ window.send = async function () {
                 }
                 if (_vmActivityRoot) _bub.insertBefore(_vmActivityRoot, _bub.firstChild);
             }
+            if (bubbleEl.dataset) bubbleEl.dataset.vmEnriched = "1";
         }
 
         /* Collapse the unified activity indicator into a clickable gray summary
@@ -14674,10 +14843,12 @@ window.send = async function () {
                 upsertLocalSession({ chat_id: currentChatId, title: fallbackData.updated_title });
                 renderSessionList();
             }
-            var _fbWrapper = _regenCtx && _regenCtx.wrapper;
+            // Reuse any live stream wrapper (or a regeneration wrapper). The
+            // old code only looked at _regenCtx, so a failed stream followed by
+            // a successful /chat fallback appended a SECOND assistant bubble.
+            var _fbWrapper = bubbleEl || (_regenCtx && _regenCtx.wrapper);
             if (_fbWrapper) {
-                var _fb = _fbWrapper.querySelector(".bubble");
-                if (_fb) _fb.textContent = reply; else addMessage(reply, "ai");
+                VMFinalizeStreamedAssistant(_fbWrapper, reply);
             } else {
                 addMessage(reply, "ai");
             }
@@ -14707,9 +14878,9 @@ window.send = async function () {
         } catch (fallbackErr) {
             removeThinkingIndicator(thinking);
             var _errMsg = streamError || fallbackErr.message || "Connection error. Please try again.";
-            if (_regenCtx && _regenCtx.wrapper) {
-                var _eb = _regenCtx.wrapper.querySelector(".bubble");
-                if (_eb) _eb.textContent = _errMsg; else addMessage(_errMsg, "ai");
+            var _ebWrapper = bubbleEl || (_regenCtx && _regenCtx.wrapper);
+            if (_ebWrapper) {
+                VMFinalizeStreamedAssistant(_ebWrapper, _errMsg);
             } else {
                 addMessage(_errMsg, "ai");
                 // Keep user's text restorable on failure.

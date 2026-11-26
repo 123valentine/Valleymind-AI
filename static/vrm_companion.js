@@ -2075,6 +2075,8 @@ function maybePromptAccess() {
 // ── public lifecycle (called by the app shell + the module itself) ───────
 async function show() {
   if (getMode() !== "vrm") { hide(); return; }
+  // No floating default: the body may only render inside its Studio workspace.
+  if (!companionWorkspaceActive()) { hide(); return; }
   // Persisted, recoverable hide: once the user hides the companion from
   // Settings it stays hidden across navigations/refreshes until re-enabled
   // there (never an irreversible hide).
@@ -2159,8 +2161,16 @@ function setMode(mode, opts) {
   }
 }
 
+// The VRM body now has one dedicated home: Studio → 3D Companion. Both the
+// auth-time auto-show and the shell dispatch must refuse to float her over
+// normal chat / general Studio views. The workspace mount calls show() direct.
+function companionWorkspaceActive() {
+  return typeof window.vmCompanionWorkspaceActive === "function" && window.vmCompanionWorkspaceActive();
+}
+
 function maybeAutoShow() {
   if (getMode() !== "vrm") return;
+  if (!companionWorkspaceActive()) return;
   if (typeof window.vmIsAuthenticated === "function" && window.vmIsAuthenticated()) {
     show();
   } else {
@@ -2173,6 +2183,7 @@ window.vmVrmCompanionShow = show;
 window.vmVrmCompanionCleanup = cleanup;
 window.vmVrmCompanionDispatch = function () {
   setDataset();
+  if (!companionWorkspaceActive()) { hide(); return; }
   if (getMode() === "vrm") show(); else hide();
 };
 window.vmVrmCompanion = {
