@@ -3164,6 +3164,84 @@
     border: 1px solid rgba(148, 163, 184, 0.3); border-radius: 7px;
 }
 .vmvrm-mode button.on { box-shadow: inset 0 0 0 1px rgba(56, 189, 248, 0.8); color: #a5d8ff; }
+
+  /* Studio 3D Companion stage. The shared overlay is pinned by the workspace
+     CSS above, so dragging is a transform from its natural centred position
+     (inline top/left are overridden there by !important). The wrapper itself
+     stays pointer-transparent: only the WebGL canvas and chat surface opt in,
+     so neither swallows a drag or blocks a workspace button. */
+  #vmVrmCompanion.vm-companion-staged {
+    pointer-events: none !important;
+    touch-action: none !important;
+    transform: translate3d(var(--vm-stage-x, 0px), var(--vm-stage-y, 0px), 0);
+    will-change: transform;
+  }
+  #vmVrmCompanion.vm-companion-staged #vmVrmCompanionCanvas {
+    pointer-events: auto !important;
+    touch-action: none !important;
+    cursor: grab !important;
+  }
+  #vmVrmCompanion.vm-companion-dragging #vmVrmCompanionCanvas { cursor: grabbing !important; }
+
+  /* Clean layers: the stage owns its own stacking context, and every control
+     outside it sits above the stage. The call bar is therefore clipped inside
+     the stage and can never cover header, tabs, voice/animation buttons,
+     close/back navigation or the Companion Outside App button. */
+  .vm-companion-stage { isolation:isolate; z-index:1; padding:12px; }
+  .vm-companion-head { position:relative; z-index:5; }
+  .vm-companion-controls { position:relative; z-index:5; pointer-events:auto; }
+  #studioOverlay .gallery-header { position:relative; z-index:20; }
+  #vmWsTabbar { position:relative; z-index:10; }
+  #vmVrmCompanion.vm-companion-staged .vmvrm-chat {
+    left:0; right:0; width:auto; max-width:100%;
+    bottom:calc(100% + 10px); margin-bottom:0;
+    max-height:min(220px, 34vh); z-index:4;
+  }
+  #vmVrmCompanion.vm-companion-staged .vmvrm-chat-log { height:min(120px, 18vh); }
+  #vmVrmCompanion.vm-companion-staged .vmvrm-chat-row { flex-wrap:wrap; }
+  /* Active call toolbar: reserve real space above the avatar instead of
+     letting the bar float over the room controls on a phone. */
+  .vm-companion-stage.vm-companion-call-active {
+    align-items:flex-end;
+    padding-top:176px;
+    min-height:560px;
+  }
+  #vmVrmCompanion.vm-companion-staged.vm-companion-chat-open {
+    height:min(34vh, 300px) !important;
+    min-height:200px !important;
+  }
+  @media (max-width:700px) {
+    .vm-companion-workspace {
+      --vm-companion-safe-top: 64px;
+      padding:calc(20px + var(--vm-companion-safe-top)) 12px 24px;
+      gap:12px;
+    }
+    .vm-companion-head h2 { font-size:20px; }
+    .vm-companion-head p { font-size:12px; }
+    .vm-companion-stage { min-height:400px; border-radius:18px; padding:10px; }
+    .vm-companion-stage.vm-companion-call-active { padding-top:160px; min-height:540px; }
+    #vmVrmCompanion.vm-companion-staged {
+      width:100% !important;
+      height:min(44vh, 340px) !important;
+      min-height:220px !important;
+    }
+    #vmVrmCompanion.vm-companion-staged.vm-companion-chat-open {
+      height:min(30vh, 240px) !important;
+      min-height:180px !important;
+    }
+    #vmVrmCompanion.vm-companion-staged .vmvrm-chat { bottom:calc(100% + 8px); }
+    #vmVrmCompanion.vm-companion-staged .vmvrm-chat-log { height:84px; }
+    #vmVrmCompanion.vm-companion-staged .vmvrm-chat-row { gap:5px; }
+    #vmVrmCompanion.vm-companion-staged .vmvrm-mini-btn { padding:5px 7px; font-size:10px; }
+    #vmVrmCompanion.vm-companion-staged .vmvrm-chat-row input { padding:5px 7px; font-size:12px; }
+    .vm-companion-controls {
+      gap:8px; padding:12px;
+      padding-bottom:calc(12px + env(safe-area-inset-bottom));
+    }
+    .vm-companion-btn { flex:1 1 auto; min-height:38px; padding:9px 10px; }
+    #vmCompanionOutsideBtn { flex-basis:100%; min-height:44px; margin-left:0; }
+  }
+
 /* Task panel (now rendered inline inside Settings → Companion; it is no longer
    an on-screen dashboard on the main view). */
 .vmvrm-task-status {
@@ -4471,7 +4549,7 @@ body[data-vm-companion="cloud"] #vmVrmCompanion { display: none !important; }
         <button type="button" class="vm-companion-btn" onclick="vmCompanionStageAnimation('pointing')">Point</button>
         <button type="button" class="vm-companion-btn" onclick="vmCompanionStageAnimation('thinking')">Think</button>
         <button type="button" class="vm-companion-btn vm-companion-outside" id="vmCompanionOutsideBtn"
-                data-vm-desktop-toggle="true" aria-pressed="false"
+                data-vm-desktop-toggle="true" data-vm-desktop-state="off" aria-pressed="false"
                 onclick="vmCompanionToggleOutsideFromWorkspace()">Companion Outside App</button>
         <span class="vm-companion-status" id="vmCompanionWorkspaceDesktopStatus" data-vm-desktop-status>Checking…</span>
       </div>
@@ -9983,8 +10061,15 @@ function vmCompanionMountWorkspace() {
     if (!stage || !avatar) return;
     if (avatar.parentNode !== stage) stage.appendChild(avatar);
     avatar.classList.add("vm-companion-staged");
+    // The stage owns the geometry (see .vm-companion-staged !important). Clear
+    // the floating overlay's viewport pins so only the stage transform drives
+    // dragging; the old dock values are still saved in the companion prefs.
+    ["left", "top", "right", "bottom"].forEach(function (prop) {
+        avatar.style[prop] = "auto";
+    });
     var hint = document.getElementById("vmCompanionStageHint");
     if (hint) hint.style.display = "none";
+    try { if (window.vmVrmCompanion && typeof window.vmVrmCompanion.syncChatClearance === "function") window.vmVrmCompanion.syncChatClearance(); } catch (e) {}
     try { if (typeof window.vmVrmCompanionShow === "function") window.vmVrmCompanionShow(); } catch (e) {}
     try { if (window.vmVrmCompanion && typeof window.vmVrmCompanion.refit === "function") window.vmVrmCompanion.refit(); } catch (e) {}
 }
@@ -9993,6 +10078,10 @@ function vmCompanionUnmountWorkspace() {
     if (!avatar || !avatar.classList || !avatar.classList.contains("vm-companion-staged")) return;
     try { if (typeof window.vmVrmCompanionHide === "function") window.vmVrmCompanionHide(); } catch (e) {}
     avatar.classList.remove("vm-companion-staged");
+    avatar.classList.remove("vm-companion-chat-open");
+    avatar.classList.remove("vm-companion-dragging");
+    var stage = document.getElementById("vmCompanionStage");
+    if (stage && stage.classList) stage.classList.remove("vm-companion-call-active");
     document.body.appendChild(avatar);
     avatar.style.display = "none";
     var hint = document.getElementById("vmCompanionStageHint");

@@ -31,8 +31,12 @@ const DEFAULTS = {
   sizePct: 100,      // overlay height as % of viewport height (increased per request)
   skin: null,        // SKIN_PRESETS name, or null = original VRM colors
   dock: "br",        // "br" | "bl" | "tr" | "tl" (used until the avatar is moved)
-  x: null,           // manual position (px) once placed
+  x: null,           // manual position (px) once placed (floating overlay)
   y: null,
+  // The Studio stage pins the same node with !important geometry. Its manual
+  // placement is a transform offset from the centred layout position.
+  stageX: null,
+  stageY: null,
   userPlaced: false, // true once the user drags the avatar; the manual position is preferred
   roam: false,       // legacy pref kept for compatibility; autonomous idle roaming is disabled
   charName: "ValleyMind", // display name (shown in Settings; keeps CJK glyphs intact)
@@ -444,7 +448,94 @@ function refit() {
   } catch (e) { }
 }
 
+// ── workspace-scoped geometry ───────────────────────────────────────────────
+// The Studio stage reuses this same node but pins it with CSS !important, so
+// inline left/top cannot move it there. Drag is expressed as a transform from
+// its natural centred position and clamped to the STAGE (not the viewport).
+// The same helpers keep the avatar below the reserved call-bar padding and
+// inside the stage after resize/rotation.
+const STAGE_DRAG_PAD = 8;
+
+function stagedWorkspace() {
+  const el = $id("vmVrmCompanion");
+  const stage = $id("vmCompanionStage");
+  if (!el || !stage || !el.classList || !stage.contains) return null;
+  if (!el.classList.contains("vm-companion-staged")) return null;
+  if (!stage.contains(el)) return null;
+  return { el: el, stage: stage };
+}
+
+function axisClamp(value, lo, hi) {
+  if (!isFinite(value)) value = lo;
+  if (hi < lo) hi = lo;
+  return Math.max(lo, Math.min(hi, value));
+}
+
+function readStageOffset(el) {
+  return {
+    x: parseFloat(el.style.getPropertyValue("--vm-stage-x") || "0") || 0,
+    y: parseFloat(el.style.getPropertyValue("--vm-stage-y") || "0") || 0,
+  };
+}
+
+function writeStageOffset(el, x, y) {
+  el.style.setProperty("--vm-stage-x", Math.round(x) + "px");
+  el.style.setProperty("--vm-stage-y", Math.round(y) + "px");
+}
+
+// Bounding rect WITH the current drag transform applied; subtract that offset
+// to recover the layout position the transform is measured from.
+function stageBaseRect(el) {
+  const r = el.getBoundingClientRect();
+  const off = readStageOffset(el);
+  return {
+    left: r.left - off.x,
+    top: r.top - off.y,
+    width: r.width || el.offsetWidth || 120,
+    height: r.height || el.offsetHeight || 120,
+  };
+}
+
+function stageDragBounds(stage) {
+  const r = stage.getBoundingClientRect();
+  let cs = null;
+  try { cs = window.getComputedStyle ? window.getComputedStyle(stage) : null; } catch (e) { }
+  function padding(key) {
+    const n = parseFloat(cs && cs[key]);
+    return isFinite(n) ? n : STAGE_DRAG_PAD;
+  }
+  return {
+    left: r.left + padding("paddingLeft"),
+    top: r.top + padding("paddingTop"),
+    right: r.right - padding("paddingRight"),
+    bottom: r.bottom - padding("paddingBottom"),
+  };
+}
+
+function clampStageOffset(x, y) {
+  const ctx = stagedWorkspace();
+  if (!ctx) return null;
+  const base = stageBaseRect(ctx.el);
+  const bounds = stageDragBounds(ctx.stage);
+  return {
+    x: axisClamp(x, bounds.left - base.left, bounds.right - base.width - base.left),
+    y: axisClamp(y, bounds.top - base.top, bounds.bottom - base.height - base.top),
+  };
+}
+
 function clampPosition() {
+  const staged = stagedWorkspace();
+  if (staged) {
+    const off = readStageOffset(staged.el);
+    const c = clampStageOffset(off.x, off.y);
+    if (c && (c.x !== off.x || c.y !== off.y)) {
+      writeStageOffset(staged.el, c.x, c.y);
+      prefs.stageX = Math.round(c.x);
+      prefs.stageY = Math.round(c.y);
+      savePrefs();
+    }
+    return;
+  }
   const el = $id("vmVrmCompanion");
   if (!el) return;
   const w = el.offsetWidth || 120;
@@ -470,6 +561,16 @@ function dockOffsets(dock) {
 }
 
 function applyPosition() {
+  const staged = stagedWorkspace();
+  if (staged) {
+    // CSS !important owns top/left here; only the transform offset is ours.
+    const c = clampStageOffset(
+      prefs.stageX != null ? prefs.stageX : 0,
+      prefs.stageY != null ? prefs.stageY : 0
+    ) || { x: 0, y: 0 };
+    writeStageOffset(staged.el, c.x, c.y);
+    return;
+  }
   const el = $id("vmVrmCompanion");
   if (!el) return;
   if (prefs.x != null && prefs.y != null) {
@@ -495,31 +596,44 @@ function home() {
   prefs.sizePct = DEFAULTS.sizePct;
   // Home is an explicit user reset back to the docked rest pose.
   prefs.userPlaced = false;
+  prefs.stageX = null;
+  prefs.stageY = null;
   savePrefs();
+  const staged = stagedWorkspace();
+  if (staged) writeStageOffset(staged.el, 0, 0);
   applySize();
   applyPosition();
   syncControls();
 }
 
 // ── direct manipulation (drag to reposition, tap to open chat) ─────────────
-// The overlay box stays pointer-transparent so the app beneath it is never
-// blocked; only the avatar canvas opts in (see index.html). A press that does
-// not move is treated as a tap and opens/closes the EXISTING chat panel (the
-// discreet touch control surface: mic + input live there, no new buttons on the
-// character). A press that moves is a drag: the position becomes user-preferred
-// and is persisted, so it survives navigation and reloads.
+// The wrapper stays pointer-transparent so it never swallows taps or drags;
+// only the avatar canvas opts in (see index.html). Pointer events bubble from
+// the canvas through the wrapper, and window-level move/up handlers keep a
+// touch drag alive even when the finger leaves the small canvas box.
 let dragState = null;
 let dragRaf = 0;
 let dragTargetX = 0;
 let dragTargetY = 0;
 
-// Eases the box toward the last pointer target. A short, bounded lerp removes
-// the jitter of raw touch events without introducing a perceptible lag, and it
-// always settles exactly on the clamped target (no permanent offset).
+// Eases toward the last pointer target. A short, bounded lerp removes touch
+// jitter without lag and always settles exactly on the clamped target.
 function runDragFrame() {
   dragRaf = 0;
   const el = $id("vmVrmCompanion");
   if (!dragState || !el) return;
+  if (dragState.staged || stagedWorkspace()) {
+    const off = readStageOffset(el);
+    const dx = dragTargetX - off.x;
+    const dy = dragTargetY - off.y;
+    if (Math.abs(dx) < 0.6 && Math.abs(dy) < 0.6) {
+      writeStageOffset(el, dragTargetX, dragTargetY);
+      return;
+    }
+    writeStageOffset(el, off.x + dx * 0.45, off.y + dy * 0.45);
+    dragRaf = requestAnimationFrame(runDragFrame);
+    return;
+  }
   const r = el.getBoundingClientRect();
   const dx = dragTargetX - r.left;
   const dy = dragTargetY - r.top;
@@ -542,55 +656,110 @@ function wireDrag() {
   if (!el || el._vmDragWired) return;
   el._vmDragWired = true;
   el.style.touchAction = "none";
-  el.addEventListener("pointerdown", (e) => {
+  const stage = $id("vmCompanionStage");
+
+  const begin = (e) => {
+    // The wrapper and the stage both see pointerdown (canvas → wrapper →
+    // stage); handle it once no matter which one the browser reports first.
+    if (e.__vmCompanionDragHandled) return;
+    e.__vmCompanionDragHandled = true;
     if (e.button != null && e.button !== 0) return;
-    // The chat panel is a live child of this box; presses inside it (typing,
-    // tapping Mic/Send) must never be read as a drag or a tap-to-toggle.
+    const ctx = stagedWorkspace();
+    if (e.currentTarget === stage && (!ctx || (!el.contains(e.target) && e.target !== el))) return;
+    // The chat/call bar is a live child: typing and Mic/Call/Send must never be
+    // interpreted as a drag or a tap-to-toggle.
     const chat = $id("vmVrmCompanionChat");
-    if (chat && chat.contains(e.target)) return;
+    if (chat && chat.contains && chat.contains(e.target)) return;
     const r = el.getBoundingClientRect();
-    dragState = { id: e.pointerId, dx: e.clientX - r.left, dy: e.clientY - r.top, sx: e.clientX, sy: e.clientY, t: Date.now(), moved: false };
-    try { el.setPointerCapture(e.pointerId); } catch (err) { }
+    dragState = {
+      id: e.pointerId, dx: e.clientX - r.left, dy: e.clientY - r.top,
+      sx: e.clientX, sy: e.clientY, t: Date.now(), moved: false,
+      staged: !!ctx,
+    };
+    try { el.setPointerCapture(e.pointerId); } catch (err) {
+      try { if (e.target && e.target.setPointerCapture) e.target.setPointerCapture(e.pointerId); } catch (err2) { }
+    }
     cancelWalk();
+    if (el.classList) el.classList.add("vm-companion-dragging");
     el.style.cursor = "grabbing";
-  });
-  el.addEventListener("pointermove", (e) => {
-    if (!dragState || e.pointerId !== dragState.id) return;
+    if (e.cancelable) e.preventDefault();
+  };
+
+  el.addEventListener("pointerdown", begin);
+  if (stage && stage.addEventListener) stage.addEventListener("pointerdown", begin);
+
+  const move = (e) => {
+    if (!dragState || (e.pointerId != null && e.pointerId !== dragState.id)) return;
     if (!dragState.moved &&
       Math.abs(e.clientX - dragState.sx) + Math.abs(e.clientY - dragState.sy) > 4) {
       dragState.moved = true;
     }
     if (!dragState.moved) return;
-    const w = el.offsetWidth || 120;
-    const h = el.offsetHeight || 120;
-    dragTargetX = Math.max(0, Math.min((window.innerWidth || 1280) - w, e.clientX - dragState.dx));
-    dragTargetY = Math.max(0, Math.min((window.innerHeight || 800) - h, e.clientY - dragState.dy));
-    el.style.right = "auto";
-    el.style.bottom = "auto";
+    if (dragState.staged || stagedWorkspace()) {
+      // Stage coordinates: subtract the natural (transform-free) layout rect,
+      // then clamp to the stage's padded bounds so she never leaves the room.
+      const ctx = stagedWorkspace();
+      if (!ctx) return;
+      const base = stageBaseRect(el);
+      const c = clampStageOffset(
+        e.clientX - dragState.dx - base.left,
+        e.clientY - dragState.dy - base.top
+      );
+      if (!c) return;
+      dragTargetX = c.x;
+      dragTargetY = c.y;
+    } else {
+      const w = el.offsetWidth || 120;
+      const h = el.offsetHeight || 120;
+      dragTargetX = Math.max(0, Math.min((window.innerWidth || 1280) - w, e.clientX - dragState.dx));
+      dragTargetY = Math.max(0, Math.min((window.innerHeight || 800) - h, e.clientY - dragState.dy));
+      el.style.right = "auto";
+      el.style.bottom = "auto";
+    }
     if (!dragRaf) dragRaf = requestAnimationFrame(runDragFrame);
-  });
+  };
+
   const end = (e) => {
     if (!dragState || (e.pointerId != null && e.pointerId !== dragState.id)) return;
     const wasTap = !dragState.moved && (Date.now() - dragState.t) < 400;
     if (dragState.moved) {
-      // Settle exactly on the final clamped target before persisting, so the
+      // Settle exactly on the final clamped target before persisting so the
       // stored position matches where the avatar actually comes to rest.
       stopDragFrame();
-      el.style.left = Math.round(dragTargetX) + "px";
-      el.style.top = Math.round(dragTargetY) + "px";
-      prefs.x = Math.round(dragTargetX);
-      prefs.y = Math.round(dragTargetY);
-      prefs.userPlaced = true; // manual placement is remembered
+      if (dragState.staged || stagedWorkspace()) {
+        const c = clampStageOffset(dragTargetX, dragTargetY);
+        if (c) {
+          writeStageOffset(el, c.x, c.y);
+          prefs.stageX = Math.round(c.x);
+          prefs.stageY = Math.round(c.y);
+        }
+      } else {
+        el.style.left = Math.round(dragTargetX) + "px";
+        el.style.top = Math.round(dragTargetY) + "px";
+        prefs.x = Math.round(dragTargetX);
+        prefs.y = Math.round(dragTargetY);
+      }
+      prefs.userPlaced = true;
       savePrefs();
     } else if (wasTap) {
       toggleChat();
     }
     stopDragFrame();
     dragState = null;
+    if (el.classList) el.classList.remove("vm-companion-dragging");
     el.style.cursor = "grab";
   };
+
+  // Window-level listeners keep the gesture alive outside the canvas/wrapper;
+  // el-level listeners are kept for engines where window capture is unavailable.
+  el.addEventListener("pointermove", move);
   el.addEventListener("pointerup", end);
   el.addEventListener("pointercancel", end);
+  if (window.addEventListener) {
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", end);
+    window.addEventListener("pointercancel", end);
+  }
 }
 
 // Keep the avatar on-screen and correctly framed after a resize, rotation or
@@ -1926,12 +2095,43 @@ function applySkin(name) {
 // Settings → Companion section drives it exclusively through these methods
 // (wired in static/settings.js), so nothing about the character can be
 // changed only from a hidden popover.
+// The Call / End / Mute / Screen / Send bar lives inside the shared chat panel.
+// In the Studio stage it gets a reserved top band instead of floating over the
+// header, workspace tabs, controls or the outside-app button on small screens.
+function syncChatClearance() {
+  const el = $id("vmVrmCompanion");
+  const panel = $id("vmVrmCompanionChat");
+  const stage = $id("vmCompanionStage");
+  const open = !!(panel && panel.classList && panel.classList.contains("open"));
+  const staged = !!(el && el.classList && el.classList.contains("vm-companion-staged"));
+  const active = open && staged;
+  if (el && el.classList) {
+    if (active) el.classList.add("vm-companion-chat-open");
+    else el.classList.remove("vm-companion-chat-open");
+  }
+  if (stage && stage.classList) {
+    if (active) stage.classList.add("vm-companion-call-active");
+    else stage.classList.remove("vm-companion-call-active");
+  }
+  // Let the new CSS geometry settle, then re-frame and re-clamp the transform.
+  setTimeout(function () { refit(); clampPosition(); }, 0);
+}
+
 function toggleChat() {
   prefs.chatOpen = !prefs.chatOpen;
   savePrefs();
   const panel = $id("vmVrmCompanionChat");
   if (panel) panel.classList.toggle("open", prefs.chatOpen);
+  syncChatClearance();
   syncControls();
+}
+
+// Explicit collapse used by the workspace's outside-app button: close the call
+// bar before handing control to the external window so no mobile control row is
+// left sitting over the workspace buttons.
+function collapseChat() {
+  if (!prefs.chatOpen) { syncChatClearance(); return; }
+  toggleChat();
 }
 
 function setVisible(on) {
@@ -2096,6 +2296,7 @@ async function show() {
   syncControls();
   const chatPanel = $id("vmVrmCompanionChat");
   if (chatPanel) chatPanel.classList.toggle("open", !!prefs.chatOpen);
+  syncChatClearance();
   initTasks();
   renderTask();
   const eng = await getEngine();
@@ -2126,7 +2327,15 @@ function hide() {
   if (window.VMCloudVoice) { try { window.VMCloudVoice.stop(); } catch (e) { } }
   setFaceTalking(false);
   const el = $id("vmVrmCompanion");
-  if (el) el.style.display = "none";
+  if (el) {
+    el.style.display = "none";
+    if (el.classList) {
+      el.classList.remove("vm-companion-chat-open");
+      el.classList.remove("vm-companion-dragging");
+    }
+  }
+  const stage = $id("vmCompanionStage");
+  if (stage && stage.classList) stage.classList.remove("vm-companion-call-active");
   if (engine) engine.setRendering(false);
 }
 
@@ -2209,6 +2418,8 @@ window.vmVrmCompanion = {
   // ── main-settings surface (wired by static/settings.js) ──────────────────
   getProps: getProps,
   syncControls: syncControls,
+  syncChatClearance: syncChatClearance,
+  collapseChat: collapseChat,
   show: show,
   hide: hide,
   isVisible: isVisible,

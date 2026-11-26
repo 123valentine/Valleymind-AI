@@ -1815,7 +1815,12 @@ function vmCompanionSetDesktopToggle(on) {
   // The dedicated Studio workspace exposes the SAME state through a launch
   // button. Keep it in sync with the Settings toggle and native broadcasts.
   _vmCompanionDesktopNodes("[data-vm-desktop-toggle]").forEach(function (node) {
-    if (node.setAttribute) node.setAttribute("aria-pressed", on ? "true" : "false");
+    if (node.setAttribute) {
+      node.setAttribute("aria-pressed", on ? "true" : "false");
+      // CSS/JS can read one unambiguous state without changing the accessible
+      // label or the button's box (important for the mobile tap target).
+      node.setAttribute("data-vm-desktop-state", on ? "on" : "off");
+    }
     if (node.classList) {
       node.classList.toggle("on", on);
       node.classList.toggle("active", on);
@@ -1829,6 +1834,12 @@ function vmCompanionToggleOutsideFromWorkspace() {
   var t = document.getElementById("vmSetDesktopVisible");
   var btn = document.getElementById("vmCompanionOutsideBtn");
   var on = t ? !t.checked : !(btn && btn.getAttribute("aria-pressed") === "true");
+  // Launching outside the app collapses the in-stage Call/End/Mute/Screen/Send
+  // bar first: on a phone that bar must never remain over the room controls.
+  if (on && typeof window !== "undefined" && window.vmVrmCompanion &&
+      typeof window.vmVrmCompanion.collapseChat === "function") {
+    try { window.vmVrmCompanion.collapseChat(); } catch (e) { }
+  }
   vmCompanionSetDesktopVisible(on);
 }
 // Loopback control calls retry a few times: the helper may be mid-startup, or
