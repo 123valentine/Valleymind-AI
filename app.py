@@ -3121,10 +3121,18 @@ def _dispatch_chat_stream(user_id, message, chat_id, image_data, persona="marcus
             yield activity_payload
 
         try:
+            # A single assistant turn may only publish ONE final reply. A second
+            # reply payload would make the client render the same answer twice
+            # (summary + follow-up, then another essay), so ignore late duplicates.
+            final_reply_emitted = False
             for token in marcus.stream_respond(message, chat_id=resolved_chat_id, image_data=image_data):
                 if token is None:
                     continue
                 if isinstance(token, dict):
+                    if "reply" in token:
+                        if final_reply_emitted:
+                            continue
+                        final_reply_emitted = True
                     yield f"data: {json.dumps(token)}\n\n"
                 elif token:
                     yield f"data: {json.dumps({'token': token})}\n\n"
@@ -3259,10 +3267,16 @@ def _dispatch_multi_stream(user_id, message, chat_id, image_data):
                 print(f"[WARN] Auto-title fallback failed: {exc}")
 
             try:
+                # Match the text-only stream: one final reply per assistant turn.
+                final_reply_emitted = False
                 for token in marcus.stream_respond(message, chat_id=resolved_chat_id, image_data=image_data):
                     if token is None:
                         continue
                     if isinstance(token, dict):
+                        if "reply" in token:
+                            if final_reply_emitted:
+                                continue
+                            final_reply_emitted = True
                         yield f"data: {json.dumps(token)}\n\n"
                     elif token:
                         yield f"data: {json.dumps({'token': token})}\n\n"
@@ -3548,10 +3562,16 @@ def _dispatch_video_text_stream(user_id, message, chat_id, image_data):
                 print(f"[WARN] Auto-title fallback failed: {exc}")
 
             try:
+                # Match the text-only stream: one final reply per assistant turn.
+                final_reply_emitted = False
                 for token in marcus.stream_respond(message, chat_id=resolved_chat_id, image_data=image_data):
                     if token is None:
                         continue
                     if isinstance(token, dict):
+                        if "reply" in token:
+                            if final_reply_emitted:
+                                continue
+                            final_reply_emitted = True
                         yield f"data: {json.dumps(token)}\n\n"
                     elif token:
                         yield f"data: {json.dumps({'token': token})}\n\n"

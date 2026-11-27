@@ -2953,15 +2953,26 @@ window.VMRichRender = (function () {
     return match && isSafeUrl(match.url) ? match.url : "";
   }
 
+  /* A raw bracket dump such as [domain.com; domain2.com] must become two clean
+     pills, never one garbled label or a broken spacer in the middle of prose. */
+  function citationLabels(label) {
+    return String(label || "")
+      .split(/\s*[;,|]\s+/)
+      .map(function (part) { return part.trim(); })
+      .filter(function (part) { return !!part; });
+  }
+
   function citePillHtml(label, sources) {
-    var slug = sourceSlug(label);
-    var url = citationUrlFor(label, sources);
-    var anchorAttrs = url
-      ? ' href="' + escapeHtml(url) + '" target="_blank" rel="noopener noreferrer"'
-      : ' href="#sources"';
-    return '<a class="vm-cite-pill"' + anchorAttrs +
-      ' data-vm-cite="' + escapeHtml(slug) + '" onclick="event.stopPropagation()">' +
-      escapeHtml(slug) + '</a>';
+    return citationLabels(label).map(function (part) {
+      var slug = sourceSlug(part);
+      var url = citationUrlFor(part, sources);
+      var anchorAttrs = url
+        ? ' href="' + escapeHtml(url) + '" target="_blank" rel="noopener noreferrer"'
+        : ' href="#sources"';
+      return '<a class="vm-cite-pill"' + anchorAttrs +
+        ' data-vm-cite="' + escapeHtml(slug) + '" onclick="event.stopPropagation()">' +
+        escapeHtml(slug) + '</a>';
+    }).join(" ");
   }
 
   /* Adjacent copies of the same citation usually mean the model emitted the
@@ -3564,7 +3575,9 @@ window.VMRichRender = (function () {
   }
 
   // Named/【】 citations become pills; numeric [1] markers stay untouched.
-  var CITE_RE = /【([^】]+)】|\[([A-Za-z][A-Za-z0-9 .&'\-]{1,40})\](?!\()/g;
+  // Multi-domain bracket dumps ([a.com; b.com]) are accepted so they can be
+  // split into individual source pills instead of leaking raw brackets.
+  var CITE_RE = /【([^】]+)】|\[((?:[A-Za-z][A-Za-z0-9 .&'\-]{1,40})(?:\s*[;,|]\s*[A-Za-z][A-Za-z0-9 .&'\-]{1,40})*)\](?!\()/g;
 
   function render(text, sourceMetadata) {
     if (text == null) return "";

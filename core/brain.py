@@ -476,7 +476,7 @@ FORMAT RULES (choose the right format; keep these in one consistent style):
 - List/name/mention/recommend/rank of brands, AI models, apps, products, movies, clubs or tools → one entity block per item using exactly [[ENTITY: Name | Subtitle | official-entity-domain.com | https://official-entity-domain.com | LogoURL-or-blank | 2-3 informative sentence explanation [source]]]. Fields 3 and 4 MUST be the entity's own official website (never a news/blog/review article URL); cite reporting sources only as inline [source] pills in the explanation. The final slot is REQUIRED: ALWAYS write a concrete, specific 2-3 sentence explanation there — cover a standout detail, the current context/form or why it matters right now, and a key strength — never a dry one-line blurb, never empty, and never put prose in the logo slot. Use the logo/icon URL supplied in the source context when available; leave that field blank rather than invent one. Place each citation marker immediately after the sentence it supports, not on a separate line. After the list, end with a brief, natural follow-up insight or an engaging topic-specific question (e.g. which option to compare deeper, analyze, or check schedules/pricing for) so the conversation keeps flowing. Do NOT use a table for a plain list.
 - If the user asks to both list and compare → entity blocks for the list, followed by one compact markdown comparison table.
 - Pros/cons → two short bullet lists or a two-column table.
-- Report/research → title, summary, sections, key points, sources.
+- Report/research → one cohesive, natural reply that talks to the user about what you found. Use short paragraphs and only a few light headings when the topic is genuinely complex; never dump a dry article-style report. Any follow-up question belongs at the very END of the reply, after all findings.
 - Ordinary replies (questions, answers, explanations, advice, summaries, conversations) → always plain prose. NEVER put them in a bordered copy box or a code fence, however long or "useful to copy" they seem.
 - Code snippets → fenced code block with the language specified.
 - Copy-ready output ONLY when the user actually needs to paste it elsewhere → use [[COPY_BOX: Short Title | content]] for user-requested prompts/templates, email drafts, social captions, and replies to pasted messages.
@@ -494,7 +494,7 @@ IMAGES AND VISUALS (CRITICAL):
 - Use image URLs only when they come from real search results or user uploads AND the query has visual intent or depicts a tangible subject (people, films/posters, places, hardware/products, designs, charts/diagrams). For text/data/benchmark lookups, omit images entirely instead of attaching generic banners.
 - Never invent images, dates, links, or source URLs.
 
-CITATIONS: When your answer is based on research sources provided in context, include inline source-name citations like [Coinbase], [Reuters], [Wikipedia] after each factual claim. Use the exact source name from the provided source list — match it case-insensitively. Place citations immediately after the claim they support, not at the end of a paragraph. Example: "Bitcoin is currently trading around $67,000 [Coinbase] and has risen 5% this week [Reuters]." If no sources are provided, do not invent citation tags. Order multiple citations by how authoritative/fresh they are (e.g. [Coinbase] for the live market price, [Reuters] for news context).
+CITATIONS: When your answer is based on research sources provided in context, include inline source-name citations like [Coinbase], [Reuters], [Wikipedia] after each factual claim. Use the exact source name from the provided source list — match it case-insensitively. Place citations immediately after the claim it supports, not at the end of a paragraph. Example: "Bitcoin is currently trading around $67,000 [Coinbase] and has risen 5% this week [Reuters]." Emit ONE clean pill per source: never write bracket dumps such as [domain.com; domain2.com], never expose notes like "the article cites..." or raw cost expressions such as "151 milliongross(thearticlecites\"151\"and\"$60\")", and never wrap ordinary currency in math delimiters ($60$). If no sources are provided, do not invent citation tags. Order multiple citations by how authoritative/fresh they are (e.g. [Coinbase] for the live market price, [Reuters] for news context).
 
 CONFIDENCE COMMUNICATION: If research confidence is LOW or sources conflict, communicate this naturally in your response — for example: "I found some information but couldn't fully verify it across multiple sources," or "Sources seem to disagree on this." Never just state "HIGH confidence" or "LOW confidence" — weave it into your conversational tone.
 
@@ -507,6 +507,13 @@ FRESHNESS AWARENESS (CRITICAL): Today's date is provided to you at the top of th
 FINANCIAL ASSETS (e.g. Bitcoin, stocks, forex): Prefer a live/current exchange or market-data source for the actual price. Use reputable news sources mainly to explain the factors affecting the price. Do NOT present a prediction site, forecast, or sentiment piece as if it were the current market price. Clearly distinguish the actual market price from forecasts/predictions/sentiment. State the source and, if visible, the timestamp of the price.
 
 ANSWER LENGTH & NATURALNESS: For a normal factual question, give the DIRECT ANSWER FIRST, then 1-3 short explanatory paragraphs, then concise bullets where actually useful, then the compact Sources section. Be concise. Do NOT repeat the same number or the same source unnecessarily. Do NOT add made-up personalization or off-topic friendliness (e.g. don't reference the user's hobbies or interests unless they actually brought them up and it is relevant). Read the room: sound intelligent and natural, not like you're trying too hard to sound human. Avoid unnecessary conversational endings.
+
+RESEARCH CONVERSATION & EVIDENCE (CRITICAL FOR WEB-RESEARCH TURNS):
+- Write ONE single cohesive response. Never produce an initial summary with a question in the middle and then append a second essay underneath it. Ask at most one follow-up question, and only as the final sentence of the entire reply (immediately before the silent animation tag), never between findings.
+- Talk naturally to the user about what you found: "I found...", "Here's the interesting bit...", "What stands out is...". Sound like a knowledgeable friend sharing a discovery, not a robotic report or a search-engine snippet.
+- Never invent, guess, or embellish unverified details. Do not claim specific scenes, props, dialogue, timestamps, release dates, figures, or plot points unless the retrieved context explicitly supports them. If the available text/video sources do not confirm something, say so plainly: "I couldn't confirm that from the sources I found." Clearly separate verified facts from what remains unconfirmed.
+- Maintain continuity across turns. Use the conversation history, discovered titles, source names, and media already discussed in this chat. When the user follows up or corrects you, build on the same subject instead of restarting the research from scratch. Refer back to the exact titles/sources already introduced rather than renaming them.
+- Match follow-ups to the subject you just discussed. For a movie, ask about its cast, trailer, scenes, or release details; for a product, ask about specs or pricing; never append unrelated boilerplate.
 
 SMART BEHAVIOR: If the user asks you to write something (a reply, a message, an email, a caption), just write it directly — do not ask "what should I say?" or "who is this for?" unless critical context is missing. When the message is meant for somebody else (for example a pasted WhatsApp/DM conversation), write it directly to that recipient and place it inside [[COPY_BOX: Reply | ...]] so the user can tap Copy and paste it straight into the chat; keep any advice for the user in plain prose outside the box. Never wrap ordinary conversational replies, questions or explanations in a copy box. If the user asks for a copy or says "copy that" or "copy this", provide ONLY the message itself, cleanly formatted for easy copying, with no surrounding analysis.
 
@@ -2290,6 +2297,70 @@ def _strip_middleware_leakage(text: str) -> str:
     return cleaned
 
 
+# Research answers occasionally leak raw model notes into user-facing text, for
+# example "151 milliongross(thearticlecites\"151\"and\"$60\")" or a bracket dump
+# like "[domain.com; domain2.com]". Clean those artifacts without touching real
+# figures, citations, or ordinary currency amounts.
+_ARTIFACT_CITE_PAREN_RE = re.compile(r"\(\s*the\s*article\s*cites\b[^)]*\)", re.IGNORECASE)
+_ARTIFACT_CITE_QUOTES_RE = re.compile(
+    r"\bthe\s*article\s*cites\b(?:\s*[\"'][^\"']{0,60}[\"']\s*(?:and\s*)?)+",
+    re.IGNORECASE,
+)
+_ARTIFACT_CITE_BARE_RE = re.compile(r"\bthe\s*article\s*cites\b\s*", re.IGNORECASE)
+_ARTIFACT_BRACKET_DUMP_RE = re.compile(
+    r"\[\s*([A-Za-z][A-Za-z0-9 .&'\-]{1,40}(?:\s*[;,|]\s*[A-Za-z][A-Za-z0-9 .&'\-]{1,40})+)\s*\]"
+)
+_ARTIFACT_MATH_CURRENCY_RE = re.compile(
+    r"\$(\d[\d,]*(?:\.\d+)?\s*(?:million|billion|thousand|k|m)?)\$(?!\w)", re.IGNORECASE
+)
+_ARTIFACT_GLUED_NUMBER_RE = re.compile(
+    r"\b(\d[\d,.]*\s*(?:million|billion|thousand))(?=[A-Za-z])", re.IGNORECASE
+)
+
+
+def _clean_research_artifacts(text: str) -> str:
+    """Remove raw citation/math notes and repair glued words/numbers."""
+    cleaned = str(text or "")
+    if not cleaned:
+        return ""
+    cleaned = _ARTIFACT_CITE_PAREN_RE.sub("", cleaned)
+    cleaned = _ARTIFACT_CITE_QUOTES_RE.sub("", cleaned)
+    cleaned = _ARTIFACT_CITE_BARE_RE.sub("", cleaned)
+
+    def _split_dump(match: re.Match) -> str:
+        parts = re.split(r"\s*[;,|]\s*", match.group(1).strip())
+        return " ".join(f"[{part.strip()}]" for part in parts if part.strip())
+
+    cleaned = _ARTIFACT_BRACKET_DUMP_RE.sub(_split_dump, cleaned)
+    cleaned = _ARTIFACT_MATH_CURRENCY_RE.sub(r"$\1", cleaned)
+    cleaned = _ARTIFACT_GLUED_NUMBER_RE.sub(r"\1 ", cleaned)
+    cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
+    cleaned = re.sub(r" +\n", "\n", cleaned)
+    return re.sub(r"\n{3,}", "\n\n", cleaned).strip()
+
+
+def _reply_has_closing_followup(text: str) -> bool:
+    """True when an answer already ends with its single follow-up question.
+
+    Used to stop a provider's finish_reason=="length" from triggering a second
+    essay after a research answer has actually completed.
+    """
+    tail = _ANIM_TAG_RE.sub("", str(text or "")).strip()
+    if not tail:
+        return False
+    tail = tail[-500:].rstrip()
+    if tail.endswith("?"):
+        return True
+    last_line = tail.split("\n")[-1].strip()
+    if re.search(r"\?\s*[.!]?$", last_line):
+        return True
+    return bool(re.search(
+        r"\b(?:would you like|want me to|shall we|which (?:one|option|movie|source))\b",
+        tail[-240:],
+        re.IGNORECASE,
+    ))
+
+
 def _sanitize_reply_for_chat(reply: str, replacement: str = "") -> str:
     cleaned = str(reply or "").strip()
     if not cleaned:
@@ -2301,6 +2372,9 @@ def _sanitize_reply_for_chat(reply: str, replacement: str = "") -> str:
     if not cleaned:
         return replacement or "I could not produce a clean response for that."
     if _is_ui_leak(cleaned):
+        return replacement or "I could not produce a clean response for that."
+    cleaned = _clean_research_artifacts(cleaned)
+    if not cleaned:
         return replacement or "I could not produce a clean response for that."
     return _privacy_guard(cleaned)
 
@@ -3120,13 +3194,22 @@ class MarcusBrain:
                 "or entity explanation it supports — e.g. '...adopted in 2025 [sirumors].' Never "
                 "collect citations on their own lines after a list or at the end of the message, "
                 "never repeat the same citation twice in a row, and never paste raw URLs into prose. "
-                "Depth and flow: give each finding or item 2-3 informative, specific sentences "
-                "grounded in the live results — include concrete names, figures, dates, standout "
-                "details, current context and why it matters right now rather than a generic one-line "
-                "blurb. Then close every search-grounded reply with one brief, natural follow-up "
-                "insight or an engaging topic-specific question that invites the user to go deeper "
-                "(e.g. which item to compare, analyze tactically, or check current schedules/pricing "
-                "for). Keep the follow-up short, warm and relevant to what you just said."
+                "Never emit raw bracket dumps like [domain.com; domain2.com], meta notes such as "
+                "'the article cites', or math-wrapped currency such as $60$; use one clean pill per "
+                "source and keep normal spacing between words and numbers. "
+                "Single cohesive reply: write ONE continuous, conversational answer. Do not put a "
+                "follow-up question in the middle and then continue with a second essay. Ask at most "
+                "one question, strictly as the final sentence after every finding. "
+                "Evidence discipline: describe only what the retrieved context actually supports. "
+                "Never invent scenes, props, dialogue, timestamps, dates, figures or sources. When "
+                "something cannot be confirmed from the available text/video sources, say so "
+                "explicitly instead of guessing, and separate verified facts from unconfirmed ones. "
+                "Depth and flow: give each finding 2-3 specific, conversational sentences grounded in "
+                "the live results — concrete names, figures, dates, standout details and why they "
+                "matter now. Use earlier turns, discovered titles, sources and media in this chat as "
+                "continuity so follow-ups continue the same discussion instead of starting over. "
+                "Close with one brief, topic-specific follow-up (cast/trailer/scenes for a movie, "
+                "specs/pricing for a product, etc.), never unrelated boilerplate."
             )
         if _needs_forced_live_search(user_message):
             sections.append(
@@ -3161,8 +3244,9 @@ class MarcusBrain:
                 "official domain. Use the exact official domain, target URL, and Logo/Icon URL from the "
                 "provided source context when available; leave the logo field blank instead of inventing "
                 "one. Put each citation inline immediately after the sentence it supports, never as "
-                "trailing lines below the list. After the entity list, close with one brief, natural "
-                "follow-up insight or engaging topic-specific question so the conversation keeps flowing "
+                "trailing lines below the list. After the entity list, close the WHOLE reply with one "
+                "brief, natural follow-up insight or engaging topic-specific question as the final "
+                "sentence — never place a question in the middle of the answer "
                 "(e.g. which club/model/option to compare deeper, analyze, or check current details for). "
                 "Do not wrap the syntax in markdown or code fences, and do not use a table for this list."
             )
@@ -3178,8 +3262,9 @@ class MarcusBrain:
                 "with inline citations at the end of the supporting sentence. Then add one compact markdown "
                 "comparison table for the requested attributes. Use exact official domains, target URLs, "
                 "and Logo/Icon URLs from the provided source context when available; leave the logo field "
-                "blank instead of inventing one. Finish with a brief, natural follow-up insight or "
-                "engaging question tailored to the topic."
+                "blank instead of inventing one. Finish the WHOLE reply with a brief, natural "
+                "follow-up insight or engaging question tailored to the topic, strictly as the final "
+                "sentence after the table — never mid-reply."
             )
         if presentation in ("entities", "combined"):
             sections.append(
@@ -4412,7 +4497,12 @@ class MarcusBrain:
                             elif yielded is not None:
                                 yield yielded
                         _finish = _finish_box[0]
-                        if _finish == "length" and _seg.strip() and _cont_n < _max_cont:
+                        # A completed research answer may be marked "length" by
+                        # the provider even though its follow-up is already the
+                        # final sentence. Never append a second essay in that case.
+                        _already_closed = _reply_has_closing_followup(full_reply)
+                        if (_finish == "length" and _seg.strip() and not _already_closed
+                                and _cont_n < _max_cont):
                             _cont_n += 1
                             print(f"[STREAM] finish_reason=length, auto-continuing ({_cont_n}/{_max_cont})")
                             yield {"stream_continue": True, "index": _cont_n}
@@ -4421,7 +4511,8 @@ class MarcusBrain:
                                 {"role": "user", "content": "Continue exactly where you left off. Do not repeat previous text, do not add a preamble. Continue the same answer/table/list."},
                             ]
                             continue
-                        if _finish == "length" and _seg.strip() and _cont_n >= _max_cont:
+                        if (_finish == "length" and _seg.strip() and not _already_closed
+                                and _cont_n >= _max_cont):
                             yield {"truncated": True, "finish_reason": "length"}
                         break
                 except GeneratorExit:
@@ -4458,6 +4549,13 @@ class MarcusBrain:
                 tail_out = privacy_stream.flush() + _privacy_guard(strip_animation_tags(anim_tail))
                 if tail_out:
                     full_reply += tail_out
+                # Repair any research artifacts in the durable copy. Streamed
+                # tokens cannot be retracted, so a corrected final reply is sent
+                # to the client below and replaces the live bubble exactly once.
+                _cleaned_reply = _clean_research_artifacts(full_reply)
+                _reply_corrected = _cleaned_reply != full_reply
+                if _reply_corrected:
+                    full_reply = _cleaned_reply
                 anim_hint = _ANIM_TAG_RE.search(raw_reply)
                 emo_hint = _EMO_TAG_RE.search(raw_reply)
                 self.last_animation = (
@@ -4473,6 +4571,11 @@ class MarcusBrain:
             # Structured control event: app.py forwards dict yields verbatim as
             # SSE JSON, so the companion shell can pose the body + face.
             yield {"animation": self.last_animation}
+
+            # If the model leaked raw citation/math notes into streamed tokens,
+            # replace the live bubble once with the cleaned complete answer.
+            if _reply_corrected:
+                yield {"reply": full_reply}
 
             # ── Update long-term memory ───────────────────────────────
             save_act = MemoryAdapter.track_update()

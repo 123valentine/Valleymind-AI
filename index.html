@@ -2351,27 +2351,59 @@
 
   /* â”€â”€ Stage 3: rich response components â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 
-  /* Research images from live search evidence (single card / side-by-side / scroll row). */
-  .bubble.ai-rich .vm-research-images{ margin:10px 0; display:flex; flex-direction:column; gap:8px; }
-  .bubble.ai-rich .vm-research-card{ display:flex; flex-direction:column; gap:6px; background:#0b1220; border:1px solid rgba(148,163,184,0.14); border-radius:12px; padding:8px; flex:0 0 auto; min-width:150px; max-width:380px; }
-  .bubble.ai-rich .vm-research-card img{ width:100%; height:auto; max-width:380px; max-height:240px; aspect-ratio:4/3; object-fit:cover; display:block; border-radius:12px; }
-  .bubble.ai-rich .vm-research-credit{ font-size:10px; color:rgba(255,255,255,0.6); text-align:center; line-height:1.3; overflow-wrap:break-word; }
-  .bubble.ai-rich a.vm-research-credit{ color:inherit; text-decoration:underline dotted rgba(255,255,255,0.35); text-underline-offset:2px; }
-  .bubble.ai-rich .vm-research-card > a{ text-decoration:none; }
-  @media(max-width:640px){ .bubble.ai-rich .vm-research-card{ min-width:140px; max-width:none; } }
-
-  /* Image-left / text-right result cards from research evidence.
-     Image on the left, name + description + attribution on the right.
-     Stacks vertically on narrow screens. */
-  .bubble.ai-rich .vm-image-left-cards{ margin:10px 0; display:flex; flex-direction:column; gap:10px; }
-  .bubble.ai-rich .vm-image-left-card{ display:flex; gap:12px; align-items:flex-start; border:1px solid rgba(148,163,184,0.14); border-radius:10px; background:#0b1220; padding:10px; min-width:0; }
-  .bubble.ai-rich .vm-image-left-card img{ width:96px; height:96px; max-width:380px; max-height:240px; object-fit:cover; border-radius:12px; flex:0 0 96px; margin:0; }
-  .bubble.ai-rich .vm-image-left-body{ flex:1; min-width:0; display:flex; flex-direction:column; gap:4px; }
-  .bubble.ai-rich .vm-image-left-name{ font-weight:700; font-size:14px; color:#e2e8f0; margin:0 0 2px; overflow-wrap:break-word; }
-  .bubble.ai-rich .vm-image-left-credit{ font-size:10px; color:rgba(255,255,255,0.6); margin-top:auto; overflow-wrap:break-word; }
+  /* Research media: a vertical list of horizontal cards. Original image left
+     (2:3 poster/portrait or proportional 16:9 still), details right. */
+  .bubble.ai-rich .vm-research-images,
+  .bubble.ai-rich .vm-image-left-cards{
+    width:100%; max-width:100%; box-sizing:border-box; margin:14px 0 4px;
+    display:flex; flex-direction:column; gap:22px; overflow:hidden;
+  }
+  .bubble.ai-rich .vm-research-card,
+  .bubble.ai-rich .vm-media-card,
+  .bubble.ai-rich .vm-image-left-card{
+    width:100%; max-width:100%; min-width:0; box-sizing:border-box;
+    display:flex; flex-direction:row; align-items:flex-start; gap:20px;
+    padding:0 0 22px; margin:0; border:0;
+    border-bottom:1px solid rgba(255,255,255,0.08); background:transparent;
+  }
+  .bubble.ai-rich .vm-research-card:last-child,
+  .bubble.ai-rich .vm-image-left-card:last-child{ border-bottom:0; padding-bottom:0; }
+  .bubble.ai-rich .vm-media-thumb{
+    flex:0 0 118px; width:118px; height:177px; aspect-ratio:2/3;
+    max-width:100%; padding:0; margin:0; border:1px solid rgba(255,255,255,0.08);
+    border-radius:15px; overflow:hidden; background:#0f172a; cursor:zoom-in;
+    box-sizing:border-box; position:relative;
+  }
+  .bubble.ai-rich .vm-media-thumb-img{
+    width:100%; height:100%; max-width:100%; object-fit:cover; display:block; border-radius:15px;
+  }
+  .bubble.ai-rich .vm-media-fallback{
+    position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+    padding:8px; text-align:center; font-size:10px; color:rgba(255,255,255,0.55);
+  }
+  .bubble.ai-rich .vm-media-body{
+    flex:1 1 auto; min-width:0; max-width:100%; box-sizing:border-box;
+    display:flex; flex-direction:column; gap:6px;
+  }
+  .bubble.ai-rich .vm-media-title{
+    font-size:15px; font-weight:700; line-height:1.35; color:#e2e8f0; overflow-wrap:anywhere;
+  }
+  .bubble.ai-rich .vm-media-meta{ font-size:11px; color:rgba(255,255,255,0.5); line-height:1.4; }
+  .bubble.ai-rich .vm-media-desc{
+    font-size:12.5px; line-height:1.5; color:rgba(255,255,255,0.72);
+    display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical;
+    overflow:hidden; max-height:56px;
+  }
+  .bubble.ai-rich .vm-media-source{
+    align-self:flex-start; text-decoration:none; font-size:10.5px; color:#9fd8ff;
+    background:rgba(0,212,255,0.08); border:1px solid rgba(0,212,255,0.22);
+    border-radius:999px; padding:3px 9px; max-width:100%; box-sizing:border-box;
+  }
   @media(max-width:640px){
-    .bubble.ai-rich .vm-image-left-card{ flex-direction:column; align-items:flex-start; }
-    .bubble.ai-rich .vm-image-left-card img{ width:100%; height:auto; max-height:200px; flex:none; }
+    .bubble.ai-rich .vm-research-card,
+    .bubble.ai-rich .vm-image-left-card{ gap:16px; }
+    .bubble.ai-rich .vm-research-images,
+    .bubble.ai-rich .vm-image-left-cards{ gap:20px; }
   }
 
   /* Copyable code block button (added by VMAddCodeCopyButtons). */
@@ -3566,20 +3598,30 @@ body[data-vm-companion="cloud"] #vmVrmCompanion { display: none !important; }
     }
   }
 
-  /* Chat edge safety: keep every bubble and copy box inside the screen on
-     phones. The padded #messages rail owns the 14-16px side margin, so child
-     cards only need to respect that width instead of adding their own. */
+  /* Chat edge safety: keep every bubble, media card and copy box inside the
+     screen. The padded #messages rail owns the side margin, so child cards only
+     need to respect that width instead of adding their own. A wandering image
+     strip must never push the whole chat thread off-screen. */
+  #messages,
+  .chat-messages,
   .assistant-message,
   .user-message,
   .assistant-message .bubble,
   .user-message .bubble,
+  .vm-research-images,
+  .vm-image-left-cards,
+  .vm-research-card,
+  .vm-media-card,
+  .vm-media-body,
+  .vm-media-thumb,
   .vm-code-card,
   .vm-copy-card,
   .vm-copybox,
   vm-copybox,
   .bubble.ai-rich > *{ max-width:100%; box-sizing:border-box; }
+  #messages, .chat-messages{ overflow-x:hidden; }
   @media (max-width: 640px) {
-    #messages{ padding:22px 16px !important; max-width:100%; box-sizing:border-box; }
+    #messages{ padding:22px 16px !important; max-width:100%; box-sizing:border-box; overflow-x:hidden; }
     .user-message{ max-width:86%; margin-left:auto; margin-right:0; }
     .user-message .bubble{ max-width:100%; box-sizing:border-box; }
     .assistant-message{ max-width:100%; margin-left:0; margin-right:0; box-sizing:border-box; }
@@ -7012,8 +7054,20 @@ function VMHydrateCitationPills(bubbleEl, sourceMetadata, sources) {
     return list;
 }
 
+/* Repair raw model notes before citation pills are built. Never alter real
+   figures, ordinary currency, or clean single-source markers. */
+function VMCleanInlineResearchArtifacts(text) {
+    return String(text || "")
+        .replace(/\(\s*the\s*article\s*cites\b[^)]*\)/gi, "")
+        .replace(/\bthe\s*article\s*cites\b\s*(?:["'][^"']{0,60}["']\s*(?:and\s*)?)+/gi, "")
+        .replace(/\bthe\s*article\s*cites\b\s*/gi, "")
+        .replace(/\$(\d[\d,]*(?:\.\d+)?\s*(?:million|billion|thousand|[km])?)\$(?!\w)/gi, "$$$1")
+        .replace(/\b(\d[\d,.]*\s*(?:million|billion|thousand))(?=[A-Za-z])/gi, "$1 ");
+}
+
 /* Replace 【SourceName】 / [SourceName] markers with modern inline domain pills.
-   Pills link straight to the matched source URL, or open the sources drawer. */
+   Pills link straight to the matched source URL, or open the sources drawer.
+   A bracket dump like [a.com; b.com] becomes two clean, subtle pills. */
 function renderInlineCitations(bubbleEl, sourceMetadata, sources) {
     if (!bubbleEl) return;
     var bub = bubbleEl.querySelector(".bubble") || bubbleEl;
@@ -7029,12 +7083,13 @@ function renderInlineCitations(bubbleEl, sourceMetadata, sources) {
         if (name && !(name in byName)) byName[name] = s;
     });
 
-    var re = /【([^】]+)】|\[([A-Za-z][A-Za-z0-9 .&'\-]{1,40})\](?!\()/g;
+    var re = /【([^】]+)】|\[((?:[A-Za-z][A-Za-z0-9 .&'\-]{1,40})(?:\s*[;,|]\s*[A-Za-z][A-Za-z0-9 .&'\-]{1,40})*)\](?!\()/g;
     var walker = document.createTreeWalker(bub, NodeFilter.SHOW_TEXT, null, false);
     var textNodes = [];
     while (walker.nextNode()) textNodes.push(walker.currentNode);
     textNodes.forEach(function (node) {
-        var text = node.textContent;
+        var text = VMCleanInlineResearchArtifacts(node.textContent);
+        if (text !== node.textContent) node.textContent = text;
         re.lastIndex = 0;
         if (!re.test(text)) return;
         re.lastIndex = 0;
@@ -7043,30 +7098,34 @@ function renderInlineCitations(bubbleEl, sourceMetadata, sources) {
         while ((m = re.exec(text)) !== null) {
             if (m.index > last) frag.appendChild(document.createTextNode(text.slice(last, m.index)));
             var raw = VMDecodeHtmlEntities((m[1] || m[2] || "").trim());
-            var slug = VMSourceSlug(raw);
-            var matched = (window.VMRichRender && typeof window.VMRichRender.findSourceForCitation === "function")
-                ? window.VMRichRender.findSourceForCitation(raw, allSources)
-                : null;
-            var src = matched || bySlug[slug] || byName[raw.toLowerCase()] || null;
-            var pill = document.createElement("a");
-            pill.className = "vm-cite-pill";
-            pill.textContent = slug;
-            if (src && src.url) {
-                pill.href = src.url;
-                pill.target = "_blank";
-                pill.rel = "noopener noreferrer";
-                pill.title = VMDecodeHtmlEntities(src.title || src.name || raw);
-                pill.onclick = function (e) { if (e && e.stopPropagation) e.stopPropagation(); };
-            } else {
-                pill.href = "#sources";
-                pill.title = raw;
-                pill.onclick = function (e) {
-                    if (e && e.stopPropagation) e.stopPropagation();
-                    if (e && e.preventDefault) e.preventDefault();
-                    VMOpenSourcesDrawer(bubbleEl, allSources);
-                };
-            }
-            frag.appendChild(pill);
+            var labels = raw.split(/\s*[;,|]\s+/).filter(function (label) { return !!label; });
+            labels.forEach(function (label, labelIndex) {
+                if (labelIndex > 0) frag.appendChild(document.createTextNode(" "));
+                var slug = VMSourceSlug(label);
+                var matched = (window.VMRichRender && typeof window.VMRichRender.findSourceForCitation === "function")
+                    ? window.VMRichRender.findSourceForCitation(label, allSources)
+                    : null;
+                var src = matched || bySlug[slug] || byName[label.toLowerCase()] || null;
+                var pill = document.createElement("a");
+                pill.className = "vm-cite-pill";
+                pill.textContent = slug;
+                if (src && src.url) {
+                    pill.href = src.url;
+                    pill.target = "_blank";
+                    pill.rel = "noopener noreferrer";
+                    pill.title = VMDecodeHtmlEntities(src.title || src.name || label);
+                    pill.onclick = function (e) { if (e && e.stopPropagation) e.stopPropagation(); };
+                } else {
+                    pill.href = "#sources";
+                    pill.title = label;
+                    pill.onclick = function (e) {
+                        if (e && e.stopPropagation) e.stopPropagation();
+                        if (e && e.preventDefault) e.preventDefault();
+                        VMOpenSourcesDrawer(bubbleEl, allSources);
+                    };
+                }
+                frag.appendChild(pill);
+            });
             last = m.index + m[0].length;
         }
         if (last < text.length) frag.appendChild(document.createTextNode(text.slice(last)));
@@ -7089,202 +7148,145 @@ function VMIsGenericResearchImage(url) {
     return false;
 }
 
-/* â”€â”€ Research images: render real, relevant images from web-search evidence
-   into the assistant response, arranged intelligently based on image count,
-   source relationships, and screen width. Layouts:
-     - 1 image   : prominent single card (centered, larger)
-     - 2 images  : side-by-side comparison if from different sources;
-                   vertical stack if same source
-     - 3+ images : compact grid on wide screens, horizontal carousel on narrow
-   Broken/missing images are hidden gracefully. Never AI-generated; always
-   tied to a real source URL. ──────────────────── */
-function VMRenderResearchImages(bubbleEl, sourceMetadata) {
-    if (!bubbleEl || !Array.isArray(sourceMetadata) || !sourceMetadata.length) return;
-    var bub = bubbleEl.querySelector(".bubble") || bubbleEl;
-    if (!bub) return;
-    if (bub.querySelector(".vm-research-images")) return;
-
-    // Only sources with a usable, directly-fetched image.
-    var imgs = sourceMetadata.filter(function (s) {
-        return s && s.image && /^https?:\/\//i.test(s.image) && s.url &&
-               !VMIsGenericResearchImage(s.image);
-    });
-    if (!imgs.length) return;
-
-    var isNarrow = window.innerWidth <= 640;
-    var container = document.createElement("div");
-    container.className = "vm-research-images";
-    container.style.cssText = "margin:10px 0; display:flex; flex-direction:column; gap:8px;";
-
-    // Determine layout based on count and source diversity.
-    var domains = {};
-    imgs.forEach(function (s) { var d = s && s.domain ? s.domain : ""; if (d) domains[d] = true; });
-    var isComparison = imgs.length === 2 && Object.keys(domains).length === 2;
-    var useGrid = imgs.length >= 3 && !isNarrow;
-
-    if (imgs.length === 1) {
-        var s = imgs[0];
-        var card = buildResearchCard(s, true);
-        container.appendChild(card);
-    } else if (isComparison) {
-        var bar = document.createElement("div");
-        bar.style.cssText = "font-size:11px;color:rgba(255,255,255,0.6);margin-bottom:6px;font-weight:600;";
-        bar.textContent = "Side-by-side comparison";
-        container.appendChild(bar);
-
-        var wrap = document.createElement("div");
-        wrap.style.cssText = "display:flex; gap:10px; align-items:flex-start;";
-        imgs.forEach(function (s) {
-            wrap.appendChild(buildResearchCard(s, false));
-        });
-        container.appendChild(wrap);
-    } else if (useGrid) {
-        var bar = document.createElement("div");
-        bar.style.cssText = "font-size:11px;color:rgba(255,255,255,0.6);margin-bottom:6px;font-weight:600;";
-        bar.textContent = "Visual evidence from sources";
-        container.appendChild(bar);
-
-        var grid = document.createElement("div");
-        grid.style.cssText = "display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:10px;";
-        imgs.forEach(function (s) {
-            grid.appendChild(buildResearchCard(s, false));
-        });
-        container.appendChild(grid);
-    } else {
-        var bar = document.createElement("div");
-        bar.style.cssText = "font-size:11px;color:rgba(255,255,255,0.6);margin-bottom:6px;font-weight:600;";
-        bar.textContent = "Visual evidence from sources";
-        container.appendChild(bar);
-
-        var wrap = document.createElement("div");
-        wrap.style.cssText = "display:flex; gap:8px; overflowX:auto; flexDirection:row; flexWrap:nowrap; -webkit-overflow-scrolling:touch;";
-        imgs.forEach(function (s) {
-            wrap.appendChild(buildResearchCard(s, false));
-        });
-        container.appendChild(wrap);
+/* ─── Research media cards ──────────────────────────────────────────────────
+   Real images discovered through web research are rendered as a vertical list
+   of horizontal cards: original image on the LEFT, details + source link on the
+   RIGHT. No carousels, no "side-by-side comparison" strip, no generated images,
+   and no element that can widen the chat viewport. ────────────────────────── */
+function VMResearchImageIsLandscape(s) {
+    if (!s) return false;
+    var ratio = parseFloat(s.aspect_ratio || s.image_aspect || "");
+    if (isNaN(ratio) && s.image_width && s.image_height) {
+        var w = parseFloat(s.image_width), h = parseFloat(s.image_height);
+        if (w && h) ratio = w / h;
     }
-
-    bub.appendChild(container);
-
-    function buildResearchCard(s, featured) {
-        var card = document.createElement("div");
-        card.className = "vm-research-card";
-        card.style.cssText = "display:flex; flex-direction:column; gap:6px; background:#0b1220; border:1px solid rgba(148,163,184,0.14); border-radius:12px; padding:8px; flex:0 0 auto;" + (featured ? " min-width:260px; max-width:380px;" : " min-width:150px; max-width:380px;");
-
-        var link = document.createElement("a");
-        link.href = s.url;
-        link.target = "_blank";
-        link.rel = "noopener noreferrer";
-        link.style.cssText = "display:block;max-width:380px;border-radius:12px;overflow:hidden;background:#0f172a;border:1px solid rgba(148,163,184,0.12);text-decoration:none;";
-        link.onclick = function (ev) { ev.stopPropagation(); };
-
-        var img = document.createElement("img");
-        img.src = s.image;
-        img.alt = VMDecodeHtmlEntities(s.name || s.title || "source image");
-        img.loading = "lazy";
-        if (featured) img.classList.add("vm-standalone-media");
-        img.style.cssText = "width:100%;max-width:380px;max-height:240px;height:auto;" + (featured ? "aspect-ratio:16/9;" : "aspect-ratio:4/3;") + "object-fit:cover;display:block;border-radius:12px;";
-        img.onerror = function () { card.style.display = "none"; };
-        img.onload = function () { card.style.display = ""; };
-        link.appendChild(img);
-        card.appendChild(link);
-
-        var cap = document.createElement("a");
-        cap.className = "vm-research-credit";
-        cap.href = s.url;
-        cap.target = "_blank";
-        cap.rel = "noopener noreferrer";
-        cap.onclick = function (ev) { ev.stopPropagation(); };
-        var name = s.name || (s.domain ? s.domain.split(".")[0].charAt(0).toUpperCase() + s.domain.split(".")[0].slice(1) : "Source");
-        cap.textContent = VMDecodeHtmlEntities(s.image_credit ? s.image_credit : name);
-        cap.style.cssText = "font-size:10px;color:rgba(255,255,255,0.6);text-align:center;line-height:1.3;overflow-wrap:break-word;";
-        card.appendChild(cap);
-
-        return card;
-    }
+    if (!isNaN(ratio) && ratio > 1.2) return true;
+    var signal = [s.type, s.media_type, s.kind, s.format, s.title, s.url].join(" ").toLowerCase();
+    return /video|trailer|still|landscape|16:9|youtube|vimeo/.test(signal);
 }
 
-/* â”€â”€ Image-left / text-right result cards from research evidence.
-   Renders each source with a retrieved image on the LEFT and name,
-   description, and source attribution on the RIGHT. Stacks vertically
-   on narrow screens. Never generates images; only uses real fetched URLs.
-   --------------------------------------------------------------------- */
-function VMRenderImageLeftTextRightCards(bubbleEl, sourceMetadata) {
-    if (!bubbleEl || !Array.isArray(sourceMetadata) || !sourceMetadata.length) return;
+function VMBuildResearchMediaCard(s, extraClass) {
+    var card = document.createElement("div");
+    card.className = "vm-research-card vm-media-card" + (extraClass ? " " + extraClass : "");
+    card.style.cssText = "display:flex;flex-direction:row;align-items:flex-start;gap:20px;width:100%;max-width:100%;box-sizing:border-box;padding:0 0 22px;margin:0;border:0;border-bottom:1px solid rgba(255,255,255,0.08);background:transparent;overflow:hidden;";
+
+    var landscape = VMResearchImageIsLandscape(s);
+    var thumb = document.createElement("button");
+    thumb.type = "button";
+    thumb.className = "vm-media-thumb";
+    thumb.setAttribute("aria-label", "Preview " + VMDecodeHtmlEntities(s.title || s.name || "source image"));
+    thumb.style.cssText = "position:relative;flex:0 0 118px;width:118px;height:" + (landscape ? "66px" : "177px") + ";aspect-ratio:" + (landscape ? "16/9" : "2/3") + ";padding:0;margin:0;border:1px solid rgba(255,255,255,0.08);border-radius:15px;overflow:hidden;background:#0f172a;cursor:zoom-in;max-width:100%;box-sizing:border-box;";
+    thumb.onclick = function (ev) {
+        if (ev && ev.stopPropagation) ev.stopPropagation();
+        if (ev && ev.preventDefault) ev.preventDefault();
+        if (thumb.querySelector(".vm-media-fallback")) return;
+        if (typeof window !== "undefined" && typeof window.openImageViewer === "function") window.openImageViewer(s.image);
+        else if (typeof openImageViewer === "function") openImageViewer(s.image);
+    };
+
+    var img = document.createElement("img");
+    img.src = s.image;
+    img.alt = VMDecodeHtmlEntities(s.title || s.name || "source image");
+    img.loading = "lazy";
+    img.className = "vm-media-thumb-img";
+    img.style.cssText = "width:100%;height:100%;max-width:100%;object-fit:cover;display:block;border-radius:15px;";
+    img.onerror = function () {
+        img.style.display = "none";
+        if (!thumb.querySelector(".vm-media-fallback")) {
+            var fallback = document.createElement("span");
+            fallback.className = "vm-media-fallback";
+            fallback.textContent = "Preview unavailable";
+            fallback.style.cssText = "position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:8px;text-align:center;font-size:10px;color:rgba(255,255,255,0.55);";
+            thumb.appendChild(fallback);
+        }
+    };
+    thumb.appendChild(img);
+    card.appendChild(thumb);
+
+    var body = document.createElement("div");
+    body.className = "vm-media-body";
+    body.style.cssText = "flex:1 1 auto;min-width:0;max-width:100%;box-sizing:border-box;display:flex;flex-direction:column;gap:6px;";
+
+    var titleText = s.title || s.name || (s.domain ? s.domain.split(".")[0] : "Source");
+    var title = document.createElement("div");
+    title.className = "vm-media-title";
+    title.textContent = VMDecodeHtmlEntities(titleText);
+    title.style.cssText = "font-size:15px;font-weight:700;line-height:1.35;color:#e2e8f0;overflow-wrap:anywhere;";
+    body.appendChild(title);
+
+    var metaBits = [s.category, s.year || s.release_year, s.type || s.media_type, s.domain || s.site_name]
+        .filter(function (bit) { return !!bit && String(bit).trim(); })
+        .map(function (bit) { return VMDecodeHtmlEntities(String(bit).trim()); });
+    if (metaBits.length) {
+        var meta = document.createElement("div");
+        meta.className = "vm-media-meta";
+        meta.textContent = metaBits.join(" · ");
+        meta.style.cssText = "font-size:11px;color:rgba(255,255,255,0.5);line-height:1.4;overflow-wrap:anywhere;";
+        body.appendChild(meta);
+    }
+
+    var description = s.description || s.snippet || s.excerpt || (s.image_credit ? "Image credit: " + s.image_credit : "");
+    if (description && String(description).trim()) {
+        var desc = document.createElement("div");
+        desc.className = "vm-media-desc";
+        desc.textContent = VMDecodeHtmlEntities(String(description).trim());
+        desc.style.cssText = "font-size:12.5px;line-height:1.5;color:rgba(255,255,255,0.72);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;max-height:56px;overflow-wrap:anywhere;";
+        body.appendChild(desc);
+    }
+
+    var source = document.createElement("a");
+    source.className = "vm-media-source";
+    source.href = s.url;
+    source.target = "_blank";
+    source.rel = "noopener noreferrer";
+    source.textContent = VMDecodeHtmlEntities(s.domain || s.name || "View source");
+    source.title = VMDecodeHtmlEntities(s.title || s.domain || s.url);
+    source.style.cssText = "align-self:flex-start;text-decoration:none;font-size:10.5px;color:#9fd8ff;background:rgba(0,212,255,0.08);border:1px solid rgba(0,212,255,0.22);border-radius:999px;padding:3px 9px;max-width:100%;box-sizing:border-box;overflow-wrap:anywhere;";
+    source.onclick = function (ev) { if (ev && ev.stopPropagation) ev.stopPropagation(); };
+    body.appendChild(source);
+
+    card.appendChild(body);
+    return card;
+}
+
+function VMResearchMediaSources(sourceMetadata) {
+    if (!Array.isArray(sourceMetadata)) return [];
+    var seen = {};
+    return sourceMetadata.filter(function (s) {
+        if (!s || !s.image || !/^https?:\/\//i.test(s.image) || !s.url || VMIsGenericResearchImage(s.image)) return false;
+        if (seen[s.image]) return false;
+        seen[s.image] = true;
+        return true;
+    });
+}
+
+function VMRenderResearchImages(bubbleEl, sourceMetadata) {
+    if (!bubbleEl) return;
     var bub = bubbleEl.querySelector(".bubble") || bubbleEl;
-    if (!bub) return;
-    if (bub.querySelector(".vm-image-left-cards")) return;
-
-    // Collect image URLs already rendered by VMRenderResearchImages to avoid duplicates.
-    var renderedImages = new Set();
-    bub.querySelectorAll(".vm-research-card img").forEach(function (img) {
-        if (img.src) renderedImages.add(img.src);
-    });
-
-    // Only sources with a usable image + name/title, not already rendered above.
-    var cards = sourceMetadata.filter(function (s) {
-        return s && s.image && /^https?:\/\//i.test(s.image) && s.url &&
-               (s.name || s.title || s.domain) &&
-               !VMIsGenericResearchImage(s.image) &&
-               !renderedImages.has(s.image);
-    });
-    if (!cards.length) return;
+    if (!bub || bub.querySelector(".vm-research-images")) return;
+    var imgs = VMResearchMediaSources(sourceMetadata);
+    if (!imgs.length) return;
 
     var container = document.createElement("div");
-    container.className = "vm-image-left-cards";
-    container.style.cssText = "margin:10px 0; display:flex; flex-direction:column; gap:10px;";
+    container.className = "vm-research-images vm-research-media-list";
+    container.style.cssText = "width:100%;max-width:100%;box-sizing:border-box;margin:14px 0 4px;display:flex;flex-direction:column;gap:22px;overflow:hidden;";
+    imgs.forEach(function (s) { container.appendChild(VMBuildResearchMediaCard(s)); });
+    bub.appendChild(container);
+}
 
-    cards.forEach(function (s) {
-        var card = document.createElement("div");
-        card.className = "vm-image-left-card";
-        card.style.cssText = "display:flex; gap:12px; align-items:flex-start; margin:0; border:1px solid rgba(148,163,184,0.14); border-radius:10px; background:#0b1220; padding:10px; min-width:0;";
-
-        var link = document.createElement("a");
-        link.href = s.url;
-        link.target = "_blank";
-        link.rel = "noopener noreferrer";
-        link.style.cssText = "display:block;border-radius:8px;overflow:hidden;background:#0f172a;border:1px solid rgba(148,163,184,0.12);text-decoration:none;flex:0 0 auto;";
-        link.onclick = function (ev) { ev.stopPropagation(); };
-
-        var img = document.createElement("img");
-        img.src = s.image;
-        img.alt = s.name || s.title || "source image";
-        img.loading = "lazy";
-        img.style.cssText = "width:96px;height:96px;max-width:380px;max-height:240px;object-fit:cover;display:block;border-radius:12px;flex:0 0 96px;";
-        img.onerror = function () { card.style.display = "none"; };
-        img.onload = function () { card.style.display = ""; };
-        link.appendChild(img);
-        card.appendChild(link);
-
-        var body = document.createElement("div");
-        body.className = "vm-image-left-body";
-        body.style.cssText = "flex:1; min-width:0; display:flex; flex-direction:column; gap:4px;";
-
-        var name = document.createElement("div");
-        name.className = "vm-image-left-name";
-        name.textContent = VMDecodeHtmlEntities(s.name || s.title || (s.domain ? s.domain.split(".")[0].charAt(0).toUpperCase() + s.domain.split(".")[0].slice(1) : "Source"));
-        name.style.cssText = "font-weight:700; font-size:14px; color:#e2e8f0; margin:0 0 2px; overflow-wrap:break-word;";
-        body.appendChild(name);
-
-        if (s.title && s.title !== (s.name || "")) {
-            var titleEl = document.createElement("div");
-            titleEl.textContent = VMDecodeHtmlEntities(s.title);
-            titleEl.style.cssText = "font-size:12px; color:rgba(255,255,255,0.7); margin:0 0 4px; overflow-wrap:break-word;";
-            body.appendChild(titleEl);
-        }
-
-        if (s.image_credit) {
-            var credit = document.createElement("div");
-            credit.className = "vm-image-left-credit";
-            credit.textContent = VMDecodeHtmlEntities(s.image_credit);
-            credit.style.cssText = "font-size:10px; color:rgba(255,255,255,0.6); margin-top:auto; overflow-wrap:break-word;";
-            body.appendChild(credit);
-        }
-
-        card.appendChild(body);
-        container.appendChild(card);
-    });
-
+/* Backwards-compatible entry point: the research renderer above now owns the
+   image-left / details-right layout, so keep this as an idempotent alias rather
+   than emitting a second (duplicated or narrower) card list. */
+function VMRenderImageLeftTextRightCards(bubbleEl, sourceMetadata) {
+    if (!bubbleEl) return;
+    var bub = bubbleEl.querySelector(".bubble") || bubbleEl;
+    if (!bub || bub.querySelector(".vm-research-images") || bub.querySelector(".vm-image-left-cards")) return;
+    var imgs = VMResearchMediaSources(sourceMetadata);
+    if (!imgs.length) return;
+    var container = document.createElement("div");
+    container.className = "vm-image-left-cards vm-research-media-list";
+    container.style.cssText = "width:100%;max-width:100%;box-sizing:border-box;margin:14px 0 4px;display:flex;flex-direction:column;gap:22px;overflow:hidden;";
+    imgs.forEach(function (s) { container.appendChild(VMBuildResearchMediaCard(s, "vm-image-left-card")); });
     bub.appendChild(container);
 }
 
@@ -7632,12 +7634,31 @@ function VMAddProactiveSuggestions(bubbleEl, fullText, intent) {
     var t = fullText.toLowerCase();
     var hasTable = intent === "table" || t.indexOf("<table") !== -1;
     var hasSteps = t.indexOf("how to") !== -1 || t.indexOf("steps") !== -1 || /^\d+\./m.test(fullText);
-    var hasPrice = t.indexOf("price") !== -1 || t.indexOf("cost") !== -1 || t.indexOf("$") !== -1;
+    var hasPrice = /\b(price|pricing|cost|costs|subscription|buy|purchase)\b/i.test(fullText);
     var isShort = fullText.length < 200;
-    // Contextual suggestions based on actual content
+    var isEntertainment = /\b(movie|film|series|tv show|television|trailer|cast|actor|actress|scene|episode|season|box office|cinema|anime|netflix|disney)\b/i.test(fullText);
+    var isProduct = /\b(phone|laptop|gpu|processor|device|product|specs|specification|subscription|plan)\b/i.test(fullText);
+    var isResearch = /\b(source|sources|report|study|article|research|found)\b/i.test(fullText);
+    var subjectMatch = /\*\*([^*]{2,60})\*\*/.exec(fullText) || /^#{1,6}\s*(.+)$/m.exec(fullText);
+    var subject = subjectMatch ? subjectMatch[1].replace(/[.:]\s*$/, "").trim() : "";
+    var aboutSubject = subject ? " " + subject : " this";
+
+    // Contextual suggestions based on the subject actually discussed. Never
+    // append shopping chips to entertainment/general research answers.
     if (hasTable) suggestions.push({ label: "Compare with another option", prompt: "Compare this with another option side by side:\n\n" });
     if (hasSteps && !wantsConcise) suggestions.push({ label: "Copy these steps", prompt: "Copy the steps above into a copyable box:\n\n" });
-    if (hasPrice) suggestions.push({ label: "Check current pricing", prompt: "What is the current pricing for this?\n\n" });
+    if (isEntertainment && intent !== "reply-writing") {
+        // Surface the most specific topic first, because only two chips fit.
+        if (/\b(scene|scenes|clip|moment|ending|plot)\b/i.test(fullText)) {
+            suggestions.push({ label: "Ask about specific scenes", prompt: "Which specific scenes" + aboutSubject + " are verified by the sources, and which details are not confirmed?" });
+        }
+        suggestions.push({ label: "Explore the cast", prompt: "Tell me about the cast" + aboutSubject + ". What stood out about their performances?" });
+        suggestions.push({ label: "Find the trailer", prompt: "Where can I watch the official trailer" + aboutSubject + "?" });
+    } else if (hasPrice && isProduct && !wantsConcise && intent !== "reply-writing") {
+        suggestions.push({ label: "Compare current pricing", prompt: "Compare the current pricing" + aboutSubject + " using the freshest sources." });
+    } else if (isResearch && intent !== "reply-writing") {
+        suggestions.push({ label: "Go deeper on these findings", prompt: "Go deeper on what you found" + aboutSubject + ". Separate verified facts from what is still unconfirmed." });
+    }
     // Only add generic follow-up for genuinely short answers when user wants suggestions
     if (isShort && suggestions.length === 0 && wantsSuggestions && !wantsDirect) {
         suggestions.push({ label: "Ask for more details", prompt: "Can you give me more details about this?\n\n" });

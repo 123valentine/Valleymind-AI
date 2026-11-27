@@ -446,6 +446,42 @@
       .replace(/[{}]/g, "");
   }
 
+  /* Research models sometimes leak notes such as
+     '151 milliongross(thearticlecites"151"and"$60")' into the rendered bubble.
+     Clean only complete text nodes so tags, source pills and links are untouched. */
+  function cleanArtifactText(text) {
+    return String(text || "")
+      .replace(/\(\s*the\s*article\s*cites\b[^)]*\)/gi, "")
+      .replace(/\bthe\s*article\s*cites\b\s*(?:["'][^"']{0,60}["']\s*(?:and\s*)?)+/gi, "")
+      .replace(/\bthe\s*article\s*cites\b\s*/gi, "")
+      .replace(/\$(\d[\d,]*(?:\.\d+)?\s*(?:million|billion|thousand|[km])?)\$(?!\w)/gi, "$$$1")
+      .replace(/\b(\d[\d,.]*\s*(?:million|billion|thousand))(?=[A-Za-z])/gi, "$1 ");
+  }
+
+  function cleanResearchArtifacts(bub) {
+    if (!bub || typeof bub.innerHTML !== "string") return;
+    if (bub.dataset && bub.dataset.vmArtifactsDone === "1") return;
+    var walker = null;
+    try {
+      if (typeof document !== "undefined" && typeof document.createTreeWalker === "function") {
+        walker = document.createTreeWalker(bub, 4 /* NodeFilter.SHOW_TEXT */, null, false);
+      }
+    } catch (e) {}
+    if (walker) {
+      var nodes = [];
+      while (walker.nextNode()) nodes.push(walker.currentNode);
+      nodes.forEach(function (node) {
+        var original = String(node.nodeValue || "");
+        var cleaned = cleanArtifactText(original);
+        if (cleaned !== original) node.nodeValue = cleaned;
+      });
+    } else if (!/<[a-z]/i.test(bub.innerHTML)) {
+      var cleanedHtml = cleanArtifactText(bub.innerHTML);
+      if (cleanedHtml !== bub.innerHTML) bub.innerHTML = cleanedHtml;
+    }
+    if (bub.dataset) bub.dataset.vmArtifactsDone = "1";
+  }
+
   function renderMathFallback(bub) {
     if (!bub || typeof bub.innerHTML !== "string") return;
     if (bub.dataset && bub.dataset.vmMathDone === "1") return;
@@ -464,6 +500,7 @@
 
   function formatBubble(bub) {
     if (!bub || typeof bub.querySelectorAll !== "function") return;
+    try { cleanResearchArtifacts(bub); } catch (e) {}
     try { renderMathFallback(bub); } catch (e) {}
     try { highlightCode(bub); } catch (e) {}
     try { bindActions(bub); } catch (e) {}
@@ -532,11 +569,13 @@
 
   window.VMCopyText = copyText;
   window.VMDownloadFile = downloadFile;
+  window.VMCleanResearchArtifacts = cleanArtifactText;
   window.VMRichRenderAddons = {
     render: renderer.render,
     copyText: copyText,
     downloadFile: downloadFile,
     formatBubble: formatBubble,
+    cleanArtifactText: cleanArtifactText,
     downloadWithSpinner: downloadWithSpinner,
     downloadIconSvg: downloadIconSvg,
     downloadSpinnerSvg: downloadSpinnerSvg,
