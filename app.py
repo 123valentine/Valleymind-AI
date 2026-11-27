@@ -39,7 +39,9 @@ from core.brain import (
     get_pending_asset_request,
     merge_pending_asset_request,
     needs_asset_clarification,
+    needs_reference_edit_clarification,
     pop_pending_asset_request,
+    wants_reference_image_edit,
     remember_pending_asset_request,
     _privacy_guard,
 )
@@ -2527,6 +2529,7 @@ def chat():
 
         chat_id = str(data.get("chat_id") or "").strip()
         image_data = str(data.get("image") or "").strip()
+        reference_image = _chat_reference_image(message, image_data)
         source = str(data.get("source") or "").strip() or None
         persona = normalize_persona(data.get("persona"))
         dedup_id = str(data.get("_vm_dedup_id", "")).strip()
@@ -2568,10 +2571,16 @@ def chat():
                 has_video = str(pending_asset.get("kind")) == "video"
                 has_text = False
 
+            # An attached photo plus edit language is an image-edit request even
+            # when the semantic router would otherwise call it a vision question.
+            if reference_image:
+                has_image, has_text, has_video = True, False, False
+
             if has_image or has_video:
                 asset_kind = "video" if has_video else "image"
                 message, clarification = _prepare_asset_request(
-                    user_id, chat_id, message, asset_kind
+                    user_id, chat_id, message, asset_kind,
+                    reference_image=reference_image,
                 )
                 if clarification:
                     return _asset_clarification_json(user_id, chat_id, clarification)
@@ -2583,7 +2592,9 @@ def chat():
             if has_text and has_image:
                 return _dispatch_multi_json(user_id, message, chat_id, image_data)
             if has_image:
-                return _dispatch_image_json(user_id, message, chat_id, image_data)
+                return _dispatch_image_json(
+                    user_id, message, chat_id, image_data, reference_image=reference_image
+                )
             return _dispatch_chat_json(user_id, message, chat_id, image_data, persona=persona, activity_session=activity_session)
 
         finally:
@@ -2638,9 +2649,9 @@ def _image_card_markup(image_url: str, alt: str = "Generated image") -> str:
     return f"[[IMAGE_CARD: {url} | {label} | valleymind_image.png]]"
 
 
-def _image_reply_copy(message: str, image_url: str, revised_prompt: str = "") -> str:
+def _image_reply_copy(message: str, image_url: str, revised_prompt: str = "", reference: bool = False) -> str:
     """Conversational copy plus an embedded, downloadable generated image."""
-    intro, followups = asset_generation_copy("image", message)
+    intro, followups = asset_generation_copy("image", message, reference=reference)
     card = _image_card_markup(image_url, revised_prompt or "Generated image")
     parts = [intro]
     if card:
@@ -2649,14 +2660,29 @@ def _image_reply_copy(message: str, image_url: str, revised_prompt: str = "") ->
     return _privacy_guard("\n\n".join(part for part in parts if part))
 
 
-def _prepare_asset_request(user_id: str, chat_id: str, message: str, kind: str):
+def _chat_reference_image(message: str, image_data: str):
+    """Treat a chat attachment as an identity reference when edit intent is clear."""
+    if not image_data or not wants_reference_image_edit(message, True):
+        return None
+    mime = "image/jpeg"
+    head = str(image_data)[:48].lower()
+    if head.startswith("data:") and ";" in head:
+        mime = str(image_data)[5:].split(";", 1)[0].strip() or "image/jpeg"
+    return {"data": image_data, "mimeType": mime}
+
+
+def _prepare_asset_request(user_id: str, chat_id: str, message: str, kind: str, reference_image=None):
     """Merge a clarification answer or ask 2-3 questions before generating."""
     key = asset_request_key(user_id, chat_id)
     pending = pop_pending_asset_request(key)
     if pending and str(pending.get("kind")) == kind:
         return merge_pending_asset_request(pending, message), None
-    if needs_asset_clarification(message, kind, _asset_chat_history(user_id, chat_id)):
-        reply = asset_clarification_message(message, kind)
+    history = _asset_chat_history(user_id, chat_id)
+    vague = needs_asset_clarification(message, kind, history)
+    if reference_image and str(kind).lower() == "image":
+        vague = vague or needs_reference_edit_clarification(message, history)
+    if vague:
+        reply = asset_clarification_message(message, kind, reference=bool(reference_image))
         remember_pending_asset_request(key, kind, message)
         return None, reply
     return message, None
@@ -2888,7 +2914,7 @@ def _vm_filter_fake_image_gen(message: str, capabilities):
         return capabilities
 
 
-def _dispatch_image_json(user_id, message, chat_id, image_data):
+def _dispatch_image_json(user_id, message, chat_id, image_data, reference_image=None):
     """IMAGE → non-streaming JSON.  Reuses the existing ProviderManager image pipeline."""
     print(f"[Router]   Dispatch: IMAGE (json) — prompt={message[:120]!r}")
 
@@ -2901,6 +2927,8 @@ def _dispatch_image_json(user_id, message, chat_id, image_data):
         prompt=prompt,
         api_key=config.gemini_api_key or None,
         enhance=True,
+        reference_image=reference_image,
+        mode="image_to_image" if reference_image else "text_to_image",
     )
 
     if not result.success:
@@ -2921,7 +2949,7 @@ def _dispatch_image_json(user_id, message, chat_id, image_data):
         return jsonify({"status": "error", "message": "Image generated but could not be saved. Please try again."}), 500
     _embed_media_exchange(user_id, message, "image", chat_id)
 
-    reply_copy = _image_reply_copy(message, stored_url, revised)
+    reply_copy = _image_reply_copy(message, stored_url, revised, reference=bool(reference_image))
     _persist_chat_message(
         user_id, chat_id, "assistant",
         f"{reply_copy}\n\n[Image: {stored_url}]", image_url=stored_url,
@@ -2936,7 +2964,7 @@ def _dispatch_image_json(user_id, message, chat_id, image_data):
     })
 
 
-def _dispatch_image_stream(user_id, message, chat_id, image_data, activity_session=None, request_id="", turn_id="", attempt_id=""):
+def _dispatch_image_stream(user_id, message, chat_id, image_data, activity_session=None, request_id="", turn_id="", attempt_id="", reference_image=None):
     """IMAGE → SSE stream.  Reuses the existing ProviderManager image pipeline."""
     print(f"[Router]   Dispatch: IMAGE (stream) — prompt={message[:120]!r}")
 
@@ -2977,7 +3005,7 @@ def _dispatch_image_stream(user_id, message, chat_id, image_data, activity_sessi
             except Exception as exc:
                 print(f"[WARN] Auto-title fallback failed: {exc}")
 
-        intro, followups = asset_generation_copy("image", message)
+        intro, followups = asset_generation_copy("image", message, reference=bool(reference_image))
         intro = _privacy_guard(intro)
         followups = _privacy_guard(followups)
         yield _sse_frame({'intent': 'generating_image', 'query': message}, request_id, turn_id, attempt_id)
@@ -2988,6 +3016,8 @@ def _dispatch_image_stream(user_id, message, chat_id, image_data, activity_sessi
             prompt=_build_image_user_context(user_id, message),
             api_key=config.gemini_api_key or None,
             enhance=True,
+            reference_image=reference_image,
+            mode="image_to_image" if reference_image else "text_to_image",
         )
 
         if not result.success:
@@ -3013,7 +3043,7 @@ def _dispatch_image_stream(user_id, message, chat_id, image_data, activity_sessi
         _embed_media_exchange(user_id, message, "image", resolved_chat_id)
 
         yield _sse_frame({'image_url': stored_url, 'revised_prompt': revised}, request_id, turn_id, attempt_id)
-        final_copy = _image_reply_copy(message, stored_url, revised)
+        final_copy = _image_reply_copy(message, stored_url, revised, reference=bool(reference_image))
         yield _sse_frame({'reply': final_copy}, request_id, turn_id, attempt_id)
 
         if marcus:
@@ -3677,6 +3707,7 @@ def chat_stream():
 
         chat_id = str(data.get("chat_id") or "").strip()
         image_data = str(data.get("image") or "").strip()
+        reference_image = _chat_reference_image(message, image_data)
         source = str(data.get("source") or "").strip() or None
         persona = normalize_persona(data.get("persona"))
         dedup_id = str(data.get("_vm_dedup_id", "")).strip()
@@ -3722,10 +3753,15 @@ def chat_stream():
             has_video = str(pending_asset.get("kind")) == "video"
             has_text = False
 
+        # Chat photo + edit language must reach the identity-preserving pipeline.
+        if reference_image:
+            has_image, has_text, has_video = True, False, False
+
         if has_image or has_video:
             asset_kind = "video" if has_video else "image"
             message, clarification = _prepare_asset_request(
-                user_id, chat_id, message, asset_kind
+                user_id, chat_id, message, asset_kind,
+                reference_image=reference_image,
             )
             if clarification:
                 return _asset_clarification_stream(
@@ -3753,6 +3789,7 @@ def chat_stream():
             return _dispatch_image_stream(
                 user_id, message, chat_id, image_data,
                 activity_session=activity_session, **_turn_ids,
+                reference_image=reference_image,
             )
         return _dispatch_chat_stream(
             user_id, message, chat_id, image_data, persona=persona,
@@ -3816,14 +3853,24 @@ def api_generate_image():
         reference_image = None
         if isinstance(reference_image_raw, dict):
             ref_data = str(reference_image_raw.get("data") or "").strip()
+            ref_url = str(reference_image_raw.get("url") or "").strip()
             ref_mime = str(reference_image_raw.get("mimeType") or "image/jpeg").strip()
-            if ref_data:
-                reference_image = {"data": ref_data, "mimeType": ref_mime}
+            if ref_data or ref_url.startswith(("http://", "https://")):
+                reference_image = {"data": ref_data, "url": ref_url, "mimeType": ref_mime}
+        elif isinstance(reference_image_raw, str) and reference_image_raw.strip().startswith(("data:", "http://", "https://")):
+            reference_image = {"data": reference_image_raw.strip()}
+
+        size = data.get("size")
+        mode = str(data.get("mode") or "").strip() or None
+        prefer = str(data.get("prefer") or "").strip() or None
+        requested_model = str(data.get("model") or "").strip() or None
 
         if not prompt:
             return jsonify({"status": "error", "message": "Please describe the image you want to create."}), 400
 
-        prompt, clarification = _prepare_asset_request(user_id, "", prompt, "image")
+        prompt, clarification = _prepare_asset_request(
+            user_id, "", prompt, "image", reference_image=reference_image
+        )
         if clarification:
             return jsonify({
                 "status": "success",
@@ -3842,6 +3889,10 @@ def api_generate_image():
             api_key=api_key or None,
             enhance=True,
             reference_image=reference_image,
+            size=size,
+            mode=mode or ("image_to_image" if reference_image else "text_to_image"),
+            model=requested_model,
+            prefer=prefer,
         )
 
         if not result.success:
@@ -3855,7 +3906,7 @@ def api_generate_image():
         print(f"[IMAGE] Success — url={image_url} provider={result.provider_name} latency={result.latency_ms:.0f}ms")
 
         revised = str(result.data.get("revised_prompt") or "")
-        reply_copy = _image_reply_copy(prompt, image_url, revised)
+        reply_copy = _image_reply_copy(prompt, image_url, revised, reference=bool(reference_image))
         return jsonify({
             "status": "success",
             "image_url": image_url,

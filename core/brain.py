@@ -2874,6 +2874,65 @@ _ASSET_LABELS = {
     "file": "document", "image": "image", "video": "video",
 }
 
+# Reference-photo editing is a distinct intent: the attached photo is an
+# identity anchor, not a generic image-generation prompt.
+_REFERENCE_EDIT_RE = re.compile(
+    r"\b(?:edit|change|switch|swap|replace|restyle|restyl[ei]ng|transform|modify|"
+    r"update|recreate|remake|dress|undress|redress|pose)\b"
+    r"[\s\S]{0,80}?\b(?:this|these|the|my|me|photo|picture|image|selfie|face|"
+    r"outfit|clothes|clothing|dress|shirt|jacket|hair|style|background)\b|"
+    r"\b(?:use|using|with|from|based on)\s+(?:this|my|the|your)\s+"
+    r"(?:photo|picture|image|selfie)\b|"
+    r"\bmake\s+me\s+(?:look|appear|into)\b|"
+    r"\b(?:outfit|clothes|clothing|background|pose)\b.{0,40}\b(?:change|swap|try|edit)\b",
+    re.IGNORECASE,
+)
+_REFERENCE_OUTFIT_RE = re.compile(
+    r"\b(?:outfit|clothes|clothing|wear|wearing|dress|gown|suit|jacket|shirt|"
+    r"jeans|trousers|sneakers|heels|attire)\b", re.IGNORECASE,
+)
+_REFERENCE_STYLE_RE = re.compile(
+    r"\b(?:style|vibe|mood|aesthetic|cinematic|casual|formal|editorial|"
+    r"streetwear|elegant|sporty|vintage|futuristic)\b", re.IGNORECASE,
+)
+_REFERENCE_BACKGROUND_RE = re.compile(
+    r"\b(?:background|setting|scene|location|studio|beach|city|garden|office|"
+    r"backdrop|environment)\b", re.IGNORECASE,
+)
+REFERENCE_IDENTITY_COPY = (
+    "I'll keep your exact facial identity, natural skin texture and likeness, "
+    "and change only what you ask — outfit, pose, lighting or background."
+)
+
+
+def wants_reference_image_edit(message: str, has_image: bool = False) -> bool:
+    """True when an attached photo is meant to be edited, not just described."""
+    if not has_image:
+        return False
+    text = str(message or "").strip()
+    if not text:
+        return False
+    return bool(_REFERENCE_EDIT_RE.search(text))
+
+
+def needs_reference_edit_clarification(message: str, history: list | None = None) -> bool:
+    """Ask about missing outfit / style / background before editing a photo.
+
+    Explicit confirmations, "create it now" and fully specified briefs go
+    straight to generation.
+    """
+    text = str(message or "").strip()
+    if not text or ASK_FIRST_MARKER in text:
+        return False
+    if _SKIP_QUESTIONS_RE.search(text) or _CONFIRMATION_RE.search(text):
+        return False
+    if _had_prior_asset_clarification(history):
+        return False
+    has_outfit = bool(_REFERENCE_OUTFIT_RE.search(text))
+    has_style = bool(_REFERENCE_STYLE_RE.search(text))
+    has_background = bool(_REFERENCE_BACKGROUND_RE.search(text))
+    return not (has_outfit and has_style and has_background)
+
 
 def asset_request_key(user_id: str, chat_id: str) -> str:
     """Stable key for a pending consultative asset request."""
@@ -2944,7 +3003,7 @@ def needs_asset_clarification(message: str, kind: str, history: list | None = No
     return bool(str(kind or "").strip())
 
 
-def asset_clarification_message(message: str, kind: str, fmt: str = "") -> str:
+def asset_clarification_message(message: str, kind: str, fmt: str = "", reference: bool = False) -> str:
     """Short consultative reply with a plan, suggestions and 2-3 questions."""
     key = str(fmt or kind or "asset").lower()
     label = _ASSET_LABELS.get(key, _ASSET_LABELS.get(str(kind or "").lower(), str(kind or "asset")))
@@ -2981,20 +3040,31 @@ def asset_clarification_message(message: str, kind: str, fmt: str = "") -> str:
             "3. How long should it feel — a quick loop or a longer scene?"
         ),
     }
+    reference_image_questions = (
+        "1. What outfit or clothing should I put on you?\n"
+        "2. Which style or vibe should the result have — casual, formal, "
+        "editorial or something else?\n"
+        "3. What background or setting should I place you in?"
+    )
     bucket = "file" if str(kind).lower() == "file" else str(kind).lower()
     if bucket not in plans:
         bucket = "file"
     parts = [
         f"{ASK_FIRST_MARKER} your {label}.",
         plans[bucket],
-        suggestions[bucket],
-        questions[bucket],
-        "Reply with your choices and I'll create it right away, or say \"create it now\" to use my suggested defaults.",
     ]
+    is_reference_image = bool(reference and bucket == "image")
+    if is_reference_image:
+        parts.append(REFERENCE_IDENTITY_COPY)
+    parts.extend([
+        suggestions[bucket],
+        reference_image_questions if is_reference_image else questions[bucket],
+        "Reply with your choices and I'll create it right away, or say \"create it now\" to use my suggested defaults.",
+    ])
     return _privacy_guard("\n\n".join(parts))
 
 
-def asset_generation_copy(kind: str, message: str = "", fmt: str = "") -> tuple[str, str]:
+def asset_generation_copy(kind: str, message: str = "", fmt: str = "", reference: bool = False) -> tuple[str, str]:
     """Before/after conversational copy for generated files, images and videos."""
     key = str(fmt or kind or "asset").lower()
     label = _ASSET_LABELS.get(key, _ASSET_LABELS.get(str(kind or "").lower(), str(kind or "asset")))
@@ -3008,6 +3078,8 @@ def asset_generation_copy(kind: str, message: str = "", fmt: str = "") -> tuple[
         intro = "Here's the image I created from your direction — I kept the subject, style and composition focused on your brief."
     else:
         intro = "Here's the video I created from your direction — I shaped the scene and pacing around your brief."
+    if reference and str(kind).lower() == "image":
+        intro = f"{intro} {REFERENCE_IDENTITY_COPY}"
     if str(kind).lower() == "image":
         followups = (
             "Want me to try a different style or lighting, change the background "

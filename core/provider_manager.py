@@ -87,6 +87,46 @@ class BaseProvider(ABC):
 # Image providers
 # ──────────────────────────────────────────────────────────────
 
+class HuggingFaceImageProvider(BaseProvider):
+    """Primary free-cloud image path (Kontext edit / schnell text-to-image)."""
+
+    name = "HuggingFace"
+    capability = Capability.IMAGE
+    priority = 5
+    health = "healthy"
+
+    def execute(self, **kwargs: Any) -> ProviderResult:
+        from core.image_gen import generate_image as image_gen
+
+        start = time.perf_counter()
+        try:
+            result = image_gen(
+                prompt=kwargs.get("prompt", ""),
+                api_key=kwargs.get("api_key"),
+                enhance=kwargs.get("enhance", True),
+                reference_image=kwargs.get("reference_image"),
+                size=kwargs.get("size"),
+                mode=kwargs.get("mode"),
+                model=kwargs.get("model"),
+                prefer="hf",
+            )
+            elapsed = (time.perf_counter() - start) * 1000
+            return ProviderResult(
+                success=True,
+                data=result,
+                provider_name=self.name,
+                latency_ms=elapsed,
+            )
+        except Exception as exc:
+            elapsed = (time.perf_counter() - start) * 1000
+            return ProviderResult(
+                success=False,
+                error=str(exc),
+                provider_name=self.name,
+                latency_ms=elapsed,
+            )
+
+
 class PollinationsImageProvider(BaseProvider):
     name = "Pollinations"
     capability = Capability.IMAGE
@@ -103,6 +143,10 @@ class PollinationsImageProvider(BaseProvider):
                 api_key=kwargs.get("api_key"),
                 enhance=kwargs.get("enhance", True),
                 reference_image=kwargs.get("reference_image"),
+                size=kwargs.get("size"),
+                mode=kwargs.get("mode"),
+                model=kwargs.get("model"),
+                prefer="pollinations",
             )
             elapsed = (time.perf_counter() - start) * 1000
             return ProviderResult(
@@ -166,6 +210,7 @@ class ProviderManager:
         self._providers: dict[Capability, list[BaseProvider]] = {
             Capability.TEXT: [],
             Capability.IMAGE: [
+                HuggingFaceImageProvider(),
                 PollinationsImageProvider(),
                 GeminiImageProvider(),
             ],

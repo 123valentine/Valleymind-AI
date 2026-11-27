@@ -3713,11 +3713,11 @@ body[data-vm-companion="cloud"] #vmVrmCompanion { display: none !important; }
         <span id="sidebarUserBadge" style="font-size:11px;color:#64748b;">Active Creator</span>
       </div>
     </div>
-    <button id="settingsGearBtn" onclick="openSettings()" style="position: relative; z-index: 99999 !important; background:none; border:none; color:#94a3b8; cursor:pointer; padding:8px; display:flex; align-items:center; justify-content:center; transition:color 0.2s;">
-      <span class="material-icons" style="font-size:24px;">settings</span>
-    </button>
-    <button onclick="vmHelpCenter.open()" title="Help &amp; Learning" style="background:none; border:none; color:#94a3b8; cursor:pointer; padding:8px; display:flex; align-items:center; justify-content:center; transition:color 0.2s;">
-      <span class="material-icons" style="font-size:24px;">help_outline</span>
+    <button id="settingsGearBtn" onclick="openSettings()" title="Settings" aria-label="Settings" style="position:relative;z-index:99999!important;width:36px;height:36px;flex:0 0 36px;flex-shrink:0;display:flex;align-items:center;justify-content:center;padding:0;margin-left:8px;background:rgba(15,23,42,0.85);border:1px solid rgba(148,163,184,0.22);border-radius:11px;color:#94a3b8;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.18);transition:color .18s ease,border-color .18s ease,box-shadow .18s ease,background .18s ease,transform .18s ease;" onmouseenter="this.style.color='#e2f8ff';this.style.borderColor='rgba(0,212,255,0.55)';this.style.background='rgba(15,23,42,0.96)';this.style.boxShadow='0 0 0 3px rgba(0,212,255,0.10),0 4px 14px rgba(0,212,255,0.18)';this.style.transform='translateY(-1px)';" onmouseleave="this.style.color='#94a3b8';this.style.borderColor='rgba(148,163,184,0.22)';this.style.background='rgba(15,23,42,0.85)';this.style.boxShadow='0 2px 8px rgba(0,0,0,0.18)';this.style.transform='none';">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0;display:block;">
+        <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
+        <circle cx="12" cy="12" r="3"/>
+      </svg>
     </button>
   </div>
 </aside>
@@ -7691,6 +7691,10 @@ function VMAddProactiveSuggestions(bubbleEl, fullText, intent) {
     var isEntertainment = /\b(movie|film|series|tv show|television|trailer|cast|actor|actress|scene|episode|season|box office|cinema|anime|netflix|disney)\b/i.test(fullText);
     var isProduct = /\b(phone|laptop|gpu|processor|device|product|specs|specification|subscription|plan)\b/i.test(fullText);
     var isResearch = /\b(source|sources|report|study|article|research|found)\b/i.test(fullText);
+    // Generated-image replies get their own edit menu instead of generic chips.
+    var isGeneratedImage = intent === "generating_image" ||
+        /\[\[IMAGE_CARD:/i.test(fullText) ||
+        /data-vm-card=["']?image/i.test(bub.innerHTML || "");
     var subjectMatch = /\*\*([^*]{2,60})\*\*/.exec(fullText) || /^#{1,6}\s*(.+)$/m.exec(fullText);
     var subject = subjectMatch ? subjectMatch[1].replace(/[.:]\s*$/, "").trim() : "";
     var aboutSubject = subject ? " " + subject : " this";
@@ -7711,16 +7715,25 @@ function VMAddProactiveSuggestions(bubbleEl, fullText, intent) {
     } else if (isResearch && intent !== "reply-writing") {
         suggestions.push({ label: "Go deeper on these findings", prompt: "Go deeper on what you found" + aboutSubject + ". Separate verified facts from what is still unconfirmed." });
     }
+    if (isGeneratedImage) {
+        var imageFollowups = window.VM_IMAGE_FOLLOWUP_SUGGESTIONS || [
+            { label: "Change the outfit", prompt: "Change the outfit in this image while keeping my exact face and identity." },
+            { label: "Change the background", prompt: "Change the background in this image while keeping me looking exactly the same." },
+            { label: "Adjust the lighting", prompt: "Adjust the lighting in this image, preserving my natural skin texture and likeness." },
+            { label: "Try an aspect ratio", prompt: "Recreate this image in a different aspect ratio (9:16) without changing my identity." },
+        ];
+        suggestions = imageFollowups.slice(0);
+    }
     // Only add generic follow-up for genuinely short answers when user wants suggestions
     if (isShort && suggestions.length === 0 && wantsSuggestions && !wantsDirect) {
         suggestions.push({ label: "Ask for more details", prompt: "Can you give me more details about this?\n\n" });
     }
-    // Cap at 2 suggestions to avoid clutter
+    // Cap at 2 chips normally; generated images get four edit shortcuts.
     if (suggestions.length === 0) return;
     var container = document.createElement("div");
     container.className = "vm-suggestion-chips";
     container.style.cssText = "display:flex;gap:6px;flex-wrap:wrap;margin:8px 0;";
-    suggestions.slice(0, 2).forEach(function (s) {
+    suggestions.slice(0, isGeneratedImage ? 4 : 2).forEach(function (s) {
         var btn = document.createElement("button");
         btn.type = "button";
         btn.textContent = s.label;
@@ -8589,10 +8602,10 @@ function addThinkingIndicator() {
 
 function removeThinkingIndicator(indicator) {
     if (!indicator || !indicator.parentNode) return;
-    // The unified activity tracker is mounted inside the thinking wrapper.
-    // Detach it first so removing the wrapper never destroys the activity UI
-    // (including its clickable step drawer); completion re-inserts it above
-    // the assistant reply bubble.
+    // Collapse first (no-tts chrome stays hidden from Read-Aloud), then detach
+    // the tracker so completion can re-insert its clickable step summary above
+    // the finished reply bubble.
+    VMCollapseThinkingIndicator(indicator);
     try {
         var tracker = indicator._vmActivity;
         if (tracker && tracker.rootEl && tracker.rootEl.parentNode === indicator) {
@@ -8600,6 +8613,40 @@ function removeThinkingIndicator(indicator) {
         }
     } catch (e) {}
     indicator.remove();
+}
+
+/* Collapse a finished Thinking... / Searching the web... status line.
+   The wrapper is animated to zero height before removal and any generic
+   summary (no recorded steps, or just a status label) is hidden outright so
+   "Thinking... (2/4)" never lingers under a completed answer. Status chrome
+   stays marked as no-tts + aria-hidden throughout the collapse. */
+function VMCollapseThinkingIndicator(indicator) {
+    if (!indicator) return;
+    if (indicator.dataset) indicator.dataset.noTts = "true";
+    indicator.setAttribute("aria-hidden", "true");
+    indicator.style.transition = "opacity 0.18s ease,max-height 0.18s ease,margin 0.18s ease,padding 0.18s ease";
+    indicator.style.overflow = "hidden";
+    indicator.style.maxHeight = "0px";
+    indicator.style.opacity = "0";
+    indicator.style.margin = "0";
+    indicator.style.padding = "0";
+
+    var tracker = indicator._vmActivity;
+    var root = tracker && tracker.rootEl;
+    if (!root) return;
+    if (root.dataset) root.dataset.noTts = "true";
+    root.setAttribute("aria-hidden", "true");
+    try {
+        var snapshot = typeof tracker.getSnapshot === "function" ? tracker.getSnapshot() : null;
+        var steps = (snapshot && snapshot.steps) || [];
+        var label = typeof tracker.getSummaryLabel === "function"
+            ? String(tracker.getSummaryLabel() || "") : "";
+        var pureThinking = /^\s*thinking(?:\s*\.\.\.|\s*\u2026)?\s*[›>]?\s*$/i;
+        if (!steps.length || pureThinking.test(label)) {
+            root.classList.add("vm-activity-hidden");
+            root.style.display = "none";
+        }
+    } catch (e) {}
 }
 
 /* Full bottom action bar shared by EVERY assistant reply. Live streamed replies
@@ -14873,6 +14920,7 @@ window.send = async function () {
                 }
                 thinking._vmActivity.finish(true);
             }
+            VMCollapseThinkingIndicator(thinking);
             removeThinkingIndicator(thinking);
         } else if (thinking) {
             removeThinkingIndicator(thinking);
@@ -15019,6 +15067,7 @@ window.send = async function () {
                 if (_fbBubble) _fbBubble.insertBefore(thinking._vmActivity.rootEl, _fbBubble.firstChild);
                 thinking._vmActivity.finish(true);
             }
+            VMCollapseThinkingIndicator(thinking);
             removeThinkingIndicator(thinking);
 
             /* Backend already persisted messages in /chat €” no duplicate save needed */

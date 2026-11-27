@@ -8,6 +8,15 @@ var VM_DOWNLOAD_SPINNER_SVG = '<svg class="vm-download-spinner" width="18" heigh
 
 function VMDownloadIconSvg() { return VM_DOWNLOAD_ICON_SVG; }
 function VMDownloadSpinnerSvg() { return VM_DOWNLOAD_SPINNER_SVG; }
+
+// Follow-up chips shown under a generated image card. Kept here (next to the
+// shared download chrome) so the chat UI and any WebView mirror use one list.
+var VM_IMAGE_FOLLOWUP_SUGGESTIONS = [
+  { label: "Change the outfit", prompt: "Change the outfit in this image while keeping my exact face and identity." },
+  { label: "Change the background", prompt: "Change the background in this image while keeping me looking exactly the same." },
+  { label: "Adjust the lighting", prompt: "Adjust the lighting in this image, preserving my natural skin texture and likeness." },
+  { label: "Try an aspect ratio", prompt: "Recreate this image in a different aspect ratio (9:16) without changing my identity." },
+];
 function VMEscapeHtmlAttr(value) {
   return String(value == null ? "" : value)
     .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
@@ -51,6 +60,7 @@ function VMWithDownloadSpinner(button, action) {
 if (typeof window !== "undefined") {
   window.VMDownloadIconSvg = VMDownloadIconSvg;
   window.VMDownloadSpinnerSvg = VMDownloadSpinnerSvg;
+  window.VM_IMAGE_FOLLOWUP_SUGGESTIONS = VM_IMAGE_FOLLOWUP_SUGGESTIONS;
   window.VMWithDownloadSpinner = VMWithDownloadSpinner;
   window.VMEscapeHtmlAttr = VMEscapeHtmlAttr;
 }
