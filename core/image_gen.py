@@ -21,6 +21,7 @@ from urllib.parse import quote
 
 import requests
 
+from core import hf_connectors
 from core.config import PROJECT_ROOT
 from core.failover import GENERIC_PROVIDER_ERROR, is_retryable_provider_error
 
@@ -28,15 +29,17 @@ from core.failover import GENERIC_PROVIDER_ERROR, is_retryable_provider_error
 GENERATED_DIR = PROJECT_ROOT / "static" / "generated"
 POLLINATIONS_BASE = "https://image.pollinations.ai/prompt"
 POLLINATIONS_GEN_BASE = "https://gen.pollinations.ai/image"
-HF_INFERENCE_BASE = os.getenv(
-    "HF_INFERENCE_BASE", "https://router.huggingface.co/hf-inference/models"
-).rstrip("/")
 GEMINI_IMAGE_BASE = os.getenv(
     "GEMINI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta"
 ).rstrip("/")
 GEMINI_IMAGE_MODEL = os.getenv("GEMINI_IMAGE_MODEL", "gemini-2.5-flash-image")
 HF_KONTEXT_MODEL = "black-forest-labs/FLUX.1-Kontext-dev"
 HF_SCHNELL_MODEL = "black-forest-labs/FLUX.1-schnell"
+# Free ZeroGPU editing Spaces tried when Inference Providers exhausts credits.
+HF_ZEROGPU_IMAGE_SPACES = (
+    os.getenv("HF_IMAGE_ZEROGPU_SPACE", "prithivMLmods/FLUX.1-Kontext-Photo-Mate-v2"),
+    "black-forest-labs/FLUX.1-Kontext-Dev",
+)
 
 # Anonymous, key-free hosting used only to give the no-key image-to-image
 # fallback a public HTTP(S) reference URL. Expire links quickly.
@@ -356,6 +359,58 @@ def _call_gemini_image(
     return _extract_gemini_image(response.json())
 
 
+def _call_inference_image(
+    prompt: str,
+    image_bytes: bytes | None = None,
+    size=(1024, 1024),
+    model_id: str | None = None,
+) -> bytes:
+    """Call the active Hugging Face Router through InferenceClient."""
+    client = hf_connectors.inference_client()
+    if image_bytes is not None:
+        image = client.image_to_image(
+            image_bytes,
+            prompt=prompt,
+            model=model_id or HF_KONTEXT_MODEL,
+        )
+    else:
+        image = client.text_to_image(
+            prompt=prompt,
+            model=model_id or HF_SCHNELL_MODEL,
+            width=int(size[0]),
+            height=int(size[1]),
+        )
+    data = hf_connectors.pil_to_bytes(image)
+    if not data:
+        raise RuntimeError("Inference response contained no image")
+    return data
+
+
+def _call_zerogpu_image(
+    prompt: str,
+    image_bytes: bytes,
+    size=(1024, 1024),
+) -> bytes:
+    """Free ZeroGPU editing fallback when Router credits/permissions fail."""
+    last_error: Exception | None = None
+    for space in HF_ZEROGPU_IMAGE_SPACES:
+        try:
+            data = hf_connectors.space_media(
+                space,
+                prompt=prompt,
+                image_bytes=image_bytes,
+                size=(int(size[0]), int(size[1])),
+                timeout=int(os.getenv("HF_IMAGE_ZEROGPU_TIMEOUT", "240")),
+            )
+            if data:
+                print("[IMAGE FLOW] ZeroGPU edit completed")
+                return data
+        except Exception as exc:
+            last_error = exc
+            print(f"[IMAGE FLOW] ZeroGPU edit attempt failed: {exc}")
+    raise last_error or RuntimeError("ZeroGPU editing unavailable")
+
+
 def _call_hf_image(
     prompt: str,
     image_bytes: bytes | None = None,
@@ -363,30 +418,18 @@ def _call_hf_image(
     model_id: str | None = None,
     timeout: int = 120,
 ) -> tuple[bytes, str]:
-    token = os.getenv("HF_TOKEN", "").strip()
-    if not token:
+    """Router inference first; free ZeroGPU edits, then Pollinations upstream."""
+    if not hf_connectors.hf_token():
         raise RuntimeError("Cloud editing token unavailable")
-    model = model_id or (HF_KONTEXT_MODEL if image_bytes else HF_SCHNELL_MODEL)
-    url = f"{HF_INFERENCE_BASE}/{quote(model, safe='/')}"
-    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
-    if image_bytes is not None:
-        payload = {
-            "inputs": base64.b64encode(image_bytes).decode("ascii"),
-            "parameters": {
-                "prompt": prompt,
-                "target_size": {"width": size[0], "height": size[1]},
-            },
-        }
-    else:
-        payload = {
-            "inputs": prompt,
-            "parameters": {"width": size[0], "height": size[1]},
-        }
-    response = requests.post(url, headers=headers, json=payload, timeout=timeout)
-    if response.status_code != 200 or not response.content:
-        detail = str(getattr(response, "text", ""))[:300]
-        raise RuntimeError(f"Cloud image HTTP {response.status_code}: {detail}")
-    return response.content, response.headers.get("content-type", "image/png")
+    try:
+        return _call_inference_image(prompt, image_bytes, size, model_id), "image/png"
+    except Exception as exc:
+        # Text-to-image hands straight off to Pollinations flux (outer chain).
+        # Reference edits get the free ZeroGPU tier before that hand-off.
+        if image_bytes is None or not hf_connectors.is_credit_error(exc):
+            raise
+        print(f"[IMAGE FLOW] Router edit unavailable, trying ZeroGPU: {exc}")
+    return _call_zerogpu_image(prompt, image_bytes, size), "image/png"
 
 
 def _call_pollinations(

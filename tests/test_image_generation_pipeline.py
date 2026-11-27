@@ -1,6 +1,8 @@
 """Image failover chain, identity-preserving edits and consultative gate tests."""
 
 import base64
+import subprocess
+from pathlib import Path
 
 import pytest
 import requests
@@ -30,6 +32,14 @@ class FakeResponse:
         return self._json
 
 
+class FakeInferenceError(Exception):
+    """Stand-in for InferenceClient HTTP/credit failures."""
+
+    def __init__(self, status_code, text="quota exhausted"):
+        self.status_code = status_code
+        super().__init__(f"Inference HTTP {status_code}: {text}")
+
+
 def _gemini_payload():
     encoded = base64.b64encode(PNG_BYTES).decode("ascii")
     return {
@@ -48,38 +58,68 @@ def _disable_google(monkeypatch):
         monkeypatch.delenv(key, raising=False)
 
 
-def _mock_chain(monkeypatch, gemini=None, hf=None, pollinations=None):
-    """Patch all three providers at once and return the captured requests."""
-    captured = {"gemini": None, "hf": None, "pollinations": None}
+def _response(spec, ok_content=b"", ok_payload=None):
+    if spec.get("timeout"):
+        raise requests.exceptions.Timeout("upstream timed out")
+    status = spec.get("status", 200)
+    text = spec.get("text", "rate limited")
+    return FakeResponse(
+        status_code=status,
+        content=ok_content if status == 200 else b"",
+        text=text,
+        json_data=ok_payload if status == 200 else None,
+    )
+
+
+def _mock_chain(monkeypatch, gemini=None, hf=None, zerogpu=None, pollinations=None):
+    """Patch the full chain and return captured requests.
+
+    ``hf`` and ``zerogpu`` are outcome specs for the new Router/ZeroGPU seams;
+    Gemini and Pollinations remain HTTP-level so the outer chain is exercised.
+    """
+    captured = {"gemini": None, "hf": None, "zerogpu": None, "pollinations": None}
     gemini = gemini or {}
     hf = hf or {}
+    zerogpu = zerogpu or {}
     pollinations = pollinations or {}
 
-    def _outcome(spec, ok_payload=None, ok_content=b""):
-        if spec.get("timeout"):
-            raise requests.exceptions.Timeout("upstream timed out")
-        status = spec.get("status", 200)
-        ok = status == 200
-        return FakeResponse(
-            status_code=status,
-            content=ok_content if ok else b"",
-            text=spec.get("text", "rate limited"),
-            json_data=ok_payload if ok else None,
-        )
-
     def fake_post(url, headers=None, json=None, timeout=None, **kwargs):
-        if "generativelanguage.googleapis.com" in url:
-            captured["gemini"] = {"url": url, "headers": headers, "payload": json}
-            return _outcome(gemini, ok_payload=_gemini_payload())
-        captured["hf"] = {"url": url, "headers": headers, "payload": json}
-        return _outcome(hf, ok_content=b"\x89PNG\r\n\x1a\nhf")
+        if "generativelanguage.googleapis.com" not in url:
+            raise AssertionError(f"Unexpected POST to {url}")
+        captured["gemini"] = {"url": url, "headers": headers, "payload": json}
+        return _response(gemini, ok_payload=_gemini_payload())
+
+    def fake_inference(prompt, image_bytes=None, size=(1024, 1024), model_id=None):
+        captured["hf"] = {
+            "prompt": prompt,
+            "image_bytes": image_bytes,
+            "size": size,
+            "model_id": model_id,
+        }
+        response = _response(hf, ok_content=PNG_BYTES + b"-hf")
+        if response.status_code != 200:
+            raise FakeInferenceError(response.status_code, response.text)
+        return response.content
+
+    def fake_zerogpu(prompt, image_bytes, size=(1024, 1024)):
+        captured["zerogpu"] = {
+            "prompt": prompt,
+            "image_bytes": image_bytes,
+            "size": size,
+        }
+        response = _response(zerogpu, ok_content=PNG_BYTES + b"-zerogpu")
+        if response.status_code != 200:
+            raise FakeInferenceError(response.status_code, response.text)
+        return response.content
 
     def fake_get(url, params=None, headers=None, timeout=None, **kwargs):
         captured["pollinations"] = {"url": url, "params": params or {}, "headers": headers}
-        return _outcome(pollinations, ok_content=b"\x89PNG\r\n\x1a\nbackup")
+        return _response(pollinations, ok_content=PNG_BYTES + b"-backup")
 
     monkeypatch.setattr(image_gen.requests, "post", fake_post)
     monkeypatch.setattr(image_gen.requests, "get", fake_get)
+    monkeypatch.setattr(image_gen, "_call_inference_image", fake_inference)
+    monkeypatch.setattr(image_gen, "_call_zerogpu_image", fake_zerogpu)
     monkeypatch.setattr(image_gen, "_save_image", lambda data, ext: "/static/generated/result.png")
     monkeypatch.setattr(
         image_gen, "_host_reference_image",
@@ -135,6 +175,7 @@ def test_gemini_reference_edit_sends_inline_reference_with_guardrail(monkeypatch
 
 @pytest.mark.parametrize("failure", [{"status": 402}, {"status": 429}, {"timeout": True}])
 def test_gemini_failure_falls_back_to_hf_then_pollinations(monkeypatch, failure):
+    monkeypatch.setenv("HF_TOKEN", "hf_test_token")
     captured = _mock_chain(monkeypatch, gemini=failure, hf={"status": 402})
 
     result = image_gen.generate_image(
@@ -142,7 +183,8 @@ def test_gemini_failure_falls_back_to_hf_then_pollinations(monkeypatch, failure)
     )
 
     assert captured["hf"] is not None
-    assert image_gen.HF_SCHNELL_MODEL in captured["hf"]["url"]
+    assert captured["hf"]["model_id"] is None  # default Router text model
+    assert captured["zerogpu"] is None  # text generation never needs a ZeroGPU edit
     assert captured["pollinations"]["params"]["model"] == "flux"
     assert result["image_url"] == "/static/generated/result.png"
 
@@ -156,6 +198,8 @@ def test_hf_failure_falls_back_to_pollinations(monkeypatch, failure):
     result = image_gen.generate_image("A quiet garden", enhance=False)
 
     assert captured["gemini"] is None
+    assert captured["hf"] is not None
+    assert captured["zerogpu"] is None
     assert captured["pollinations"]["params"]["model"] == "flux"
     assert result["image_url"] == "/static/generated/result.png"
 
@@ -170,15 +214,43 @@ def test_hf_kontext_edit_and_schnell_text_when_google_key_absent(monkeypatch):
         enhance=False,
         reference_image={"data": TINY_REFERENCE, "mimeType": "image/png"},
     )
-    assert image_gen.HF_KONTEXT_MODEL in captured["hf"]["url"]
-    assert base64.b64decode(captured["hf"]["payload"]["inputs"]) == b"reference-image-bytes"
-    assert "exact facial identity" in captured["hf"]["payload"]["parameters"]["prompt"]
+    assert captured["hf"]["image_bytes"] == b"reference-image-bytes"
+    assert "exact facial identity" in captured["hf"]["prompt"]
+    assert captured["zerogpu"] is None
     assert edit["mode"] == "image_to_image"
 
     text = image_gen.generate_image("A lighthouse at dawn", enhance=False)
-    assert image_gen.HF_SCHNELL_MODEL in captured["hf"]["url"]
-    assert captured["hf"]["payload"]["inputs"] == "A lighthouse at dawn"
+    assert captured["hf"]["image_bytes"] is None
+    assert captured["hf"]["model_id"] is None
     assert text["mode"] == "text_to_image"
+
+
+@pytest.mark.parametrize("zerogpu_failure", [None, {"status": 402, "text": "quota exhausted"}])
+def test_router_credit_edit_fails_over_to_zerogpu_then_pollinations(monkeypatch, zerogpu_failure):
+    """Router 402 -> ZeroGPU gradio_client -> Pollinations kontext -> done."""
+    _disable_google(monkeypatch)
+    monkeypatch.setenv("HF_TOKEN", "hf_test_token")
+    captured = _mock_chain(
+        monkeypatch,
+        hf={"status": 402, "text": "payment required"},
+        zerogpu=zerogpu_failure,
+    )
+
+    result = image_gen.generate_image(
+        "Change my outfit to a red dress",
+        enhance=False,
+        reference_image={"data": TINY_REFERENCE, "mimeType": "image/png"},
+    )
+
+    assert captured["hf"]["image_bytes"] == b"reference-image-bytes"
+    assert captured["zerogpu"] is not None
+    assert captured["zerogpu"]["image_bytes"] == b"reference-image-bytes"
+    assert "exact facial identity" in captured["zerogpu"]["prompt"]
+    if zerogpu_failure:
+        assert captured["pollinations"]["params"]["model"] == "kontext"
+    else:
+        assert captured["pollinations"] is None
+    assert result["mode"] == "image_to_image"
 
 
 def test_pollinations_uses_authenticated_endpoint_when_key_present(monkeypatch):
@@ -212,6 +284,7 @@ def test_exhausted_chain_raises_generic_error_only(monkeypatch):
 
 
 def test_provider_manager_starts_with_gemini_then_falls_back(monkeypatch):
+    monkeypatch.setenv("HF_TOKEN", "hf_test_token")
     captured = _mock_chain(monkeypatch)
 
     result = _image_manager().execute(
@@ -234,8 +307,8 @@ def test_provider_manager_starts_with_gemini_then_falls_back(monkeypatch):
     )
     assert result.success
     assert result.provider_name == "HuggingFace"
-    assert image_gen.HF_KONTEXT_MODEL in captured["hf"]["url"]
-    assert "exact facial identity" in captured["hf"]["payload"]["parameters"]["prompt"]
+    assert captured["hf"]["image_bytes"] == b"reference-image-bytes"
+    assert "exact facial identity" in captured["hf"]["prompt"]
 
 
 def test_provider_manager_passes_hf_model_hint(monkeypatch):
@@ -251,7 +324,7 @@ def test_provider_manager_passes_hf_model_hint(monkeypatch):
     )
 
     assert result.success
-    assert captured["hf"]["url"].endswith("/custom-model")
+    assert captured["hf"]["model_id"] == "custom-model"
     assert result.provider_name == "HuggingFace"
 
 
@@ -319,3 +392,17 @@ def test_privacy_guard_scrubs_all_generation_provider_names():
     )
     for name in ("gemini", "google", "hugging", "pollinations", "qwen", "alibaba"):
         assert name not in copy.lower()
+
+
+def test_no_deprecated_api_inference_endpoint_remains():
+    """The retired host must be absent from every tracked file."""
+    retired_host = "api-" + "inference.huggingface.co"
+    repo_root = Path(__file__).resolve().parents[1]
+    result = subprocess.run(
+        ["git", "grep", "-n", "-i", retired_host],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 1, result.stdout
+    assert result.stdout.strip() == ""

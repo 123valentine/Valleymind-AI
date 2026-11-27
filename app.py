@@ -2752,11 +2752,13 @@ def _safe_persist_url(media_record: dict | None, source_url: str) -> str:
     return ""
 
 
-def _spawn_video_generation(user_id: str, chat_id: str, message: str) -> dict:
+def _spawn_video_generation(user_id: str, chat_id: str, message: str, reference_image=None) -> dict:
     """Run the full video lifecycle (generate → download → GridFS save → persist)
     in a background daemon thread, so it completes even if the browser
     disconnects mid-generation. Returns a mutable ``state`` dict the SSE stream
     can observe for progress and the final permanent URL.
+
+    ``reference_image`` enables image-to-video on providers that support it.
 
     The chat message is persisted with our OWN permanent GridFS URL — never the
     provider's temporary signed URL (which carries an Expires param and would
@@ -2767,7 +2769,7 @@ def _spawn_video_generation(user_id: str, chat_id: str, message: str) -> dict:
     def _run():
         try:
             dispatcher = get_video_dispatcher()
-            task = dispatcher.generate(message)
+            task = dispatcher.generate(message, reference_image=reference_image)
             if task.status.value == "failed" or not task.video_url:
                 state.update(done=True, status="failed", error=public_video_error(task.error))
                 print(f"[VIDEO] Background generation failed: {task.error}")
@@ -3441,7 +3443,7 @@ def _dispatch_video_json(user_id, message, chat_id, image_data):
     _persist_chat_message(user_id, chat_id, "user", message)
 
     dispatcher = get_video_dispatcher()
-    task = dispatcher.generate(message)
+    task = dispatcher.generate(message, reference_image=image_data)
 
     if task.status.value == "failed":
         print(f"[Router]   VIDEO failed: {task.error}")
@@ -3493,7 +3495,7 @@ def _dispatch_video_stream(user_id, message, chat_id, image_data, activity_sessi
         except Exception:
             pass
 
-    state = _spawn_video_generation(user_id, resolved_chat_id, message)
+    state = _spawn_video_generation(user_id, resolved_chat_id, message, image_data)
 
     return Response(
         stream_with_context(_stream_video_state(
@@ -3573,7 +3575,7 @@ def _dispatch_video_text_json(user_id, message, chat_id, image_data):
 
     # ── 2. Generate video via VideoDispatcher ─────────────────────────
     dispatcher = get_video_dispatcher()
-    task = dispatcher.generate(message)
+    task = dispatcher.generate(message, reference_image=image_data)
 
     video_url = ""
     video_error = ""
@@ -3688,7 +3690,7 @@ def _dispatch_video_text_stream(user_id, message, chat_id, image_data, activity_
                 yield _sse_frame({'error': str(exc)}, request_id, turn_id, attempt_id)
 
         # ── 2. Generate video in background (survives disconnect), tail it ─
-        state = _spawn_video_generation(user_id, resolved_chat_id, message)
+        state = _spawn_video_generation(user_id, resolved_chat_id, message, image_data)
         for chunk in _stream_video_state(
             state, resolved_chat_id, updated_title=updated_title, message=message,
             request_id=request_id, turn_id=turn_id, attempt_id=attempt_id,

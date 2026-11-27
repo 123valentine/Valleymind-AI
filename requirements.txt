@@ -16,6 +16,9 @@ pymongo
 certifi
 imageio-ffmpeg
 Pillow
+# Hugging Face Router inference + ZeroGPU Spaces (image/video connectors)
+huggingface_hub
+gradio_client
 boto3
 psutil
 edge-tts

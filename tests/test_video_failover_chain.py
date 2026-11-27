@@ -1,12 +1,11 @@
-"""Video provider chain tests: 402/429/timeout hand-offs and final local fallback."""
+"""Video provider chain tests: quota/queue hand-offs and final local fallback."""
 
 import base64
-import json
 
 import pytest
 import requests
 
-from core import video_dispatcher
+from core import hf_connectors, video_dispatcher
 from core.video_dispatcher import VideoDispatcher, public_video_error
 from core.video_providers import huggingface as hf_module
 from core.video_providers import local_storyboard, pollinations as poll_module
@@ -41,7 +40,6 @@ def _prepare(monkeypatch):
     monkeypatch.setattr(poll_module, "record_error", lambda *a, **kw: None)
     monkeypatch.setattr(poll_module, "record_success", lambda *a, **kw: None)
     monkeypatch.setattr(local_storyboard, "record_success", lambda *a, **kw: None)
-    monkeypatch.setattr(hf_module, "_models", lambda: ["Wan-AI/Wan2.1-T2V-1.3B"])
     monkeypatch.setattr(poll_module, "_models", lambda: ["wan"])
     monkeypatch.setattr(hf_module, "_save_video", lambda data, ext="mp4": "/static/generated/hf.mp4")
     monkeypatch.setattr(poll_module, "_save_video", lambda data, ext="mp4": "/static/generated/backup.mp4")
@@ -59,16 +57,25 @@ def _dispatcher():
     return dispatcher
 
 
-def _patch_hf(monkeypatch, failure):
-    def fake_post(url, headers=None, json=None, timeout=None, **kwargs):
+def _patch_hf(monkeypatch, failure, captured=None):
+    """Replace the LTX ZeroGPU call seam and record its arguments."""
+    captured = captured if captured is not None else {}
+
+    def fake_ltx(prompt, reference_image=None, timeout=None):
+        captured.update(
+            {"prompt": prompt, "reference_image": reference_image, "timeout": timeout}
+        )
         if failure.get("timeout"):
             raise requests.exceptions.Timeout("upstream timed out")
         status = failure.get("status", 200)
         if status == 200:
-            return FakeResponse(200, json_data={"video": base64.b64encode(MP4_BYTES).decode("ascii")})
-        return FakeResponse(status, text=failure.get("text", "quota exhausted"))
+            return MP4_BYTES
+        error = RuntimeError(f"Space HTTP {status}: {failure.get('text', 'quota exhausted')}")
+        error.status_code = status
+        raise error
 
-    monkeypatch.setattr(hf_module.requests, "post", fake_post)
+    monkeypatch.setattr(hf_module, "_call_ltx_space", fake_ltx)
+    return captured
 
 
 def _patch_pollinations(monkeypatch, failure=None, async_job=False):
@@ -97,6 +104,101 @@ def _patch_pollinations(monkeypatch, failure=None, async_job=False):
         return FakeResponse(200, content=MP4_BYTES, headers={"content-type": "video/mp4"})
 
     monkeypatch.setattr(poll_module.requests, "get", fake_get)
+
+
+def test_hf_ltx_space_is_primary_video_provider():
+    assert hf_module.SPACE == "Lightricks/LTX-2.5"
+
+
+def test_hf_ltx_space_success_uses_primary_video(monkeypatch):
+    _prepare(monkeypatch)
+    captured = _patch_hf(monkeypatch, {})
+
+    task = _dispatcher().generate("A drone shot over the coast")
+
+    assert captured["prompt"] == "A drone shot over the coast"
+    assert task.status == VideoTaskStatus.COMPLETED
+    assert task.video_url == "/static/generated/hf.mp4"
+    assert task.metadata["_provider"] == "HuggingFaceVideo"
+    assert task.metadata["model"] == "Lightricks/LTX-2.5"
+
+
+def test_hf_video_forwards_reference_image_for_image_to_video(monkeypatch):
+    _prepare(monkeypatch)
+    reference = "data:image/png;base64," + base64.b64encode(b"reference-frame").decode("ascii")
+    captured = _patch_hf(monkeypatch, {})
+
+    task = _dispatcher().generate("Animate this photo", reference_image=reference)
+
+    assert task.status == VideoTaskStatus.COMPLETED
+    assert captured["reference_image"] == reference
+
+
+def test_ltx_space_maps_live_gradio_schema_to_call_arguments(monkeypatch):
+    """The Space call uses view_api labels instead of hard-coded positions."""
+    captured = {}
+
+    class FakeSpaceClient:
+        def view_api(self, return_format=None, print_info=False):
+            captured["return_format"] = return_format
+            return {
+                "named_endpoints": {
+                    "/run": {
+                        "parameters": [
+                            {"label": "Prompt", "parameter_name": "prompt"},
+                            {
+                                "label": "Input image (optional ? image-to-video)",
+                                "parameter_name": "image_path",
+                            },
+                            {
+                                "label": "Height (final)",
+                                "parameter_name": "height",
+                                "type": {"type": "number", "description": "between 512 and 1536"},
+                            },
+                            {
+                                "label": "Width (final)",
+                                "parameter_name": "width",
+                                "type": {"type": "number", "description": "between 512 and 1536"},
+                            },
+                            {"label": "Seed", "parameter_name": "seed"},
+                        ],
+                        "returns": [{"label": "Result (with audio)"}],
+                    },
+                    "/set_dims_from_image": {"parameters": [], "returns": []},
+                }
+            }
+
+        def predict(self, api_name=None, **kwargs):
+            captured["api_name"] = api_name
+            captured["kwargs"] = kwargs
+            image_value = kwargs["image_path"]
+            captured["image_file_payload"] = isinstance(image_value, dict)
+            image_path = image_value["path"] if isinstance(image_value, dict) else image_value
+            with open(image_path, "rb") as handle:
+                captured["image_bytes"] = handle.read()
+            return b"generated-video-bytes" * 8
+
+    monkeypatch.setattr(
+        hf_connectors, "space_client",
+        lambda space, token=None, verbose=False: FakeSpaceClient(),
+    )
+
+    data = hf_connectors.space_media(
+        "Lightricks/LTX-2.5",
+        prompt="Make the subject turn around",
+        image_bytes=b"reference-frame",
+        size=(576, 320),
+        timeout=10,
+    )
+
+    assert captured["return_format"] == "dict"
+    assert captured["api_name"] == "/run"
+    assert captured["kwargs"]["prompt"] == "Make the subject turn around"
+    assert captured["kwargs"]["height"] == 512  # live Space clamps to its published range
+    assert captured["kwargs"]["width"] == 576
+    assert captured["image_file_payload"] is True
+    assert captured["image_bytes"] == b"reference-frame"
+    assert data == b"generated-video-bytes" * 8
 
 
 @pytest.mark.parametrize(
@@ -181,7 +283,7 @@ def test_video_chain_priority_order():
 
 
 def test_public_video_error_is_provider_neutral():
-    message = public_video_error("HuggingFace HTTP 402 on Wan-AI/Wan2.1-T2V-1.3B")
+    message = public_video_error("HuggingFace HTTP 402 on Lightricks/LTX-2.5")
     assert "hugging" not in message.lower()
     assert "402" not in message
     assert video_dispatcher.GENERIC_VIDEO_ERROR == message
