@@ -20,6 +20,11 @@ from pathlib import Path
 from threading import Lock, Thread
 from urllib.parse import quote
 
+from dotenv import load_dotenv
+
+# Local runs must match Render: load project-root .env before provider setup.
+load_dotenv(Path(__file__).resolve().parent / ".env")
+
 from flask import Flask, Response, jsonify, redirect, request, send_file, send_from_directory, session, stream_with_context
 from werkzeug.security import check_password_hash, generate_password_hash
 
@@ -48,6 +53,7 @@ from core.brain import (
 from core.config import PROJECT_ROOT, get_config
 from core.db import auth_tokens_collection, app_config_collection, chats_collection, get_db, studio_runs_collection, usage_collection, users_collection
 from core.media_manager import get_media_manager
+from core.photo_enhance import enhance_photo_bytes, make_preview_data_uri
 from core.router import RouteDecision, get_router
 from core.seo import PUBLIC_PAGES as SEO_PAGE_REGISTRY
 from core.seo import URL_ALIASES as SEO_URL_ALIASES
@@ -56,7 +62,7 @@ from core.seo import sitemap_xml as seo_sitemap_body
 from core.seo import render_page as seo_render_page
 from core.vision import get_vision_service
 from core.tts import speak_marcus
-from core.video_dispatcher import get_video_dispatcher
+from core.video_dispatcher import get_video_dispatcher, public_video_error
 from core import ai_builder
 from core import file_gen
 from core import template_library as tpllib
@@ -2763,13 +2769,13 @@ def _spawn_video_generation(user_id: str, chat_id: str, message: str) -> dict:
             dispatcher = get_video_dispatcher()
             task = dispatcher.generate(message)
             if task.status.value == "failed" or not task.video_url:
-                state.update(done=True, status="failed", error=task.error or "Video generation failed")
+                state.update(done=True, status="failed", error=public_video_error(task.error))
                 print(f"[VIDEO] Background generation failed: {task.error}")
                 return
 
             media = get_media_manager(user_id)
             media_record = media.save_video(
-                task.video_url, prompt=message, provider="AlibabaVideo", chat_id=chat_id,
+                task.video_url, prompt=message, provider="video", chat_id=chat_id,
             )
             stored_url = media_record["local_path"] if media_record else ""
             if not stored_url:
@@ -2784,7 +2790,7 @@ def _spawn_video_generation(user_id: str, chat_id: str, message: str) -> dict:
             state.update(done=True, status="completed", stored_url=stored_url)
             print(f"[VIDEO] Background generation complete, persisted {stored_url}")
         except Exception as exc:
-            state.update(done=True, status="failed", error=str(exc))
+            state.update(done=True, status="failed", error=public_video_error(exc))
             print(f"[VIDEO] Background generation crashed: {exc}")
 
     Thread(target=_run, daemon=True).start()
@@ -2806,7 +2812,7 @@ def _stream_video_state(state: dict, resolved_chat_id: str, updated_title=None, 
         _time.sleep(2)
         yield _sse_frame({'intent': 'video_progress', 'status': state['status'], 'status_message': 'Generating video, this can take a few minutes...'}, request_id, turn_id, attempt_id)
     if state["error"]:
-        yield _sse_frame({'error': state['error']}, request_id, turn_id, attempt_id)
+        yield _sse_frame({'error': public_video_error(state['error'])}, request_id, turn_id, attempt_id)
     else:
         yield _sse_frame({'video_url': state['stored_url']}, request_id, turn_id, attempt_id)
         if followups:
@@ -3439,12 +3445,12 @@ def _dispatch_video_json(user_id, message, chat_id, image_data):
 
     if task.status.value == "failed":
         print(f"[Router]   VIDEO failed: {task.error}")
-        return jsonify({"status": "error", "message": task.error or "Video generation failed"}), 500
+        return jsonify({"status": "error", "message": public_video_error(task.error)}), 500
 
     print(f"[Router]   VIDEO success — video_url={task.video_url}")
 
     media = get_media_manager(user_id)
-    media_record = media.save_video(task.video_url, prompt=message, provider="AlibabaVideo", chat_id=chat_id)
+    media_record = media.save_video(task.video_url, prompt=message, provider="video", chat_id=chat_id)
     if not media_record:
         # Never fall back to task.video_url — it's a temporary signed URL that
         # would rot. If GridFS save failed, report failure rather than persist
@@ -3570,16 +3576,21 @@ def _dispatch_video_text_json(user_id, message, chat_id, image_data):
     task = dispatcher.generate(message)
 
     video_url = ""
+    video_error = ""
     if task.status.value != "failed" and task.video_url:
         print(f"[Router]   VIDEO success — provider url received")
         media = get_media_manager(user_id)
-        media_record = media.save_video(task.video_url, prompt=message, provider="AlibabaVideo", chat_id=chat_id)
+        media_record = media.save_video(task.video_url, prompt=message, provider="video", chat_id=chat_id)
         if media_record:
             video_url = media_record["local_path"]  # permanent GridFS URL only
         else:
             print("[Router]   VIDEO save-to-gallery failed; not persisting a temporary URL")
     else:
+        video_error = public_video_error(task.error)
         print(f"[Router]   VIDEO failed: {task.error}")
+
+    if video_error:
+        text_reply = _privacy_guard(f"{text_reply}\n\n{video_error}".strip())
 
     # ── 3. Persist ────────────────────────────────────────────────────
     if video_url:
@@ -3603,6 +3614,7 @@ def _dispatch_video_text_json(user_id, message, chat_id, image_data):
         "character": "marcus",
         "reply": text_reply,
         "video_url": video_url,
+        "video_error": video_error or None,
         "task_id": task.task_id,
         "voice": voice,
         "detected_route": str(meta.get("detected_route") or ""),
@@ -3922,6 +3934,53 @@ def api_generate_image():
         return jsonify({
             "status": "error",
             "message": "Image generation failed. Please try again.",
+        }), 500
+
+
+@app.route("/api/studio/photo-enhance", methods=["POST"])
+def api_studio_photo_enhance():
+    """Local Pillow finishing for Studio Retouch / Auto Enhance (zero API calls)."""
+    try:
+        _, error = _require_login()
+        if error:
+            return error
+
+        mode = str(request.form.get("mode") or "").strip().lower()
+        uploaded = request.files.get("image") or request.files.get("file")
+        if uploaded and uploaded.filename:
+            image_bytes = uploaded.read()
+        else:
+            payload = request.get_json(silent=True) or {}
+            if not mode:
+                mode = str(payload.get("mode") or "").strip().lower()
+            raw = str(
+                payload.get("image")
+                or payload.get("image_data")
+                or payload.get("data")
+                or ""
+            ).strip()
+            if raw.startswith("data:"):
+                raw = raw.partition(",")[2].strip()
+            image_bytes = base64.b64decode(raw, validate=False) if raw else b""
+
+        if not image_bytes:
+            return jsonify({"status": "error", "message": "Please choose a photo first."}), 400
+        if len(image_bytes) > 25 * 1024 * 1024:
+            return jsonify({"status": "error", "message": "Please choose a smaller photo."}), 413
+
+        enhanced, mime = enhance_photo_bytes(image_bytes, mode or "auto")
+        mode = mode if mode in ("auto", "retouch") else "auto"
+        return jsonify({
+            "status": "success",
+            "mode": mode,
+            "mime": mime,
+            "image": make_preview_data_uri(enhanced, mime),
+        })
+    except Exception as exc:
+        print(f"[STUDIO PHOTO] Enhancement failed: {exc}")
+        return jsonify({
+            "status": "error",
+            "message": "Photo finishing is temporarily unavailable. Please try again.",
         }), 500
 
 

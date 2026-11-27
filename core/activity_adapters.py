@@ -189,15 +189,16 @@ class ProviderAdapter:
         next_provider: str,
         reason: Optional[str] = None,
     ) -> None:
+        # Provider identities stay internal; only generic status reaches the UI.
         with track_activity(
             "provider_fallback",
             label="Switching to backup AI provider...",
-            detail=reason,
-            meta={"from": failed_provider, "to": next_provider},
+            detail="Temporary capacity issue",
+            meta={"from": "primary", "to": "backup"},
         ) as handle:
             handle.complete(
                 label="Connected to backup AI provider",
-                meta={"from": failed_provider, "to": next_provider},
+                meta={"from": "primary", "to": "backup"},
             )
 
 

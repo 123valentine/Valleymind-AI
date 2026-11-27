@@ -210,15 +210,33 @@ if gemini_key:
 else:
     test("Gemini -- Text (Prompt Enhancement)", False, "No Gemini key")
 
-# GeminiImageProvider stub
-test("Gemini Image Provider (Stub)", True, "Configured as fallback in provider_manager.py (stub returns 'not yet implemented')")
+# Automatic image failover chain (registered providers, first three in order)
+try:
+    from core.provider_manager import Capability, ProviderManager
+    names = [p.name for p in ProviderManager()._providers.get(Capability.IMAGE, [])]
+    chain = [n for n in names if n in ("Gemini", "HuggingFace", "Pollinations")]
+    test("Image failover chain Gemini->HF->Pollinations", chain[:3] == ["Gemini", "HuggingFace", "Pollinations"], " -> ".join(chain[:3]))
+except Exception as e:
+    test("Image failover chain Gemini->HF->Pollinations", False, _safe(str(e)))
+
+test("Gemini Image Provider configured", bool(gemini_key), "native image generation is first when a key is present")
 
 
 # ---------------------------------------------------------------------------
 # 6. VIDEO GENERATION
 # ---------------------------------------------------------------------------
 print("\n--- 6. VIDEO GENERATION ---\n")
-test("Video Generation -- PlaceholderVideoProvider", True, "Stub -- returns 'Video generation not yet available'")
+try:
+    from core.video_dispatcher import VideoDispatcher
+    names = [p.name for p in VideoDispatcher()._providers]
+    chain = names[:3]
+    test(
+        "Video failover chain HF->Pollinations->LocalStoryboard",
+        chain == ["HuggingFaceVideo", "PollinationsVideo", "LocalStoryboard"],
+        " -> ".join(chain),
+    )
+except Exception as e:
+    test("Video failover chain HF->Pollinations->LocalStoryboard", False, _safe(str(e)))
 
 
 # ---------------------------------------------------------------------------

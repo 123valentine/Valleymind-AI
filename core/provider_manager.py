@@ -92,7 +92,7 @@ class HuggingFaceImageProvider(BaseProvider):
 
     name = "HuggingFace"
     capability = Capability.IMAGE
-    priority = 5
+    priority = 10
     health = "healthy"
 
     def execute(self, **kwargs: Any) -> ProviderResult:
@@ -108,7 +108,7 @@ class HuggingFaceImageProvider(BaseProvider):
                 size=kwargs.get("size"),
                 mode=kwargs.get("mode"),
                 model=kwargs.get("model"),
-                prefer="hf",
+                prefer="hf_only",
             )
             elapsed = (time.perf_counter() - start) * 1000
             return ProviderResult(
@@ -130,7 +130,7 @@ class HuggingFaceImageProvider(BaseProvider):
 class PollinationsImageProvider(BaseProvider):
     name = "Pollinations"
     capability = Capability.IMAGE
-    priority = 10
+    priority = 20
     health = "healthy"
 
     def execute(self, **kwargs: Any) -> ProviderResult:
@@ -166,18 +166,43 @@ class PollinationsImageProvider(BaseProvider):
 
 
 class GeminiImageProvider(BaseProvider):
-    """Stub — ready for future Gemini image-gen integration."""
+    """First image path: Google AI Studio native image generation/editing."""
+
     name = "Gemini"
     capability = Capability.IMAGE
-    priority = 20
+    priority = 5
     health = "healthy"
 
     def execute(self, **kwargs: Any) -> ProviderResult:
-        return ProviderResult(
-            success=False,
-            error="Gemini image provider not yet implemented",
-            provider_name=self.name,
-        )
+        from core.image_gen import generate_image as image_gen
+
+        start = time.perf_counter()
+        try:
+            result = image_gen(
+                prompt=kwargs.get("prompt", ""),
+                api_key=kwargs.get("api_key"),
+                enhance=kwargs.get("enhance", True),
+                reference_image=kwargs.get("reference_image"),
+                size=kwargs.get("size"),
+                mode=kwargs.get("mode"),
+                model=kwargs.get("model"),
+                prefer="gemini_only",
+            )
+            elapsed = (time.perf_counter() - start) * 1000
+            return ProviderResult(
+                success=True,
+                data=result,
+                provider_name=self.name,
+                latency_ms=elapsed,
+            )
+        except Exception as exc:
+            elapsed = (time.perf_counter() - start) * 1000
+            return ProviderResult(
+                success=False,
+                error=str(exc),
+                provider_name=self.name,
+                latency_ms=elapsed,
+            )
 
 
 # ──────────────────────────────────────────────────────────────
@@ -210,9 +235,9 @@ class ProviderManager:
         self._providers: dict[Capability, list[BaseProvider]] = {
             Capability.TEXT: [],
             Capability.IMAGE: [
+                GeminiImageProvider(),
                 HuggingFaceImageProvider(),
                 PollinationsImageProvider(),
-                GeminiImageProvider(),
             ],
             Capability.VIDEO: [
                 PlaceholderVideoProvider(),

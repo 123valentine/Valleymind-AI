@@ -7,12 +7,17 @@ from datetime import datetime
 from typing import Optional
 
 import requests
+from dotenv import load_dotenv
 
 from core.auto_model import get_latest_groq_model
 from core.activity_v2 import get_current_session, track_activity
 from core.activity_adapters import WebSearchAdapter, MemoryAdapter, ProviderAdapter
 from core.character import load_character_profile
 from core.config import PROJECT_ROOT, get_config
+
+# Local runs must match Render: read project-root .env before any provider call.
+load_dotenv(PROJECT_ROOT / ".env")
+
 from core.file_gen import file_card as _make_file_card, generate_file as _generate_real_file
 from core.external_apis import (
     classify_research_intent,
@@ -2625,7 +2630,8 @@ _NON_PHONE_NUMERIC_RE = re.compile(
     r"^\d{4}[\s.\-/]+\d{1,2}[\s.\-/]+\d{1,4}$|^\d{1,2}:\d{2}(?::\d{2})?$"
 )
 _THIRD_PARTY_PROVIDER_RE = re.compile(
-    r"\b(?:Groq|NVIDIA|Gemini|OpenRouter|Alibaba)(?:Video|Studio|Cloud|AI)?\b",
+    r"\b(?:Groq|NVIDIA|Gemini|Google(?:\s+AI\s+Studio)?|OpenRouter|Alibaba|"
+    r"Hugging\s*Face|HuggingFace|Pollinations|Qwen|Flux(?:\.1)?)(?:Video|Studio|Cloud|AI)?\b",
     re.IGNORECASE,
 )
 

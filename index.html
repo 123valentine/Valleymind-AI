@@ -333,6 +333,28 @@
   .vm-spinner-arc { opacity:0.95; }
   @keyframes vmDownloadSpin { to { transform:rotate(360deg); } }
 
+  /* Studio photo tool: before/after comparison. */
+  .vm-photo-compare {
+    position:relative; width:100%; height:320px; overflow:hidden;
+    border-radius:14px; border:1px solid rgba(255,255,255,0.12);
+    background:#080c10;
+  }
+  .vm-photo-compare img {
+    position:absolute; inset:0; width:100%; height:100%;
+    object-fit:contain; pointer-events:none;
+  }
+  .vm-photo-compare #vmPhotoAfter {
+    clip-path:inset(0 calc(100% - var(--vm-split, 50%)) 0 0);
+  }
+  .vm-photo-compare-label {
+    position:absolute; top:8px; z-index:2; padding:4px 8px;
+    border-radius:999px; background:rgba(0,0,0,0.62);
+    color:#e2e8f0; font-size:10px; letter-spacing:0.08em; text-transform:uppercase;
+  }
+  .vm-photo-compare-label.before { left:8px; }
+  .vm-photo-compare-label.after { right:8px; color:#00d4ff; }
+  #vmPhotoSlider { width:100%; accent-color:#00d4ff; }
+
   /* â”€â”€ Image Generation Skeleton Card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
   .img-gen-skeleton {
     max-width:420px; border-radius:16px; overflow:hidden;
@@ -3734,6 +3756,37 @@ body[data-vm-companion="cloud"] #vmVrmCompanion { display: none !important; }
     </button>
   </div>
   <p style="color:#94a3b8;font-size:13px;line-height:1.5;margin-top:10px;">This feature is being prepared. Chat stays ready underneath.</p>
+</div>
+
+<!-- STUDIO PHOTO TOOL MODAL (Retouch / Auto Enhance / Photo + AI image tools) -->
+<div id="vmPhotoToolOverlay" onclick="closePhotoTool()" style="position:fixed;inset:0;z-index:200;background:rgba(0,0,0,0.55);backdrop-filter:blur(4px);opacity:0;visibility:hidden;pointer-events:none;transition:opacity 0.2s ease,visibility 0.2s ease;"></div>
+<div id="vmPhotoToolModal" role="dialog" aria-modal="true" style="position:fixed;left:50%;top:50%;transform:translate(-50%,-46%) scale(0.98);z-index:210;width:min(620px,calc(100vw - 32px));background:rgba(14,20,23,0.98);border:1px solid rgba(0,212,255,0.24);border-radius:16px;padding:22px;box-shadow:0 20px 60px rgba(0,0,0,0.5);opacity:0;visibility:hidden;pointer-events:none;transition:opacity 0.2s ease,transform 0.2s ease,visibility 0.2s ease;">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+    <h2 id="vmPhotoToolTitle" style="color:#00d4ff;font-size:14px;font-weight:800;text-transform:uppercase;letter-spacing:0.15em;font-family:'Space Grotesk',sans-serif;margin:0;">Retouch</h2>
+    <button onclick="closePhotoTool()" aria-label="Close" style="background:transparent;border:none;color:#94a3b8;cursor:pointer;padding:4px;border-radius:8px;display:flex;">
+      <span class="material-icons" style="font-size:20px;">close</span>
+    </button>
+  </div>
+  <input type="file" id="vmPhotoToolInput" accept="image/*" onchange="vmPhotoToolLoad()" style="display:none;">
+  <button onclick="document.getElementById('vmPhotoToolInput').click()" style="width:100%;border:1px dashed rgba(0,212,255,0.45);border-radius:12px;background:rgba(0,212,255,0.06);color:#d8f8ff;padding:18px;cursor:pointer;font-size:13px;font-weight:700;">
+    Choose a photo to start
+  </button>
+  <div id="vmPhotoCompare" class="vm-photo-compare" style="display:none;margin-top:14px;--vm-split:50%;">
+    <img id="vmPhotoBefore" alt="Original photo">
+    <img id="vmPhotoAfter" alt="Enhanced photo">
+    <span class="vm-photo-compare-label before">Before</span>
+    <span class="vm-photo-compare-label after">After</span>
+  </div>
+  <input id="vmPhotoSlider" type="range" min="0" max="100" value="50" oninput="vmPhotoToolSplit(this.value)" style="display:none;margin-top:8px;">
+  <p id="vmPhotoToolStatus" style="min-height:18px;color:#ff6b7a;font-size:12px;margin:8px 0 0;"></p>
+  <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px;">
+    <button id="vmPhotoToolRunBtn" onclick="vmPhotoToolApply()" style=" flex:1;border:none;border-radius:12px;background:#00d4ff;color:#003642;font-weight:800;padding:12px 16px;cursor:pointer;text-transform:uppercase;letter-spacing:0.1em;font-family:'Space Grotesk',sans-serif;font-size:13px;">
+      Apply finishing
+    </button>
+    <button id="vmPhotoToolDownloadBtn" class="vm-icon-download" onclick="vmPhotoToolDownload(this)" aria-label="Download enhanced photo" title="Download enhanced photo" disabled style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.14);color:#e2e8f0;">
+      <span id="vmPhotoToolDownloadIcon">&darr;</span>
+    </button>
+  </div>
 </div>
 
 <!-- IMAGE GENERATION MODAL -->
@@ -10230,7 +10283,9 @@ var STUDIO_LAUNCH_Z = {
     videoGalleryOverlay: 9998,
     roundTableOverlay: 1000,
     imageGenOverlay: 200,
-    imageGenModal: 210
+    imageGenModal: 210,
+    vmPhotoToolOverlay: 200,
+    vmPhotoToolModal: 210
 };
 
 function studioRefreshIcons() {
@@ -10270,6 +10325,10 @@ function studioLaunchOverlay(id, openFn) {
     if (id === "imageGenOverlay") {
         var modal = document.getElementById("imageGenModal");
         if (modal) modal.style.zIndex = "10000";
+    }
+    if (id === "vmPhotoToolOverlay") {
+        var photoModal = document.getElementById("vmPhotoToolModal");
+        if (photoModal) photoModal.style.zIndex = "10000";
     }
     if (typeof openFn === "function") openFn();
 }
@@ -10362,14 +10421,14 @@ function studioShowComingSoon(f) {
 // â”€â”€ Feature catalog â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 var SD_HOME_FEATURES = [
     { id: "autocut", icon: "scissors", title: "AutoCut", desc: "Turn any idea into a finished trailer with the full AI crew.", ready: true, action: function () { studioShowClassic(); } },
-    { id: "retouch", icon: "wand-2", title: "Retouch", desc: "Clean up faces and details with one-tap AI retouching.", ready: false },
+    { id: "retouch", icon: "wand-2", title: "Retouch", desc: "Clean up faces and details with one-tap AI retouching.", ready: true, action: function () { launchPhotoTool("Retouch"); } },
     { id: "photo-tools", icon: "image", title: "Photo Tools", desc: "Browse, organise and manage every image you've created.", ready: true, action: function () { studioLaunchOverlay("galleryOverlay", openGallery); } },
     { id: "shoot-record", icon: "video", title: "Shoot & Record", desc: "Capture raw footage straight from your camera.", ready: false },
-    { id: "auto-enhance", icon: "sparkles", title: "Auto Enhance", desc: "One tap to fix light, colour and sharpness automatically.", ready: false },
+    { id: "auto-enhance", icon: "sparkles", title: "Auto Enhance", desc: "One tap to fix light, colour and sharpness automatically.", ready: true, action: function () { launchPhotoTool("Auto Enhance"); } },
     { id: "auto-captions", icon: "captions", title: "Auto Captions", desc: "Word-perfect captions synced to your video automatically.", ready: true, action: function () { openEditing(); } },
     { id: "ai-generator", icon: "bot", title: "AI Generator", desc: "The Studio crew writes, directs and edits for you.", ready: true, action: function () { studioShowClassic(); } },
-    { id: "remove-bg", icon: "eraser", title: "Remove Background", desc: "Cut any subject out of its background in one click.", ready: false },
-    { id: "ai-photo-editor", icon: "brush", title: "AI Photo Editor", desc: "Edit photos the way you'd ask a designer to.", ready: false },
+    { id: "remove-bg", icon: "eraser", title: "Remove Background", desc: "Cut any subject out of its background in one click.", ready: true, action: function () { launchPhotoTool("Remove Background"); } },
+    { id: "ai-photo-editor", icon: "brush", title: "AI Photo Editor", desc: "Edit photos the way you'd ask a designer to.", ready: true, action: function () { launchPhotoTool("AI Photo Editor"); } },
     { id: "ai-video-generator", icon: "clapperboard", title: "AI Video Generator", desc: "Text-to-video through the ValleyMind Studio crew.", ready: true, action: function () { studioShowClassic(); } },
     { id: "ai-image-generator", icon: "image-plus", title: "AI Image Generator", desc: "Describe it and watch an image come to life.", ready: true, action: function () { studioLaunchOverlay("imageGenOverlay", generateImagesTool); } },
     { id: "ai-voice", icon: "mic", title: "AI Voice", desc: "Multi-persona voice conversations at the Round Table.", ready: true, action: function () { studioLaunchOverlay("roundTableOverlay", openRoundTable); } },
@@ -10392,18 +10451,18 @@ var SD_VIDEO_ITEMS = [
 ];
 
 var SD_PHOTO_ITEMS = [
-    { id: "remove-bg", icon: "eraser", title: "Remove Background", desc: "Cut out subjects with one click.", ready: false },
-    { id: "upscaler", icon: "maximize", title: "Image Upscaler", desc: "Upgrade any photo to 4K with AI detail.", ready: false },
-    { id: "ai-enhance", icon: "sun", title: "AI Enhance", desc: "Restore light, tone and clarity instantly.", ready: false },
-    { id: "ai-edit", icon: "brush", title: "AI Edit", desc: "Edit photos with natural language commands.", ready: false },
-    { id: "object-removal", icon: "wand-2", title: "Object Removal", desc: "Erase unwanted objects cleanly.", ready: false },
-    { id: "portrait-tools", icon: "user", title: "Portrait Tools", desc: "Skin, eyes and smile tuning for portraits.", ready: false },
-    { id: "filters", icon: "palette", title: "Filters", desc: "Cinematic looks and presets.", ready: false }
+    { id: "remove-bg", icon: "eraser", title: "Remove Background", desc: "Cut out subjects with one click.", ready: true, action: function () { launchPhotoTool("Remove Background"); } },
+    { id: "upscaler", icon: "maximize", title: "Image Upscaler", desc: "Upgrade any photo to 4K with AI detail.", ready: true, action: function () { launchPhotoTool("Image Upscaler"); } },
+    { id: "ai-enhance", icon: "sun", title: "AI Enhance", desc: "Restore light, tone and clarity instantly.", ready: true, action: function () { launchPhotoTool("AI Enhance"); } },
+    { id: "ai-edit", icon: "brush", title: "AI Edit", desc: "Edit photos with natural language commands.", ready: true, action: function () { launchPhotoTool("AI Edit"); } },
+    { id: "object-removal", icon: "wand-2", title: "Object Removal", desc: "Erase unwanted objects cleanly.", ready: true, action: function () { launchPhotoTool("Object Removal"); } },
+    { id: "portrait-tools", icon: "user", title: "Portrait Tools", desc: "Skin, eyes and smile tuning for portraits.", ready: true, action: function () { launchPhotoTool("Portrait Tools"); } },
+    { id: "filters", icon: "palette", title: "Filters", desc: "Cinematic looks and presets.", ready: true, action: function () { launchPhotoTool("Filters"); } }
 ];
 
 var SD_AI_ITEMS = [
     { id: "t2i", icon: "image", title: "Text â†’ Image", desc: "Describe a picture and generate it.", ready: true, action: function () { studioLaunchOverlay("imageGenOverlay", generateImagesTool); } },
-    { id: "i2i", icon: "repeat", title: "Image â†’ Image", desc: "Restyle an image from a prompt.", ready: false },
+    { id: "i2i", icon: "repeat", title: "Image â†’ Image", desc: "Restyle an image from a prompt.", ready: true, action: function () { launchPhotoTool("Image to Image"); } },
     { id: "t2v", icon: "clapperboard", title: "Text â†’ Video", desc: "Turn a script into moving footage.", ready: true, action: function () { studioShowClassic(); } },
     { id: "i2v", icon: "film", title: "Image â†’ Video", desc: "Animate a still into motion.", ready: false },
     { id: "v2v", icon: "repeat-2", title: "Video â†’ Video", desc: "Restyle or re-edit an existing video.", ready: false },
@@ -16255,6 +16314,142 @@ window.addEventListener("pageshow", function (event) {
 });
 
 // Settings now defined inline with the settings overlay HTML
+
+/* === STUDIO PHOTO TOOL (upload / preview / before-after / download) === */
+var vmPhotoToolSource = "";
+var vmPhotoToolMode = "auto";
+var vmPhotoToolResult = "";
+
+function launchPhotoTool(title) {
+    studioLaunchOverlay("vmPhotoToolOverlay", function () { openPhotoTool(title); });
+}
+
+function openPhotoTool(title) {
+    closeSidebar();
+    vmPhotoToolSource = "";
+    vmPhotoToolResult = "";
+    vmPhotoToolMode = /retouch|portrait|edit|object|image to image/i.test(String(title || "")) ? "retouch" : "auto";
+    var titleEl = document.getElementById("vmPhotoToolTitle");
+    var status = document.getElementById("vmPhotoToolStatus");
+    var before = document.getElementById("vmPhotoBefore");
+    var after = document.getElementById("vmPhotoAfter");
+    var compare = document.getElementById("vmPhotoCompare");
+    var slider = document.getElementById("vmPhotoSlider");
+    var download = document.getElementById("vmPhotoToolDownloadBtn");
+    var runBtn = document.getElementById("vmPhotoToolRunBtn");
+    if (titleEl) titleEl.textContent = title || "Photo Tool";
+    if (status) status.textContent = "";
+    if (before) before.removeAttribute("src");
+    if (after) after.removeAttribute("src");
+    if (compare) { compare.style.display = "none"; compare.style.setProperty("--vm-split", "50%"); }
+    if (slider) { slider.style.display = "none"; slider.value = "50"; }
+    if (download) download.disabled = true;
+    if (runBtn) runBtn.disabled = false;
+    var overlay = document.getElementById("vmPhotoToolOverlay");
+    var modal = document.getElementById("vmPhotoToolModal");
+    if (overlay) { overlay.style.opacity = "1"; overlay.style.visibility = "visible"; overlay.style.pointerEvents = "auto"; }
+    if (modal) {
+        modal.style.opacity = "1"; modal.style.visibility = "visible";
+        modal.style.pointerEvents = "auto"; modal.style.transform = "translate(-50%,-50%) scale(1)";
+    }
+}
+
+function closePhotoTool() {
+    var overlay = document.getElementById("vmPhotoToolOverlay");
+    var modal = document.getElementById("vmPhotoToolModal");
+    if (overlay) { overlay.style.opacity = "0"; overlay.style.visibility = "hidden"; overlay.style.pointerEvents = "none"; }
+    if (modal) {
+        modal.style.opacity = "0"; modal.style.visibility = "hidden";
+        modal.style.pointerEvents = "none"; modal.style.transform = "translate(-50%,-46%) scale(0.98)";
+    }
+    if (!vmReturnToStudio()) focusChatInput();
+}
+
+function vmPhotoToolLoad() {
+    var input = document.getElementById("vmPhotoToolInput");
+    var status = document.getElementById("vmPhotoToolStatus");
+    var file = input && input.files && input.files[0];
+    if (!file) return;
+    if (file.size > 25 * 1024 * 1024) {
+        if (status) status.textContent = "Please choose a photo smaller than 25 MB.";
+        return;
+    }
+    var reader = new FileReader();
+    reader.onload = function () {
+        vmPhotoToolSource = String(reader.result || "");
+        vmPhotoToolResult = "";
+        var before = document.getElementById("vmPhotoBefore");
+        var after = document.getElementById("vmPhotoAfter");
+        var compare = document.getElementById("vmPhotoCompare");
+        var slider = document.getElementById("vmPhotoSlider");
+        var download = document.getElementById("vmPhotoToolDownloadBtn");
+        if (before) before.src = vmPhotoToolSource;
+        if (after) after.removeAttribute("src");
+        if (compare) compare.style.display = "block";
+        if (slider) slider.style.display = "block";
+        if (download) download.disabled = true;
+        if (status) status.textContent = "";
+    };
+    reader.onerror = function () { if (status) status.textContent = "That photo could not be opened. Please try another."; };
+    reader.readAsDataURL(file);
+}
+
+function vmPhotoToolSplit(value) {
+    var compare = document.getElementById("vmPhotoCompare");
+    if (compare) compare.style.setProperty("--vm-split", value + "%");
+}
+
+async function vmPhotoToolApply() {
+    var status = document.getElementById("vmPhotoToolStatus");
+    var runBtn = document.getElementById("vmPhotoToolRunBtn");
+    var download = document.getElementById("vmPhotoToolDownloadBtn");
+    if (!vmPhotoToolSource) {
+        if (status) status.textContent = "Please choose a photo first.";
+        return;
+    }
+    if (status) status.textContent = "";
+    if (runBtn) runBtn.disabled = true;
+    if (download) download.disabled = true;
+    try {
+        var res = await apiFetch("/api/studio/photo-enhance", {
+            method: "POST",
+            credentials: "include",
+            headers: authHeaders({ "Content-Type": "application/json" }),
+            body: JSON.stringify({ mode: vmPhotoToolMode, image: vmPhotoToolSource }),
+            timeoutMs: 60000,
+        });
+        var data = await res.json();
+        if (!res.ok || !data || data.status !== "success" || !data.image) {
+            throw new Error((data && data.message) || "Photo finishing is temporarily unavailable. Please try again.");
+        }
+        vmPhotoToolResult = data.image;
+        var after = document.getElementById("vmPhotoAfter");
+        if (after) after.src = vmPhotoToolResult;
+        vmPhotoToolSplit(50);
+        if (download) download.disabled = false;
+    } catch (err) {
+        if (status) status.textContent = (err && err.message) || "Photo finishing is temporarily unavailable. Please try again.";
+    } finally {
+        if (runBtn) runBtn.disabled = false;
+    }
+}
+
+function vmPhotoToolDownload(button) {
+    if (!vmPhotoToolResult || (button && button.disabled)) return;
+    var action = function () {
+        var link = document.createElement("a");
+        link.href = vmPhotoToolResult;
+        link.download = "valleymind_photo.png";
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+    };
+    if (typeof window.VMWithDownloadSpinner === "function") {
+        window.VMWithDownloadSpinner(button, action);
+    } else {
+        action();
+    }
+}
 
 /* === IMAGE GENERATION TOOL === */
 function generateImagesTool() {

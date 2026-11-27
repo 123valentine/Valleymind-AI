@@ -1,10 +1,14 @@
-"""Free cloud image generation and identity-preserving reference editing.
+"""Resilient image generation and identity-preserving reference editing.
 
-Primary path: Hugging Face Inference Providers (FLUX.1 Kontext for reference
-editing, FLUX.1 schnell for text-to-image) when ``HF_TOKEN`` is available.
-Zero-key fallback: Pollinations ``kontext`` (image-to-image) or ``flux``
-(text-to-image). Provider names never appear in user-facing copy; everything
-here is infrastructure and is only logged server-side.
+Automatic chain:
+    1. Google AI Studio ``gemini-2.5-flash-image`` when a Google key is present
+    2. Hugging Face (FLUX.1 Kontext for edits, FLUX.1 schnell for text)
+       when ``HF_TOKEN`` is available
+    3. Pollinations ``kontext`` (edits) or ``flux`` (text) as the permanent
+       zero-key backup
+
+Provider names never appear in user-facing copy; all provider detail is
+internal and only logged server-side.
 """
 
 import base64
@@ -18,13 +22,19 @@ from urllib.parse import quote
 import requests
 
 from core.config import PROJECT_ROOT
+from core.failover import GENERIC_PROVIDER_ERROR, is_retryable_provider_error
 
 
 GENERATED_DIR = PROJECT_ROOT / "static" / "generated"
 POLLINATIONS_BASE = "https://image.pollinations.ai/prompt"
+POLLINATIONS_GEN_BASE = "https://gen.pollinations.ai/image"
 HF_INFERENCE_BASE = os.getenv(
     "HF_INFERENCE_BASE", "https://router.huggingface.co/hf-inference/models"
 ).rstrip("/")
+GEMINI_IMAGE_BASE = os.getenv(
+    "GEMINI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta"
+).rstrip("/")
+GEMINI_IMAGE_MODEL = os.getenv("GEMINI_IMAGE_MODEL", "gemini-2.5-flash-image")
 HF_KONTEXT_MODEL = "black-forest-labs/FLUX.1-Kontext-dev"
 HF_SCHNELL_MODEL = "black-forest-labs/FLUX.1-schnell"
 
@@ -224,6 +234,128 @@ def _content_extension(content_type: str, data: bytes) -> str:
     return "png"
 
 
+_PROVIDER_NAME_RE = re.compile(
+    r"\b(?:google(?:\s+ai\s+studio)?|gemini|hugging\s*face|huggingface|"
+    r"pollinations|flux(?:\.1)?(?:\s+kontext|\s+schnell)?|qwen|alibaba)\b",
+    re.IGNORECASE,
+)
+
+
+def _scrub_provider_names(text: str) -> str:
+    """Keep infrastructure names out of user-visible prompt/card copy."""
+    return _PROVIDER_NAME_RE.sub("AI", _sanitize_prompt(text))
+
+
+def _google_image_api_key(api_key: str | None = None) -> str:
+    """Accept the app config key or any common Google key variable name."""
+    candidates = (
+        api_key,
+        os.getenv("GEMINI_API_KEY"),
+        os.getenv("GOOGLE_API_KEY"),
+        os.getenv("GOOGLE_GENERATIVE_AI_API_KEY"),
+    )
+    for candidate in candidates:
+        if candidate and str(candidate).strip():
+            return str(candidate).strip()
+    return ""
+
+
+def _pollinations_api_key() -> str:
+    return (os.getenv("POLLINATIONS_API_KEY") or "").strip()
+
+
+def _pollinations_image_base() -> str:
+    """Use the authenticated gen endpoint when a key exists, else the free host."""
+    return POLLINATIONS_GEN_BASE if _pollinations_api_key() else POLLINATIONS_BASE
+
+
+def _gemini_aspect_ratio(width: int, height: int) -> str:
+    ratio = width / max(1, height)
+    return min(
+        ((1, "1:1"), (3 / 4, "3:4"), (4 / 3, "4:3"), (9 / 16, "9:16"), (16 / 9, "16:9")),
+        key=lambda item: abs(ratio - item[0]),
+    )[1]
+
+
+def _extract_gemini_image(payload) -> tuple[bytes, str]:
+    """Find inline image data in generateContent or interactions responses."""
+    def walk(node):
+        if isinstance(node, dict):
+            inline = node.get("inlineData") or node.get("inline_data") or {}
+            if isinstance(inline, dict):
+                encoded = inline.get("data") or inline.get("b64_json")
+                if encoded:
+                    mime = inline.get("mimeType") or inline.get("mime_type") or "image/png"
+                    return base64.b64decode(encoded), mime
+            for key in ("outputImage", "output_image"):
+                candidate = node.get(key)
+                if isinstance(candidate, dict):
+                    encoded = candidate.get("data") or candidate.get("b64_json")
+                    if encoded:
+                        mime = candidate.get("mimeType") or candidate.get("mime_type") or "image/png"
+                        return base64.b64decode(encoded), mime
+            for value in node.values():
+                found = walk(value)
+                if found:
+                    return found
+        elif isinstance(node, list):
+            for value in node:
+                found = walk(value)
+                if found:
+                    return found
+        return None
+
+    found = walk(payload)
+    if not found:
+        raise RuntimeError("Image response contained no image data.")
+    return found
+
+
+def _call_gemini_image(
+    prompt: str,
+    api_key: str | None = None,
+    reference_bytes: bytes | None = None,
+    mime: str = "image/jpeg",
+    size=(1024, 1024),
+    model_id: str | None = None,
+    timeout: int = 120,
+) -> tuple[bytes, str]:
+    key = _google_image_api_key(api_key)
+    if not key:
+        raise RuntimeError("Image provider key unavailable")
+
+    parts = [{"text": prompt}]
+    if reference_bytes is not None:
+        parts.append(
+            {
+                "inline_data": {
+                    "mime_type": mime or "image/jpeg",
+                    "data": base64.b64encode(reference_bytes).decode("ascii"),
+                }
+            }
+        )
+
+    payload = {
+        "contents": [{"role": "user", "parts": parts}],
+        "generationConfig": {
+            "responseModalities": ["TEXT", "IMAGE"],
+            "imageConfig": {"aspectRatio": _gemini_aspect_ratio(size[0], size[1])},
+        },
+    }
+    model = model_id or GEMINI_IMAGE_MODEL
+    url = f"{GEMINI_IMAGE_BASE}/models/{quote(model, safe='/')}:generateContent"
+    response = requests.post(
+        url,
+        headers={"Content-Type": "application/json", "x-goog-api-key": key},
+        json=payload,
+        timeout=timeout,
+    )
+    if response.status_code != 200:
+        detail = str(getattr(response, "text", ""))[:300]
+        raise RuntimeError(f"Image HTTP {response.status_code}: {detail}")
+    return _extract_gemini_image(response.json())
+
+
 def _call_hf_image(
     prompt: str,
     image_bytes: bytes | None = None,
@@ -273,8 +405,12 @@ def _call_pollinations(
     }
     if reference_url:
         params["image"] = reference_url
-    url = f"{POLLINATIONS_BASE}/{quote(prompt, safe='')}"
-    response = requests.get(url, params=params, timeout=timeout)
+    key = _pollinations_api_key()
+    if key:
+        params["key"] = key
+    url = f"{_pollinations_image_base()}/{quote(prompt, safe='')}"
+    headers = {"Authorization": f"Bearer {key}"} if key else None
+    response = requests.get(url, params=params, headers=headers, timeout=timeout)
     if response.status_code != 200 or not response.content:
         detail = str(getattr(response, "text", ""))[:300]
         raise RuntimeError(f"Image HTTP {response.status_code}: {detail}")
@@ -293,9 +429,9 @@ def generate_image(
 ) -> dict:
     """Generate (or edit) an image and save it to local static storage.
 
-    ``prefer`` is internal routing only: ``"hf"`` forces the primary path,
-    ``"pollinations"`` forces the zero-key path, and the default tries the
-    primary path first then falls back automatically on failure/rate limit.
+    ``prefer`` is internal routing only. The default tries the full automatic
+    chain (Google → Hugging Face → Pollinations); a provider name starts the
+    chain at that provider while keeping later free/backup paths available.
     """
     print("[IMAGE] Request Started")
     reference_bytes, reference_url, mime = _reference_parts(reference_image)
@@ -319,60 +455,112 @@ def generate_image(
     width, height = _parse_size(size)
 
     requested_model = str(model or "").strip() or None
-    # Internal convenience prefix: force primary routing without leaking it
-    # into the provider's model path.
-    forced_hf = bool(requested_model and requested_model.lower().startswith("hf:"))
-    if forced_hf:
-        requested_model = requested_model[3:].strip() or None
     lowered_model = (requested_model or "").lower()
-    if prefer in (None, "", "auto"):
-        engines = ["hf", "pollinations"]
-    elif str(prefer).lower() in ("hf", "huggingface", "hugging face"):
-        engines = ["hf"]
+    start_engine = None
+
+    # Internal convenience prefixes force a starting provider without leaking
+    # infrastructure names into the provider's model path.
+    for prefix, engine in (("gemini:", "gemini"), ("google:", "gemini"), ("hf:", "hf")):
+        if lowered_model.startswith(prefix):
+            start_engine = engine
+            requested_model = requested_model[len(prefix):].strip() or None
+            lowered_model = (requested_model or "").lower()
+            break
+
+    preference = str(prefer or "").strip().lower()
+    forced_only = None
+    if preference in ("gemini_only", "gemini-only"):
+        forced_only = start_engine = "gemini"
+    elif preference in ("hf_only", "hf-only"):
+        forced_only = start_engine = "hf"
+    elif preference in ("pollinations", "pollinations_only", "pollinations-only", "free", "backup"):
+        forced_only = start_engine = "pollinations"
+
+    if start_engine is None:
+        if preference in ("gemini", "google", "google ai studio"):
+            start_engine = "gemini"
+        elif preference in ("hf", "huggingface", "hugging face"):
+            start_engine = "hf"
+        elif "gemini" in lowered_model or "google" in lowered_model:
+            start_engine = "gemini"
+        elif "kontext-dev" in lowered_model or "schnell" in lowered_model:
+            start_engine = "hf"
+        elif lowered_model in ("kontext", "flux"):
+            start_engine = "pollinations"
+
+    if start_engine == "hf" and lowered_model in ("kontext", "flux"):
+        requested_model = HF_KONTEXT_MODEL if lowered_model == "kontext" else HF_SCHNELL_MODEL
+
+    chain = ["gemini", "hf", "pollinations"]
+    if forced_only:
+        engines = [forced_only]
+    elif start_engine == "pollinations":
+        engines = ["pollinations"]
+    elif start_engine:
+        engines = chain[chain.index(start_engine):]
     else:
-        engines = ["pollinations"]
-    if forced_hf:
-        engines = ["hf"]
-        if lowered_model == "kontext":
-            requested_model = HF_KONTEXT_MODEL
-        elif lowered_model == "flux":
-            requested_model = HF_SCHNELL_MODEL
-    elif "kontext-dev" in lowered_model or "schnell" in lowered_model:
-        engines = ["hf"]
-    elif lowered_model in ("kontext", "flux"):
-        engines = ["pollinations"]
+        engines = list(chain)
+
+    # A model override belongs to the provider that was explicitly selected;
+    # backup providers must receive their own defaults, never that model id.
+    engine_models = {
+        "gemini": requested_model if start_engine == "gemini" else None,
+        "hf": requested_model if start_engine == "hf" else None,
+        "pollinations": requested_model if start_engine == "pollinations" else None,
+    }
 
     last_error: Exception | None = None
     for engine in engines:
         try:
-            if engine == "hf":
+            if engine == "gemini":
+                data, content_type = _call_gemini_image(
+                    effective_prompt,
+                    api_key,
+                    reference_bytes if is_edit else None,
+                    mime,
+                    (width, height),
+                    model_id=engine_models["gemini"],
+                )
+            elif engine == "hf":
                 data, content_type = _call_hf_image(
                     effective_prompt,
                     reference_bytes if is_edit else None,
                     (width, height),
-                    model_id=requested_model or None,
+                    model_id=engine_models["hf"],
                 )
             else:
                 hosted_url = ""
                 if is_edit:
                     hosted_url = reference_url or _host_reference_image(reference_bytes, mime)
+                pollinations_model = "kontext" if is_edit else "flux"
+                own_model = engine_models["pollinations"]
+                if own_model:
+                    if "kontext" in own_model.lower():
+                        pollinations_model = "kontext"
+                    elif "schnell" in own_model.lower() or own_model.lower() == "flux":
+                        pollinations_model = "flux"
+                    else:
+                        pollinations_model = own_model
                 data, content_type = _call_pollinations(
                     effective_prompt,
                     hosted_url or None,
                     (width, height),
-                    model_id=("kontext" if is_edit else "flux") if not requested_model else requested_model,
+                    model_id=pollinations_model,
                 )
             image_url = _save_image(data, _content_extension(content_type, data))
-            print(f"[IMAGE] Request Success — mode={'edit' if is_edit else 'text'}")
+            print(f"[IMAGE] Request Success — mode={'edit' if is_edit else 'text'} — path={engine}")
             return {
                 "image_url": image_url,
-                "revised_prompt": resolved_prompt,
+                "revised_prompt": _scrub_provider_names(resolved_prompt),
                 "effective_prompt": effective_prompt,
                 "text": "",
                 "mode": "image_to_image" if is_edit else "text_to_image",
             }
         except Exception as exc:
             last_error = exc
-            print(f"[IMAGE FLOW] {engine} attempt failed: {exc}")
+            # Internal classification only: every provider failure hands off so
+            # a retired model on one provider cannot strand the request.
+            retryable = is_retryable_provider_error(exc)
+            print(f"[IMAGE FLOW] {engine} attempt failed (retryable={retryable}): {exc}")
 
-    raise RuntimeError(str(last_error) if last_error else "Image generation failed.")
+    raise RuntimeError(GENERIC_PROVIDER_ERROR)

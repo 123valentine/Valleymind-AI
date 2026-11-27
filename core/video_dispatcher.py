@@ -27,6 +27,14 @@ from typing import Any, Iterator
 
 from core.config import get_config
 
+GENERIC_VIDEO_ERROR = "Video generation is temporarily unavailable. Please try again in a moment."
+
+
+def public_video_error(error=None) -> str:
+    """Never let upstream/provider detail reach a user-facing response."""
+    return GENERIC_VIDEO_ERROR
+
+
 # wan2.7-t2v routinely renders for 5-10 minutes, well past the old 300s cap.
 # Configurable so the ceiling can be tuned without a code change.
 _DEFAULT_MAX_POLL = int(os.getenv("VIDEO_MAX_POLL_SECONDS", "900"))
@@ -43,8 +51,9 @@ def _discover_providers() -> list[BaseVideoProvider]:
     """Auto-discover video providers from known modules."""
     providers: list[BaseVideoProvider] = []
     module_paths = [
-        "core.video_providers.alibaba",
-        "core.video_providers.fal",
+        "core.video_providers.huggingface",
+        "core.video_providers.pollinations",
+        "core.video_providers.local_storyboard",
     ]
 
     for module_path in module_paths:
@@ -131,7 +140,7 @@ class VideoDispatcher:
         self._tasks[task.task_id] = task
 
         if task.status == VideoTaskStatus.FAILED:
-            yield {"error": task.error}
+            yield {"error": public_video_error(task.error)}
             return
 
         yield {
@@ -171,33 +180,45 @@ class VideoDispatcher:
                 "task_id": task.task_id,
             }
         elif task.status == VideoTaskStatus.FAILED:
-            yield {"error": task.error or "Video generation timed out"}
+            yield {"error": public_video_error(task.error)}
         else:
-            yield {"error": "Video generation timed out — please try again"}
+            yield {"error": public_video_error("Video generation timed out")}
 
     # ── Internal methods ────────────────────────────────────────────
 
     def _submit(self, task: VideoTask, **kwargs: Any) -> VideoTask:
-        """Submit to the best available provider with fallback."""
+        """Submit through the priority chain, continuing on any provider failure."""
+        last_error = ""
         for provider in self._providers:
             if provider.health == "down":
                 print(f"[VIDEO] Skipping down provider: {provider.name}")
                 continue
 
-            print(f"[VIDEO] Submitting to {provider.name}...")
-            task = provider.submit(task, **kwargs)
+            # Each attempt gets a fresh task so a failed provider's terminal
+            # state cannot poison the next fallback attempt.
+            attempt = VideoTask(
+                task_id=task.task_id,
+                prompt=task.prompt,
+                metadata=dict(task.metadata),
+            )
+            try:
+                print(f"[VIDEO] Submitting to {provider.name}...")
+                attempt = provider.submit(attempt, **kwargs)
+            except Exception as exc:
+                attempt.status = VideoTaskStatus.FAILED
+                attempt.error = str(exc)
 
-            if task.status != VideoTaskStatus.FAILED:
+            if attempt.status != VideoTaskStatus.FAILED:
                 # Remember who owns this task so _poll asks the right provider.
-                task.metadata["_provider"] = provider.name
-                return task
+                attempt.metadata["_provider"] = provider.name
+                return attempt
 
-            print(f"[VIDEO] Provider {provider.name} failed, trying next...")
+            last_error = attempt.error or "provider failed"
+            provider.record_failure()
+            print(f"[VIDEO] Provider attempt failed, trying next: {last_error}")
 
-        # All providers failed
-        if task.status != VideoTaskStatus.FAILED:
-            task.status = VideoTaskStatus.FAILED
-            task.error = "All video providers failed"
+        task.status = VideoTaskStatus.FAILED
+        task.error = last_error or "All video providers failed"
         return task
 
     def _poll(self, task: VideoTask, **kwargs: Any) -> VideoTask:
@@ -218,6 +239,7 @@ class VideoDispatcher:
         try:
             return provider.poll(task, **kwargs)
         except Exception as exc:
+            task.status = VideoTaskStatus.FAILED
             task.error = str(exc)
             return task
 

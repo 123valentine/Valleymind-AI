@@ -172,6 +172,15 @@ _SPECS: dict[str, FreeTierSpec] = {
     "groq": FreeTierSpec("groq", "Groq", can_charge=False, default_state=QuotaState.AVAILABLE),
     "nvidia": FreeTierSpec("nvidia", "NVIDIA NIM", can_charge=False, default_state=QuotaState.AVAILABLE),
     "gemini": FreeTierSpec("gemini", "Google Gemini", can_charge=False, default_state=QuotaState.AVAILABLE),
+    "hf_video": FreeTierSpec(
+        "hf_video", "Hugging Face video", can_charge=False,
+        default_state=QuotaState.AVAILABLE,
+        note="Try with the configured token; block only after an observed 402/429.",
+    ),
+    "pollinations_video": FreeTierSpec(
+        "pollinations_video", "Pollinations video", can_charge=False,
+        default_state=QuotaState.AVAILABLE,
+    ),
     # Keyless / free surfaces — always available.
     "pollinations": FreeTierSpec("pollinations", "Pollinations image", can_charge=False, default_state=QuotaState.AVAILABLE),
     "duckduckgo": FreeTierSpec("duckduckgo", "DuckDuckGo Lite", can_charge=False, default_state=QuotaState.AVAILABLE),
@@ -190,6 +199,8 @@ _ALIASES = {
     "qwen": "alibaba",
     "fal.ai": "fal",
     "fal_ai": "fal",
+    "huggingface_video": "hf_video",
+    "hf-videos": "hf_video",
     "opencode_zen": "opencode",
     "ai_builder": "opencode",
     "builder": "opencode",
