@@ -220,10 +220,16 @@ def _active_topic_from_history(history, limit: int = 6) -> str:
         "i", "you", "he", "she", "it", "they", "them", "we", "that", "this",
         "these", "those", "the", "yes", "yh", "yeah", "ok", "okay", "what",
         "who", "and", "but", "so", "because", "there", "here",
+        "tell", "me", "about", "please", "can", "could", "would", "should",
+        "help", "look", "looking", "give", "find", "name", "list", "when",
+        "where", "why", "how", "your", "mine", "ours", "theirs", "just",
+        "also", "maybe", "thanks", "thank", "does", "did", "do", "is", "are",
+        "was", "were", "will", "have", "has", "had", "from", "with", "into",
+        "after", "before", "then", "than",
     }
     title_re = re.compile(
         r"[《“\"']([^》”\"']{2,80})[》”\"']|"
-        r"\b((?:[A-Z][\w'&-]+\s+){1,3}[A-Z][\w'&-]*|[A-Z][\w'&-]{3,})\s*(?:\(\d{4}\))?"
+        r"\b((?:[A-Z0-9][\w'&-]*\s+){1,6}[A-Z0-9][\w'&-]*|[A-Z][\w'&-]{3,})\s*(?:\(\d{4}\))?"
     )
     entity_context_re = re.compile(
         r"\b(?:movie|film|show|series|anime|book|novel|game|song|club|team|brand|"
@@ -243,8 +249,7 @@ def _active_topic_from_history(history, limit: int = 6) -> str:
             candidate = m.group(1).strip()
             if candidate.lower() not in invalid:
                 return candidate[:80]
-        m = title_re.search(content)
-        if m:
+        for m in title_re.finditer(content):
             candidate = (m.group(1) or m.group(2) or "").strip()
             if candidate and candidate.lower() not in invalid:
                 return candidate[:80]

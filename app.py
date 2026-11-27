@@ -2674,13 +2674,13 @@ def _asset_clarification_json(user_id: str, chat_id: str, reply: str):
     })
 
 
-def _asset_clarification_stream(user_id: str, chat_id: str, reply: str):
+def _asset_clarification_stream(user_id: str, chat_id: str, reply: str, request_id="", turn_id="", attempt_id=""):
     _persist_chat_message(user_id, chat_id, "user", "(asset brief awaiting details)")
     _persist_chat_message(user_id, chat_id, "assistant", reply)
 
     def generate():
-        yield f"data: {json.dumps({'reply': reply, 'detected_route': 'asset_clarification'})}\n\n"
-        yield f"data: {json.dumps({'done': True, 'chat_id': chat_id})}\n\n"
+        yield _sse_frame({"reply": reply, "detected_route": "asset_clarification"}, request_id, turn_id, attempt_id)
+        yield _sse_frame({"done": True, "chat_id": chat_id}, request_id, turn_id, attempt_id)
 
     return Response(
         stream_with_context(generate()),
@@ -2765,7 +2765,7 @@ def _spawn_video_generation(user_id: str, chat_id: str, message: str) -> dict:
     return state
 
 
-def _stream_video_state(state: dict, resolved_chat_id: str, updated_title=None, message: str = ""):
+def _stream_video_state(state: dict, resolved_chat_id: str, updated_title=None, message: str = "", request_id="", turn_id="", attempt_id=""):
     """SSE generator that tails a background video ``state`` and emits progress,
     the final permanent URL, then done. Safe to abandon: if the client
     disconnects, the background thread still finishes the save + persist."""
@@ -2773,22 +2773,22 @@ def _stream_video_state(state: dict, resolved_chat_id: str, updated_title=None, 
     intro, followups = asset_generation_copy("video", message) if message else ("", "")
     intro = _privacy_guard(intro)
     followups = _privacy_guard(followups)
-    yield f"data: {json.dumps({'intent': 'generating_video', 'query': '', 'status': 'preparing', 'status_message': 'Preparing video generation...'})}\n\n"
+    yield _sse_frame({'intent': 'generating_video', 'query': '', 'status': 'preparing', 'status_message': 'Preparing video generation...'}, request_id, turn_id, attempt_id)
     if intro:
-        yield f"data: {json.dumps({'token': intro})}\n\n"
+        yield _sse_frame({'token': intro}, request_id, turn_id, attempt_id)
     while not state["done"]:
         _time.sleep(2)
-        yield f"data: {json.dumps({'intent': 'video_progress', 'status': state['status'], 'status_message': 'Generating video, this can take a few minutes...'})}\n\n"
+        yield _sse_frame({'intent': 'video_progress', 'status': state['status'], 'status_message': 'Generating video, this can take a few minutes...'}, request_id, turn_id, attempt_id)
     if state["error"]:
-        yield f"data: {json.dumps({'error': state['error']})}\n\n"
+        yield _sse_frame({'error': state['error']}, request_id, turn_id, attempt_id)
     else:
-        yield f"data: {json.dumps({'video_url': state['stored_url']})}\n\n"
+        yield _sse_frame({'video_url': state['stored_url']}, request_id, turn_id, attempt_id)
         if followups:
-            yield f"data: {json.dumps({'token': followups})}\n\n"
+            yield _sse_frame({'token': followups}, request_id, turn_id, attempt_id)
     done_evt = {'done': True, 'chat_id': resolved_chat_id}
     if updated_title:
         done_evt['updated_title'] = updated_title
-    yield f"data: {json.dumps(done_evt)}\n\n"
+    yield _sse_frame(done_evt, request_id, turn_id, attempt_id)
 
 
 # ── Video generation kill switch ─────────────────────────────────────────────
@@ -2826,7 +2826,7 @@ def _video_disabled_json(user_id, message, chat_id):
     })
 
 
-def _video_disabled_stream(user_id, message, chat_id):
+def _video_disabled_stream(user_id, message, chat_id, request_id="", turn_id="", attempt_id=""):
     """SSE response for a blocked video request. No provider is ever called."""
     marcus = load_marcus(user_id)
     resolved = chat_id or (f"{marcus.profile.key}_main_chat" if marcus else chat_id)
@@ -2834,8 +2834,8 @@ def _video_disabled_stream(user_id, message, chat_id):
     _persist_chat_message(user_id, resolved, "assistant", VIDEO_DISABLED_MESSAGE)
 
     def generate():
-        yield f"data: {json.dumps({'token': VIDEO_DISABLED_MESSAGE})}\n\n"
-        yield f"data: {json.dumps({'done': True, 'chat_id': resolved, 'video_disabled': True})}\n\n"
+        yield _sse_frame({'token': VIDEO_DISABLED_MESSAGE}, request_id, turn_id, attempt_id)
+        yield _sse_frame({'done': True, 'chat_id': resolved, 'video_disabled': True}, request_id, turn_id, attempt_id)
 
     return Response(
         stream_with_context(generate()),
@@ -2936,7 +2936,7 @@ def _dispatch_image_json(user_id, message, chat_id, image_data):
     })
 
 
-def _dispatch_image_stream(user_id, message, chat_id, image_data):
+def _dispatch_image_stream(user_id, message, chat_id, image_data, activity_session=None, request_id="", turn_id="", attempt_id=""):
     """IMAGE → SSE stream.  Reuses the existing ProviderManager image pipeline."""
     print(f"[Router]   Dispatch: IMAGE (stream) — prompt={message[:120]!r}")
 
@@ -2953,6 +2953,11 @@ def _dispatch_image_stream(user_id, message, chat_id, image_data):
 
     def generate():
         updated_title = None
+        activity_payload = _tag_sse_frames(
+            drain_sse_activities(activity_session), request_id, turn_id, attempt_id
+        )
+        if activity_payload:
+            yield activity_payload
         if message and resolved_chat_id:
             try:
                 sessions = _list_user_sessions(user_id)
@@ -2975,8 +2980,8 @@ def _dispatch_image_stream(user_id, message, chat_id, image_data):
         intro, followups = asset_generation_copy("image", message)
         intro = _privacy_guard(intro)
         followups = _privacy_guard(followups)
-        yield f"data: {json.dumps({'intent': 'generating_image', 'query': message})}\n\n"
-        yield f"data: {json.dumps({'token': intro})}\n\n"
+        yield _sse_frame({'intent': 'generating_image', 'query': message}, request_id, turn_id, attempt_id)
+        yield _sse_frame({'token': intro}, request_id, turn_id, attempt_id)
 
         result = pm.get_manager().execute(
             pm.Capability.IMAGE,
@@ -2987,8 +2992,8 @@ def _dispatch_image_stream(user_id, message, chat_id, image_data):
 
         if not result.success:
             print(f"[Router]   IMAGE failed: {result.error}")
-            yield f"data: {json.dumps({'error': 'Image generation failed. Please try again.'})}\n\n"
-            yield f"data: {json.dumps({'done': True, 'chat_id': resolved_chat_id, 'updated_title': updated_title})}\n\n"
+            yield _sse_frame({'error': 'Image generation failed. Please try again.'}, request_id, turn_id, attempt_id)
+            yield _sse_frame({'done': True, 'chat_id': resolved_chat_id, 'updated_title': updated_title}, request_id, turn_id, attempt_id)
             return
 
         image_url = result.data.get("image_url", "")
@@ -3002,14 +3007,14 @@ def _dispatch_image_stream(user_id, message, chat_id, image_data):
         )
         stored_url = _safe_persist_url(media_record, image_url)
         if not stored_url:
-            yield f"data: {json.dumps({'error': 'Image generated but could not be saved. Please try again.'})}\n\n"
-            yield f"data: {json.dumps({'done': True, 'chat_id': resolved_chat_id, 'updated_title': updated_title})}\n\n"
+            yield _sse_frame({'error': 'Image generated but could not be saved. Please try again.'}, request_id, turn_id, attempt_id)
+            yield _sse_frame({'done': True, 'chat_id': resolved_chat_id, 'updated_title': updated_title}, request_id, turn_id, attempt_id)
             return
         _embed_media_exchange(user_id, message, "image", resolved_chat_id)
 
-        yield f"data: {json.dumps({'image_url': stored_url, 'revised_prompt': revised})}\n\n"
+        yield _sse_frame({'image_url': stored_url, 'revised_prompt': revised}, request_id, turn_id, attempt_id)
         final_copy = _image_reply_copy(message, stored_url, revised)
-        yield f"data: {json.dumps({'reply': final_copy})}\n\n"
+        yield _sse_frame({'reply': final_copy}, request_id, turn_id, attempt_id)
 
         if marcus:
             try:
@@ -3020,7 +3025,7 @@ def _dispatch_image_stream(user_id, message, chat_id, image_data):
             except Exception:
                 pass
 
-        yield f"data: {json.dumps({'done': True, 'chat_id': resolved_chat_id, 'updated_title': updated_title})}\n\n"
+        yield _sse_frame({'done': True, 'chat_id': resolved_chat_id, 'updated_title': updated_title}, request_id, turn_id, attempt_id)
 
     return Response(
         stream_with_context(generate()),
@@ -3087,7 +3092,44 @@ def _dispatch_chat_json(user_id, message, chat_id, image_data, persona="marcus",
     return jsonify(resp)
 
 
-def _dispatch_chat_stream(user_id, message, chat_id, image_data, persona="marcus", activity_session=None):
+def _sse_frame(payload, request_id="", turn_id="", attempt_id=""):
+    """Build an SSE frame carrying the per-turn identity echoed by the client.
+
+    Every frame from a chat stream is tagged so a late chunk from an aborted
+    attempt can be rejected by the browser before it touches a newer bubble.
+    """
+    event = dict(payload) if isinstance(payload, dict) else {"token": payload}
+    if request_id:
+        event["request_id"] = request_id
+    if turn_id:
+        event["turn_id"] = turn_id
+    if attempt_id:
+        event["attempt_id"] = attempt_id
+    return f"data: {json.dumps(event)}\n\n"
+
+
+def _tag_sse_frames(payload, request_id="", turn_id="", attempt_id=""):
+    """Re-tag already-framed SSE text (e.g. activity events) with turn IDs."""
+    if not payload:
+        return ""
+    frames = []
+    for raw in str(payload).split("\n\n"):
+        line = raw.strip()
+        if not line:
+            continue
+        if line.startswith("data: "):
+            try:
+                event = json.loads(line[6:].strip())
+            except Exception:
+                frames.append(line)
+                continue
+            frames.append(_sse_frame(event, request_id, turn_id, attempt_id).strip())
+        else:
+            frames.append(line)
+    return "".join(frame + "\n\n" for frame in frames)
+
+
+def _dispatch_chat_stream(user_id, message, chat_id, image_data, persona="marcus", activity_session=None, request_id="", turn_id="", attempt_id=""):
     """TEXT → SSE stream, in the selected persona's voice."""
     marcus = load_persona_brain(user_id, persona)
     if not marcus:
@@ -3116,7 +3158,9 @@ def _dispatch_chat_stream(user_id, message, chat_id, image_data, persona="marcus
                 print(f"[WARN] Auto-title fallback failed: {exc}")
 
         # Yield any accumulated activity frames before streaming tokens.
-        activity_payload = drain_sse_activities(activity_session)
+        activity_payload = _tag_sse_frames(
+            drain_sse_activities(activity_session), request_id, turn_id, attempt_id
+        )
         if activity_payload:
             yield activity_payload
 
@@ -3133,13 +3177,18 @@ def _dispatch_chat_stream(user_id, message, chat_id, image_data, persona="marcus
                         if final_reply_emitted:
                             continue
                         final_reply_emitted = True
-                    yield f"data: {json.dumps(token)}\n\n"
+                    yield _sse_frame(token, request_id, turn_id, attempt_id)
                 elif token:
-                    yield f"data: {json.dumps({'token': token})}\n\n"
+                    yield _sse_frame({"token": token}, request_id, turn_id, attempt_id)
         except Exception as exc:
-            yield f"data: {json.dumps({'error': str(exc)})}\n\n"
+            yield _sse_frame({"error": str(exc)}, request_id, turn_id, attempt_id)
 
-        yield f"data: {json.dumps({'done': True, 'chat_id': resolved_chat_id, 'updated_title': updated_title, 'reply_mode': bool(getattr(marcus, '_reply_mode', False))})}\n\n"
+        yield _sse_frame({
+            "done": True,
+            "chat_id": resolved_chat_id,
+            "updated_title": updated_title,
+            "reply_mode": bool(getattr(marcus, '_reply_mode', False)),
+        }, request_id, turn_id, attempt_id)
 
     return Response(
         stream_with_context(generate()),
@@ -3225,7 +3274,7 @@ def _dispatch_multi_json(user_id, message, chat_id, image_data):
     })
 
 
-def _dispatch_multi_stream(user_id, message, chat_id, image_data):
+def _dispatch_multi_stream(user_id, message, chat_id, image_data, activity_session=None, request_id="", turn_id="", attempt_id=""):
     """TEXT + IMAGE → SSE stream.  Streams text tokens first, then sends image URL.
 
     The frontend already handles both token events and image_url events in the
@@ -3248,6 +3297,11 @@ def _dispatch_multi_stream(user_id, message, chat_id, image_data):
 
     def generate():
         updated_title = None
+        activity_payload = _tag_sse_frames(
+            drain_sse_activities(activity_session), request_id, turn_id, attempt_id
+        )
+        if activity_payload:
+            yield activity_payload
 
         # ── 1. Stream text tokens via Marcus Brain ────────────────────
         if marcus:
@@ -3277,14 +3331,14 @@ def _dispatch_multi_stream(user_id, message, chat_id, image_data):
                             if final_reply_emitted:
                                 continue
                             final_reply_emitted = True
-                        yield f"data: {json.dumps(token)}\n\n"
+                        yield _sse_frame(token, request_id, turn_id, attempt_id)
                     elif token:
-                        yield f"data: {json.dumps({'token': token})}\n\n"
+                        yield _sse_frame({"token": token}, request_id, turn_id, attempt_id)
             except Exception as exc:
-                yield f"data: {json.dumps({'error': str(exc)})}\n\n"
+                yield _sse_frame({"error": str(exc)}, request_id, turn_id, attempt_id)
 
         # ── 2. Generate image via ProviderManager ─────────────────────
-        yield f"data: {json.dumps({'intent': 'generating_image', 'query': message})}\n\n"
+        yield _sse_frame({"intent": "generating_image", "query": message}, request_id, turn_id, attempt_id)
 
         image_result = pm.get_manager().execute(
             pm.Capability.IMAGE,
@@ -3305,9 +3359,9 @@ def _dispatch_multi_stream(user_id, message, chat_id, image_data):
             )
             stored_url = media_record["local_path"] if media_record else image_url
 
-            yield f"data: {json.dumps({'image_url': stored_url, 'revised_prompt': revised})}\n\n"
+            yield _sse_frame({"image_url": stored_url, "revised_prompt": revised}, request_id, turn_id, attempt_id)
             asset_copy = _image_reply_copy(message, stored_url, revised)
-            yield f"data: {json.dumps({'token': asset_copy})}\n\n"
+            yield _sse_frame({"token": asset_copy}, request_id, turn_id, attempt_id)
 
             if marcus:
                 try:
@@ -3319,9 +3373,14 @@ def _dispatch_multi_stream(user_id, message, chat_id, image_data):
                     pass
         else:
             print(f"[Router]   IMAGE failed: {image_result.error}")
-            yield f"data: {json.dumps({'error': 'Image generation failed. The text response above is still valid.'})}\n\n"
+            yield _sse_frame({"error": "Image generation failed. The text response above is still valid."}, request_id, turn_id, attempt_id)
 
-        yield f"data: {json.dumps({'done': True, 'chat_id': resolved_chat_id, 'updated_title': updated_title, 'reply_mode': bool(getattr(marcus, '_reply_mode', False))})}\n\n"
+        yield _sse_frame({
+            "done": True,
+            "chat_id": resolved_chat_id,
+            "updated_title": updated_title,
+            "reply_mode": bool(getattr(marcus, '_reply_mode', False)),
+        }, request_id, turn_id, attempt_id)
 
     return Response(
         stream_with_context(generate()),
@@ -3381,12 +3440,12 @@ def _dispatch_video_json(user_id, message, chat_id, image_data):
     })
 
 
-def _dispatch_video_stream(user_id, message, chat_id, image_data):
+def _dispatch_video_stream(user_id, message, chat_id, image_data, activity_session=None, request_id="", turn_id="", attempt_id=""):
     """VIDEO → SSE stream. Generation runs in a background thread (survives
     client disconnect); the stream just tails its progress."""
     if not _video_generation_enabled():
         print("[Router]   VIDEO blocked — generation disabled (kill switch)")
-        return _video_disabled_stream(user_id, message, chat_id)
+        return _video_disabled_stream(user_id, message, chat_id, request_id, turn_id, attempt_id)
     print(f"[Router]   Dispatch: VIDEO (stream) — prompt={message[:120]!r}")
 
     marcus = load_marcus(user_id)
@@ -3401,7 +3460,10 @@ def _dispatch_video_stream(user_id, message, chat_id, image_data):
     state = _spawn_video_generation(user_id, resolved_chat_id, message)
 
     return Response(
-        stream_with_context(_stream_video_state(state, resolved_chat_id, message=message)),
+        stream_with_context(_stream_video_state(
+            state, resolved_chat_id, message=message,
+            request_id=request_id, turn_id=turn_id, attempt_id=attempt_id,
+        )),
         mimetype='text/event-stream',
         headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no', 'Connection': 'keep-alive'},
     )
@@ -3521,11 +3583,11 @@ def _dispatch_video_text_json(user_id, message, chat_id, image_data):
     })
 
 
-def _dispatch_video_text_stream(user_id, message, chat_id, image_data):
+def _dispatch_video_text_stream(user_id, message, chat_id, image_data, activity_session=None, request_id="", turn_id="", attempt_id=""):
     """TEXT + VIDEO → SSE stream.  Streams text first, then video progress + URL."""
     if not _video_generation_enabled():
         print("[Router]   TEXT+VIDEO blocked — generation disabled (kill switch)")
-        return _video_disabled_stream(user_id, message, chat_id)
+        return _video_disabled_stream(user_id, message, chat_id, request_id, turn_id, attempt_id)
     print(f"[Router]   Dispatch: TEXT+VIDEO (stream) — prompt={message[:120]!r}")
 
     marcus = load_marcus(user_id)
@@ -3543,6 +3605,11 @@ def _dispatch_video_text_stream(user_id, message, chat_id, image_data):
 
     def generate():
         updated_title = None
+        activity_payload = _tag_sse_frames(
+            drain_sse_activities(activity_session), request_id, turn_id, attempt_id
+        )
+        if activity_payload:
+            yield activity_payload
 
         # ── 1. Stream text tokens via Marcus Brain ────────────────────
         if marcus:
@@ -3572,16 +3639,17 @@ def _dispatch_video_text_stream(user_id, message, chat_id, image_data):
                             if final_reply_emitted:
                                 continue
                             final_reply_emitted = True
-                        yield f"data: {json.dumps(token)}\n\n"
+                        yield _sse_frame(token, request_id, turn_id, attempt_id)
                     elif token:
-                        yield f"data: {json.dumps({'token': token})}\n\n"
+                        yield _sse_frame({'token': token}, request_id, turn_id, attempt_id)
             except Exception as exc:
-                yield f"data: {json.dumps({'error': str(exc)})}\n\n"
+                yield _sse_frame({'error': str(exc)}, request_id, turn_id, attempt_id)
 
         # ── 2. Generate video in background (survives disconnect), tail it ─
         state = _spawn_video_generation(user_id, resolved_chat_id, message)
         for chunk in _stream_video_state(
-            state, resolved_chat_id, updated_title=updated_title, message=message
+            state, resolved_chat_id, updated_title=updated_title, message=message,
+            request_id=request_id, turn_id=turn_id, attempt_id=attempt_id,
         ):
             yield chunk
 
@@ -3612,6 +3680,11 @@ def chat_stream():
         source = str(data.get("source") or "").strip() or None
         persona = normalize_persona(data.get("persona"))
         dedup_id = str(data.get("_vm_dedup_id", "")).strip()
+        # Per-turn SSE identity. A retry keeps the same turn_id but gets a fresh
+        # attempt_id, so late frames from the aborted attempt are rejected.
+        request_id = str(data.get("request_id") or data.get("turn_id") or "").strip() or str(uuid.uuid4())
+        turn_id = str(data.get("turn_id") or request_id).strip() or request_id
+        attempt_id = str(data.get("attempt_id") or request_id).strip() or request_id
 
         # ── vm-fix22 dedup: match on _vm_dedup_id + chat_id, not message text ──
         if dedup_id and chat_id:
@@ -3655,17 +3728,36 @@ def chat_stream():
                 user_id, chat_id, message, asset_kind
             )
             if clarification:
-                return _asset_clarification_stream(user_id, chat_id, clarification)
+                return _asset_clarification_stream(
+                    user_id, chat_id, clarification,
+                    request_id=request_id, turn_id=turn_id, attempt_id=attempt_id,
+                )
 
+        _turn_ids = {"request_id": request_id, "turn_id": turn_id, "attempt_id": attempt_id}
         if has_video and has_text:
-            return _dispatch_video_text_stream(user_id, message, chat_id, image_data, activity_session=activity_session)
+            return _dispatch_video_text_stream(
+                user_id, message, chat_id, image_data,
+                activity_session=activity_session, **_turn_ids,
+            )
         if has_video:
-            return _dispatch_video_stream(user_id, message, chat_id, image_data, activity_session=activity_session)
+            return _dispatch_video_stream(
+                user_id, message, chat_id, image_data,
+                activity_session=activity_session, **_turn_ids,
+            )
         if has_text and has_image:
-            return _dispatch_multi_stream(user_id, message, chat_id, image_data, activity_session=activity_session)
+            return _dispatch_multi_stream(
+                user_id, message, chat_id, image_data,
+                activity_session=activity_session, **_turn_ids,
+            )
         if has_image:
-            return _dispatch_image_stream(user_id, message, chat_id, image_data, activity_session=activity_session)
-        return _dispatch_chat_stream(user_id, message, chat_id, image_data, persona=persona, activity_session=activity_session)
+            return _dispatch_image_stream(
+                user_id, message, chat_id, image_data,
+                activity_session=activity_session, **_turn_ids,
+            )
+        return _dispatch_chat_stream(
+            user_id, message, chat_id, image_data, persona=persona,
+            activity_session=activity_session, **_turn_ids,
+        )
 
     except Exception as e:
         print(f"[CRITICAL] /chat/stream crashed: {e}")

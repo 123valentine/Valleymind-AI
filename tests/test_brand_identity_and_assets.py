@@ -204,7 +204,7 @@ def test_llm_replies_and_streams_are_privacy_scrubbed(monkeypatch):
     })
     monkeypatch.setattr(
         brain_module, "_call_llm_cluster",
-        lambda messages, timeout=30: (leak, {"groq_used": True}),
+        lambda messages, timeout=30, max_tokens=0: (leak, {"groq_used": True}),
     )
     brain = _brain()
     reply = brain.respond("Say hello", chat_id="privacy-1")

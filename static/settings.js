@@ -55,6 +55,75 @@ if (typeof window !== "undefined") {
   window.VMEscapeHtmlAttr = VMEscapeHtmlAttr;
 }
 
+/* ── Per-turn SSE guard ─────────────────────────────────────────────────────
+   The browser owns the authoritative attempt token. The server echoes the same
+   request/turn/attempt IDs on every SSE frame; a frame from an aborted attempt
+   (or an older user turn) is dropped before it can touch a newer bubble. */
+(function () {
+  if (typeof window === "undefined") return;
+  var counter = 0;
+  function newId(prefix) {
+    counter += 1;
+    return String(prefix || "vm") + "_" + Date.now().toString(36) +
+      "_" + counter.toString(36) + "_" + Math.random().toString(36).slice(2, 8);
+  }
+  function begin(ids) {
+    if (window._vmActiveTurnGuard && window._vmActiveTurnGuard.active) {
+      window._vmActiveTurnGuard.active = false;
+    }
+    var guard = {
+      requestId: String((ids && ids.requestId) || newId("req")),
+      turnId: String((ids && ids.turnId) || newId("turn")),
+      attemptId: String((ids && ids.attemptId) || newId("attempt")),
+      active: true,
+    };
+    window._vmActiveTurnGuard = guard;
+    return guard;
+  }
+  function retry(guard) {
+    if (!guard || !guard.active || window._vmActiveTurnGuard !== guard) return null;
+    return begin({ requestId: guard.requestId, turnId: guard.turnId });
+  }
+  function accepts(guard, evt) {
+    if (!guard || !guard.active || window._vmActiveTurnGuard !== guard) return false;
+    if (!evt || typeof evt !== "object") return false;
+    var hasRequest = Object.prototype.hasOwnProperty.call(evt, "request_id");
+    var hasTurn = Object.prototype.hasOwnProperty.call(evt, "turn_id");
+    var hasAttempt = Object.prototype.hasOwnProperty.call(evt, "attempt_id");
+    // Untagged legacy frames are accepted; any tagged frame must match all of
+    // the IDs it carries. A stale attempt can never pass this check.
+    if (!hasRequest && !hasTurn && !hasAttempt) return true;
+    if (hasRequest && String(evt.request_id) !== String(guard.requestId)) return false;
+    if (hasTurn && String(evt.turn_id) !== String(guard.turnId)) return false;
+    if (hasAttempt && String(evt.attempt_id) !== String(guard.attemptId)) return false;
+    return true;
+  }
+  window.VMTurnGuard = { newId: newId, begin: begin, retry: retry, accepts: accepts };
+})();
+
+/* Research replies sometimes begin with a bare source domain line. Strip only
+   that echo (never interior words or spacing) so the answer starts cleanly. */
+function VMCleanDomainEcho(text, sourceMetadata) {
+  var s = String(text == null ? "" : text);
+  var domains = [];
+  (Array.isArray(sourceMetadata) ? sourceMetadata : []).forEach(function (item) {
+    var d = String((item && (item.domain || item.site_name)) || "").trim().toLowerCase();
+    if (d) domains.push(d.replace(/^www\./, ""));
+  });
+  domains.sort(function (a, b) { return b.length - a.length; });
+  domains.forEach(function (domain) {
+    if (!s) return;
+    var escaped = domain.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    var re = new RegExp("^\\s*" + escaped + "\\s*(?:[|·•\\-–—]\\s*)?(?:\\r?\\n)+", "i");
+    if (re.test(s)) s = s.replace(re, "");
+  });
+  var generic = /^\s*((?:[a-z0-9-]+\.)+(?:com|org|net|io|ai|co|tv|me|dev|app|news|info|us|uk))\s*(?:[|·•\-–—]\s*)?(?:\r?\n)+/i;
+  if (generic.test(s)) s = s.replace(generic, "");
+  return s;
+}
+
+if (typeof window !== "undefined") window.VMCleanDomainEcho = VMCleanDomainEcho;
+
 var SETTINGS_SECTIONS = [
   { id: "account",       label: "Account" },
   { id: "interests",     label: "Interests & Goals" },
@@ -3594,8 +3663,16 @@ window.VMRichRender = (function () {
 
     t = t.replace(/\[Image:\s*([^\n\]]+)\]/gi, function (m, url) {
       url = url.trim();
-      // vm-fix19 items 3,4: lazy load, onerror hides (no broken/fake placeholders shown)
-      return '<img src="' + escapeHtml(url) + '" alt="image" loading="lazy" onerror="this.style.display=\'none\'" style="max-width:100%;border-radius:8px;margin:8px 0;display:block;">';
+      // Natural orientation decides portrait posters vs landscape stills. The
+      // image is never stretched or cropped; a broken URL becomes a clean label.
+      var onload = "this.style.width=(this.naturalWidth>this.naturalHeight?'100%':'124px');" +
+        "this.style.maxHeight=(this.naturalWidth>this.naturalHeight?'none':'186px');";
+      var onerror = "this.style.display='none';var f=document.createElement('span');" +
+        "f.className='vm-media-fallback';f.textContent='Preview unavailable';" +
+        "if(this.parentNode)this.parentNode.insertBefore(f,this);";
+      return '<img src="' + escapeHtml(url) + '" alt="image" loading="lazy" ' +
+        'onload="' + onload + '" onerror="' + onerror + '" ' +
+        'style="max-width:100%;height:auto;object-fit:contain;display:block;border-radius:10px;margin:8px 0;background:#0f172a;">';
     });
     t = t.replace(/\[Video:\s*([^\n\]]+)\]/gi, function (m, url) {
       url = url.trim();
@@ -4098,7 +4175,8 @@ window.VMEnrichAssistantReply = function (bub, fullText, sourceMetadata, sources
   if (typeof window.VMPresentationSelector === "undefined" ||
       typeof window.VMRichRender === "undefined") return;
   try {
-    var t = String(fullText);
+    // Drop a raw leading source-domain echo before choosing a presentation.
+    var t = VMCleanDomainEcho(fullText, sourceMetadata);
     var fmt = window.VMPresentationSelector.select(t);
     // vm-fix19: render markdown for AI replies with any markdown syntax
     // (bold, italic, headings, lists, tables, code, blockquotes, links)

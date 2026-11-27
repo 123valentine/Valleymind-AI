@@ -2369,13 +2369,14 @@
   .bubble.ai-rich .vm-research-card:last-child,
   .bubble.ai-rich .vm-image-left-card:last-child{ border-bottom:0; padding-bottom:0; }
   .bubble.ai-rich .vm-media-thumb{
-    flex:0 0 118px; width:118px; height:177px; aspect-ratio:2/3;
+    flex:0 0 auto; width:124px; height:186px; aspect-ratio:2/3;
     max-width:100%; padding:0; margin:0; border:1px solid rgba(255,255,255,0.08);
     border-radius:15px; overflow:hidden; background:#0f172a; cursor:zoom-in;
     box-sizing:border-box; position:relative;
   }
+  .bubble.ai-rich .vm-media-thumb.vm-media-landscape{ width:208px; height:117px; aspect-ratio:16/9; }
   .bubble.ai-rich .vm-media-thumb-img{
-    width:100%; height:100%; max-width:100%; object-fit:cover; display:block; border-radius:15px;
+    width:100%; height:100%; max-width:100%; object-fit:contain; display:block; border-radius:15px;
   }
   .bubble.ai-rich .vm-media-fallback{
     position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
@@ -7153,16 +7154,45 @@ function VMIsGenericResearchImage(url) {
    of horizontal cards: original image on the LEFT, details + source link on the
    RIGHT. No carousels, no "side-by-side comparison" strip, no generated images,
    and no element that can widen the chat viewport. ────────────────────────── */
-function VMResearchImageIsLandscape(s) {
-    if (!s) return false;
+function VMResearchImageMetrics(s) {
+    if (!s) return { landscape: false, width: 124, height: 186, aspect: "2/3", ratio: 2 / 3 };
     var ratio = parseFloat(s.aspect_ratio || s.image_aspect || "");
     if (isNaN(ratio) && s.image_width && s.image_height) {
         var w = parseFloat(s.image_width), h = parseFloat(s.image_height);
         if (w && h) ratio = w / h;
     }
-    if (!isNaN(ratio) && ratio > 1.2) return true;
     var signal = [s.type, s.media_type, s.kind, s.format, s.title, s.url].join(" ").toLowerCase();
-    return /video|trailer|still|landscape|16:9|youtube|vimeo/.test(signal);
+    var landscape = (!isNaN(ratio) && ratio > 1.2) ||
+        (isNaN(ratio) && /video|trailer|still|landscape|16:9|youtube|vimeo/.test(signal));
+    var safeRatio = (!isNaN(ratio) && ratio > 0.2 && ratio < 5) ? ratio : (landscape ? 16 / 9 : 2 / 3);
+    var width = landscape ? 208 : 124;
+    var height = Math.round(width / safeRatio);
+    if (landscape) height = Math.max(95, Math.min(140, height));
+    else height = Math.max(160, Math.min(210, height));
+    return { landscape: landscape, width: width, height: height, aspect: landscape ? "16/9" : "2/3", ratio: safeRatio };
+}
+
+function VMResearchImageIsLandscape(s) {
+    return VMResearchImageMetrics(s).landscape;
+}
+
+/* Card titles are display labels, not a place to repeat the source URL/domain
+   or the filename. Returning "" means the caller should omit the title row. */
+function VMResearchMediaTitle(s) {
+    var raw = String((s && (s.title || s.name)) || "").trim();
+    var domain = String((s && (s.domain || s.site_name)) || "").trim();
+    var cleaned = VMDecodeHtmlEntities(raw)
+        .replace(/^(?:https?:\/\/)?(?:www\.)?[^\s/]+\.[a-z]{2,}\s*[|·•-]?\s*/i, "")
+        .trim();
+    if (!cleaned) return "";
+    if (domain && cleaned.toLowerCase() === String(domain).replace(/^www\./, "").toLowerCase()) return "";
+    return cleaned;
+}
+
+function VMResearchMediaKey(s) {
+    var title = VMResearchMediaTitle(s).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+    var domain = String((s && (s.domain || s.site_name)) || "").toLowerCase().replace(/^www\./, "");
+    return title && domain ? title + "|" + domain : String((s && s.url) || "").toLowerCase();
 }
 
 function VMBuildResearchMediaCard(s, extraClass) {
@@ -7170,12 +7200,13 @@ function VMBuildResearchMediaCard(s, extraClass) {
     card.className = "vm-research-card vm-media-card" + (extraClass ? " " + extraClass : "");
     card.style.cssText = "display:flex;flex-direction:row;align-items:flex-start;gap:20px;width:100%;max-width:100%;box-sizing:border-box;padding:0 0 22px;margin:0;border:0;border-bottom:1px solid rgba(255,255,255,0.08);background:transparent;overflow:hidden;";
 
-    var landscape = VMResearchImageIsLandscape(s);
+    var metrics = VMResearchImageMetrics(s);
+    var landscape = metrics.landscape;
     var thumb = document.createElement("button");
     thumb.type = "button";
-    thumb.className = "vm-media-thumb";
-    thumb.setAttribute("aria-label", "Preview " + VMDecodeHtmlEntities(s.title || s.name || "source image"));
-    thumb.style.cssText = "position:relative;flex:0 0 118px;width:118px;height:" + (landscape ? "66px" : "177px") + ";aspect-ratio:" + (landscape ? "16/9" : "2/3") + ";padding:0;margin:0;border:1px solid rgba(255,255,255,0.08);border-radius:15px;overflow:hidden;background:#0f172a;cursor:zoom-in;max-width:100%;box-sizing:border-box;";
+    thumb.className = "vm-media-thumb" + (landscape ? " vm-media-landscape" : "");
+    thumb.setAttribute("aria-label", "Preview " + VMDecodeHtmlEntities(VMResearchMediaTitle(s) || "source image"));
+    thumb.style.cssText = "position:relative;flex:0 0 auto;width:" + metrics.width + "px;height:" + metrics.height + "px;aspect-ratio:" + metrics.aspect + ";padding:0;margin:0;border:1px solid rgba(255,255,255,0.08);border-radius:15px;overflow:hidden;background:#0f172a;cursor:zoom-in;max-width:100%;box-sizing:border-box;";
     thumb.onclick = function (ev) {
         if (ev && ev.stopPropagation) ev.stopPropagation();
         if (ev && ev.preventDefault) ev.preventDefault();
@@ -7186,10 +7217,24 @@ function VMBuildResearchMediaCard(s, extraClass) {
 
     var img = document.createElement("img");
     img.src = s.image;
-    img.alt = VMDecodeHtmlEntities(s.title || s.name || "source image");
+    img.alt = VMDecodeHtmlEntities(VMResearchMediaTitle(s) || "source image");
     img.loading = "lazy";
     img.className = "vm-media-thumb-img";
-    img.style.cssText = "width:100%;height:100%;max-width:100%;object-fit:cover;display:block;border-radius:15px;";
+    img.style.cssText = "width:100%;height:100%;max-width:100%;object-fit:contain;display:block;border-radius:15px;";
+    img.onload = function () {
+        var nw = img.naturalWidth || 0, nh = img.naturalHeight || 0;
+        if (!nw || !nh) return;
+        var natural = VMResearchImageMetrics({
+            aspect_ratio: String(nw / nh), type: s.type, media_type: s.media_type,
+            title: s.title, url: s.url,
+        });
+        thumb.style.width = natural.width + "px";
+        thumb.style.height = natural.height + "px";
+        thumb.style.aspectRatio = natural.aspect;
+        if (natural.landscape !== landscape) {
+            thumb.className = "vm-media-thumb" + (natural.landscape ? " vm-media-landscape" : "");
+        }
+    };
     img.onerror = function () {
         img.style.display = "none";
         if (!thumb.querySelector(".vm-media-fallback")) {
@@ -7207,12 +7252,14 @@ function VMBuildResearchMediaCard(s, extraClass) {
     body.className = "vm-media-body";
     body.style.cssText = "flex:1 1 auto;min-width:0;max-width:100%;box-sizing:border-box;display:flex;flex-direction:column;gap:6px;";
 
-    var titleText = s.title || s.name || (s.domain ? s.domain.split(".")[0] : "Source");
-    var title = document.createElement("div");
-    title.className = "vm-media-title";
-    title.textContent = VMDecodeHtmlEntities(titleText);
-    title.style.cssText = "font-size:15px;font-weight:700;line-height:1.35;color:#e2e8f0;overflow-wrap:anywhere;";
-    body.appendChild(title);
+    var titleText = VMResearchMediaTitle(s);
+    if (titleText) {
+        var title = document.createElement("div");
+        title.className = "vm-media-title";
+        title.textContent = titleText;
+        title.style.cssText = "font-size:15px;font-weight:700;line-height:1.35;color:#e2e8f0;overflow-wrap:anywhere;";
+        body.appendChild(title);
+    }
 
     var metaBits = [s.category, s.year || s.release_year, s.type || s.media_type, s.domain || s.site_name]
         .filter(function (bit) { return !!bit && String(bit).trim(); })
@@ -7251,11 +7298,16 @@ function VMBuildResearchMediaCard(s, extraClass) {
 
 function VMResearchMediaSources(sourceMetadata) {
     if (!Array.isArray(sourceMetadata)) return [];
-    var seen = {};
+    var seenImages = {};
+    var seenTitles = {};
     return sourceMetadata.filter(function (s) {
         if (!s || !s.image || !/^https?:\/\//i.test(s.image) || !s.url || VMIsGenericResearchImage(s.image)) return false;
-        if (seen[s.image]) return false;
-        seen[s.image] = true;
+        var imageKey = String(s.image).toLowerCase().replace(/[?#].*$/, "");
+        if (seenImages[imageKey]) return false;
+        seenImages[imageKey] = true;
+        var titleKey = VMResearchMediaKey(s);
+        if (titleKey && seenTitles[titleKey]) return false;
+        if (titleKey) seenTitles[titleKey] = true;
         return true;
     });
 }
@@ -8633,20 +8685,29 @@ function VMEnsureAssistantToolbar(wrapper, msgIndex) {
 /* addMessage("", "ai") intentionally does not append a .bubble for empty text,
    so streamed tokens need their own live bubble. Create (or reuse) one here and
    keep the activity tracker mounted directly above the streaming text. */
-function VMEnsureLiveAssistantBubble(thinkingEl, regenCtx) {
+function VMEnsureLiveAssistantBubble(thinkingEl, regenCtx, turnId) {
     var container = document.getElementById("messages");
     if (!container) return null;
     var welcome = document.getElementById("welcome");
     if (welcome) welcome.style.display = "none";
 
+    var wantedTurn = String(turnId || "");
+    // A wrapper stamped for an earlier attempt must never receive text from the
+    // current stream. Unstamped legacy wrappers stay eligible for compatibility.
+    var belongsToTurn = function (candidate) {
+        return !!candidate && (!wantedTurn || !candidate.dataset ||
+            !candidate.dataset.vmTurnId || candidate.dataset.vmTurnId === wantedTurn);
+    };
+
     var wrapper = null;
-    if (regenCtx && regenCtx.wrapper && regenCtx.wrapper.parentNode === container) {
+    if (regenCtx && regenCtx.wrapper && regenCtx.wrapper.parentNode === container &&
+        belongsToTurn(regenCtx.wrapper)) {
         wrapper = regenCtx.wrapper;
     }
     if (!wrapper) {
         var last = container.lastElementChild;
         if (last && last.classList && last.classList.contains("assistant-message") &&
-            !last.querySelector(".bubble") && !last.dataset.statusEl) {
+            !last.querySelector(".bubble") && !last.dataset.statusEl && belongsToTurn(last)) {
             wrapper = last; // wrapper created by an earlier addMessage("")
         }
     }
@@ -8657,7 +8718,10 @@ function VMEnsureLiveAssistantBubble(thinkingEl, regenCtx) {
     }
     // A live stream must be identifiable even before its first token lands, so
     // completion/finalization can reuse this wrapper instead of appending one.
-    if (wrapper.dataset) wrapper.dataset.vmStreamAssistant = "true";
+    if (wrapper.dataset) {
+        wrapper.dataset.vmStreamAssistant = "true";
+        if (wantedTurn) wrapper.dataset.vmTurnId = wantedTurn;
+    }
     var bubble = wrapper.querySelector(".bubble");
     if (!bubble) {
         bubble = document.createElement("div");
@@ -14036,6 +14100,26 @@ window.handleSendClick = function () {
 
 window.send = async function () {
     if (!authCheckComplete || isThinking) return;
+    // The browser owns the authoritative attempt token. Regeneration keeps the
+    // wrapper's existing turn ID so it updates the same bubble; every other send
+    // is a genuinely new turn.
+    var _regenCtxForGuard = window._regenCtx || null;
+    var _regenTurnId = (_regenCtxForGuard && _regenCtxForGuard.wrapper &&
+        _regenCtxForGuard.wrapper.dataset && _regenCtxForGuard.wrapper.dataset.vmTurnId) ||
+        "";
+    var _vmTurnGuard = (window.VMTurnGuard && typeof window.VMTurnGuard.begin === "function")
+        ? window.VMTurnGuard.begin({ turnId: _regenTurnId })
+        : null;
+    function _vmTurnIsActive() {
+        return !_vmTurnGuard || (
+            _vmTurnGuard.active &&
+            (!window._vmActiveTurnGuard || window._vmActiveTurnGuard === _vmTurnGuard)
+        );
+    }
+    function _vmWrapperIsCurrent(wrapper) {
+        return !!wrapper && (!_vmTurnGuard || !wrapper.dataset || !wrapper.dataset.vmTurnId ||
+            wrapper.dataset.vmTurnId === _vmTurnGuard.turnId);
+    }
     const input = document.getElementById("chatInput");
     // If recording, stop the mic and flush the captured buffer into the textarea
     // so everything is sent as one combined message. Do this before reading text.
@@ -14314,6 +14398,11 @@ window.send = async function () {
         window._vmStreamVisibilityAbort = false;
         _vmStreamTimedOut = false;
         if (_vmStreamAttempt > 0) {
+            if (_vmTurnGuard && window.VMTurnGuard && typeof window.VMTurnGuard.retry === "function") {
+                var _retriedGuard = window.VMTurnGuard.retry(_vmTurnGuard);
+                if (!_retriedGuard) break; // a newer user turn superseded this retry
+                _vmTurnGuard = _retriedGuard;
+            }
             console.warn("[stream] auto-retry attempt " + (_vmStreamAttempt + 1) + "/" + _vmStreamRetryMax);
             // Clean up partial UI only if no user-visible answer content was rendered.
             try {
@@ -14333,6 +14422,11 @@ window.send = async function () {
     try {
         var body = { message: text || "(image attached)", persona: currentPersona };
         if (currentChatId) body.chat_id = currentChatId;
+        if (_vmTurnGuard) {
+            body.request_id = _vmTurnGuard.requestId;
+            body.turn_id = _vmTurnGuard.turnId;
+            body.attempt_id = _vmTurnGuard.attemptId;
+        }
         // Images/videos are pre-analyzed via /api/vision/analyze above; their
         // findings are appended to message text. Do NOT also send raw image
         // data to /chat/stream (which only accepts a single image anyway).
@@ -14375,8 +14469,9 @@ window.send = async function () {
             });
         }
         while (true) {
-            if (_sendAborted) break;
+            if (_sendAborted || !_vmTurnIsActive()) break;
             var chunk = await _vmReadWithTimeout(reader, 45000); _vmStreamLastActivity = Date.now();
+            if (!_vmTurnIsActive()) break;
             if (chunk.done) break;
 
             buffer += decoder.decode(chunk.value, { stream: true });
@@ -14406,6 +14501,13 @@ window.send = async function () {
                 try {
                     evt = JSON.parse(dataStr);
                 } catch (e) { continue; }
+                // A late frame from an interrupted attempt (or an older turn)
+                // must never mutate the current bubble or status indicator.
+                if (window.VMTurnGuard && typeof window.VMTurnGuard.accepts === "function" &&
+                    !window.VMTurnGuard.accepts(_vmTurnGuard, evt)) {
+                    console.warn("[stream] dropped SSE frame from a stale turn/attempt");
+                    continue;
+                }
 
                 if (evt && evt.type === "activity" && evt.activity) {
                     if (thinking && thinking._vmActivity) thinking._vmActivity.ingest(evt);
@@ -14663,7 +14765,7 @@ window.send = async function () {
                         statusIndicator = null;
                     }
                     if (!bubbleEl) {
-                        var live = VMEnsureLiveAssistantBubble(thinking, _regenCtx);
+                        var live = VMEnsureLiveAssistantBubble(thinking, _regenCtx, _vmTurnGuard ? _vmTurnGuard.turnId : "");
                         if (live) bubbleEl = live.wrapper;
                     }
                     fullReply += tok;
@@ -14686,7 +14788,7 @@ window.send = async function () {
                     if (bubbleEl && fullReply) {
                         VMFinalizeStreamedAssistant(bubbleEl, fullReply);
                     } else if (fullReply) {
-                        var doneLive = VMEnsureLiveAssistantBubble(thinking, _regenCtx);
+                        var doneLive = VMEnsureLiveAssistantBubble(thinking, _regenCtx, _vmTurnGuard ? _vmTurnGuard.turnId : "");
                         if (doneLive) {
                             bubbleEl = doneLive.wrapper;
                             VMFinalizeStreamedAssistant(bubbleEl, fullReply);
@@ -14719,7 +14821,7 @@ window.send = async function () {
            live wrapper rather than calling addMessage() (which appended a
            duplicate assistant bubble). */
         if (!bubbleEl && !streamError && fullReply) {
-            var finalLive = VMEnsureLiveAssistantBubble(thinking, _regenCtx);
+            var finalLive = VMEnsureLiveAssistantBubble(thinking, _regenCtx, _vmTurnGuard ? _vmTurnGuard.turnId : "");
             if (finalLive) bubbleEl = finalLive.wrapper;
         }
         if (bubbleEl && !streamError && fullReply &&
@@ -14849,14 +14951,23 @@ window.send = async function () {
     }
     try { document.removeEventListener("visibilitychange", _vmVisRetryHandler); } catch(e){}
     window._vmChatStreamActive = false;
+    // A newer send may have taken ownership while this stream was finishing.
+    // Do not render a JSON fallback or error into its bubble.
+    if (!_vmTurnIsActive()) return;
 
     // Fallback to non-streaming if streaming failed
     if (streamError) {
         try {
+            if (!_vmTurnIsActive()) return;
             removeThinkingIndicator(thinking);
             if (thinking && thinking._vmActivity) thinking._vmActivity.abort("Request interrupted");
             var body2 = { message: text || "(image attached)", persona: currentPersona };
             if (currentChatId) body2.chat_id = currentChatId;
+            if (_vmTurnGuard) {
+                body2.request_id = _vmTurnGuard.requestId;
+                body2.turn_id = _vmTurnGuard.turnId;
+                body2.attempt_id = _vmTurnGuard.attemptId;
+            }
             // Use the captured send-time images: the composer (and the legacy
             // mirror) has already been cleared by this point.
             if (sentImage && sentImage.length) body2.image = sentImage[0];
@@ -14867,7 +14978,9 @@ window.send = async function () {
                 body: JSON.stringify(body2),
                 timeoutMs: 120000
             });
+            if (!_vmTurnIsActive()) return;
             var fallbackData = await fallbackRes.json();
+            if (!_vmTurnIsActive()) return;
             // Ingest activity events from the JSON response into the unified tracker.
             if (fallbackData && fallbackData.activities && Array.isArray(fallbackData.activities)) {
                 if (thinking && thinking._vmActivity) thinking._vmActivity.ingestBatch(fallbackData.activities);
@@ -14889,7 +15002,9 @@ window.send = async function () {
             // Reuse any live stream wrapper (or a regeneration wrapper). The
             // old code only looked at _regenCtx, so a failed stream followed by
             // a successful /chat fallback appended a SECOND assistant bubble.
-            var _fbWrapper = bubbleEl || (_regenCtx && _regenCtx.wrapper);
+            var _fbWrapper = _vmWrapperIsCurrent(bubbleEl)
+                ? bubbleEl
+                : (_vmWrapperIsCurrent(_regenCtx && _regenCtx.wrapper) ? _regenCtx.wrapper : null);
             if (_fbWrapper) {
                 VMFinalizeStreamedAssistant(_fbWrapper, reply);
             } else {
@@ -14919,9 +15034,12 @@ window.send = async function () {
                 speakPersona(reply, currentPersona);
             }
         } catch (fallbackErr) {
+            if (!_vmTurnIsActive()) return;
             removeThinkingIndicator(thinking);
             var _errMsg = streamError || fallbackErr.message || "Connection error. Please try again.";
-            var _ebWrapper = bubbleEl || (_regenCtx && _regenCtx.wrapper);
+            var _ebWrapper = _vmWrapperIsCurrent(bubbleEl)
+                ? bubbleEl
+                : (_vmWrapperIsCurrent(_regenCtx && _regenCtx.wrapper) ? _regenCtx.wrapper : null);
             if (_ebWrapper) {
                 VMFinalizeStreamedAssistant(_ebWrapper, _errMsg);
             } else {
@@ -14937,6 +15055,8 @@ window.send = async function () {
             }
         }
     }
+
+    if (!_vmTurnIsActive()) return;
 
     // Cleanup abort state and restore send button icon.
     _sendAbortController = null;
@@ -14960,6 +15080,9 @@ window.send = async function () {
 window.cancelSend = function () {
     try {
         _sendAborted = true;
+        // Deactivate the attempt token so any frames already in flight are
+        // dropped even if the abort arrives too late to stop the fetch.
+        if (window._vmActiveTurnGuard) window._vmActiveTurnGuard.active = false;
         if (_sendAbortController) { try { _sendAbortController.abort(); } catch (e) {} }
         _sendAbortController = null;
 

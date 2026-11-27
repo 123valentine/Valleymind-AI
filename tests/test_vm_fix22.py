@@ -5,7 +5,15 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from unittest.mock import patch, MagicMock
 
 # ── 1. Fallback key: 401/403 → retry once with fallback key ───────────
-from core.brain import _call_openai_compat, _call_gemini, _call_groq
+from core.brain import (
+    CHAT_MAX_COMPLETION_TOKENS,
+    FALLBACK_RESPONSE,
+    _call_openai_compat,
+    _call_gemini,
+    _call_groq,
+    _fast_model_candidates,
+    _is_reasoning_transient_failure,
+)
 
 class FakeResp:
     def __init__(self, status_code, text='{"error": {"message": "test"}}'):
@@ -88,6 +96,23 @@ mem.add_message("test_chat", "user", "hello", dedup_id="abc-123")
 msgs = mem.get_chat("test_chat")
 assert msgs[-1].get("dedup_id") == "abc-123", f"dedup_id not persisted: {msgs[-1]}"
 print("DEDUP_PERSIST_OK")
+
+# ── 4. Transient reasoning failure → configured fast-model retry ────────
+from pathlib import Path
+
+BRAIN_SRC = (Path(__file__).resolve().parents[1] / "core" / "brain.py").read_text(encoding="utf-8")
+assert CHAT_MAX_COMPLETION_TOKENS >= 2400
+assert _is_reasoning_transient_failure(FALLBACK_RESPONSE) is True
+assert _is_reasoning_transient_failure("Here is the answer.") is False
+
+with patch.dict(os.environ, {"GROQ_FAST_MODELS": "custom-fast,primary-model"}):
+    _candidates = _fast_model_candidates("primary-model")
+assert _candidates[0] == "custom-fast", _candidates
+assert "primary-model" not in _candidates
+assert "_iter_transient_guarded_stream" in BRAIN_SRC
+assert 'status.get("transient")' in BRAIN_SRC
+assert BRAIN_SRC.count("_fast_model_candidates(") >= 4
+print("FAST_MODEL_RETRY_OK")
 
 print()
 print("ALL_VM_FIX22_MOCKED_TESTS_OK")

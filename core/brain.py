@@ -26,7 +26,10 @@ from core.source_intelligence import SourceIntelligence, EvidencePackage
 from core.memory import MemorySystem
 from core.memory_manager import MemoryManager
 from core.conversation_recovery import ConversationRecovery
-from core.router import _needs_contextual_research as _router_contextual_research
+from core.router import (
+    _active_topic_from_history,
+    _needs_contextual_research as _router_contextual_research,
+)
 from core.african_culture import (
     cultural_request_directives,
     resolve_language,
@@ -37,6 +40,44 @@ from core.african_culture import (
 
 
 FALLBACK_RESPONSE = "I can't reach the reasoning model right now. Please try again shortly."
+
+# Multi-item comparisons and research answers routinely exceed the old 2048-token
+# ceiling. Keep a generous budget on every chat path; the auto-continuation loop
+# below still handles providers that stop early with finish_reason="length".
+CHAT_MAX_COMPLETION_TOKENS = 3072
+
+# Explicitly configured fast Groq models are tried before showing the transient
+# reasoning-model apology. Defaults cover the common free-tier chat models.
+_FAST_GROQ_MODEL_DEFAULTS = (
+    "openai/gpt-oss-20b",
+    "llama-3.3-70b-versatile",
+    "llama-3.1-8b-instant",
+)
+
+
+def _is_reasoning_transient_failure(value) -> bool:
+    """True when a provider returned the canonical transient reasoning apology."""
+    text = re.sub(r"\s+", " ", str(value or "")).strip().lower()
+    fallback = re.sub(r"\s+", " ", FALLBACK_RESPONSE).strip().lower()
+    return bool(text) and (text == fallback or text.startswith(fallback))
+
+
+def _fast_model_candidates(primary_model: str = "") -> list:
+    """Configured fast Groq models, de-duplicated and ordered for retry."""
+    configured = [
+        item.strip()
+        for item in str(os.getenv("GROQ_FAST_MODELS", "")).split(",")
+        if item.strip()
+    ]
+    candidates = configured + [item for item in _FAST_GROQ_MODEL_DEFAULTS if item]
+    primary = str(primary_model or "").strip()
+    seen = {primary} if primary else set()
+    ordered = []
+    for model in candidates:
+        if model not in seen:
+            seen.add(model)
+            ordered.append(model)
+    return ordered
 
 # ── Companion semantic animation contract ──────────────────────────────────
 # The VRM companion knows these body behaviours and face expressions (see
@@ -968,6 +1009,59 @@ def _needs_forced_live_search(message: str) -> bool:
     )
 
 
+# Bare directives such as "search online" / "check online" are explicit user
+# commands, not freshness questions. They must resolve against the active
+# conversation entity before the research pipeline runs.
+_EXPLICIT_SEARCH_DIRECTIVE_RE = re.compile(
+    r"^\s*(?:(?:can|could|would|will|shall)\s+you\s+|please\s+|kindly\s+)*"
+    r"(?:search(?:\s+(?:the\s+)?(?:web|internet|online))?|"
+    r"look\s+(?:it|this|that)\s+up|look\s+up|"
+    r"check(?:\s+(?:online|the\s+web|the\s+internet|it|this|that))?|"
+    r"find\s+out|google)\b",
+    re.IGNORECASE,
+)
+_EXPLICIT_SEARCH_NOISE_RE = re.compile(
+    r"^(?:online|on\s+the\s+web|on\s+the\s+internet|the\s+web|the\s+internet|"
+    r"web|internet|for\s+me|please|kindly|it|this|that|them)\b[\s:,.!?—–-]*",
+    re.IGNORECASE,
+)
+_CONVERSATIONAL_OPINION_RE = re.compile(
+    r"\b(?:what'?s|what\s+is)\s+your\b[\s\S]{0,50}\b"
+    r"(?:favou?rite|most\s+memorable|best|part|moment|scene|character|thing)\b|"
+    r"\b(?:which|what)\s+(?:part|moment|scene|character|thing)\b"
+    r"(?:\s+(?:did|do|would)\s+you\s+(?:like|enjoy|prefer|find))?|"
+    r"^\s*(?:do|did|would|could)\s+you\s+(?:like|enjoy|prefer|pick|choose)\b",
+    re.IGNORECASE,
+)
+
+
+def _needs_explicit_live_search(message: str) -> bool:
+    """True for a direct 'search/check online' command."""
+    return bool(_EXPLICIT_SEARCH_DIRECTIVE_RE.match(str(message or "").strip()))
+
+
+def _resolve_explicit_live_search(message: str, active_topic: str = "") -> str:
+    """Turn a bare search directive into a standalone grounded query."""
+    if not _needs_explicit_live_search(message):
+        return ""
+    text = str(message or "").strip()
+    text = _EXPLICIT_SEARCH_DIRECTIVE_RE.sub("", text, count=1)
+    text = re.sub(r"^[\s:,.!?—–-]+", "", text).strip()
+    text = _EXPLICIT_SEARCH_NOISE_RE.sub("", text).strip()
+    topic = str(active_topic or "").strip()
+    if not text:
+        return topic
+    if topic and topic.lower() not in text.lower():
+        return f"{topic} {text}".strip()
+    return text
+
+
+def _is_conversational_opinion_question(message: str) -> bool:
+    """True for warm in-persona opinion asks that must not trigger research."""
+    text = str(message or "").strip()
+    return bool(text) and bool(_CONVERSATIONAL_OPINION_RE.search(text))
+
+
 def _wants_combined_presentation(message: str) -> bool:
     """True when the user wants both a list of entities and a comparison."""
     text = str(message or "")
@@ -1045,9 +1139,61 @@ def _is_generic_research_image(url: str) -> bool:
     return any(pattern in value for pattern in _GENERIC_RESEARCH_IMAGE_PATTERNS)
 
 
-def _filter_query_images(items, query: str) -> list:
-    """Strip images from source dicts unless the query actually warrants them."""
-    allow_images = _wants_visual_research(query)
+_TOPIC_QUERY_STOPWORDS = frozenset({
+    "the", "and", "for", "with", "from", "that", "this", "what", "when",
+    "where", "which", "who", "why", "how", "about", "into", "your", "you",
+    "are", "was", "were", "has", "have", "had", "its", "his", "her", "their",
+    "online", "web", "search", "check", "look", "latest", "current", "new",
+    "season", "seasons", "show", "shows", "movie", "movies", "film", "films",
+})
+_OFF_TOPIC_IMAGE_DOMAINS = (
+    "almanac.com",
+    "timeanddate.com",
+    "calendarpedia.com",
+    "theoldfarmersalmanac.com",
+)
+
+
+def _topic_keywords(topic: str, query: str = "") -> list:
+    """Meaningful tokens used to keep retrieved images on the active subject."""
+    text = " ".join(str(part or "") for part in (topic, query)).lower()
+    tokens = re.findall(r"[a-z0-9][a-z0-9'-]{2,}", text)
+    seen, keywords = set(), []
+    for token in tokens:
+        token = token.strip("-'")
+        if len(token) < 3 or token in _TOPIC_QUERY_STOPWORDS or token in seen:
+            continue
+        seen.add(token)
+        keywords.append(token)
+    return keywords
+
+
+def _image_matches_topic(item: dict, keywords: list) -> bool:
+    """Reject incidental source imagery that has no active-topic overlap."""
+    if not keywords:
+        return True
+    haystack = " ".join(
+        str(item.get(key) or "")
+        for key in (
+            "title", "name", "description", "snippet", "excerpt", "url",
+            "domain", "site_name", "image", "image_credit",
+        )
+    ).lower()
+    off_topic = any(domain in haystack for domain in _OFF_TOPIC_IMAGE_DOMAINS)
+    if off_topic:
+        return False
+    return any(token in haystack for token in keywords)
+
+
+def _filter_query_images(items, query: str, active_topic: str = "") -> list:
+    """Strip images from source dicts unless the query actually warrants them.
+
+    ``active_topic`` is the resolved conversation entity (e.g. a TV show title).
+    Images from unrelated algorithmic results are dropped even when the source
+    page itself looked like a search hit.
+    """
+    allow_images = _wants_visual_research(query) or _wants_visual_research(active_topic)
+    keywords = _topic_keywords(active_topic, query)
     filtered = []
     for item in (items or []):
         if not isinstance(item, dict):
@@ -1055,7 +1201,11 @@ def _filter_query_images(items, query: str) -> list:
             continue
         copy = dict(item)
         image_url = str(copy.get("image") or "").strip()
-        if image_url and (not allow_images or _is_generic_research_image(image_url)):
+        if image_url and (
+            not allow_images
+            or _is_generic_research_image(image_url)
+            or not _image_matches_topic(copy, keywords)
+        ):
             copy["image"] = ""
             copy["image_credit"] = ""
         # Logos are identity metadata, not visual-research images. They must
@@ -1138,7 +1288,7 @@ def _call_groq(messages: list, model_name: str, timeout: int = 40, timeout_retri
     payload = {
         "model": model_name,
         "messages": messages,
-        "max_completion_tokens": 2048,
+        "max_completion_tokens": CHAT_MAX_COMPLETION_TOKENS,
         "include_reasoning": False,
     }
     if max_completion_tokens:
@@ -1448,7 +1598,7 @@ def get_discovered_model(provider: str) -> str | None:
     return _DISCOVERED_MODELS.get(provider)
 
 
-def _call_groq_stream(messages: list, model_name: str = "", timeout: int = 40, max_completion_tokens: int = 2048, fallback_key: str = ""):
+def _call_groq_stream(messages: list, model_name: str = "", timeout: int = 40, max_completion_tokens: int = CHAT_MAX_COMPLETION_TOKENS, fallback_key: str = ""):
     """Stream Groq tokens. Yields str content chunks and may yield a final
     control dict {"__vm_control":"finish","finish_reason": "..."} so callers can
     detect truncation (finish_reason == "length") and continue."""
@@ -1466,7 +1616,7 @@ def _call_groq_stream(messages: list, model_name: str = "", timeout: int = 40, m
     payload = {
         "model": resolved_model,
         "messages": messages,
-        "max_completion_tokens": max(256, int(max_completion_tokens or 2048)),
+        "max_completion_tokens": max(256, int(max_completion_tokens or CHAT_MAX_COMPLETION_TOKENS)),
         "include_reasoning": False,
         "stream": True,
     }
@@ -1537,7 +1687,7 @@ def _call_openai_compat_stream(
     base_url: str,
     provider_label: str,
     timeout: int = 40,
-    max_completion_tokens: int = 2048,
+    max_completion_tokens: int = CHAT_MAX_COMPLETION_TOKENS,
     fallback_key: str = "",
 ):
     """Stream tokens from an OpenAI-compatible provider (NVIDIA, OpenRouter, etc.)."""
@@ -1612,10 +1762,56 @@ def _call_openai_compat_stream(
         raise
 
 
+def _iter_transient_guarded_stream(items, status_box: dict | None = None):
+    """Yield provider chunks, holding back an exact transient apology.
+
+    The fallback sentence used to leak into the live bubble one token at a time.
+    Buffering only while the accumulated text is still a prefix of that exact
+    sentence keeps normal streaming immediate, while giving the caller a clean
+    place to retry a fast model before any apology is shown.
+    """
+    buffered: list[str] = []
+    control = None
+    emitted = False
+    for item in items:
+        if isinstance(item, dict):
+            if item.get("__vm_control") == "finish":
+                control = item
+            else:
+                yield item
+            continue
+        piece = str(item or "")
+        if not piece:
+            continue
+        if emitted:
+            yield piece
+            continue
+        buffered.append(piece)
+        joined = "".join(buffered)
+        if FALLBACK_RESPONSE.startswith(joined) and len(joined) <= len(FALLBACK_RESPONSE):
+            continue
+        emitted = True
+        yield joined
+        buffered = []
+
+    tail = "".join(buffered)
+    transient = False
+    if tail:
+        if _is_reasoning_transient_failure(tail):
+            transient = True
+        else:
+            emitted = True
+            yield tail
+    if status_box is not None:
+        status_box.update({"emitted": emitted, "transient": transient, "finish": control})
+    if control is not None and not transient:
+        yield control
+
+
 def _call_llm_cluster_stream(
     messages: list,
     timeout: int = 40,
-    max_completion_tokens: int = 2048,
+    max_completion_tokens: int = CHAT_MAX_COMPLETION_TOKENS,
     capability: str = "text",
 ):
     """Stream tokens with full provider failover, invisible to the user.
@@ -1673,41 +1869,70 @@ def _call_llm_cluster_stream(
             yield response
             return
 
-    # ── Quick plain chat: Groq first ─────────────────────────────────────
+    # ── Quick plain chat: Groq first, then configured fast Groq models ──
     if config.groq_api_key:
+        primary_model = ""
         try:
-            model = get_latest_groq_model()
-            if model:
-                emitted = False
-                try:
-                    for item in _call_groq_stream(
-                        messages, model, timeout=timeout, max_completion_tokens=max_completion_tokens,
-                    ):
-                        if isinstance(item, dict):
-                            yield item
-                            continue
-                        if item:
-                            emitted = True
-                            yield item
-                    if emitted:
-                        print("[LLM CLUSTER STREAM] Response served by: Groq")
-                        return
-                    # 200 but no content - treat as failure, fall through
-                    print("[LLM CLUSTER STREAM] Groq streamed no content. Rotating to fallback cluster.")
-                except Exception as exc:
-                    if emitted:
-                        print(f"[LLM CLUSTER STREAM] Groq failed mid-stream after output: {_short_error_detail(str(exc))}")
-                        return
-                    print(f"[LLM CLUSTER STREAM] Groq failed before output: {_short_error_detail(str(exc))}. Rotating to fallback cluster.")
-            else:
-                print("[LLM CLUSTER STREAM] Groq skipped: no model resolved. Rotating to fallback cluster.")
+            primary_model = get_latest_groq_model()
         except Exception as exc:
-            print(f"[LLM CLUSTER STREAM] Groq setup failed: {_short_error_detail(str(exc))}. Rotating to fallback cluster.")
+            print(f"[LLM CLUSTER STREAM] Groq model lookup failed: {_short_error_detail(str(exc))}")
+        models = ([primary_model] if primary_model else []) + _fast_model_candidates(primary_model)
+        for model in models:
+            emitted = False
+            status: dict = {}
+            try:
+                stream = _call_groq_stream(
+                    messages, model, timeout=timeout,
+                    max_completion_tokens=max_completion_tokens,
+                )
+                for item in _iter_transient_guarded_stream(stream, status):
+                    if isinstance(item, dict):
+                        yield item
+                        continue
+                    if item:
+                        emitted = True
+                        yield item
+                if status.get("transient"):
+                    print(f"[LLM CLUSTER STREAM] {model} returned the transient reasoning apology; trying next fast model")
+                    continue
+                if emitted:
+                    print(f"[LLM CLUSTER STREAM] Response served by: Groq ({model})")
+                    return
+                # 200 but no content - try the next model, then the fallback chain.
+                print(f"[LLM CLUSTER STREAM] Groq model {model} streamed no content. Rotating.")
+            except Exception as exc:
+                if emitted:
+                    print(f"[LLM CLUSTER STREAM] Groq failed mid-stream after output: {_short_error_detail(str(exc))}")
+                    return
+                print(f"[LLM CLUSTER STREAM] Groq model {model} failed before output: {_short_error_detail(str(exc))}. Rotating.")
     else:
         print("[LLM CLUSTER STREAM] Groq unavailable: no API key. Rotating to fallback cluster.")
 
     # Fallbacks: reuse the non-streaming rotation, emit as one chunk
-    response, meta = _call_llm_cluster_impl(messages, timeout=timeout, capability=capability)
+    response, meta = _call_llm_cluster_impl(
+        messages, timeout=timeout, capability=capability,
+        max_tokens=max_completion_tokens,
+    )
+    if _is_reasoning_transient_failure(response):
+        primary = ""
+        try:
+            primary = get_latest_groq_model()
+        except Exception:
+            pass
+        for model in _fast_model_candidates(primary):
+            try:
+                candidate = _call_groq(
+                    messages, model, timeout=timeout,
+                    max_completion_tokens=max_completion_tokens,
+                )
+            except Exception as exc:
+                print(f"[LLM CLUSTER STREAM] Fast fallback {model} failed: {_short_error_detail(str(exc))}")
+                continue
+            if candidate and not _is_reasoning_transient_failure(candidate):
+                response = candidate
+                meta = {"groq_used": True, "fallback_used": True, "fallback_source": f"Groq fast:{model}"}
+                print(f"[LLM CLUSTER STREAM] Recovered transient failure via {model}")
+                break
     print(f"[LLM CLUSTER STREAM] Response served by: {_served_by(meta)} (non-streamed fallback)")
     yield response
 
@@ -1729,7 +1954,7 @@ def _call_openai_compat(
     payload = {
         "model": model,
         "messages": messages,
-        "max_tokens": 2048,
+        "max_tokens": CHAT_MAX_COMPLETION_TOKENS,
     }
     if max_tokens:
         payload["max_tokens"] = max(256, int(max_tokens))
@@ -2942,7 +3167,7 @@ class MarcusBrain:
             used += len(block)
         return "\n\n".join(blocks)
 
-    def _groq_messages(self, chat_id: str, user_message: str, image_data: str = "", live_context: str = "", expanded_query: str = "", mongo_history: list = None, global_memories: str = "", knowledge_data: str = "", recovered_context: str = "", search_note: str = "") -> list:
+    def _groq_messages(self, chat_id: str, user_message: str, image_data: str = "", live_context: str = "", expanded_query: str = "", mongo_history: list = None, global_memories: str = "", knowledge_data: str = "", recovered_context: str = "", search_note: str = "", conversational_opinion: bool = False) -> list:
         try:
             self.memory.reload()
             long_term = self.memory.get_full_memory() or {}
@@ -3211,7 +3436,16 @@ class MarcusBrain:
                 "Close with one brief, topic-specific follow-up (cast/trailer/scenes for a movie, "
                 "specs/pricing for a product, etc.), never unrelated boilerplate."
             )
-        if _needs_forced_live_search(user_message):
+        if conversational_opinion:
+            sections.append(
+                "PERSONAL OPINION MODE: The user is asking for your own take in the "
+                "relationship you share with them. Answer warmly, in character, as "
+                "though you have been watching/discussing this with them. Give a real "
+                "opinion with a specific reason. Never say you don't watch shows, "
+                "don't have feelings, are an AI, or that you cannot have a favourite. "
+                "Do not introduce dates, freshness checks, or web-search claims."
+            )
+        if _needs_forced_live_search(user_message) and not conversational_opinion:
             sections.append(
                 "DIRECT ANSWER MODE: This is a current/factual question. Use the live "
                 "results above to answer the user's ACTUAL question first, with real "
@@ -3456,12 +3690,40 @@ class MarcusBrain:
             return ""
         return "\n".join(lines)
 
-    def _try_llm_first(self, chat_id: str, user_message: str, image_data: str = "", live_context: str = "", mongo_history: list = None, global_memories: str = "", knowledge_data: str = "", recovered_context: str = "") -> dict:
+    def _try_llm_first(self, chat_id: str, user_message: str, image_data: str = "", live_context: str = "", mongo_history: list = None, global_memories: str = "", knowledge_data: str = "", recovered_context: str = "", search_note: str = "", conversational_opinion: bool = False) -> dict:
         try:
-            response, meta = _call_llm_cluster(self._groq_messages(chat_id, user_message, image_data, live_context=live_context, mongo_history=mongo_history, global_memories=global_memories, knowledge_data=knowledge_data, recovered_context=recovered_context))
+            messages = self._groq_messages(
+                chat_id, user_message, image_data, live_context=live_context,
+                mongo_history=mongo_history, global_memories=global_memories,
+                knowledge_data=knowledge_data, recovered_context=recovered_context,
+                search_note=search_note, conversational_opinion=conversational_opinion,
+            )
+            response, meta = _call_llm_cluster(messages, max_tokens=CHAT_MAX_COMPLETION_TOKENS)
+            if _is_reasoning_transient_failure(response):
+                try:
+                    primary = get_latest_groq_model()
+                except Exception:
+                    primary = ""
+                for model in _fast_model_candidates(primary):
+                    try:
+                        candidate = _call_groq(
+                            messages, model, max_completion_tokens=CHAT_MAX_COMPLETION_TOKENS,
+                        )
+                    except Exception as exc:
+                        print(f"[LLM CLUSTER] Fast model {model} failed: {_short_error_detail(str(exc))}")
+                        continue
+                    if candidate and not _is_reasoning_transient_failure(candidate):
+                        response = candidate
+                        meta = {
+                            "groq_used": True,
+                            "fallback_used": True,
+                            "fallback_source": f"Groq fast:{model}",
+                        }
+                        print(f"[LLM CLUSTER] Recovered transient reasoning failure via {model}")
+                        break
             envelope = _parse_envelope(response)
             reply = str(envelope.get("reply") or "").strip()
-            if not reply:
+            if not reply or _is_reasoning_transient_failure(reply):
                 raise RuntimeError("LLM returned no usable reply after parsing.")
             envelope["meta"] = meta
             return envelope
@@ -3586,8 +3848,13 @@ class MarcusBrain:
             "meta": meta,
         }
 
-    def _think(self, chat_id: str, user_message: str, image_data: str = "", live_context: str = "", mongo_history: list = None, global_memories: str = "", knowledge_data: str = "", recovered_context: str = "") -> dict:
-        llm_envelope = self._try_llm_first(chat_id, user_message, image_data, live_context=live_context, mongo_history=mongo_history, global_memories=global_memories, knowledge_data=knowledge_data, recovered_context=recovered_context)
+    def _think(self, chat_id: str, user_message: str, image_data: str = "", live_context: str = "", mongo_history: list = None, global_memories: str = "", knowledge_data: str = "", recovered_context: str = "", search_note: str = "", conversational_opinion: bool = False) -> dict:
+        llm_envelope = self._try_llm_first(
+            chat_id, user_message, image_data, live_context=live_context,
+            mongo_history=mongo_history, global_memories=global_memories,
+            knowledge_data=knowledge_data, recovered_context=recovered_context,
+            search_note=search_note, conversational_opinion=conversational_opinion,
+        )
         if llm_envelope:
             return llm_envelope
         return self._envelope(
@@ -3867,12 +4134,21 @@ class MarcusBrain:
             search_note = ""
             self._pending_sources = []
             self._pending_source_metadata = []
+            routing_history = mongo_history if mongo_history is not None else self.memory.get_chat(cid)
+            active_topic = (
+                _active_topic_from_history(routing_history)
+                or _active_topic_from_history([{"role": "user", "content": message}])
+            )
+            conversational_opinion = _is_conversational_opinion_question(message)
+            explicit_live_query = (
+                "" if conversational_opinion else _resolve_explicit_live_search(message, active_topic)
+            )
             directed_site, directed_query = parse_directed_search(message)
             research_info = classify_research_intent(message, recent_context=self._recent_context_for_routing(cid))
             intent = research_info["intent"]
             research_domain = research_info.get("domain", "general")
             forced_live_search = _needs_forced_live_search(message)
-            if forced_live_search:
+            if forced_live_search and not conversational_opinion:
                 # Never let a chat/none classification skip a direct 2026/news/list
                 # question. This forces the normal web_search -> research pipeline.
                 intent = "search"
@@ -3882,7 +4158,24 @@ class MarcusBrain:
                     )
                 print(f"[FORCED SEARCH] Direct factual question — searching web: {message[:120]}")
             contextual_route = self._contextual_search_route(cid, message, route=route)
-            if directed_site:
+            if conversational_opinion:
+                # A "what's your favourite part?" question is relationship talk,
+                # not a fresh research request or a date-dependent lookup.
+                intent = "none"
+                forced_live_search = False
+                contextual_route = {"needs_search": False, "search_query": "", "reason": "personal opinion"}
+            elif explicit_live_query:
+                intent = "search"
+                forced_live_search = False
+                if research_domain in ("", "general"):
+                    research_domain = "media" if active_topic else "general"
+                contextual_route = {
+                    "needs_search": True,
+                    "search_query": explicit_live_query,
+                    "reason": "explicit live search directive",
+                }
+                print(f"[EXPLICIT SEARCH] Resolved active topic: {explicit_live_query[:120]}")
+            elif directed_site:
                 intent = "search"
                 research_domain = "general"
             elif contextual_route.get("needs_search") or contextual_route.get("search_query"):
@@ -3918,7 +4211,8 @@ class MarcusBrain:
                     if evidence_package.evidence:
                         live_ctx = evidence_package.to_context_string()
                         self._pending_source_metadata = _filter_query_images(
-                            evidence_package.to_frontend_metadata(), search_message
+                            evidence_package.to_frontend_metadata(), search_message,
+                            active_topic=active_topic,
                         )
                         # Build sources list from evidence
                         seen_domains = set()
@@ -3939,7 +4233,8 @@ class MarcusBrain:
                                     "image_credit": ev.image_credit,
                                 })
                         self._pending_sources = _filter_query_images(
-                            self._pending_sources, search_message
+                            self._pending_sources, search_message,
+                            active_topic=active_topic,
                         )
                         print(f"[SOURCE INTEL] Non-stream research: {len(evidence_package.evidence)} evidence items, "
                               f"confidence={evidence_package.confidence}")
@@ -3952,7 +4247,8 @@ class MarcusBrain:
                         live_ctx = _fetch_live_context_force(search_message, site=directed_site or "")
                         if live_ctx:
                             self._pending_sources = _filter_query_images(
-                                get_last_search_sources(), search_message
+                                get_last_search_sources(), search_message,
+                                active_topic=active_topic,
                             )
                         else:
                             print("[SEARCH] No live context found - proceeding with cached knowledge only")
@@ -4013,7 +4309,12 @@ class MarcusBrain:
                 print(f"[CONV RECOVERY] Recovery failed (non-fatal): {exc}")
 
             _emit_activity("summarization", "compiling", detail="Preparing your response")
-            envelope = self._think(cid, message, image_data, live_context=live_ctx, mongo_history=mongo_history, global_memories=global_memories, knowledge_data=knowledge_data, recovered_context=recovered_context)
+            envelope = self._think(
+                cid, message, image_data, live_context=live_ctx,
+                mongo_history=mongo_history, global_memories=global_memories,
+                knowledge_data=knowledge_data, recovered_context=recovered_context,
+                search_note=search_note, conversational_opinion=conversational_opinion,
+            )
             self.last_response_meta = envelope.get("meta") or self._metadata(False, True, "local")
             self.last_response_meta["sources"] = list(getattr(self, "_pending_sources", []) or [])
             raw_reply = str(envelope.get("reply") or "").strip()
@@ -4159,6 +4460,15 @@ class MarcusBrain:
             live_ctx = ""
             search_note = ""
             self._pending_sources = []
+            routing_history = mongo_history if mongo_history is not None else self.memory.get_chat(cid)
+            active_topic = (
+                _active_topic_from_history(routing_history)
+                or _active_topic_from_history([{"role": "user", "content": message}])
+            )
+            conversational_opinion = _is_conversational_opinion_question(message)
+            explicit_live_query = (
+                "" if conversational_opinion else _resolve_explicit_live_search(message, active_topic)
+            )
             directed_site, directed_query = parse_directed_search(message)
             research_info = classify_research_intent(message, recent_context=self._recent_context_for_routing(cid))
             intent = research_info["intent"]
@@ -4167,7 +4477,7 @@ class MarcusBrain:
             self._reply_mode = research_info.get("reason") in ("reply-writing", "copy-box")
             reply_mode = self._reply_mode
             forced_live_search = _needs_forced_live_search(message)
-            if forced_live_search and not reply_mode:
+            if forced_live_search and not reply_mode and not conversational_opinion:
                 intent = "search"
                 if research_domain in ("", "general"):
                     research_domain = (
@@ -4175,7 +4485,22 @@ class MarcusBrain:
                     )
                 print(f"[FORCED SEARCH] Direct factual question — searching web: {message[:120]}")
             contextual_route = self._contextual_search_route(cid, message, route=route)
-            if directed_site:
+            if conversational_opinion:
+                intent = "none"
+                forced_live_search = False
+                contextual_route = {"needs_search": False, "search_query": "", "reason": "personal opinion"}
+            elif explicit_live_query and not reply_mode:
+                intent = "search"
+                forced_live_search = False
+                if research_domain in ("", "general"):
+                    research_domain = "media" if active_topic else "general"
+                contextual_route = {
+                    "needs_search": True,
+                    "search_query": explicit_live_query,
+                    "reason": "explicit live search directive",
+                }
+                print(f"[EXPLICIT SEARCH] Resolved active topic: {explicit_live_query[:120]}")
+            elif directed_site:
                 intent = "search"
                 research_domain = "general"
             elif (contextual_route.get("needs_search") or contextual_route.get("search_query")) and not reply_mode:
@@ -4242,7 +4567,8 @@ class MarcusBrain:
                 if evidence_package.evidence:
                     live_ctx = evidence_package.to_context_string()
                     self._pending_source_metadata = _filter_query_images(
-                        evidence_package.to_frontend_metadata(), search_message
+                        evidence_package.to_frontend_metadata(), search_message,
+                        active_topic=active_topic,
                     )
                     self._pending_sources = []
                     # Build sources list from evidence for frontend
@@ -4288,7 +4614,8 @@ class MarcusBrain:
                                     "freshness_label": ev.freshness_label,
                                 })
                     self._pending_sources = _filter_query_images(
-                        self._pending_sources, search_message
+                        self._pending_sources, search_message,
+                        active_topic=active_topic,
                     )
                     print(f"[STREAM RESEARCH] {len(evidence_package.evidence)} evidence items, "
                           f"confidence={evidence_package.confidence}, "
@@ -4306,7 +4633,8 @@ class MarcusBrain:
                         if result and str(result).strip() != str(LIVE_DATA_UNAVAILABLE):
                             live_ctx = result
                             self._pending_sources = _filter_query_images(
-                                get_last_search_sources(), search_message
+                                get_last_search_sources(), search_message,
+                                active_topic=active_topic,
                             )
                         elif result:
                             live_ctx = ""
@@ -4428,7 +4756,12 @@ class MarcusBrain:
                 except Exception as exc:
                     print(f"[CONV RECOVERY] Recovery failed (non-fatal): {exc}")
 
-                msgs = self._groq_messages(cid, message, image_data, live_context=live_ctx, mongo_history=mongo_history, global_memories=global_memories, knowledge_data=knowledge_data, recovered_context=recovered_context, search_note=search_note)
+                msgs = self._groq_messages(
+                    cid, message, image_data, live_context=live_ctx,
+                    mongo_history=mongo_history, global_memories=global_memories,
+                    knowledge_data=knowledge_data, recovered_context=recovered_context,
+                    search_note=search_note, conversational_opinion=conversational_opinion,
+                )
                 # Time-to-first-token for this request's first real LLM chunk.
                 _llm_request_started = time.monotonic()
                 _ttft_logged = False
@@ -4446,7 +4779,7 @@ class MarcusBrain:
                 else:
                     cap_act = None
 
-                def _stream_once(_msgs, _finish_box, _max_tokens=2048):
+                def _stream_once(_msgs, _finish_box, _max_tokens=CHAT_MAX_COMPLETION_TOKENS):
                     for item in _call_llm_cluster_stream(_msgs, max_completion_tokens=_max_tokens, capability=capability):
                         if isinstance(item, dict):
                             if item.get("__vm_control") == "finish":

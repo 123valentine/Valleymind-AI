@@ -148,14 +148,39 @@
     '</div>';
   }
 
+  function mediaGeometry(hint) {
+    var landscape = /landscape|wide|16:9|video|still/i.test(String(hint || ""));
+    return {
+      landscape: landscape,
+      width: landscape ? 208 : 124,
+      height: landscape ? 117 : 186,
+      aspect: landscape ? "16/9" : "2/3"
+    };
+  }
+
+  function cleanMediaTitle(value, fileName) {
+    var title = String(value || "").trim();
+    var stem = String(fileName || "").trim().replace(/\.[a-z0-9]+$/i, "");
+    if (stem && title.toLowerCase() === stem.toLowerCase()) return "";
+    return title.replace(/^(?:https?:\/\/)?(?:www\.)?[^\s/]+\.[a-z]{2,}\s*[|·•-]?\s*/i, "").trim();
+  }
+
   function imageCardHtml(body) {
     var parts = String(body || "").split("|").map(function (part) { return String(part || "").trim(); });
     var url = safeUrl(parts[0]);
     if (!url) return "";
-    var alt = parts[1] || "Generated image";
     var fileName = parts[2] || "valleymind_image.png";
-    return '<div class="vm-image-card vm-chat-media-card" data-vm-card="image" style="position:relative;display:inline-block;max-width:100%;margin:8px 0;border-radius:14px;overflow:hidden;border:1px solid rgba(148,163,184,0.28);background:#f8fafc;">' +
-      '<img src="' + escapeHtml(url) + '" alt="' + escapeHtml(alt) + '" loading="lazy" style="display:block;max-width:100%;width:100%;height:auto;">' +
+    var alt = cleanMediaTitle(parts[1], fileName) || "Generated image";
+    var geo = mediaGeometry(parts[3] || (/\.(mp4|webm|mov)$/i.test(url) ? "video" : ""));
+    var onload = "var r=this.naturalWidth/this.naturalHeight;var w=this.parentNode;" +
+      "if(w&&r>1.2){w.style.width='208px';w.style.height='117px';w.style.aspectRatio='16/9';}" +
+      "else if(w){w.style.width='124px';w.style.height='186px';w.style.aspectRatio='2/3';}";
+    var onerror = "this.style.display='none';var f=document.createElement('span');" +
+      "f.className='vm-media-fallback';f.textContent='Preview unavailable';" +
+      "f.style.cssText='position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:8px;text-align:center;font-size:10px;color:rgba(15,23,42,0.65);';" +
+      "if(this.parentNode)this.parentNode.appendChild(f);";
+    return '<div class="vm-image-card vm-chat-media-card" data-vm-card="image" style="position:relative;display:inline-block;width:' + geo.width + 'px;height:' + geo.height + 'px;aspect-ratio:' + geo.aspect + ';max-width:100%;margin:8px 0;border-radius:14px;overflow:hidden;border:1px solid rgba(148,163,184,0.28);background:#f8fafc;">' +
+      '<img src="' + escapeHtml(url) + '" alt="' + escapeHtml(alt) + '" loading="lazy" onload="' + onload + '" onerror="' + onerror + '" style="display:block;width:100%;height:100%;max-width:100%;object-fit:contain;">' +
       '<button type="button" class="vm-file-download vm-icon-download vm-media-download" title="Download" aria-label="Download" ' +
         'data-download-url="' + escapeHtml(url) + '" data-download-name="' + escapeHtml(fileName) + '" ' +
         'style="position:absolute;right:10px;bottom:10px;width:36px;height:36px;display:flex;align-items:center;justify-content:center;border-radius:50%;border:1px solid rgba(255,255,255,0.45);background:rgba(15,23,42,0.72);color:#fff;cursor:pointer;">' +
@@ -583,6 +608,8 @@
     badgeHtml: badgeHtml,
     copyBoxHtml: copyBoxHtml,
     imageCardHtml: imageCardHtml,
+    mediaGeometry: mediaGeometry,
+    cleanMediaTitle: cleanMediaTitle,
     fileCardHtml: fileCardHtml,
     thumbGridHtml: thumbGridHtml
   };

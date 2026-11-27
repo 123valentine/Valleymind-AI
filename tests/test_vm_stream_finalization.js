@@ -10,6 +10,7 @@ function assert(name, cond, detail) {
 }
 
 const html = fs.readFileSync('index.html', 'utf8');
+const settingsSrc = fs.readFileSync('static/settings.js', 'utf8');
 
 function extractFunction(name) {
   const start = html.indexOf('function ' + name + '(');
@@ -91,8 +92,68 @@ assert('tokens after completion are ignored',
   html.includes('if (streamDone) continue; // completion already owns the final text'));
 assert('toolbar and enrichment are each guarded once',
   html.includes('dataset.vmToolbarDone') && html.includes('dataset.vmEnriched'));
-assert('non-stream fallback reuses a live bubble',
-  html.includes('var _fbWrapper = bubbleEl || (_regenCtx && _regenCtx.wrapper);'));
+assert('non-stream fallback respects the live turn guard',
+  html.includes('_vmWrapperIsCurrent(bubbleEl)') &&
+  html.includes('_vmWrapperIsCurrent(_regenCtx && _regenCtx.wrapper)'));
+assert('send mints an authoritative per-turn guard',
+  html.includes('window.VMTurnGuard.begin({ turnId: _regenTurnId })'));
+assert('request body carries request/turn/attempt IDs',
+  html.includes('body.request_id = _vmTurnGuard.requestId') &&
+  html.includes('body.turn_id = _vmTurnGuard.turnId') &&
+  html.includes('body.attempt_id = _vmTurnGuard.attemptId'));
+assert('stale SSE frames are dropped before rendering',
+  html.includes('!window.VMTurnGuard.accepts(_vmTurnGuard, evt)') &&
+  html.includes('dropped SSE frame from a stale turn/attempt'));
+assert('live wrappers are stamped and guarded by turn ID',
+  html.includes('wrapper.dataset.vmTurnId = wantedTurn') &&
+  html.includes('function VMEnsureLiveAssistantBubble(thinkingEl, regenCtx, turnId)') &&
+  html.includes('belongsToTurn'));
+assert('retries and delayed fallback work are guarded',
+  html.includes('window.VMTurnGuard.retry') &&
+  (html.match(/if \(!_vmTurnIsActive\(\)\) return;/g) || []).length >= 5 &&
+  html.includes('window._vmActiveTurnGuard.active = false'));
+
+// ── Functional per-turn guard check against the real settings.js source ─────
+const guardComment = settingsSrc.indexOf('The browser owns the authoritative attempt token.');
+const guardStart = settingsSrc.indexOf('(function () {', guardComment);
+const guardEnd = settingsSrc.indexOf('})();', guardComment) + 5;
+const guardSrc = guardStart >= 0 && guardEnd > guardStart
+  ? settingsSrc.slice(guardStart, guardEnd)
+  : '';
+const guardWindow = {};
+new Function('window', guardSrc)(guardWindow);
+const guardApi = guardWindow.VMTurnGuard;
+assert('VMTurnGuard is installed by settings.js', !!guardApi && typeof guardApi.accepts === 'function');
+
+if (guardApi) {
+  const g1 = guardApi.begin();
+  const oldFrame = {
+    request_id: g1.requestId, turn_id: g1.turnId, attempt_id: g1.attemptId, token: 'old'
+  };
+  assert('current turn accepts a matching tagged frame', guardApi.accepts(g1, oldFrame));
+  assert('legacy untagged frames are still accepted', guardApi.accepts(g1, { token: 'legacy' }));
+
+  const g2 = guardApi.begin();
+  assert('a newer turn deactivates the previous guard', !guardApi.accepts(g1, oldFrame));
+  assert('a newer turn rejects frames from the older turn', !guardApi.accepts(g2, oldFrame));
+
+  const retryGuard = guardApi.retry(g2);
+  const g2Frame = {
+    request_id: g2.requestId, turn_id: g2.turnId, attempt_id: g2.attemptId, token: 'retry'
+  };
+  assert('retry keeps request/turn identity but rotates the attempt',
+    !!retryGuard && retryGuard.requestId === g2.requestId &&
+    retryGuard.turnId === g2.turnId && retryGuard.attemptId !== g2.attemptId);
+  assert('frames from the aborted attempt are rejected after retry',
+    !guardApi.accepts(retryGuard, g2Frame));
+  assert('the retried attempt accepts its own frames',
+    guardApi.accepts(retryGuard, {
+      request_id: retryGuard.requestId,
+      turn_id: retryGuard.turnId,
+      attempt_id: retryGuard.attemptId,
+      token: 'fresh'
+    }));
+}
 
 console.log('\nVM_STREAM_FINALIZATION_TESTS: ' + ok + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

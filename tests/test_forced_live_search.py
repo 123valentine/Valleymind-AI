@@ -11,7 +11,14 @@ Run with:
 import unittest
 from pathlib import Path
 
-from core.brain import _needs_forced_live_search, strip_animation_tags_preserve_space
+from core.brain import (
+    _is_conversational_opinion_question,
+    _needs_explicit_live_search,
+    _needs_forced_live_search,
+    _resolve_explicit_live_search,
+    strip_animation_tags_preserve_space,
+)
+from core.router import _active_topic_from_history
 
 ROOT = Path(__file__).resolve().parent.parent
 BRAIN = (ROOT / "core" / "brain.py").read_text(encoding="utf-8")
@@ -109,6 +116,29 @@ class SSEDeltaSpacingTests(unittest.TestCase):
     def test_stream_loop_uses_the_preserving_stripper(self):
         self.assertIn("anim_tail = strip_animation_tags_preserve_space(anim_tail + yielded)", BRAIN)
         self.assertNotIn("anim_tail = strip_animation_tags(anim_tail + yielded)", BRAIN)
+
+
+class ExplicitDirectiveAndOpinionTests(unittest.TestCase):
+    def test_bare_directives_use_the_active_conversation_entity(self):
+        history = [
+            {"role": "user", "content": "Tell me about The Umbrella Academy Season 4 Jennifer"},
+            {"role": "assistant", "content": "Here is what I found."},
+        ]
+        active_topic = _active_topic_from_history(history)
+        self.assertIn("Umbrella Academy", active_topic)
+        for message in ("search online", "check online", "look it up"):
+            with self.subTest(message=message):
+                self.assertTrue(_needs_explicit_live_search(message))
+                self.assertEqual(_resolve_explicit_live_search(message, active_topic), active_topic)
+
+    def test_personal_opinion_asks_are_not_treated_as_fresh_research(self):
+        for message in ("what's your favorite part?", "Which scene did you like most?"):
+            with self.subTest(message=message):
+                self.assertTrue(_is_conversational_opinion_question(message))
+                self.assertFalse(_needs_explicit_live_search(message))
+        self.assertIn("PERSONAL OPINION MODE", BRAIN)
+        self.assertIn("Do not introduce dates, freshness checks", BRAIN)
+        self.assertEqual(BRAIN.count("intent = \"none\""), 2)
 
 
 if __name__ == "__main__":
