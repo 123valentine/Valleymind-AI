@@ -34,6 +34,29 @@ var VM_MASSIVE_EFFECT_GROUPS = [
 var VM_MASSIVE_STICKER_GROUPS = ["My Stickers", "Reactions", "Sports", "Tutorial Pop-Ups"];
 var VM_MASSIVE_CAPTION_STYLES = ["Word-by-Word Pop", "Clean Subtitle", "Off"];
 var VM_MASSIVE_AUDIO_MODES = ["Keep Original Audio", "Add Background Track"];
+var VM_MASSIVE_TOOLS = [
+  { id: "stickers", label: "Stickers" },
+  { id: "overlays", label: "Overlays" },
+  { id: "transitions", label: "Transitions" },
+  { id: "fx", label: "FX" }
+];
+// Lightweight, text/CSS-only previews. No sticker packs or media files ship
+// with the app; user uploads come from their own editing asset library.
+var VM_MASSIVE_MEME_TEMPLATES = [
+  { label: "YES!", emoji: "🔥", tone: "hot" },
+  { label: "NO WAY", emoji: "😳", tone: "shock" },
+  { label: "TOO REAL", emoji: "💀", tone: "dark" },
+  { label: "GOAT", emoji: "🐐", tone: "gold" }
+];
+var VM_MASSIVE_EMOJI_STICKERS = ["🔥", "😂", "😭", "💀", "🏆", "⚽", "✨", "🥲"];
+var VM_MASSIVE_OVERLAY_PRESETS = [
+  { name: "Clean Border", kind: "border" },
+  { name: "Neon Frame", kind: "border" },
+  { name: "Picture Card", kind: "picture" },
+  { name: "PIP Window", kind: "pip" }
+];
+var VM_MASSIVE_TRANSITIONS = ["Cut", "Zoom Punch", "Whip Pan", "Fade", "Glitch"];
+var VM_MASSIVE_SPEED_CURVES = ["Linear", "Ease In", "Ease Out", "S-Curve"];
 
 // Follow-up chips shown under a generated image card. Kept here (next to the
 // shared download chrome) so the chat UI and any WebView mirror use one list.
@@ -97,6 +120,12 @@ if (typeof window !== "undefined") {
   window.VM_MASSIVE_STICKER_GROUPS = VM_MASSIVE_STICKER_GROUPS;
   window.VM_MASSIVE_CAPTION_STYLES = VM_MASSIVE_CAPTION_STYLES;
   window.VM_MASSIVE_AUDIO_MODES = VM_MASSIVE_AUDIO_MODES;
+  window.VM_MASSIVE_TOOLS = VM_MASSIVE_TOOLS;
+  window.VM_MASSIVE_MEME_TEMPLATES = VM_MASSIVE_MEME_TEMPLATES;
+  window.VM_MASSIVE_EMOJI_STICKERS = VM_MASSIVE_EMOJI_STICKERS;
+  window.VM_MASSIVE_OVERLAY_PRESETS = VM_MASSIVE_OVERLAY_PRESETS;
+  window.VM_MASSIVE_TRANSITIONS = VM_MASSIVE_TRANSITIONS;
+  window.VM_MASSIVE_SPEED_CURVES = VM_MASSIVE_SPEED_CURVES;
 }
 
 /* ── Per-turn SSE guard ─────────────────────────────────────────────────────

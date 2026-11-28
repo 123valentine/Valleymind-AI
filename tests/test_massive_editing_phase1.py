@@ -1,10 +1,10 @@
-"""Phase 1 Massive Editing workspace + upload-routing tests.
+"""Massive Editing workspace + upload-routing tests.
 
-Covers the lightweight mobile-first layout (top bar/Projects, preview/timeline,
-one composer with multi-media `+`, and the four slide-up drawers) and the
-storage gateway that routes reference photos, custom stickers and reaction
-clips through the media manager (object storage when configured, temporary
-local storage only when it is unset).
+Covers the sidebar-led tablet/desktop layout (permanent asset rail, adjacent
+slide-over drawers, stacked multi-track timeline, docked speed properties and
+the bottom multimedia composer) and the storage gateway that routes reference
+photos, custom stickers and reaction clips through the media manager (object
+storage when configured, temporary local storage only when it is unset).
 
 Run with: python -m pytest tests/test_massive_editing_phase1.py -v
 """
@@ -47,23 +47,25 @@ class Phase1StaticTestCase(unittest.TestCase):
 
     def test_single_composer_has_plus_upload_and_apply(self):
         js = self._read("static/massive_editing.js")
-        self.assertIn('placeholder="Describe your edit..."', js)
+        self.assertIn('placeholder="Describe your AI edit..."', js)
         self.assertIn('id="meFilesInput" accept="video/*,image/*,audio/*" multiple', js)
         self.assertIn("me-composer-plus", js)
         self.assertIn("me-attachment-chips", js)
         self.assertIn(">Apply</button>", js)
+        self.assertIn('title="Start AI Edit"', js)
         self.assertIn('postJSON("/api/editing/run"', js)
 
-    def test_four_bottom_tabs_and_slide_up_drawers(self):
+    def test_sidebar_tools_and_slide_over_drawers(self):
         js = self._read("static/massive_editing.js")
         html = self._read("index.html")
-        for label in ("Effects", "Stickers", "Captions", "Audio"):
+        for label in ("Stickers", "Overlays", "Transitions", "FX"):
             self.assertIn(label, js)
-        for drawer in ("effectsDrawer", "stickersDrawer", "captionsDrawer",
-                       "audioDrawer", "me-drawer", "openDrawer"):
+        for drawer in ("stickersTool", "overlaysTool", "transitionsTool",
+                       "fxTool", "meDrawer", "openDrawer", "toggleTool"):
             self.assertIn(drawer, js)
-        self.assertIn(".me-bottom-tabs", html)
-        self.assertIn(".me-drawer.open", html)
+        self.assertIn(".me-sidebar", html)
+        self.assertIn(".me-flyout.open", html)
+        self.assertNotIn(".me-bottom-tabs", html)
 
     def test_drawer_categories_and_empty_state_presets(self):
         settings = self._read("static/settings.js")
@@ -73,8 +75,13 @@ class Phase1StaticTestCase(unittest.TestCase):
                       "Camera Shake", "Phonk Contrast", "Cinematic Warm", "Vignette"):
             self.assertTrue(label in settings or label in js, label)
         for label in ("My Stickers", "Reactions", "Sports", "Tutorial Pop-Ups",
-                      "Add Sticker", "Ready for sync"):
-            self.assertIn(label, js)
+                      "YES!", "NO WAY", "TOO REAL", "GOAT", "🔥", "😂", "⚽"):
+            self.assertTrue(label in settings or label in js, label)
+        for label in ("Clean Border", "Neon Frame", "Picture Card", "PIP Window",
+                      "Cut", "Whip Pan", "Fade", "Glitch"):
+            self.assertTrue(label in settings or label in js, label)
+        self.assertIn('<strong>Add</strong>', js)
+        self.assertIn("Ready for sync", js)
         for label in ("Word-by-Word Pop", "Clean Subtitle", "Off",
                       "Keep Original Audio", "Add Background Track"):
             self.assertTrue(label in settings or label in js, label)
@@ -83,6 +90,35 @@ class Phase1StaticTestCase(unittest.TestCase):
         js = self._read("static/massive_editing.js")
         self.assertNotIn("reaction-clips", js.lower())
         self.assertNotIn("sticker-pack", js.lower())
+
+    def test_sidebar_feeds_stacked_timeline_and_properties(self):
+        js = self._read("static/massive_editing.js")
+        settings = self._read("static/settings.js")
+        html = self._read("index.html")
+        for marker in ("meSidebar", "meDrawer", "meWorkspace", "me-tl-multitrack",
+                       "me-tl-track-label", "me-tl-marker", "me-tl-playhead",
+                       "meProperties", "Speed Control", "sliceAtPlayhead",
+                       "trimAtPlayhead", "alignToBeat", "Beat Sync", "Vocal",
+                       "collectTimelineBlocks"):
+            self.assertIn(marker, js)
+        for label in ("VIDEO", "AUDIO", "FX", "STICKERS"):
+            self.assertIn(label, js)
+        for marker in ("me-sidebar", "me-flyout.open", "me-tl-multitrack",
+                       "me-tl-trim-handle", "me-properties", "me-composer-dock"):
+            self.assertIn(marker, html)
+        for tool in ("stickers", "overlays", "transitions", "fx"):
+            self.assertIn('id: "%s"' % tool, settings)
+
+    def test_apply_payload_carries_sidebar_selections_and_speed_controls(self):
+        js = self._read("static/massive_editing.js")
+        for field in ('fd.append("instruction", text)', 'fd.append("mode", ME.modeName)',
+                      'fd.append("manual", JSON.stringify(manualOverrides()))',
+                      'speed_curve:', 'ramp_in:', 'ramp_out:', 'trim_start:', 'trim_end:',
+                      'beat_sync:', 'sticker_anim:', 'fd.append("overlay", ME.overlay)',
+                      'fd.append("transition", ME.preview.transition)',
+                      'fd.append("sticker_text", ME.sticker.text)',
+                      'postJSON("/api/editing/run"'):
+            self.assertIn(field, js)
 
 
 class BaseFakeManager:
