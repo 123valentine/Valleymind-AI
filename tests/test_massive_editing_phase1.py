@@ -9,6 +9,7 @@ storage when configured, temporary local storage only when it is unset).
 Run with: python -m pytest tests/test_massive_editing_phase1.py -v
 """
 import io
+import json
 import sys
 import tempfile
 import unittest
@@ -74,9 +75,13 @@ class Phase1StaticTestCase(unittest.TestCase):
                       "Beat Flash", "Zoom Punch", "Velocity Slow-Mo",
                       "Camera Shake", "Phonk Contrast", "Cinematic Warm", "Vignette"):
             self.assertTrue(label in settings or label in js, label)
-        for label in ("My Stickers", "Reactions", "Sports", "Tutorial Pop-Ups",
+        for label in ("Asset Stickers", "Emojis", "Uploaded", "Animated",
                       "YES!", "NO WAY", "TOO REAL", "GOAT", "🔥", "😂", "⚽"):
             self.assertTrue(label in settings or label in js, label)
+        self.assertIn('"Asset Stickers", "Emojis"', settings)
+        self.assertIn('"All", "Uploaded", "Animated"', settings)
+        self.assertIn("/api/editing/stickers?", js)
+        self.assertIn("setStickerFilter", js)
         for label in ("Clean Border", "Neon Frame", "Picture Card", "PIP Window",
                       "Cut", "Whip Pan", "Fade", "Glitch"):
             self.assertTrue(label in settings or label in js, label)
@@ -90,6 +95,20 @@ class Phase1StaticTestCase(unittest.TestCase):
         js = self._read("static/massive_editing.js")
         self.assertNotIn("reaction-clips", js.lower())
         self.assertNotIn("sticker-pack", js.lower())
+
+    def test_responsive_layout_rules_and_properties_toggle(self):
+        html = self._read("index.html")
+        js = self._read("static/massive_editing.js")
+        self.assertIn("@media (min-width: 993px)", html)
+        self.assertIn(".me-sidebar { width:40px; min-width:40px;", html)
+        self.assertIn("position: absolute; left: 40px; top: 0; height: 100%; z-index: 999;", html)
+        self.assertIn("width: min(280px, 80vw); box-shadow: 4px 0 15px rgba(0,0,0,0.5);", html)
+        self.assertIn("height:clamp(24px,3.2vw,28px)", html)
+        self.assertIn(".me-tl-track { height:24px;", html)
+        self.assertIn(".me-composer-dock { flex-shrink:0; display:flex; justify-content:center;", html)
+        self.assertIn("Properties - Velocity (1.00x) ▾", js)
+        self.assertIn("data-overlay", js)
+        self.assertIn(">Trim</button>", js)
 
     def test_sidebar_feeds_stacked_timeline_and_properties(self):
         js = self._read("static/massive_editing.js")
@@ -213,6 +232,37 @@ class VideoEditorStorageTestCase(unittest.TestCase):
         self.assertEqual(manager.calls[0][2]["category"], "reaction")
 
 
+class ManualOverrideGatewayTestCase(unittest.TestCase):
+    def test_missing_default_and_malformed_payloads_are_noops(self):
+        self.assertEqual(massive_storage.parse_manual_overrides(None), {})
+        self.assertEqual(massive_storage.parse_manual_overrides(""), {})
+        self.assertEqual(massive_storage.parse_manual_overrides("not-json"), {})
+        defaults = {
+            "speed": 1, "speed_curve": "Linear", "ramp_in": 0, "ramp_out": 0,
+            "trim_start": 0, "trim_end": 0, "beat_sync": False,
+            "overlay": "", "transition": "", "sticker_text": "",
+            "sticker_anim": "", "effects": [], "mode": "Auto AI Director",
+        }
+        self.assertEqual(massive_storage.parse_manual_overrides(json.dumps(defaults)), {})
+
+    def test_real_overrides_are_mapped_to_engine_keys(self):
+        payload = json.dumps({
+            "speed": 1.5, "speed_curve": "S-Curve", "ramp_in": 0.5,
+            "trim_start": 1.25, "trim_end": 4, "beat_sync": True,
+            "sticker_anim": "beat", "overlay": "Clean Border",
+            "effects": ["boost", "vignette"],
+        })
+        manual = massive_storage.parse_manual_overrides(payload)
+        self.assertEqual(manual["speed"], 1.5)
+        self.assertEqual(manual["speed_curve"], "S-Curve")
+        self.assertEqual(manual["ramp_in"], 0.5)
+        self.assertEqual(manual["trim"], {"start": 1.25, "end": 4.0})
+        self.assertTrue(manual["beat_sync"])
+        self.assertEqual(manual["sticker_anim"], "beat")
+        self.assertEqual(manual["overlay"], "Clean Border")
+        self.assertEqual(manual["effects"], ["boost", "vignette"])
+
+
 class _AuthMixin:
     @classmethod
     def _start_storage(cls):
@@ -308,6 +358,56 @@ class EditingStorageRoutesTestCase(_AuthMixin, unittest.TestCase):
             self.assertEqual([a["type"] for a in body["job"]["media_assets"]], ["image"])
         finally:
             for p in job_patches:
+                p.stop()
+
+    def test_manual_overrides_reach_job_only_when_supplied(self):
+        client = self._client("phase1_manual@example.com")
+        fake_jobs = FakeJobsCollection()
+        captured = {}
+        real_new = sj.new_autoedit_job
+
+        def capture_new(user_id, source_video_url, **kwargs):
+            captured.clear()
+            captured.update(kwargs)
+            return real_new(user_id, source_video_url, **kwargs)
+
+        def payload(manual):
+            return {
+                "instruction": "slow-mo the goal",
+                "media": [(io.BytesIO(b"video"), "clip.mp4")],
+                "test_mode": "1",
+                "manual": manual,
+            }
+
+        patches = (
+            patch.object(sj, "studio_jobs_collection", lambda: fake_jobs),
+            patch.object(sj, "launch", lambda job_id: None),
+            patch.object(sj, "new_autoedit_job", capture_new),
+        )
+        for p in patches:
+            p.start()
+        try:
+            defaults = json.dumps({
+                "speed": 1, "speed_curve": "Linear", "ramp_in": 0, "ramp_out": 0,
+                "trim_start": 0, "trim_end": 0, "beat_sync": False,
+                "overlay": "", "transition": "", "sticker_text": "",
+                "sticker_anim": "", "effects": [],
+            })
+            resp = client.post("/api/editing/run", data=payload(defaults),
+                               content_type="multipart/form-data")
+            self.assertEqual(resp.status_code, 200)
+            self.assertNotIn("manual", captured)
+
+            real = json.dumps({"speed_curve": "S-Curve", "ramp_in": 0.5,
+                               "trim_start": 1.25, "beat_sync": True})
+            resp = client.post("/api/editing/run", data=payload(real),
+                               content_type="multipart/form-data")
+            self.assertEqual(resp.status_code, 200)
+            self.assertEqual(captured["manual"]["speed_curve"], "S-Curve")
+            self.assertEqual(captured["manual"]["trim"], {"start": 1.25, "end": None})
+            self.assertTrue(captured["manual"]["beat_sync"])
+        finally:
+            for p in patches:
                 p.stop()
 
 

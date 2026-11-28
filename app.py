@@ -5882,6 +5882,7 @@ def api_editing_run():
       video             — legacy single-video field (still supported)
       sticker_url       — a /static/... sticker asset to actually overlay
       sticker_name      — human label for that sticker
+      manual            — optional JSON of real sidebar/timeline overrides
       test_mode         — "1" for a free dry run (no B-roll spend)
 
     No paid video-generation spend (Groq Whisper + a free B-roll provider +
@@ -5941,12 +5942,16 @@ def api_editing_run():
                 pass
 
     test_mode = str(request.form.get("test_mode", "")).strip().lower() in ("1", "true", "yes", "on")
+    # Default/no-op manual payloads are ignored so the prompt-driven render
+    # remains hands-free; only real sidebar/timeline overrides reach the job.
+    manual = massive_storage.parse_manual_overrides(request.form.get("manual"))
+    job_kwargs = {"manual": manual} if manual else {}
     job = sj.new_autoedit_job(
         user_id, primary["local_path"], test_mode=test_mode,
         instruction=instruction, voice_transcript=voice_transcript,
         voice_note=voice_note, media_assets=media_assets,
         sticker_source=sticker_url, sticker_name=sticker_name,
-        sticker_pos=sticker_pos)
+        sticker_pos=sticker_pos, **job_kwargs)
     sj.launch(job["_id"])
     return jsonify({"status": "success", "job": sj.public_view(sj.get_job(job["_id"]))})
 

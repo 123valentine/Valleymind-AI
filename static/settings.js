@@ -31,7 +31,10 @@ var VM_MASSIVE_EFFECT_GROUPS = [
   { name: "Color & Vibe", items: ["Phonk Contrast", "Cinematic Warm"] },
   { name: "Framing", items: ["Vignette"] }
 ];
-var VM_MASSIVE_STICKER_GROUPS = ["My Stickers", "Reactions", "Sports", "Tutorial Pop-Ups"];
+// Sticker library is asset-first: uploaded/bundled image stickers lead, while
+// the existing emoji set stays available as a secondary scrolling shelf.
+var VM_MASSIVE_STICKER_GROUPS = ["Asset Stickers", "Emojis"];
+var VM_MASSIVE_STICKER_LIST_OPTIONS = ["All", "Uploaded", "Animated"];
 var VM_MASSIVE_CAPTION_STYLES = ["Word-by-Word Pop", "Clean Subtitle", "Off"];
 var VM_MASSIVE_AUDIO_MODES = ["Keep Original Audio", "Add Background Track"];
 var VM_MASSIVE_TOOLS = [
@@ -118,6 +121,7 @@ if (typeof window !== "undefined") {
   window.VM_MASSIVE_MODES = VM_MASSIVE_MODES;
   window.VM_MASSIVE_EFFECT_GROUPS = VM_MASSIVE_EFFECT_GROUPS;
   window.VM_MASSIVE_STICKER_GROUPS = VM_MASSIVE_STICKER_GROUPS;
+  window.VM_MASSIVE_STICKER_LIST_OPTIONS = VM_MASSIVE_STICKER_LIST_OPTIONS;
   window.VM_MASSIVE_CAPTION_STYLES = VM_MASSIVE_CAPTION_STYLES;
   window.VM_MASSIVE_AUDIO_MODES = VM_MASSIVE_AUDIO_MODES;
   window.VM_MASSIVE_TOOLS = VM_MASSIVE_TOOLS;

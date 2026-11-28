@@ -13,11 +13,84 @@ heavy media assets.
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from core import r2_storage
 
 _KINDS = ("image", "video", "audio")
+
+
+def _manual_num(value: Any, default: float, low: float, high: float) -> float:
+    """Clamp an optional override number; malformed values use ``default``."""
+    try:
+        n = float(value)
+    except (TypeError, ValueError):
+        return default
+    if n != n:  # NaN
+        return default
+    return max(low, min(high, n))
+
+
+def parse_manual_overrides(raw: Any) -> dict:
+    """Decode optional JSON ``manual`` overrides from /api/editing/run.
+
+    The workspace always sends a manual payload, but a default payload is a
+    no-op.  Return {} for missing, malformed or default-only input so the normal
+    prompt-to-video job stays fully automated.  Non-default presentation values
+    are mapped onto the engine's manual vocabulary where one exists.
+    """
+    if raw is None or raw == "":
+        return {}
+    if isinstance(raw, dict):
+        data = raw
+    else:
+        try:
+            data = json.loads(str(raw))
+        except (TypeError, ValueError):
+            return {}
+        if not isinstance(data, dict):
+            return {}
+
+    out: dict = {}
+    speed = _manual_num(data.get("speed"), 1.0, 0.5, 2.0)
+    if abs(speed - 1.0) > 0.001:
+        out["speed"] = round(speed, 2)
+
+    curve = str(data.get("speed_curve") or "").strip()
+    if curve and curve.lower() != "linear":
+        out["speed_curve"] = curve[:40]
+
+    for field in ("ramp_in", "ramp_out"):
+        value = _manual_num(data.get(field), 0.0, 0.0, 10.0)
+        if value > 0:
+            out[field] = round(value, 2)
+
+    trim = data.get("trim")
+    if not isinstance(trim, dict):
+        trim = {"start": data.get("trim_start"), "end": data.get("trim_end")}
+    start = _manual_num(trim.get("start"), 0.0, 0.0, 1e6)
+    end_raw = trim.get("end")
+    end = None if end_raw in (None, "", 0, "0") else _manual_num(end_raw, 0.0, 0.0, 1e6)
+    if start > 0 or (end is not None and end > 0):
+        out["trim"] = {"start": round(start, 3),
+                       "end": None if end is None else round(max(start, end), 3)}
+
+    if data.get("beat_sync") is True:
+        out["beat_sync"] = True
+
+    effects = data.get("effects")
+    if isinstance(effects, list):
+        names = [str(e).strip() for e in effects if str(e or "").strip()]
+        if names:
+            out["effects"] = names[:20]
+
+    for field in ("overlay", "transition", "sticker_text", "sticker_anim"):
+        value = str(data.get(field) or "").strip()
+        if value:
+            out[field] = value[:120]
+
+    return out
 
 
 def storage_backend() -> str:

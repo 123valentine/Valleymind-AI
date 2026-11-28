@@ -1667,6 +1667,23 @@ def _normalize_manual(raw) -> dict:
         out["camera"] = bool(raw.get("camera"))
     if isinstance(raw.get("sfx"), bool):
         out["sfx"] = bool(raw.get("sfx"))
+
+    # Presentation/timeline controls that the render already reads by name.
+    # Keeping them here (instead of silently dropping them) lets a real manual
+    # override reach the job while an empty/default payload stays a no-op.
+    curve = str(raw.get("speed_curve") or "").strip()
+    if curve and curve.lower() != "linear":
+        out["speed_curve"] = curve[:40]
+    for key in ("ramp_in", "ramp_out"):
+        ramp = _num(raw.get(key), 0.0, 0.0, 10.0)
+        if ramp > 0:
+            out[key] = round(ramp, 2)
+    if _bool(raw.get("beat_sync")):
+        out["beat_sync"] = True
+    for key in ("overlay", "transition", "sticker_text", "sticker_anim"):
+        value = str(raw.get(key) or "").strip()
+        if value:
+            out[key] = value[:120]
     return out
 
 

@@ -478,6 +478,14 @@ class PlanEngineTestCase(unittest.TestCase):
         m2 = ve._normalize_manual({"transitions": "auto", "intensity": "wild"})
         self.assertEqual(m2.get("transitions_mode"), "auto")
         self.assertNotIn("intensity", m2)  # unknown intensity dropped
+        m3 = ve._normalize_manual({
+            "speed_curve": "S-Curve", "ramp_in": 0.5, "beat_sync": True,
+            "sticker_anim": "bounce",
+        })
+        self.assertEqual(m3["speed_curve"], "S-Curve")
+        self.assertEqual(m3["ramp_in"], 0.5)
+        self.assertTrue(m3["beat_sync"])
+        self.assertEqual(m3["sticker_anim"], "bounce")
 
     def test_analysis_notice_uses_vision_context(self):
         note = ve._analysis_notice({"vision": {"context": "Street football trick"}})

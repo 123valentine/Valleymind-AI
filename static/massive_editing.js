@@ -14,7 +14,7 @@
 (function () {
   "use strict";
 
-  var CACHE_BUST = "?v=5";
+  var CACHE_BUST = "?v=6";
   var MAX_FILE_MB = 100;
   var STAGES = ["analysis", "planned", "broll", "sticker", "slow-motion",
     "camera", "transitions", "sfx", "music", "done"];
@@ -39,8 +39,11 @@
   ];
   var STICKER_GROUPS = (typeof window !== "undefined" && window.VM_MASSIVE_STICKER_GROUPS &&
     window.VM_MASSIVE_STICKER_GROUPS.length) ? window.VM_MASSIVE_STICKER_GROUPS.slice() : [
-    "My Stickers", "Reactions", "Sports", "Tutorial Pop-Ups"
+    "Asset Stickers", "Emojis"
   ];
+  var STICKER_LIST_OPTIONS = (typeof window !== "undefined" &&
+    window.VM_MASSIVE_STICKER_LIST_OPTIONS && window.VM_MASSIVE_STICKER_LIST_OPTIONS.length)
+    ? window.VM_MASSIVE_STICKER_LIST_OPTIONS.slice() : ["All", "Uploaded", "Animated"];
   var CAPTION_STYLES = (typeof window !== "undefined" && window.VM_MASSIVE_CAPTION_STYLES &&
     window.VM_MASSIVE_CAPTION_STYLES.length) ? window.VM_MASSIVE_CAPTION_STYLES.slice() : [
     "Word-by-Word Pop", "Clean Subtitle", "Off"
@@ -79,6 +82,8 @@
     "Linear", "Ease In", "Ease Out", "S-Curve"
   ];
   var OVERLAY_CATS = ["Borders", "Pictures", "PIP"];
+  var PROPERTIES_TOGGLE_LABEL = "Properties - Velocity (1.00x) ▾";
+  var ASSET_STICKER_CATEGORIES = ["sticker", "gif", "reaction", "image"];
 
   // Preset cards are presentation-only previews that map onto the engine's
   // existing effect/flag vocabulary; no new render backend is introduced.
@@ -107,8 +112,9 @@
     prompt: "", files: [], voice: null, sticker: null, stickerPos: "br",
     jobId: "", start: 0, timer: null,
     drawer: "", assetCategory: "sticker", storageReady: false,
-    drawerCats: {effects: "Velocity & Beat", stickers: "My Stickers", overlays: "Borders"},
-    assetLibrary: [], overlay: "",
+    drawerCats: {effects: "Velocity & Beat", stickers: STICKER_GROUPS[0], overlays: "Borders"},
+    stickerFilter: STICKER_LIST_OPTIONS[0], stickerQuery: "",
+    propsOpen: false, builtinStickers: [], assetLibrary: [], overlay: "",
     preview: {caption: "YES!", fx: false, sticker: "", transition: "", pulse: false, token: 0},
     rec: {stream: null, recorder: null, chunks: [], active: false},
     undoStack: [], redoStack: [], projects: [],
@@ -147,9 +153,12 @@
   }
   function JS(s) { return E(s).replace(/&#039;/g, "\\'"); }
   function $(id) { return document.getElementById(id); }
-  function isSmall() {
-    return !!(window.matchMedia && window.matchMedia("(max-width:980px)").matches);
+  function matchesWidth(px) {
+    return !!(window.matchMedia && window.matchMedia("(max-width:" + px + "px)").matches);
   }
+  function isSmall() { return matchesWidth(980); }
+  function isMobile() { return matchesWidth(768); }
+  function isOverlayLayout() { return isSmall(); }
   function apiHeaders(o) {
     if (typeof authHeaders === "function") return authHeaders(o);
     return o || {};
@@ -251,10 +260,12 @@
       '<div class="me-scrim" id="meScrim" onclick="VMEditing.closeSheets()"></div>' +
       '<div id="meToast" class="me-toast" style="display:none"></div>';
     renderBody();
-    // Sticker and overlay slots start empty; custom additions come from the
-    // user's own library via fetchAssets().
-    fetchAssets(); fetchStorageStatus();
+    // Sticker slots load from the built-in asset manifest plus the user's own
+    // uploads; emoji reactions stay a lightweight secondary shelf.
+    fetchAssets(); fetchBuiltinStickers(); fetchStorageStatus();
     document.addEventListener("visibilitychange", function () { if (document.hidden) stopRec(); });
+    if (document.addEventListener) document.addEventListener("pointerdown", onDocumentPointerDown);
+    if (window.addEventListener) window.addEventListener("resize", syncScrim);
   }
 
   function renderTopbar() {
@@ -332,6 +343,9 @@
           '</div>' +
         '</div>' +
         '<div class="me-timeline-strip" id="meTimeline"></div>' +
+          '<button class="me-props-toggle" id="mePropsToggle" type="button" ' +
+            'aria-controls="meProperties" aria-expanded="false" ' +
+            'onclick="VMEditing.toggleProperties()">' + PROPERTIES_TOGGLE_LABEL + '</button>' +
       '</section>' +
       '<aside class="me-properties" id="meProperties"></aside>' +
     '</div>';
@@ -570,7 +584,7 @@
       '<div class="me-tl-head"><span>Timeline</span>' +
         '<div class="me-tl-actions">' +
           '<button onclick="VMEditing.sliceAtPlayhead()">Slice</button>' +
-          '<button onclick="VMEditing.trimAtPlayhead(\'start\')">Trim in</button>' +
+          '<button onclick="VMEditing.trimAtPlayhead(\'start\')">Trim</button>' +
           '<button onclick="VMEditing.trimAtPlayhead(\'end\')">Trim out</button>' +
           '<button onclick="VMEditing.alignToBeat()">Beat Sync</button>' +
         '</div>' +
@@ -606,7 +620,9 @@
     var ph = $("meTlPlayhead"), ruler = $("meTlRuler"); if (!ph) return;
     dur = dur || ME.editor.duration || 1;
     var pct = Math.max(0, Math.min(100, (time / dur) * 100));
-    ph.style.left = "calc(76px + (100% - 76px) * " + (pct / 100).toFixed(4) + ")";
+    var label = isMobile() ? 52 : 76;
+    ph.style.left = "calc(" + label + "px + (100% - " + label + "px) * " +
+      (pct / 100).toFixed(4) + ")";
     if (ruler) {
       var zoom = ME.editor.timelineZoom || 1;
       var step = Math.max(1, (dur > 60 ? 10 : dur > 20 ? 5 : 2) / zoom);
@@ -705,6 +721,21 @@
             (s === "Keep Original Audio" ? "Original" : "Background") + '</button>';
         }).join("") + '</div></div>' +
       '<p class="me-prop-note">Adjustments are applied when you tap Apply again on a finished edit.</p>';
+    updatePropertiesToggle();
+  }
+  function propertiesToggleLabel(open) {
+    var velocity = Number(ME.editor.manual.speed || 1).toFixed(2) + "x";
+    return "Properties - Velocity (" + velocity + ") " + (open ? "▴" : "▾");
+  }
+  function updatePropertiesToggle() {
+    var btn = $("mePropsToggle"), box = $("meProperties"); if (!btn) return;
+    btn.textContent = propertiesToggleLabel(!!ME.propsOpen);
+    btn.setAttribute("aria-expanded", ME.propsOpen ? "true" : "false");
+    if (box) box.classList.toggle("open", !!ME.propsOpen);
+  }
+  function toggleProperties(force) {
+    ME.propsOpen = typeof force === "boolean" ? force : !ME.propsOpen;
+    updatePropertiesToggle();
   }
   function updatePropertyReadouts() {
     var m = ME.editor.manual;
@@ -716,6 +747,7 @@
     Object.keys(map).forEach(function (id) {
       var el = $(id); if (el) el.textContent = map[id];
     });
+    updatePropertiesToggle();
   }
   function setSpeedCurve(curve) {
     if (SPEED_CURVES.indexOf(curve) < 0) return;
@@ -770,52 +802,91 @@
         E(n) + '</button>';
     }).join("") + '</div>';
   }
+  function stickerAssetView(item, source, fallbackKind) {
+    if (!item) return null;
+    var url = String(item.url || item.local_path || "");
+    if (!url) return null;
+    var kind = String(item.kind || item.type || fallbackKind || "sticker").toLowerCase();
+    if (ASSET_STICKER_CATEGORIES.indexOf(kind) < 0 && kind !== "video") kind = "sticker";
+    return {
+      name: String(item.name || item.file || (source === "uploaded" ? "Your sticker" : "Sticker")),
+      url: url, kind: kind, source: source
+    };
+  }
+  function allStickerAssets() {
+    var seen = {}, items = [];
+    function add(view) {
+      if (!view || seen[view.url]) return;
+      seen[view.url] = true; items.push(view);
+    }
+    ME.builtinStickers.forEach(function (a) { add(stickerAssetView(a, "builtin", "sticker")); });
+    ME.assetLibrary.forEach(function (a) { add(stickerAssetView(a, "uploaded", "image")); });
+    return items;
+  }
+  function stickerMatchesFilter(a) {
+    if (ME.stickerFilter === "Uploaded") return a.source === "uploaded";
+    if (ME.stickerFilter === "Animated") {
+      return a.kind === "gif" || a.kind === "reaction" || a.kind === "video";
+    }
+    return true;
+  }
+  function visibleStickers() {
+    var needle = String(ME.stickerQuery || "").trim().toLowerCase();
+    return allStickerAssets().filter(function (a) {
+      return stickerMatchesFilter(a) &&
+        (!needle || String(a.name).toLowerCase().indexOf(needle) >= 0);
+    });
+  }
+  function stickerAssetTile(a) {
+    var thumb = a.kind === "video"
+      ? '<video src="' + E(a.url) + CACHE_BUST + '" muted preload="metadata"></video>'
+      : '<img src="' + E(a.url) + CACHE_BUST + '" alt="">';
+    return '<button class="me-sticker-tile asset" data-sticker-source="' + E(a.source) +
+      '" onclick="VMEditing.pickSticker(\'' + JS(a.name) + '\',\'' + JS(a.url) + '\')">' +
+      thumb + '<span>' + E(a.name) + '</span></button>';
+  }
+  function stickerFilterRow() {
+    return '<div class="me-sticker-filters" aria-label="Sticker list options">' +
+      STICKER_LIST_OPTIONS.map(function (name) {
+        return '<button class="' + (name === ME.stickerFilter ? 'active' : '') +
+          '" onclick="VMEditing.setStickerFilter(\'' + JS(name) + '\')">' + E(name) + '</button>';
+      }).join("") + '</div>';
+  }
+  function emojiShelf(full) {
+    var items = MEME_TEMPLATES.map(function (t) {
+      return '<button class="me-sticker-tile meme ' + E(t.tone || "") + '" ' +
+        'onclick="VMEditing.pickTextSticker(\'' + JS(t.label) + '\',\'' + JS(t.emoji) + '\')">' +
+        '<span class="me-tile-emoji">' + E(t.emoji) + '</span><span>' + E(t.label) + '</span></button>';
+    }).concat(EMOJI_STICKERS.map(function (e) {
+      return '<button class="me-sticker-tile" onclick="VMEditing.pickTextSticker(\'' +
+        JS(e) + '\',\'' + JS(e) + '\')"><span class="me-tile-emoji">' + E(e) + '</span></button>';
+    }));
+    return '<div class="me-sticker-shelf me-sticker-grid">' + items.join("") + '</div>';
+  }
   function stickersTool() {
     var active = ME.drawerCats.stickers || STICKER_GROUPS[0];
-    var cat = active.toLowerCase();
-    if (cat === "reactions") cat = "reaction";
-    if (cat === "tutorial pop-ups") cat = "sticker";
-    var assets = ME.assetLibrary.filter(function (a) {
-      return (a.category || "") === cat ||
-        (active === "My Stickers" && (a.category === "sticker" || a.kind === "image"));
-    });
-    var cards = '<button class="me-add-tile" onclick="VMEditing.openAssetPicker(\'' +
-      JS(active) + '\')"><span class="me-add-mark">+</span><span>' +
-      '<strong>Add</strong><small>Upload or generate a custom sticker</small></span></button>';
-    if (active === "My Stickers") {
-      cards += '<div class="me-drawer-section-label">Meme templates</div>' +
-        '<div class="me-sticker-grid">' + MEME_TEMPLATES.map(function (t) {
-          return '<button class="me-sticker-tile meme ' + E(t.tone || "") + '" ' +
-            'onclick="VMEditing.pickTextSticker(\'' + JS(t.label) + '\',\'' + JS(t.emoji) + '\')">' +
-            '<span class="me-tile-emoji">' + E(t.emoji) + '</span><span>' + E(t.label) + '</span></button>';
-        }).join("") + '</div>' +
-        '<div class="me-drawer-section-label">Emoji reactions</div>' +
-        '<div class="me-sticker-grid">' + EMOJI_STICKERS.map(function (e) {
-          return '<button class="me-sticker-tile" onclick="VMEditing.pickTextSticker(\'' +
-            JS(e) + '\',\'' + JS(e) + '\')"><span class="me-tile-emoji">' + E(e) + '</span></button>';
-        }).join("") + '</div>';
+    var tabs = categoryTabs("stickers", STICKER_GROUPS, active);
+    var addTile = '<button class="me-add-tile" onclick="VMEditing.openAssetPicker(\'sticker\')">' +
+      '<span class="me-add-mark">+</span><span><strong>Add</strong>' +
+      '<small>Upload or generate a custom sticker</small></span></button>';
+    var uploadInput = '<input type="file" id="meStickerUpload" accept="image/*,video/*" ' +
+      'style="display:none" onchange="VMEditing.uploadAssetFiles(this.files)">';
+    if (active === "Emojis") {
+      return tabs + addTile + uploadInput +
+        '<div class="me-drawer-section-label">Emoji reactions</div>' + emojiShelf(true);
     }
-    cards += '<div class="me-drawer-section-label">Your stickers</div>' +
-      '<div class="me-sticker-grid">';
-    if (assets.length) {
-      cards += assets.map(function (a) {
-        var url = a.local_path || a.url || "";
-        var thumb = a.kind === "video"
-          ? '<video src="' + E(url) + CACHE_BUST + '" muted preload="metadata"></video>'
-          : '<img src="' + E(url) + CACHE_BUST + '" alt="">';
-        return '<button class="me-sticker-tile asset" onclick="VMEditing.pickSticker(\'' +
-          JS(a.name || "Sticker") + '\',\'' + JS(url) + '\')">' + thumb +
-          '<span>' + E(a.name || "Sticker") + '</span></button>';
-      }).join("");
-    } else {
-      cards += '<div class="me-sticker-tile empty">Ready for sync</div>' +
+    var assets = visibleStickers();
+    var grid = assets.length ? assets.map(stickerAssetTile).join("")
+      : '<div class="me-sticker-tile empty">Ready for sync</div>' +
         '<div class="me-sticker-tile empty">Ready for sync</div>' +
         '<div class="me-sticker-tile empty">Your upload</div>';
-    }
-    cards += '</div>';
-    return categoryTabs("stickers", STICKER_GROUPS, active) +
-      '<input type="file" id="meStickerUpload" accept="image/*,video/*" style="display:none" ' +
-      'onchange="VMEditing.uploadAssetFiles(this.files)">' + cards;
+    return tabs + uploadInput +
+      '<input class="me-sticker-search" type="search" placeholder="Find a sticker" ' +
+        'value="' + E(ME.stickerQuery) + '" oninput="VMEditing.filterStickers(this.value)">' +
+      stickerFilterRow() + addTile +
+      '<div class="me-drawer-section-label">Asset Stickers</div>' +
+      '<div class="me-sticker-grid">' + grid + '</div>' +
+      '<div class="me-drawer-section-label">Emoji shelf</div>' + emojiShelf(false);
   }
   function overlaysTool() {
     var active = ME.drawerCats.overlays || OVERLAY_CATS[0];
@@ -917,8 +988,12 @@
   }
   function openAssetPicker(category) {
     var normalized = String(category || "sticker").toLowerCase();
+    if (normalized === "asset stickers" || normalized === "emojis" ||
+        normalized === "stickers" || normalized === "my stickers" ||
+        normalized === "sports" || normalized === "tutorial pop-ups") {
+      normalized = "sticker";
+    }
     if (normalized === "reactions") normalized = "reaction";
-    if (normalized === "sports" || normalized === "tutorial pop-ups") normalized = "sticker";
     if (normalized === "borders" || normalized === "pictures" || normalized === "pip") {
       normalized = "overlay";
     }
@@ -949,13 +1024,32 @@
       .catch(function () { showToast("Could not save that item."); });
   }
   function fetchAssets() {
-    postJSON("/api/editing/assets", {timeoutMs: 20000})
+    return postJSON("/api/editing/assets", {timeoutMs: 20000})
       .then(function (r) { return r.json(); })
       .then(function (d) {
         ME.assetLibrary = (d && d.assets) || [];
         if (ME.drawer === "stickers" || ME.drawer === "overlays") renderDrawer();
       })
       .catch(function () {});
+  }
+  function fetchBuiltinStickers() {
+    function load(kind) {
+      return postJSON("/api/editing/stickers?type=" + kind, {timeoutMs: 20000})
+        .then(function (r) { return r.json(); })
+        .then(function (d) { return (d && d.stickers) || []; })
+        .catch(function () { return []; });
+    }
+    return Promise.all([load("stickers"), load("gifs")]).then(function (lists) {
+      ME.builtinStickers = [];
+      lists.forEach(function (list, i) {
+        var fallback = i === 0 ? "sticker" : "gif";
+        list.forEach(function (item) {
+          var view = stickerAssetView(item, "builtin", fallback);
+          if (view) ME.builtinStickers.push(view);
+        });
+      });
+      if (ME.drawer === "stickers") renderDrawer();
+    });
   }
   function fetchStorageStatus() {
     postJSON("/api/editing/storage", {timeoutMs: 10000})
@@ -1027,7 +1121,16 @@
   }
   function syncScrim() {
     var sc = $("meScrim"), d = $("meDrawer"); if (!sc || !d) return;
-    sc.classList.toggle("show", isSmall() && d.classList.contains("open"));
+    d.setAttribute("data-overlay", isMobile() ? "true" : "false");
+    sc.classList.toggle("show", isOverlayLayout() && d.classList.contains("open"));
+  }
+  function onDocumentPointerDown(e) {
+    if (!ME.drawer || !e || !e.target) return;
+    var d = $("meDrawer"), nav = $("meSidebar");
+    var target = e.target;
+    if (d && typeof target.closest === "function" && target.closest("#meDrawer")) return;
+    if (nav && typeof target.closest === "function" && target.closest("#meSidebar")) return;
+    if (d && target !== d && !(d.contains && d.contains(target))) closeDrawer();
   }
 
   /* ── Projects (local, lightweight) ──────────────────────────────────── */
@@ -1503,14 +1606,16 @@
   function uploadCustomSticker(files) {
     ME.assetCategory = "sticker";
     if (files && files.length) uploadAssetFiles(files);
-    else openAssetPicker("My Stickers");
+    else openAssetPicker(STICKER_GROUPS[0]);
   }
   function pickEditorSticker(url, name) { pickSticker(name, url); }
+  function setStickerFilter(name) {
+    if (STICKER_LIST_OPTIONS.indexOf(name) < 0) return;
+    ME.stickerFilter = name;
+    if (ME.drawer === "stickers") renderDrawer();
+  }
   function filterStickers(q) {
-    var needle = String(q || "").toLowerCase();
-    ME.assetLibrary = ME.assetLibrary.filter(function (a) {
-      return !needle || String(a.name || "").toLowerCase().indexOf(needle) >= 0;
-    });
+    ME.stickerQuery = String(q || "");
     if (ME.drawer === "stickers") renderDrawer();
   }
   function pickSticker(name, url) {
@@ -1544,13 +1649,15 @@
     status: status, refine: refine,
     toggleRec: toggleRec, clearVoice: clearVoice,
     pickSticker: pickSticker, pickTextSticker: pickTextSticker,
+    isMobile: isMobile, isOverlayLayout: isOverlayLayout, toggleProperties: toggleProperties,
     setPos: setPos, removeFile: removeFile, submit: submit, toDashboard: toDashboard,
     toggleSection: toggleSection, setManual: setManual,
     toggleEffect: toggleEffect, toggleAITool: toggleAITool,
     setCanvasAspect: setCanvasAspect, setCanvasMode: setCanvasMode, setCanvasBg: setCanvasBg,
     applyAIEdit: applyAIEdit, applyManual: applyManual, aiRecord: aiRecord,
     sbUploadMedia: sbUploadMedia, pickEditorSticker: pickEditorSticker,
-    filterStickers: filterStickers, uploadCustomSticker: uploadCustomSticker,
+    filterStickers: filterStickers, setStickerFilter: setStickerFilter,
+    fetchBuiltinStickers: fetchBuiltinStickers, uploadCustomSticker: uploadCustomSticker,
     uploadAudio: uploadAudio, removeMusic: removeMusic, uploadVoiceOver: uploadVoiceOver,
     smartReframe: smartReframe, aiSuggestTransitions: aiSuggestTransitions,
     addTextLayer: addTextLayer, removeTextLayer: removeTextLayer, updateTextLayer: updateTextLayer,

@@ -49,9 +49,15 @@ function byId(id) {
   return cache[id];
 }
 
+// Width-aware matchMedia lets the runtime checks exercise mobile and laptop
+// behaviour without a real browser.
+let viewportWidth = 1280;
+function setViewportWidth(px) { viewportWidth = Number(px) || 1280; }
+
 // settings.js runs with a null-returning DOM first; that keeps its unrelated
 // persona hydration out of the way. Then the lookup is enabled for the editor.
 let domReady = false;
+const documentListeners = {};
 const documentStub = {
   readyState: 'complete',
   hidden: false,
@@ -60,7 +66,10 @@ const documentStub = {
   getElementById(id) { return domReady ? byId(id) : null; },
   querySelector() { return null; },
   querySelectorAll() { return []; },
-  addEventListener() {}
+  addEventListener(name, fn) {
+    if (!documentListeners[name]) documentListeners[name] = [];
+    documentListeners[name].push(fn);
+  }
 };
 
 const captured = { api: [] };
@@ -73,7 +82,17 @@ function fakeApiFetch(url, opts) {
   captured.api.push({ url: String(url), method: opts && opts.method, body: opts && opts.body });
   const u = String(url);
   let data = { status: 'success' };
-  if (u.indexOf('/api/editing/assets') >= 0) data.assets = [];
+  if (u.indexOf('/api/editing/assets') >= 0) {
+    data.assets = [{
+      name: 'My Upload.png', kind: 'image', category: 'sticker',
+      local_path: '/static/media/users/u/images/mine.png'
+    }];
+  }
+  if (u.indexOf('/api/editing/stickers') >= 0) {
+    data.stickers = u.indexOf('type=gifs') >= 0
+      ? [{ name: 'Dance GIF', kind: 'gif', url: '/static/assets/gifs/dance.gif' }]
+      : [{ name: 'Fire Sticker', kind: 'sticker', url: '/static/assets/stickers/fire.png' }];
+  }
   if (u.indexOf('/api/editing/storage') >= 0) { data.storage = 'r2'; data.ready = true; }
   if (u.indexOf('/api/studio/job/') >= 0) {
     data = { status: 'success', job: { job_id: 'job-sidebar', status: 'queued' } };
@@ -96,7 +115,10 @@ const win = {
     setItem(k, v) { store[k] = String(v); },
     removeItem(k) { delete store[k]; }
   },
-  matchMedia() { return { matches: false, addListener() {}, removeListener() {} }; },
+  matchMedia(query) {
+    const m = /max-width:\s*(\d+)px/.exec(String(query));
+    return { matches: !!m && viewportWidth <= Number(m[1]), addListener() {}, removeListener() {} };
+  },
   console, Promise, Object, Date, Blob: function () {}, FormData: FakeFormData,
   setTimeout, clearTimeout, setInterval: noopInterval, clearInterval() {},
   fetch: fakeApiFetch, apiFetch: fakeApiFetch,
@@ -127,11 +149,16 @@ if (settingsError || moduleError) {
   return;
 }
 
+async function runTests() {
+// Let the built-in sticker and asset fetches settle before inspecting drawers.
+await new Promise(function (resolve) { setTimeout(resolve, 0); });
 const API = win.VMEditing;
 check('workspace exposes the VMEditing API',
   !!API && typeof API.openDrawer === 'function' &&
   typeof API.submit === 'function' && typeof API.pickFiles === 'function' &&
-  typeof API.sliceAtPlayhead === 'function' && typeof API.alignToBeat === 'function');
+  typeof API.sliceAtPlayhead === 'function' && typeof API.alignToBeat === 'function' &&
+  typeof API.toggleProperties === 'function' &&
+  typeof API.setStickerFilter === 'function' && typeof API.isMobile === 'function');
 
 // ── Shared vocabularies ──────────────────────────────────────────────────────
 const modes = win.VM_MASSIVE_MODES || [];
@@ -150,8 +177,10 @@ check('settings shares the three effect categories',
 check('settings shares all seven effect presets',
   effectGroups.reduce(function (n, g) { return n + g.items.length; }, 0) === 7 &&
   effectGroups[0].items.join('|') === 'Beat Flash|Zoom Punch|Velocity Slow-Mo|Camera Shake', effectGroups);
-check('settings shares the four sticker categories',
-  stickerGroups.join('|') === 'My Stickers|Reactions|Sports|Tutorial Pop-Ups', stickerGroups);
+check('settings shares asset-first sticker categories and list options',
+  stickerGroups.join('|') === 'Asset Stickers|Emojis' &&
+  (win.VM_MASSIVE_STICKER_LIST_OPTIONS || []).join('|') === 'All|Uploaded|Animated',
+  [stickerGroups, win.VM_MASSIVE_STICKER_LIST_OPTIONS]);
 check('settings shares caption + audio controls',
   captionStyles.join('|') === 'Word-by-Word Pop|Clean Subtitle|Off' &&
   audioModes.join('|') === 'Keep Original Audio|Add Background Track');
@@ -197,6 +226,15 @@ const props = decode(byId('meProperties').innerHTML);
 check('docked properties include velocity curve and speed ramps',
   ['Properties', 'Speed Control', 'Velocity', 'Slow-mo curve', 'Ramp in', 'Ramp out',
     'S-Curve'].every(function (label) { return props.indexOf(label) >= 0; }), props);
+check('properties collapse to a compact velocity toggle',
+  /mePropsToggle/.test(meSrc) &&
+  /Properties - Velocity \(/.test(byId('mePropsToggle').textContent),
+  byId('mePropsToggle').textContent);
+API.toggleProperties(true);
+check('properties toggle expands the overlay on demand',
+  byId('mePropsToggle').getAttribute('aria-expanded') === 'true' &&
+  byId('meProperties').classList.contains('open'));
+API.toggleProperties(false);
 
 // ── Attachments ──────────────────────────────────────────────────────────────
 API.sbUploadMedia([
@@ -230,18 +268,62 @@ check('Effects drawer shows all seven presets across its categories',
   }), effects);
 
 API.openDrawer('stickers');
-const stickers = decode(byId('meDrawer').innerHTML);
-check('Stickers drawer shows all four categories',
-  stickerGroups.every(function (g) { return stickers.indexOf(g) >= 0; }), stickers);
-check('Stickers drawer has a prominent Add button plus empty-state slots',
-  /me-add-mark">\+/.test(stickers) && /<strong>Add<\/strong>/.test(stickers) &&
-  /Ready for sync/.test(stickers), stickers);
-check('Stickers drawer has meme templates and emoji reactions',
+let stickers = decode(byId('meDrawer').innerHTML);
+check('Stickers drawer offers Asset Stickers and Emojis categories',
+  stickerGroups.every(function (g) { return stickers.indexOf(g) >= 0; }) &&
+  stickers.indexOf('Asset Stickers') < stickers.indexOf('Emoji shelf'), stickers);
+check('Asset Sticker row merges built-in and uploaded assets',
+  ['Fire Sticker', '/static/assets/stickers/fire.png',
+    'My Upload.png', '/static/media/users/u/images/mine.png'].every(function (label) {
+    return stickers.indexOf(label) >= 0;
+  }), stickers);
+check('Sticker drawer exposes customizable list options',
+  ['All', 'Uploaded', 'Animated'].every(function (label) {
+    return stickers.indexOf('>' + label + '</button>') >= 0 || stickers.indexOf(label) >= 0;
+  }), stickers);
+check('Stickers drawer has a prominent blue Add button',
+  /me-add-tile/.test(stickers) && /me-add-mark">\+/.test(stickers) &&
+  /<strong>Add<\/strong>/.test(stickers), stickers);
+check('Emoji reactions are a secondary scrolling shelf',
+  /me-sticker-shelf/.test(stickers) &&
   ['YES!', 'NO WAY', 'TOO REAL', 'GOAT', '🔥', '😂', '⚽'].every(function (label) {
     return stickers.indexOf(label) >= 0;
   }), stickers);
+API.setDrawerCategory('stickers', 'Emojis');
+const emojiTab = decode(byId('meDrawer').innerHTML);
+check('Emojis category keeps the lightweight reaction set',
+  /Emoji reactions/.test(emojiTab) && emojiTab.indexOf('Fire Sticker') < 0, emojiTab);
+API.setDrawerCategory('stickers', 'Asset Stickers');
+API.setStickerFilter('Uploaded');
+const uploadedOnly = decode(byId('meDrawer').innerHTML);
+check('Uploaded filter narrows the asset list',
+  uploadedOnly.indexOf('My Upload.png') >= 0 && uploadedOnly.indexOf('Fire Sticker') < 0,
+  uploadedOnly);
+API.setStickerFilter('All');
 check('Stickers drawer bundles no sticker packs or reaction clips',
   !/sticker-pack/i.test(stickers) && !/reaction-clips/i.test(stickers));
+
+// ── Responsive runtime ───────────────────────────────────────────────────────
+setViewportWidth(360);
+check('runtime detects a mobile viewport', API.isMobile() && API.isOverlayLayout());
+API.openDrawer('stickers');
+check('below 768px the drawer is a modal overlay',
+  byId('meDrawer').getAttribute('data-overlay') === 'true' &&
+  byId('meScrim').classList.contains('show'));
+const outsideTarget = makeElement('div');
+(documentListeners.pointerdown || []).forEach(function (fn) {
+  fn({ target: outsideTarget });
+});
+check('an outside pointer closes the overlay drawer',
+  !byId('meDrawer').classList.contains('open'));
+setViewportWidth(1024);
+check('laptop viewport returns to the inline drawer',
+  !API.isMobile() && !API.isOverlayLayout());
+API.openDrawer('stickers');
+check('above 768px the drawer does not use the modal scrim',
+  byId('meDrawer').getAttribute('data-overlay') === 'false' &&
+  !byId('meScrim').classList.contains('show'));
+API.closeDrawer();
 
 API.openDrawer('overlays');
 let overlays = '';
@@ -314,9 +396,10 @@ check('stacked timeline has four labeled tracks',
   ['VIDEO', 'AUDIO', 'FX', 'STICKERS'].every(function (label) {
     return timeline.indexOf(label) >= 0;
   }) && (timeline.match(/me-tl-track"/g) || []).length === 4, timeline);
-check('timeline exposes slice, trim, beat-sync and playhead controls',
+check('timeline exposes compact slice, trim, beat-sync and playhead controls',
   ['sliceAtPlayhead', 'trimAtPlayhead', 'alignToBeat', 'Beat Sync',
-    'me-tl-trim-handle', 'me-tl-marker', 'me-tl-playhead', 'Clean Border'].every(function (marker) {
+    '>Trim</button>', 'me-tl-trim-handle', 'me-tl-marker', 'me-tl-playhead',
+    'Clean Border'].every(function (marker) {
     return timeline.indexOf(marker) >= 0;
   }), timeline);
 
@@ -349,7 +432,25 @@ check('workspace CSS is loaded from index.html',
   /\.me-scrim/.test(html) && /\.me-composer-dock/.test(html) &&
   /\.me-preview\[data-aspect="9:16"\]/.test(html));
 check('workspace script versions are bumped',
-  /settings\.js\?v=21/.test(html) && /massive_editing\.js\?v=5/.test(html));
+  /settings\.js\?v=22/.test(html) && /massive_editing\.js\?v=6/.test(html));
+check('mobile rail collapses to 40px icons',
+  html.indexOf('@media (max-width: 768px)') >= 0 &&
+  html.indexOf('.me-sidebar { width:40px; min-width:40px;') >= 0 &&
+  html.indexOf('.me-sidebar-label { display:none; }') >= 0);
+check('mobile drawer matches the requested modal overlay geometry',
+  html.indexOf('position: absolute; left: 40px; top: 0; height: 100%; z-index: 999;') >= 0 &&
+  html.indexOf('width: min(280px, 80vw); box-shadow: 4px 0 15px rgba(0,0,0,0.5);') >= 0 &&
+  html.indexOf('.me-scrim { z-index:998; }') >= 0);
+check('timeline lanes stay 24-28px with compact actions',
+  html.indexOf('height:clamp(24px,3.2vw,28px)') >= 0 &&
+  html.indexOf('.me-tl-track { height:24px;') >= 0 &&
+  html.indexOf('.me-tl-track-content { height:20px; }') >= 0);
+check('laptop keeps the stage/properties side-by-side split',
+  html.indexOf('@media (min-width: 993px)') >= 0 &&
+  html.indexOf('.me-stage-grid { grid-template-columns:minmax(0,1fr) 258px; }') >= 0);
+check('the text composer is prominently centered',
+  html.indexOf('.me-composer-dock { flex-shrink:0; display:flex; justify-content:center;') >= 0 &&
+  html.indexOf('.me-composer { width:min(100%,1120px); margin:0 auto;') >= 0);
 check('old bottom-tab layout is gone', !/\.me-bottom-tabs/.test(html));
 
 const visibleCopy = [topbar, sidebar, workspace, composer, timeline, props,
@@ -359,3 +460,8 @@ check('no storage provider names leak into user-facing copy',
 
 console.log('MASSIVE_EDITING_WORKSPACE_TESTS: ' + ok + ' passed, ' + fail + ' failed');
 if (fail) process.exitCode = 1;
+}
+runTests().catch(function (e) {
+  console.log('FAIL: workspace test runner :: ' + (e && e.stack ? e.stack : e));
+  process.exitCode = 1;
+});
