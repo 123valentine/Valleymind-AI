@@ -54,6 +54,7 @@ from core.config import PROJECT_ROOT, get_config
 from core.db import auth_tokens_collection, app_config_collection, chats_collection, get_db, studio_runs_collection, usage_collection, users_collection
 from core.image_gen import REFERENCE_EDIT_RETRY_MESSAGE
 from core.media_manager import get_media_manager
+from core import video_editor as massive_storage
 from core.photo_enhance import (
     REMOVE_BG_MODES,
     enhance_photo_bytes,
@@ -5763,6 +5764,20 @@ def _edit_enabled() -> bool:
     return os.getenv("EDIT_ENABLED", "1").strip().lower() not in ("0", "false", "no", "off")
 
 
+@app.route("/api/editing/storage", methods=["GET"])
+def api_editing_storage():
+    """Report which backend Massive Editing uploads use. The UI shows only a
+    generic 'ready' dot; backend/credential names are not surfaced to users."""
+    user_id, error = _require_login()
+    if error:
+        return error
+    if not _edit_enabled():
+        return jsonify({"status": "error", "message": "Editing is temporarily unavailable."}), 503
+    backend = massive_storage.storage_backend()
+    return jsonify({"status": "success", "storage": backend,
+                    "ready": massive_storage.object_storage_ready()})
+
+
 @app.route("/api/editing/transcribe", methods=["POST"])
 def api_editing_transcribe():
     """Transcribe a raw voice-note (or any audio/video upload) into text for a
@@ -5834,24 +5849,15 @@ def _edit_collect_uploads(user_id: str) -> tuple[list, dict, str]:
             name = (f.filename or "asset")[:200]
             if not kind:
                 return [], {}, f"{f.filename} isn't a supported video/image/audio file."
-            if kind == "video":
-                rec = mm.save_video(tmp_path, prompt=name, provider="EditUpload",
-                                    chat_id=f"edit_{user_id}")
-                if primary is None:
-                    primary = rec
-                elif rec:
-                    media_assets.append({"type": "video", "url": rec["local_path"], "name": name})
-            elif kind == "image":
-                rec = mm.save_image(tmp_path, prompt=name, provider="EditUpload",
-                                    chat_id=f"edit_{user_id}")
-                if rec:
-                    media_assets.append({"type": "image", "url": rec["local_path"], "name": name})
-            elif kind == "audio":
-                rec = mm.save_media(tmp_path, media_type="audio", prompt=name,
-                                    provider="EditUpload", chat_id=f"edit_{user_id}",
-                                    library="edit", category="music")
-                if rec:
-                    media_assets.append({"type": "audio", "url": rec["local_path"], "name": name})
+            rec = massive_storage.store_upload(
+                mm, tmp_path, kind, prompt=name, category="music",
+                chat_id=f"edit_{user_id}")
+            if not rec:
+                continue
+            if kind == "video" and primary is None:
+                primary = rec
+            else:
+                media_assets.append({"type": kind, "url": rec["local_path"], "name": name})
         finally:
             try:
                 os.remove(tmp_path)
@@ -5922,10 +5928,10 @@ def api_editing_run():
         tmp.close()
         try:
             vn.save(tmp_path)
-            vrec = get_media_manager(user_id).save_media(
-                tmp_path, media_type="audio", prompt="Voice instruction for an edit",
-                provider="EditVoice", chat_id=f"edit_{user_id}", library="edit",
-                category="reaction")
+            vrec = massive_storage.store_upload(
+                get_media_manager(user_id), tmp_path, "audio",
+                prompt="Voice instruction for an edit", category="reaction",
+                chat_id=f"edit_{user_id}")
             if vrec:
                 voice_note = vrec["local_path"]
         finally:
@@ -6111,8 +6117,9 @@ def api_editing_assets_upload():
             if size_mb > _max_upload_mb:
                 errors.append(f"{up.filename}: {size_mb:.0f}MB over the {_max_upload_mb:.0f}MB limit")
                 continue
-            rec = media.save_asset(tmp_path, kind=kind, category=category,
-                                   name=os.path.splitext(up.filename)[0][:80])
+            rec = massive_storage.store_library_asset(
+                media, tmp_path, kind=kind, category=category,
+                name=os.path.splitext(up.filename)[0][:80])
             if rec:
                 saved.append(rec)
             else:
@@ -6169,9 +6176,9 @@ def api_editing_apply_sticker():
             return jsonify({"status": "error",
                             "message": f"{upload.filename} is {size_mb:.0f}MB — the limit is "
                                        f"{_max_upload_mb:.0f}MB."}), 413
-        rec = get_media_manager(user_id).save_video(
-            tmp_path, prompt=(upload.filename or "clip")[:200],
-            provider="StickerSource", chat_id=f"edit_{user_id}")
+        rec = massive_storage.store_upload(
+            get_media_manager(user_id), tmp_path, "video",
+            prompt=(upload.filename or "clip")[:200], chat_id=f"edit_{user_id}")
         if not rec:
             return jsonify({"status": "error", "message": "Couldn't store the upload."}), 502
     finally:

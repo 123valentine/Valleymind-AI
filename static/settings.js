@@ -16,6 +16,25 @@ function VMStatusSpinner() {
   return '<span class="vm-inline-spinner" aria-hidden="true">' + VM_DOWNLOAD_SPINNER_SVG + '</span>';
 }
 
+// Massive Editing workspace vocabulary. Kept here so the renderer and the
+// structural tests share one source of truth. These are labels only — no
+// sticker packs, reaction clips or other heavy assets are bundled.
+var VM_MASSIVE_MODES = [
+  "Auto AI Director",
+  "Skit & Meme Cutaways",
+  "Sports / Beat-Sync",
+  "Tutorial Pop-Ups",
+  "Character Fusion"
+];
+var VM_MASSIVE_EFFECT_GROUPS = [
+  { name: "Velocity & Beat", items: ["Beat Flash", "Zoom Punch", "Velocity Slow-Mo", "Camera Shake"] },
+  { name: "Color & Vibe", items: ["Phonk Contrast", "Cinematic Warm"] },
+  { name: "Framing", items: ["Vignette"] }
+];
+var VM_MASSIVE_STICKER_GROUPS = ["My Stickers", "Reactions", "Sports", "Tutorial Pop-Ups"];
+var VM_MASSIVE_CAPTION_STYLES = ["Word-by-Word Pop", "Clean Subtitle", "Off"];
+var VM_MASSIVE_AUDIO_MODES = ["Keep Original Audio", "Add Background Track"];
+
 // Follow-up chips shown under a generated image card. Kept here (next to the
 // shared download chrome) so the chat UI and any WebView mirror use one list.
 var VM_IMAGE_FOLLOWUP_SUGGESTIONS = [
@@ -73,6 +92,11 @@ if (typeof window !== "undefined") {
   window.VM_IMAGE_FOLLOWUP_SUGGESTIONS = VM_IMAGE_FOLLOWUP_SUGGESTIONS;
   window.VMWithDownloadSpinner = VMWithDownloadSpinner;
   window.VMEscapeHtmlAttr = VMEscapeHtmlAttr;
+  window.VM_MASSIVE_MODES = VM_MASSIVE_MODES;
+  window.VM_MASSIVE_EFFECT_GROUPS = VM_MASSIVE_EFFECT_GROUPS;
+  window.VM_MASSIVE_STICKER_GROUPS = VM_MASSIVE_STICKER_GROUPS;
+  window.VM_MASSIVE_CAPTION_STYLES = VM_MASSIVE_CAPTION_STYLES;
+  window.VM_MASSIVE_AUDIO_MODES = VM_MASSIVE_AUDIO_MODES;
 }
 
 /* ── Per-turn SSE guard ─────────────────────────────────────────────────────
