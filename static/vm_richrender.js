@@ -19,6 +19,7 @@
 
   var FALLBACK_DOWNLOAD_ICON = '<svg class="vm-download-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
   var FALLBACK_DOWNLOAD_SPINNER = '<svg class="vm-download-spinner" width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle class="vm-spinner-track" cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2.5"/><circle class="vm-spinner-arc" cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2.5" stroke-dasharray="28 28" stroke-linecap="round"/></svg>';
+  var FALLBACK_REGENERATE_ICON = '<svg class="vm-regenerate-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 11-2.64-6.36"/><polyline points="21 3 21 9 15 9"/></svg>';
 
   function downloadIconSvg() {
     return typeof window.VMDownloadIconSvg === "function"
@@ -28,6 +29,16 @@
   function downloadSpinnerSvg() {
     return typeof window.VMDownloadSpinnerSvg === "function"
       ? window.VMDownloadSpinnerSvg() : FALLBACK_DOWNLOAD_SPINNER;
+  }
+
+  function regenerateIconSvg() {
+    try {
+      if (typeof window.VMRegenerateIconSvg === "function") {
+        return window.VMRegenerateIconSvg();
+      }
+      if (typeof VMRegenerateIconSvg === "function") return VMRegenerateIconSvg();
+    } catch (e) {}
+    return FALLBACK_REGENERATE_ICON;
   }
 
   window.__VM_RICH_COPY_TEXT = window.__VM_RICH_COPY_TEXT || {};
@@ -149,13 +160,18 @@
   }
 
   function mediaGeometry(hint) {
-    var landscape = /landscape|wide|16:9|video|still/i.test(String(hint || ""));
-    return {
-      landscape: landscape,
-      width: landscape ? 208 : 124,
-      height: landscape ? 117 : 186,
-      aspect: landscape ? "16/9" : "2/3"
-    };
+    var value = String(hint || "");
+    var landscape = /landscape|wide|16:9|video|still/i.test(value);
+    // "portrait" alone stays a research poster; portrait edits and generated
+    // reference cards use the taller 4/5 frame used by the generation skeleton.
+    var portraitEdit = /portrait[-_ ]?edit|edit|reference|4:5|4\/5/i.test(value);
+    if (landscape) {
+      return { landscape: true, portraitEdit: false, width: 208, height: 117, aspect: "16/9" };
+    }
+    if (portraitEdit) {
+      return { landscape: false, portraitEdit: true, width: 160, height: 200, aspect: "4/5" };
+    }
+    return { landscape: false, portraitEdit: false, width: 124, height: 186, aspect: "2/3" };
   }
 
   function cleanMediaTitle(value, fileName) {
@@ -171,19 +187,27 @@
     if (!url) return "";
     var fileName = parts[2] || "valleymind_image.png";
     var alt = cleanMediaTitle(parts[1], fileName) || "Generated image";
-    var geo = mediaGeometry(parts[3] || (/\.(mp4|webm|mov)$/i.test(url) ? "video" : ""));
+    var hint = parts[3] || (/\.(mp4|webm|mov)$/i.test(url) ? "video" : "");
+    var geo = mediaGeometry(hint);
+    var prompt = parts[4] || alt;
     var onload = "var r=this.naturalWidth/this.naturalHeight;var w=this.parentNode;" +
       "if(w&&r>1.2){w.style.width='208px';w.style.height='117px';w.style.aspectRatio='16/9';}" +
-      "else if(w){w.style.width='124px';w.style.height='186px';w.style.aspectRatio='2/3';}";
+      "else if(w){w.style.width='" + geo.width + "px';w.style.height='" + geo.height + "px';w.style.aspectRatio='" + geo.aspect + "';}";
     var onerror = "this.style.display='none';var f=document.createElement('span');" +
       "f.className='vm-media-fallback';f.textContent='Preview unavailable';" +
       "f.style.cssText='position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:8px;text-align:center;font-size:10px;color:rgba(15,23,42,0.65);';" +
       "if(this.parentNode)this.parentNode.appendChild(f);";
+    var buttonStyle = "position:absolute;bottom:10px;width:36px;height:36px;display:flex;align-items:center;justify-content:center;border-radius:50%;border:1px solid rgba(255,255,255,0.45);background:rgba(15,23,42,0.72);color:#fff;cursor:pointer;";
     return '<div class="vm-image-card vm-chat-media-card" data-vm-card="image" style="position:relative;display:inline-block;width:' + geo.width + 'px;height:' + geo.height + 'px;aspect-ratio:' + geo.aspect + ';max-width:100%;margin:8px 0;border-radius:14px;overflow:hidden;border:1px solid rgba(148,163,184,0.28);background:#f8fafc;">' +
       '<img src="' + escapeHtml(url) + '" alt="' + escapeHtml(alt) + '" loading="lazy" onload="' + onload + '" onerror="' + onerror + '" style="display:block;width:100%;height:100%;max-width:100%;object-fit:contain;">' +
+      '<button type="button" class="vm-file-download vm-icon-download vm-media-regenerate" title="Regenerate" aria-label="Regenerate" ' +
+        'data-regenerate-url="' + escapeHtml(url) + '" data-regenerate-prompt="' + escapeHtml(prompt) + '" ' +
+        'style="' + buttonStyle + 'left:10px;">' +
+        regenerateIconSvg() +
+      '</button>' +
       '<button type="button" class="vm-file-download vm-icon-download vm-media-download" title="Download" aria-label="Download" ' +
         'data-download-url="' + escapeHtml(url) + '" data-download-name="' + escapeHtml(fileName) + '" ' +
-        'style="position:absolute;right:10px;bottom:10px;width:36px;height:36px;display:flex;align-items:center;justify-content:center;border-radius:50%;border:1px solid rgba(255,255,255,0.45);background:rgba(15,23,42,0.72);color:#fff;cursor:pointer;">' +
+        'style="' + buttonStyle + 'right:10px;">' +
         downloadIconSvg() +
       '</button>' +
     '</div>';
@@ -410,12 +434,13 @@
 
   function bindActions(root) {
     if (!root || typeof root.querySelectorAll !== "function") return;
-    var nodes = root.querySelectorAll("[data-copy-id],[data-download-url]");
+    var nodes = root.querySelectorAll("[data-copy-id],[data-download-url],[data-regenerate-prompt]");
     for (var i = 0; i < nodes.length; i++) {
       var node = nodes[i];
       if (!node || node.__vmRichActionBound) continue;
       var copyId = attr(node, "data-copy-id");
       var downloadUrl = attr(node, "data-download-url");
+      var regeneratePrompt = attr(node, "data-regenerate-prompt");
       if (copyId) {
         node.__vmRichActionBound = true;
         node.onclick = function (event) {
@@ -424,6 +449,17 @@
           var text = (window.__VM_RICH_COPY_TEXT || {})[id] || this.textContent || "";
           var button = this;
           copyText(text).then(function (ok) { buttonFeedback(button, ok); });
+        };
+      } else if (regeneratePrompt) {
+        node.__vmRichActionBound = true;
+        node.onclick = function (event) {
+          if (event && typeof event.stopPropagation === "function") event.stopPropagation();
+          var input = (typeof document !== "undefined" && document.getElementById)
+            ? (document.getElementById("chatInput") || document.getElementById("chat-input")) : null;
+          if (input) {
+            input.value = attr(this, "data-regenerate-prompt");
+            if (typeof input.focus === "function") input.focus();
+          }
         };
       } else if (downloadUrl) {
         node.__vmRichActionBound = true;
@@ -546,7 +582,8 @@
       while (node && node !== document) {
         var copyId = attr(node, "data-copy-id");
         var downloadUrl = attr(node, "data-download-url");
-        if (copyId || downloadUrl) {
+        var regeneratePrompt = attr(node, "data-regenerate-prompt");
+        if (copyId || downloadUrl || regeneratePrompt) {
           if (!node.__vmRichActionBound) {
             bindActions(node.parentNode || document);
             // The document listener runs after the button's own onclick in the
@@ -604,6 +641,7 @@
     downloadWithSpinner: downloadWithSpinner,
     downloadIconSvg: downloadIconSvg,
     downloadSpinnerSvg: downloadSpinnerSvg,
+    regenerateIconSvg: regenerateIconSvg,
     languageLabel: languageLabel,
     badgeHtml: badgeHtml,
     copyBoxHtml: copyBoxHtml,

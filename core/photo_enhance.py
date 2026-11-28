@@ -1,15 +1,25 @@
 """Local, zero-API-limit photo finishing used by Studio's Auto Enhance and Retouch.
 
-This module intentionally uses only Pillow so the Studio tools keep working
-when every remote inference provider is unavailable or out of credit.
+This module intentionally uses only Pillow and numpy so the Studio tools keep
+working when every remote inference provider is unavailable or out of credit.
 """
 
 from __future__ import annotations
 
 import io
+import os
+from collections import deque
 from typing import Tuple
 
+import numpy as np
 from PIL import Image, ImageEnhance, ImageFilter, ImageOps, ImageStat
+
+REMOVE_BG_MODES = frozenset({
+    "remove-bg", "remove_bg", "remove background", "background-remove",
+    "background_remove", "cutout", "transparent",
+})
+MAX_SEGMENT_SIDE = 512
+RESAMPLE = getattr(Image, "Resampling", Image)
 
 PROFILES = {
     "auto": {
@@ -82,6 +92,116 @@ def enhance_photo_bytes(image_bytes: bytes, mode: str = "auto") -> Tuple[bytes, 
         out = io.BytesIO()
         image.save(out, format="JPEG", quality=93, optimize=True, subsampling=0)
         return out.getvalue(), "image/jpeg"
+
+
+def _rembg_cutout(image: Image.Image) -> Image.Image | None:
+    """Use rembg when it is installed; otherwise fall back to local matting.
+
+    The model is optional and never downloaded during tests. Failures are
+    internal only and hand off to the deterministic Pillow/numpy matte.
+    """
+    if os.getenv("VM_DISABLE_REMBG", "").strip().lower() in ("1", "true", "yes", "on"):
+        return None
+    try:
+        from rembg import remove  # type: ignore[import-not-found]
+
+        result = remove(image, alpha_matting=True)
+        if isinstance(result, bytes):
+            result = Image.open(io.BytesIO(result))
+        return result.convert("RGBA")
+    except Exception as exc:
+        print(f"[STUDIO PHOTO] Optional segmentation unavailable, using local matte: {exc}")
+        return None
+
+
+def _border_connected(seed: np.ndarray) -> np.ndarray:
+    """Flood-fill the seed mask from the image border (GrabCut background prior)."""
+    height, width = seed.shape
+    visited = np.zeros_like(seed, dtype=bool)
+    queue = deque()
+    for x in range(width):
+        for y in (0, height - 1):
+            if seed[y, x] and not visited[y, x]:
+                visited[y, x] = True
+                queue.append((y, x))
+    for y in range(height):
+        for x in (0, width - 1):
+            if seed[y, x] and not visited[y, x]:
+                visited[y, x] = True
+                queue.append((y, x))
+    while queue:
+        y, x = queue.popleft()
+        for ny, nx in ((y - 1, x), (y + 1, x), (y, x - 1), (y, x + 1)):
+            if 0 <= ny < height and 0 <= nx < width and seed[ny, nx] and not visited[ny, nx]:
+                visited[ny, nx] = True
+                queue.append((ny, nx))
+    return visited
+
+
+def _local_alpha_matte(image: Image.Image) -> Image.Image:
+    """Edge-aware foreground segmentation with Pillow/numpy only."""
+    rgba = image.convert("RGBA")
+    scale = min(1.0, MAX_SEGMENT_SIDE / max(rgba.size))
+    work_size = (max(1, int(rgba.width * scale)), max(1, int(rgba.height * scale)))
+    work = rgba.resize(work_size, RESAMPLE.LANCZOS)
+    pixels = np.asarray(work.convert("RGB"), dtype=np.float32)
+    height, width = pixels.shape[:2]
+
+    border = max(2, int(min(height, width) * 0.05))
+    ring = np.concatenate((
+        pixels[:border, :, :].reshape(-1, 3),
+        pixels[-border:, :, :].reshape(-1, 3),
+        pixels[:, :border, :].reshape(-1, 3),
+        pixels[:, -border:, :].reshape(-1, 3),
+    ))
+    background = np.median(ring, axis=0)
+    # Colour distance in 0-255 space. The sampled border sets the background
+    # tolerance, so a textured background cannot swallow the subject.
+    distance = np.sqrt(np.sum((pixels - background) ** 2, axis=2))
+    ring_distance = np.sqrt(np.sum((ring - background) ** 2, axis=1))
+    tolerance = max(16.0, float(np.percentile(ring_distance, 95)) * 1.6)
+    alpha = np.clip((distance - tolerance) / 45.0, 0.0, 1.0)
+
+    # GrabCut-style background prior: only background-coloured pixels connected
+    # to the image border are forced transparent.
+    border_background = _border_connected(distance < tolerance * 1.35)
+    alpha[border_background] = 0.0
+
+    # Hole repair: low-alpha pixels enclosed by foreground are part of the
+    # subject (eyes, shadows, dark clothing), not the background.
+    enclosed = (alpha < 0.2) & ~_border_connected(alpha < 0.2)
+    alpha[enclosed] = 1.0
+
+    # Edge-aware matting: preserve crisp edges, feather only gradual ramps.
+    grey = ImageOps.grayscale(work)
+    edges = np.asarray(grey.filter(ImageFilter.FIND_EDGES), dtype=np.float32) / 255.0
+    soft = Image.fromarray((alpha * 255).astype(np.uint8), "L")
+    feathered = np.asarray(soft.filter(ImageFilter.GaussianBlur(0.8)), dtype=np.float32) / 255.0
+    edge_strength = np.clip((edges - 0.10) / 0.28, 0.0, 1.0)
+    alpha = np.maximum(alpha, np.minimum(feathered, alpha + 0.18) * (1.0 - edge_strength * 0.35))
+    alpha = np.clip(alpha, 0.0, 1.0)
+
+    alpha_full = Image.fromarray((alpha * 255).astype(np.uint8), "L")
+    if alpha_full.size != rgba.size:
+        alpha_full = alpha_full.resize(rgba.size, RESAMPLE.BILINEAR)
+    original_alpha = np.asarray(rgba.getchannel("A"), dtype=np.uint8)
+    combined = np.minimum(
+        np.asarray(alpha_full, dtype=np.uint8), original_alpha
+    )
+    result = rgba.copy()
+    result.putalpha(Image.fromarray(combined, "L"))
+    return result
+
+
+def remove_background_bytes(image_bytes: bytes) -> Tuple[bytes, str]:
+    """Return a real transparent PNG cutout for Studio's Background Remover."""
+    with Image.open(io.BytesIO(image_bytes)) as source:
+        image = ImageOps.exif_transpose(source).convert("RGBA")
+    cutout = _rembg_cutout(image) or _local_alpha_matte(image)
+    cutout = cutout.convert("RGBA")
+    out = io.BytesIO()
+    cutout.save(out, format="PNG", optimize=True)
+    return out.getvalue(), "image/png"
 
 
 def make_preview_data_uri(image_bytes: bytes, mime_type: str) -> str:

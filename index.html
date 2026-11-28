@@ -353,6 +353,18 @@
   }
   .vm-photo-compare-label.before { left:8px; }
   .vm-photo-compare-label.after { right:8px; color:#00d4ff; }
+  /* Transparent cutouts sit on a real checkerboard so erased background is
+     visibly empty rather than a flat colour. */
+  .vm-photo-compare.vm-transparent {
+    background-color:#ffffff;
+    background-image:
+      linear-gradient(45deg, #cbd5e1 25%, transparent 25%),
+      linear-gradient(-45deg, #cbd5e1 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, #cbd5e1 75%),
+      linear-gradient(-45deg, transparent 75%, #cbd5e1 75%);
+    background-size:20px 20px;
+    background-position:0 0, 0 10px, 10px -10px, -10px 0;
+  }
   #vmPhotoSlider { width:100%; accent-color:#00d4ff; }
 
   /* â”€â”€ Image Generation Skeleton Card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
@@ -364,6 +376,8 @@
   .img-gen-skeleton .skel-image {
     width:100%; aspect-ratio:1; border-radius:0;
     background:linear-gradient(90deg, rgba(0,212,255,0.04) 25%, rgba(0,212,255,0.12) 50%, rgba(0,212,255,0.04) 75%);
+    /* Portrait reference edits and video previews use their real output frame
+       while generating so the card never jumps or gets cropped on replay. */
     background-size:200% 100%;
     animation:skelPulse 1.8s ease-in-out infinite;
     position:relative;
@@ -372,6 +386,9 @@
     content:""; position:absolute; inset:0;
     background:linear-gradient(180deg, transparent 60%, rgba(0,212,255,0.03) 100%);
   }
+  .img-gen-skeleton.vm-gen-edit .skel-image { aspect-ratio:4/5; }
+  .img-gen-skeleton.vm-gen-video .skel-image { aspect-ratio:16/9; }
+  .img-gen-skeleton.vm-gen-video { max-width:520px; }
   .img-gen-skeleton .skel-body { padding:16px 20px; }
   .img-gen-skeleton .skel-line {
     height:12px; border-radius:6px; margin-bottom:10px;
@@ -426,12 +443,16 @@
     background:rgba(0,212,255,0.3);
   }
   .img-result-card .btn-regenerate {
-    background:rgba(148,163,184,0.1); color:#94a3b8;
-    border:1px solid rgba(148,163,184,0.2) !important;
+    flex:0 0 36px; width:36px; height:36px; min-width:36px; padding:0;
+    border-radius:50%; background:rgba(148,163,184,0.14); color:#94a3b8;
+    border:1px solid rgba(148,163,184,0.28) !important;
+    display:flex; align-items:center; justify-content:center;
   }
   .img-result-card .btn-regenerate:hover {
-    background:rgba(148,163,184,0.2); color:#e2e8f0;
+    background:rgba(148,163,184,0.26); color:#e2e8f0;
   }
+  .vm-media-regenerate { border-color:rgba(255,255,255,0.32) !important; }
+  .vm-media-regenerate:hover { background:rgba(0,212,255,0.3); color:#fff; }
   @keyframes cardFadeIn {
     0% { opacity:0; transform:translateY(8px) scale(0.98); }
     100% { opacity:1; transform:translateY(0) scale(1); }
@@ -2100,6 +2121,8 @@
   #historyList {
     transition:opacity 0.25s ease;
   }
+  .session-scope-toggle:hover { background:rgba(0,212,255,0.16); color:#e2e8f0; }
+  .session-scope-toggle:active { transform:scale(0.97); }
   .session-load-status {
     padding:12px 8px; font-size:11px; text-align:center; color:#64748b;
   }
@@ -2841,10 +2864,26 @@
     body{overflow:hidden}
     .sidebar{width:min(292px,84vw)!important;transform:translateX(-100%);transition:transform 0.26s cubic-bezier(.22,1,.36,1);z-index:60;will-change:transform}
     .sidebar.open{transform:translateX(0)}
+    /* Studio, Help & Learning and the Settings gear stay tappable in the
+       mobile drawer; only the chat list is capped by the recent toggle. */
+    .sidebar #mainNav{display:block!important}
+    .sidebar #nav-studio, .sidebar #nav-help{display:flex!important}
+    .sidebar #settingsGearBtn{display:flex!important;opacity:1!important;visibility:visible!important}
     #sidebarBackdrop{background:rgba(0,0,0,0.32);backdrop-filter:none}
     main{margin-left:0!important;transition:filter 0.22s ease}
     body.sidebar-open #mainArea{filter:brightness(0.82)}
     header{left:0!important}
+    /* Lock the app shell to the visual viewport. Streaming cards and video
+       replay must scroll inside #messages, never widen the page or scatter
+       the fixed top header. */
+    html, body { width:100%!important; max-width:100%!important; overflow-x:hidden!important; }
+    #topHeader {
+      left:0!important; right:0!important; width:100vw!important; max-width:100vw!important;
+      position:fixed!important; transform:none!important; overflow:hidden!important;
+      flex-wrap:nowrap!important; box-sizing:border-box!important;
+    }
+    #topHeader > * { min-width:0!important; flex-shrink:1!important; }
+    #messages, #messages .bubble, #messages video { max-width:100%!important; box-sizing:border-box!important; }
     .mobile-toggle{display:flex!important}
     #messages{padding:22px 14px!important}
 
@@ -3678,9 +3717,16 @@ body[data-vm-companion="cloud"] #vmVrmCompanion { display: none !important; }
   <!-- Chats List -->
   <div id="sidebarPanel-chats">
   <div id="newThreadHistoryDropdown" class="px-6 mb-2">
-    <div class="flex items-center justify-between px-1 mb-2">
+    <div class="flex items-center justify-between gap-2 px-1 mb-2">
       <p class="text-[9px] uppercase tracking-[0.2em] text-slate-500 font-label-caps">// Recent Sessions</p>
-      <span id="sessionCount" class="text-[9px] text-slate-600 font-label-caps"></span>
+      <div class="flex items-center gap-2 min-w-0">
+        <span id="sessionCount" class="text-[9px] text-slate-600 font-label-caps"></span>
+        <button type="button" id="sessionListToggle" onclick="toggleSessionListScope()"
+          class="session-scope-toggle" title="Show all chats" aria-label="Show all chats"
+          aria-expanded="false" style="flex-shrink:0;padding:3px 8px;border-radius:999px;border:1px solid rgba(0,212,255,0.24);background:rgba(0,212,255,0.07);color:#67e8f9;font-size:9px;font-weight:700;letter-spacing:0.05em;cursor:pointer;white-space:nowrap;">
+          Show all chats
+        </button>
+      </div>
     </div>
     <div class="space-y-1" id="historyList"></div>
   </div>
@@ -4938,6 +4984,13 @@ let sessionsLoadPromise = null;
 let currentChatId = "";
 let sessionFetchFailed = false;
 let sessionList = [];
+/** Sidebar shows the five newest threads until the user asks for the full list. */
+let sessionListExpanded = false;
+
+function toggleSessionListScope() {
+    sessionListExpanded = !sessionListExpanded;
+    renderSessionList();
+}
 /** Incremented to cancel in-flight message hydration (checkSession vs newChat races). */
 let chatHydrationToken = 0;
 
@@ -8413,13 +8466,27 @@ function renderSessionList() {
         visibleSessions.unshift(normalizeSession(current));
     }
 
+    var displayedSessions = sessionListExpanded
+        ? visibleSessions : visibleSessions.slice(0, 5);
+
+    var scopeBtn = document.getElementById("sessionListToggle");
+    if (scopeBtn) {
+        var scopeLabel = sessionListExpanded ? "Show recent" : "Show all chats";
+        scopeBtn.textContent = scopeLabel;
+        scopeBtn.setAttribute("title", scopeLabel);
+        scopeBtn.setAttribute("aria-label", scopeLabel);
+        scopeBtn.setAttribute("aria-expanded", sessionListExpanded ? "true" : "false");
+    }
+
     if (countEl) {
         countEl.textContent = visibleSessions.length > 0
-            ? visibleSessions.length + " session" + (visibleSessions.length !== 1 ? "s" : "")
+            ? (sessionListExpanded
+                ? visibleSessions.length + " session" + (visibleSessions.length !== 1 ? "s" : "")
+                : Math.min(5, visibleSessions.length) + "/" + visibleSessions.length)
             : "";
     }
 
-    if (visibleSessions.length === 0) {
+    if (displayedSessions.length === 0) {
         list.innerHTML = '<div style="padding:12px 8px;color:#475569;font-size:11px;text-align:center;">No previous sessions</div>';
         return;
     }
@@ -8432,7 +8499,7 @@ function renderSessionList() {
         list.appendChild(warn);
     }
 
-    visibleSessions.forEach(function (session) {
+    displayedSessions.forEach(function (session) {
         var chatId = getSessionId(session);
         var isPinned = pinnedIds.indexOf(chatId) !== -1;
         var item = document.createElement("div");
@@ -8694,7 +8761,7 @@ function VMCollapseThinkingIndicator(indicator) {
         var steps = (snapshot && snapshot.steps) || [];
         var label = typeof tracker.getSummaryLabel === "function"
             ? String(tracker.getSummaryLabel() || "") : "";
-        var pureThinking = /^\s*thinking(?:\s*\.\.\.|\s*\u2026)?\s*[›>]?\s*$/i;
+        var pureThinking = /^\s*thinking(?:\s*\.\.\.|\s*\u2026)?\b/i;
         if (!steps.length || pureThinking.test(label)) {
             root.classList.add("vm-activity-hidden");
             root.style.display = "none";
@@ -13127,16 +13194,22 @@ document.addEventListener("keydown", function (e) {
 var _imgGenStartTime = 0;
 var _imgGenSkeletonEl = null;
 
-function showImageGenSkeleton() {
+function showGenerationSkeleton(kind) {
+    var mode = String(kind || "image").toLowerCase();
+    var isVideo = /video|video_progress/i.test(mode);
+    var isEdit = /edit|reference/i.test(mode);
     _imgGenStartTime = Date.now();
     removeThinkingIndicator(null);
 
     var wrapper = document.createElement("div");
     wrapper.className = "assistant-message";
     wrapper.id = "imgGenSkeletonWrapper";
+    wrapper.dataset.generationKind = isVideo ? "video" : (isEdit ? "edit" : "image");
 
     var card = document.createElement("div");
     card.className = "img-gen-skeleton";
+    if (isVideo) card.classList.add("vm-gen-video");
+    else if (isEdit) card.classList.add("vm-gen-edit");
 
     var skelImage = document.createElement("div");
     skelImage.className = "skel-image";
@@ -13152,7 +13225,9 @@ function showImageGenSkeleton() {
     line3.className = "skel-line";
     var badge = document.createElement("div");
     badge.className = "skel-badge";
-    badge.textContent = "Generating";
+    badge.textContent = isVideo
+        ? "Generating video..."
+        : (isEdit ? "Editing your photo..." : "Generating image...");
     body.appendChild(line1);
     body.appendChild(line2);
     body.appendChild(line3);
@@ -13164,6 +13239,16 @@ function showImageGenSkeleton() {
     container.appendChild(wrapper);
     container.scrollTop = container.scrollHeight;
     _imgGenSkeletonEl = wrapper;
+    return wrapper;
+}
+
+function showImageGenSkeleton(reference) {
+    var isEdit = reference === true || /edit|reference/i.test(String(reference || ""));
+    return showGenerationSkeleton(isEdit ? "edit" : "image");
+}
+
+function showVideoGenSkeleton() {
+    return showGenerationSkeleton("video");
 }
 
 function removeImageGenSkeleton() {
@@ -13221,8 +13306,13 @@ function renderImageResultCard(imageUrl, prompt, revisedPrompt) {
         actionsRow.appendChild(dlBtn);
 
         var editBtn = document.createElement("button");
+        editBtn.type = "button";
         editBtn.className = "btn-regenerate";
-        editBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg> Edit';
+        editBtn.setAttribute("title", "Regenerate");
+        editBtn.setAttribute("aria-label", "Regenerate");
+        editBtn.innerHTML = typeof window.VMRegenerateIconSvg === "function"
+            ? window.VMRegenerateIconSvg()
+            : '<svg class="vm-regenerate-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 11-2.64-6.36"/><polyline points="21 3 21 9 15 9"/></svg>';
         editBtn.onclick = function () {
             card.classList.add("editing");
             editArea.style.display = "block";
@@ -14629,7 +14719,10 @@ window.send = async function () {
                         // every intermediate routing and tool step. Only the
                         // first visible reply token (or final render) clears it.
                         if (evt.intent === "generating_image") {
-                            showImageGenSkeleton();
+                            showImageGenSkeleton(evt.reference);
+                            statusIndicator = document.getElementById("imgGenSkeletonWrapper");
+                        } else if (evt.intent === "generating_video") {
+                            showVideoGenSkeleton();
                             statusIndicator = document.getElementById("imgGenSkeletonWrapper");
                         } else {
                             var statusDiv = document.createElement("div");
@@ -14663,10 +14756,15 @@ window.send = async function () {
                             document.getElementById("messages").scrollTop = document.getElementById("messages").scrollHeight;
                         }
                     } else if (evt.intent === "video_progress" && statusIndicator) {
-                        /* Update existing status bubble with new progress */
+                        /* Update the video status card in place (skeleton or bubble). */
+                        var videoLabel = evt.status_message || "Generating video...";
                         var existingBubble = statusIndicator.querySelector(".bubble");
                         if (existingBubble) {
-                            existingBubble.textContent = (evt.status_message || "Generating video...");
+                            existingBubble.textContent = videoLabel;
+                        }
+                        var skeletonBadge = statusIndicator.querySelector(".skel-badge");
+                        if (skeletonBadge) {
+                            skeletonBadge.textContent = videoLabel;
                         }
                         document.getElementById("messages").scrollTop = document.getElementById("messages").scrollHeight;
                     }
@@ -14772,26 +14870,42 @@ window.send = async function () {
                     if (evt.thumbnail_url) video.poster = evt.thumbnail_url;
                     vidBubble.appendChild(video);
 
-                    /* Action buttons row */
+                    /* Action buttons row: circular icon-only controls. */
                     var btnRow = document.createElement("div");
-                    btnRow.style.cssText = "display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;";
+                    btnRow.className = "vm-media-card-actions";
+                    btnRow.style.cssText = "display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;justify-content:flex-end;";
 
-                    var dlBtn = document.createElement("a");
-                    dlBtn.href = evt.video_url;
-                    dlBtn.download = "valleymind_video.mp4";
-                    dlBtn.textContent = "Download";
-                    dlBtn.style.cssText = "display:inline-block;padding:6px 14px;border-radius:6px;background:rgba(0,212,255,0.18);color:#00d4ff;text-decoration:none;font-size:0.85em;cursor:pointer;border:1px solid rgba(0,212,255,0.3);transition:background 0.2s;";
-                    dlBtn.onmouseenter = function(){ dlBtn.style.background = "rgba(0,212,255,0.35)"; };
-                    dlBtn.onmouseleave = function(){ dlBtn.style.background = "rgba(0,212,255,0.18)"; };
+                    var downloadIcon = typeof window.VMDownloadIconSvg === "function"
+                        ? window.VMDownloadIconSvg() : "";
+                    var regenerateIcon = typeof window.VMRegenerateIconSvg === "function"
+                        ? window.VMRegenerateIconSvg() : "";
+
+                    var dlBtn = document.createElement("button");
+                    dlBtn.type = "button";
+                    dlBtn.className = "vm-icon-download vm-media-download";
+                    dlBtn.title = "Download";
+                    dlBtn.setAttribute("aria-label", "Download");
+                    dlBtn.innerHTML = downloadIcon;
+                    dlBtn.style.cssText = "background:rgba(0,212,255,0.18);color:#00d4ff;border:1px solid rgba(0,212,255,0.3);";
+                    dlBtn.onclick = function () {
+                        var link = document.createElement("a");
+                        link.href = evt.video_url;
+                        link.download = "valleymind_video.mp4";
+                        document.body.appendChild(link);
+                        link.click();
+                        link.remove();
+                    };
                     btnRow.appendChild(dlBtn);
 
                     var regenBtn = document.createElement("button");
-                    regenBtn.textContent = "Regenerate";
-                    regenBtn.style.cssText = "display:inline-block;padding:6px 14px;border-radius:6px;background:rgba(148,163,184,0.12);color:#94a3b8;text-decoration:none;font-size:0.85em;cursor:pointer;border:1px solid rgba(148,163,184,0.2);transition:background 0.2s;";
-                    regenBtn.onmouseenter = function(){ regenBtn.style.background = "rgba(148,163,184,0.25)"; };
-                    regenBtn.onmouseleave = function(){ regenBtn.style.background = "rgba(148,163,184,0.12)"; };
-                    regenBtn.onclick = function(){
-                        var input = document.getElementById("chat-input");
+                    regenBtn.type = "button";
+                    regenBtn.className = "vm-icon-download vm-media-regenerate";
+                    regenBtn.title = "Regenerate";
+                    regenBtn.setAttribute("aria-label", "Regenerate");
+                    regenBtn.innerHTML = regenerateIcon;
+                    regenBtn.style.cssText = "background:rgba(148,163,184,0.14);color:#94a3b8;border:1px solid rgba(148,163,184,0.25);";
+                    regenBtn.onclick = function () {
+                        var input = document.getElementById("chatInput") || document.getElementById("chat-input");
                         if (input) { input.value = evt.query || "Regenerate this video"; input.focus(); }
                     };
                     btnRow.appendChild(regenBtn);
@@ -16328,7 +16442,14 @@ function openPhotoTool(title) {
     closeSidebar();
     vmPhotoToolSource = "";
     vmPhotoToolResult = "";
-    vmPhotoToolMode = /retouch|portrait|edit|object|image to image/i.test(String(title || "")) ? "retouch" : "auto";
+    var toolTitle = String(title || "");
+    if (/remove.?background|remove.?bg|cutout|transparent/i.test(toolTitle)) {
+        vmPhotoToolMode = "remove-bg";
+    } else if (/retouch|portrait|edit|object|image to image/i.test(toolTitle)) {
+        vmPhotoToolMode = "retouch";
+    } else {
+        vmPhotoToolMode = "auto";
+    }
     var titleEl = document.getElementById("vmPhotoToolTitle");
     var status = document.getElementById("vmPhotoToolStatus");
     var before = document.getElementById("vmPhotoBefore");
@@ -16341,10 +16462,17 @@ function openPhotoTool(title) {
     if (status) status.textContent = "";
     if (before) before.removeAttribute("src");
     if (after) after.removeAttribute("src");
-    if (compare) { compare.style.display = "none"; compare.style.setProperty("--vm-split", "50%"); }
+    if (compare) {
+        compare.style.display = "none";
+        compare.style.setProperty("--vm-split", "50%");
+        compare.classList.toggle("vm-transparent", vmPhotoToolMode === "remove-bg");
+    }
     if (slider) { slider.style.display = "none"; slider.value = "50"; }
     if (download) download.disabled = true;
-    if (runBtn) runBtn.disabled = false;
+    if (runBtn) {
+        runBtn.disabled = false;
+        runBtn.textContent = vmPhotoToolMode === "remove-bg" ? "Remove background" : "Apply finishing";
+    }
     var overlay = document.getElementById("vmPhotoToolOverlay");
     var modal = document.getElementById("vmPhotoToolModal");
     if (overlay) { overlay.style.opacity = "1"; overlay.style.visibility = "visible"; overlay.style.pointerEvents = "auto"; }
@@ -16385,7 +16513,10 @@ function vmPhotoToolLoad() {
         var download = document.getElementById("vmPhotoToolDownloadBtn");
         if (before) before.src = vmPhotoToolSource;
         if (after) after.removeAttribute("src");
-        if (compare) compare.style.display = "block";
+        if (compare) {
+            compare.style.display = "block";
+            compare.classList.toggle("vm-transparent", vmPhotoToolMode === "remove-bg");
+        }
         if (slider) slider.style.display = "block";
         if (download) download.disabled = true;
         if (status) status.textContent = "";
@@ -16411,7 +16542,9 @@ async function vmPhotoToolApply() {
     if (runBtn) runBtn.disabled = true;
     if (download) download.disabled = true;
     try {
-        var res = await apiFetch("/api/studio/photo-enhance", {
+        var endpoint = vmPhotoToolMode === "remove-bg"
+            ? "/api/studio/remove-bg" : "/api/studio/photo-enhance";
+        var res = await apiFetch(endpoint, {
             method: "POST",
             credentials: "include",
             headers: authHeaders({ "Content-Type": "application/json" }),
@@ -16423,8 +16556,11 @@ async function vmPhotoToolApply() {
             throw new Error((data && data.message) || "Photo finishing is temporarily unavailable. Please try again.");
         }
         vmPhotoToolResult = data.image;
+        var transparent = data.transparent === true || vmPhotoToolMode === "remove-bg";
         var after = document.getElementById("vmPhotoAfter");
+        var compare = document.getElementById("vmPhotoCompare");
         if (after) after.src = vmPhotoToolResult;
+        if (compare) compare.classList.toggle("vm-transparent", transparent);
         vmPhotoToolSplit(50);
         if (download) download.disabled = false;
     } catch (err) {
@@ -16439,7 +16575,8 @@ function vmPhotoToolDownload(button) {
     var action = function () {
         var link = document.createElement("a");
         link.href = vmPhotoToolResult;
-        link.download = "valleymind_photo.png";
+        link.download = vmPhotoToolMode === "remove-bg"
+            ? "valleymind_cutout.png" : "valleymind_photo.png";
         document.body.appendChild(link);
         link.click();
         link.remove();

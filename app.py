@@ -52,8 +52,14 @@ from core.brain import (
 )
 from core.config import PROJECT_ROOT, get_config
 from core.db import auth_tokens_collection, app_config_collection, chats_collection, get_db, studio_runs_collection, usage_collection, users_collection
+from core.image_gen import REFERENCE_EDIT_RETRY_MESSAGE
 from core.media_manager import get_media_manager
-from core.photo_enhance import enhance_photo_bytes, make_preview_data_uri
+from core.photo_enhance import (
+    REMOVE_BG_MODES,
+    enhance_photo_bytes,
+    make_preview_data_uri,
+    remove_background_bytes,
+)
 from core.router import RouteDecision, get_router
 from core.seo import PUBLIC_PAGES as SEO_PAGE_REGISTRY
 from core.seo import URL_ALIASES as SEO_URL_ALIASES
@@ -2624,14 +2630,24 @@ def chat():
 # directly — no duplication of business logic.
 
 
-def _persist_chat_message(user_id: str, chat_id: str, role: str, content: str, image_url: str = "", video_url: str = ""):
-    """Persist a single message to Marcus memory (best-effort)."""
+def _persist_chat_message(
+    user_id: str, chat_id: str, role: str, content: str,
+    image_url: str = "", video_url: str = "", image_data: str = "",
+):
+    """Persist a single message to Marcus memory (best-effort).
+
+    ``image_data`` keeps a user's uploaded reference photo attached to the chat
+    bubble after reload; generated media continues to use ``image_url``.
+    """
     marcus = load_marcus(user_id)
     if not marcus:
         return
     resolved = chat_id or f"{marcus.profile.key}_main_chat"
     try:
-        marcus.memory.add_message(resolved, role, content, image_url=image_url, video_url=video_url)
+        marcus.memory.add_message(
+            resolved, role, content,
+            image_data=image_data, image_url=image_url, video_url=video_url,
+        )
     except Exception as exc:
         print(f"[Dispatch] Failed to persist {role} message: {exc}")
 
@@ -2926,7 +2942,7 @@ def _dispatch_image_json(user_id, message, chat_id, image_data, reference_image=
     """IMAGE → non-streaming JSON.  Reuses the existing ProviderManager image pipeline."""
     print(f"[Router]   Dispatch: IMAGE (json) — prompt={message[:120]!r}")
 
-    _persist_chat_message(user_id, chat_id, "user", message)
+    _persist_chat_message(user_id, chat_id, "user", message, image_data=image_data)
 
     config = get_config()
     prompt = _build_image_user_context(user_id, message)
@@ -2941,7 +2957,8 @@ def _dispatch_image_json(user_id, message, chat_id, image_data, reference_image=
 
     if not result.success:
         print(f"[Router]   IMAGE failed: {result.error}")
-        return jsonify({"status": "error", "message": "Image generation failed. Please try again."}), 500
+        message = REFERENCE_EDIT_RETRY_MESSAGE if reference_image else "Image generation failed. Please try again."
+        return jsonify({"status": "error", "message": message}), 500
 
     image_url = result.data.get("image_url", "")
     revised = result.data.get("revised_prompt", "")
@@ -2981,7 +2998,9 @@ def _dispatch_image_stream(user_id, message, chat_id, image_data, activity_sessi
 
     if marcus:
         try:
-            marcus.memory.add_message(resolved_chat_id, "user", message)
+            marcus.memory.add_message(
+                resolved_chat_id, "user", message, image_data=image_data
+            )
         except Exception:
             pass
 
@@ -3016,7 +3035,10 @@ def _dispatch_image_stream(user_id, message, chat_id, image_data, activity_sessi
         intro, followups = asset_generation_copy("image", message, reference=bool(reference_image))
         intro = _privacy_guard(intro)
         followups = _privacy_guard(followups)
-        yield _sse_frame({'intent': 'generating_image', 'query': message}, request_id, turn_id, attempt_id)
+        yield _sse_frame(
+            {'intent': 'generating_image', 'query': message, 'reference': bool(reference_image)},
+            request_id, turn_id, attempt_id,
+        )
         yield _sse_frame({'token': intro}, request_id, turn_id, attempt_id)
 
         result = pm.get_manager().execute(
@@ -3030,7 +3052,8 @@ def _dispatch_image_stream(user_id, message, chat_id, image_data, activity_sessi
 
         if not result.success:
             print(f"[Router]   IMAGE failed: {result.error}")
-            yield _sse_frame({'error': 'Image generation failed. Please try again.'}, request_id, turn_id, attempt_id)
+            error_copy = REFERENCE_EDIT_RETRY_MESSAGE if reference_image else "Image generation failed. Please try again."
+            yield _sse_frame({'error': error_copy}, request_id, turn_id, attempt_id)
             yield _sse_frame({'done': True, 'chat_id': resolved_chat_id, 'updated_title': updated_title}, request_id, turn_id, attempt_id)
             return
 
@@ -3853,6 +3876,7 @@ def api_chat_message():
 
 @app.route("/api/generate-image", methods=["POST"])
 def api_generate_image():
+    reference_image = None
     try:
         user_id, error = _require_login()
         if error:
@@ -3913,7 +3937,7 @@ def api_generate_image():
             print(f"[IMAGE] Provider execution failed: {result.error}")
             return jsonify({
                 "status": "error",
-                "message": "Image generation failed. Please try again.",
+                "message": REFERENCE_EDIT_RETRY_MESSAGE if reference_image else "Image generation failed. Please try again.",
             }), 500
 
         image_url = result.data["image_url"]
@@ -3935,18 +3959,20 @@ def api_generate_image():
         traceback.print_exc()
         return jsonify({
             "status": "error",
-            "message": "Image generation failed. Please try again.",
+            "message": REFERENCE_EDIT_RETRY_MESSAGE if reference_image else "Image generation failed. Please try again.",
         }), 500
 
 
 @app.route("/api/studio/photo-enhance", methods=["POST"])
+@app.route("/api/studio/remove-bg", methods=["POST"])
 def api_studio_photo_enhance():
-    """Local Pillow finishing for Studio Retouch / Auto Enhance (zero API calls)."""
+    """Studio photo finishing: Retouch / Auto Enhance / transparent cutout."""
     try:
         _, error = _require_login()
         if error:
             return error
 
+        remove_background = request.path.rstrip("/").endswith("/remove-bg")
         mode = str(request.form.get("mode") or "").strip().lower()
         uploaded = request.files.get("image") or request.files.get("file")
         if uploaded and uploaded.filename:
@@ -3970,13 +3996,18 @@ def api_studio_photo_enhance():
         if len(image_bytes) > 25 * 1024 * 1024:
             return jsonify({"status": "error", "message": "Please choose a smaller photo."}), 413
 
-        enhanced, mime = enhance_photo_bytes(image_bytes, mode or "auto")
-        mode = mode if mode in ("auto", "retouch") else "auto"
+        if remove_background or mode in REMOVE_BG_MODES:
+            finished, mime = remove_background_bytes(image_bytes)
+            mode = "remove-bg"
+        else:
+            finished, mime = enhance_photo_bytes(image_bytes, mode or "auto")
+            mode = mode if mode in ("auto", "retouch") else "auto"
         return jsonify({
             "status": "success",
             "mode": mode,
             "mime": mime,
-            "image": make_preview_data_uri(enhanced, mime),
+            "transparent": mode == "remove-bg",
+            "image": make_preview_data_uri(finished, mime),
         })
     except Exception as exc:
         print(f"[STUDIO PHOTO] Enhancement failed: {exc}")

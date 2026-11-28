@@ -226,10 +226,11 @@ def test_hf_kontext_edit_and_schnell_text_when_google_key_absent(monkeypatch):
 
 
 @pytest.mark.parametrize("zerogpu_failure", [None, {"status": 402, "text": "quota exhausted"}])
-def test_router_credit_edit_fails_over_to_zerogpu_then_pollinations(monkeypatch, zerogpu_failure):
-    """Router 402 -> ZeroGPU gradio_client -> Pollinations kontext -> done."""
+def test_router_credit_edit_fails_over_to_zerogpu_then_authenticated_backup(monkeypatch, zerogpu_failure):
+    """Router 402 -> ZeroGPU gradio_client -> authenticated kontext -> done."""
     _disable_google(monkeypatch)
     monkeypatch.setenv("HF_TOKEN", "hf_test_token")
+    monkeypatch.setenv("POLLINATIONS_API_KEY", "test-backup-key")
     captured = _mock_chain(
         monkeypatch,
         hf={"status": 402, "text": "payment required"},
@@ -248,9 +249,105 @@ def test_router_credit_edit_fails_over_to_zerogpu_then_pollinations(monkeypatch,
     assert "exact facial identity" in captured["zerogpu"]["prompt"]
     if zerogpu_failure:
         assert captured["pollinations"]["params"]["model"] == "kontext"
+        assert captured["pollinations"]["url"].startswith(image_gen.POLLINATIONS_GEN_BASE)
+        assert captured["pollinations"]["headers"]["Authorization"] == "Bearer test-backup-key"
     else:
         assert captured["pollinations"] is None
     assert result["mode"] == "image_to_image"
+
+
+def test_text_only_model_never_replaces_reference_photo(monkeypatch):
+    """A flux/schnell request with a photo is refused, not silently regenerated."""
+    _disable_google(monkeypatch)
+    monkeypatch.setenv("HF_TOKEN", "hf_test_token")
+    monkeypatch.setenv("POLLINATIONS_API_KEY", "test-backup-key")
+    captured = _mock_chain(monkeypatch)
+
+    with pytest.raises(RuntimeError) as exc:
+        image_gen.generate_image(
+            "Change my outfit to a red dress",
+            model="flux",
+            enhance=False,
+            reference_image={"data": TINY_REFERENCE, "mimeType": "image/png"},
+        )
+
+    assert str(exc.value) == image_gen.REFERENCE_EDIT_RETRY_MESSAGE
+    assert captured["gemini"] is None
+    assert captured["hf"] is None
+    assert captured["pollinations"] is None
+
+
+def test_kontext_model_id_is_allowed_for_reference_edit(monkeypatch):
+    """Kontext ids contain 'flux' but still preserve identity."""
+    _disable_google(monkeypatch)
+    monkeypatch.setenv("HF_TOKEN", "hf_test_token")
+    monkeypatch.delenv("POLLINATIONS_API_KEY", raising=False)
+    captured = _mock_chain(monkeypatch)
+
+    result = image_gen.generate_image(
+        "Change the background to a studio",
+        model="black-forest-labs/FLUX.1-Kontext-dev",
+        enhance=False,
+        reference_image={"data": TINY_REFERENCE, "mimeType": "image/png"},
+    )
+
+    assert captured["hf"]["model_id"] == "black-forest-labs/FLUX.1-Kontext-dev"
+    assert captured["hf"]["image_bytes"] == b"reference-image-bytes"
+    assert "exact facial identity" in captured["hf"]["prompt"]
+    assert result["mode"] == "image_to_image"
+
+
+def test_busy_edit_chain_never_uses_keyless_text_fallback(monkeypatch):
+    """When every identity-preserving path is busy, return clean retry copy."""
+    _disable_google(monkeypatch)
+    monkeypatch.setenv("HF_TOKEN", "hf_test_token")
+    monkeypatch.delenv("POLLINATIONS_API_KEY", raising=False)
+    captured = _mock_chain(
+        monkeypatch,
+        hf={"status": 402, "text": "payment required"},
+        zerogpu={"status": 429, "text": "rate limited"},
+    )
+
+    with pytest.raises(RuntimeError) as exc:
+        image_gen.generate_image(
+            "Change my outfit to a red dress",
+            enhance=False,
+            reference_image={"data": TINY_REFERENCE, "mimeType": "image/png"},
+        )
+
+    message = str(exc.value)
+    assert message == image_gen.REFERENCE_EDIT_RETRY_MESSAGE
+    assert "photo is still attached" in message
+    for name in ("gemini", "hugging", "pollinations", "flux", "429", "402"):
+        assert name not in message.lower()
+    assert captured["pollinations"] is None
+    assert captured["zerogpu"] is not None
+
+
+def test_persist_chat_message_keeps_uploaded_reference(monkeypatch):
+    from app import _persist_chat_message
+
+    calls = []
+
+    class Memory:
+        def add_message(self, chat_id, role, content, **kwargs):
+            calls.append((chat_id, role, content, kwargs))
+
+    class Profile:
+        key = "main"
+
+    class Marcus:
+        profile = Profile()
+        memory = Memory()
+
+    monkeypatch.setattr("app.load_marcus", lambda user_id: Marcus())
+    data_uri = "data:image/png;base64," + TINY_REFERENCE
+
+    _persist_chat_message("user-1", "chat-1", "user", "change my outfit", image_data=data_uri)
+
+    assert len(calls) == 1
+    assert calls[0][:3] == ("chat-1", "user", "change my outfit")
+    assert calls[0][3]["image_data"] == data_uri
 
 
 def test_pollinations_uses_authenticated_endpoint_when_key_present(monkeypatch):

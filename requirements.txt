@@ -16,6 +16,9 @@ pymongo
 certifi
 imageio-ffmpeg
 Pillow
+numpy
+# Optional local cutout model: rembg may be installed for higher-quality
+# segmentation; the Pillow/numpy matte is used when it is unavailable.
 # Hugging Face Router inference + ZeroGPU Spaces (image/video connectors)
 huggingface_hub
 gradio_client

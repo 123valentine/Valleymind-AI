@@ -5,9 +5,13 @@
 // so every download looks identical in the PWA and Android WebView.
 var VM_DOWNLOAD_ICON_SVG = '<svg class="vm-download-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
 var VM_DOWNLOAD_SPINNER_SVG = '<svg class="vm-download-spinner" width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle class="vm-spinner-track" cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2.5"/><circle class="vm-spinner-arc" cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2.5" stroke-dasharray="28 28" stroke-linecap="round"/></svg>';
+var VM_REGENERATE_ICON_SVG = '<svg class="vm-regenerate-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 11-2.64-6.36"/><polyline points="21 3 21 9 15 9"/></svg>';
+var VM_EDIT_ICON_SVG = '<svg class="vm-edit-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 013 3L7 19l-4 1 1-4z"/></svg>';
 
 function VMDownloadIconSvg() { return VM_DOWNLOAD_ICON_SVG; }
 function VMDownloadSpinnerSvg() { return VM_DOWNLOAD_SPINNER_SVG; }
+function VMRegenerateIconSvg() { return VM_REGENERATE_ICON_SVG; }
+function VMEditIconSvg() { return VM_EDIT_ICON_SVG; }
 
 // Follow-up chips shown under a generated image card. Kept here (next to the
 // shared download chrome) so the chat UI and any WebView mirror use one list.
@@ -60,6 +64,8 @@ function VMWithDownloadSpinner(button, action) {
 if (typeof window !== "undefined") {
   window.VMDownloadIconSvg = VMDownloadIconSvg;
   window.VMDownloadSpinnerSvg = VMDownloadSpinnerSvg;
+  window.VMRegenerateIconSvg = VMRegenerateIconSvg;
+  window.VMEditIconSvg = VMEditIconSvg;
   window.VM_IMAGE_FOLLOWUP_SUGGESTIONS = VM_IMAGE_FOLLOWUP_SUGGESTIONS;
   window.VMWithDownloadSpinner = VMWithDownloadSpinner;
   window.VMEscapeHtmlAttr = VMEscapeHtmlAttr;

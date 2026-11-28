@@ -5,10 +5,12 @@ Automatic chain:
     2. Hugging Face (FLUX.1 Kontext for edits, FLUX.1 schnell for text)
        when ``HF_TOKEN`` is available
     3. Pollinations ``kontext`` (edits) or ``flux`` (text) as the permanent
-       zero-key backup
+       backup
 
-Provider names never appear in user-facing copy; all provider detail is
-internal and only logged server-side.
+An edit never falls back to a text-only model: without an authenticated
+identity-preserving path the reference photo is preserved and a clean retry
+message is returned. Provider names never appear in user-facing copy; all
+provider detail is internal and only logged server-side.
 """
 
 import base64
@@ -24,6 +26,15 @@ import requests
 from core import hf_connectors
 from core.config import PROJECT_ROOT
 from core.failover import GENERIC_PROVIDER_ERROR, is_retryable_provider_error
+
+
+# A reference photo is never replaced with an unrelated face. When every
+# identity-preserving path is busy, the UI keeps the attachment and asks for a
+# retry without naming any provider.
+REFERENCE_EDIT_RETRY_MESSAGE = (
+    "Your photo is still attached, but editing is busy right now. "
+    "Please try again in a moment."
+)
 
 
 GENERATED_DIR = PROJECT_ROOT / "static" / "generated"
@@ -424,9 +435,10 @@ def _call_hf_image(
     try:
         return _call_inference_image(prompt, image_bytes, size, model_id), "image/png"
     except Exception as exc:
-        # Text-to-image hands straight off to Pollinations flux (outer chain).
-        # Reference edits get the free ZeroGPU tier before that hand-off.
-        if image_bytes is None or not hf_connectors.is_credit_error(exc):
+        # Text-to-image hands straight off to the free backup (outer chain).
+        # Reference edits get the free ZeroGPU tier for any retryable outage,
+        # not only credit failures, before the authenticated edit backup.
+        if image_bytes is None or not is_retryable_provider_error(exc):
             raise
         print(f"[IMAGE FLOW] Router edit unavailable, trying ZeroGPU: {exc}")
     return _call_zerogpu_image(prompt, image_bytes, size), "image/png"
@@ -460,6 +472,12 @@ def _call_pollinations(
     return response.content, response.headers.get("content-type", "image/png")
 
 
+def _is_text_only_model(value: str | None) -> bool:
+    """True for flux/schnell model ids that ignore a reference image."""
+    lowered = str(value or "").lower()
+    return bool(re.search(r"flux|schnell", lowered)) and "kontext" not in lowered
+
+
 def generate_image(
     prompt: str,
     api_key: str | None = None,
@@ -486,6 +504,8 @@ def generate_image(
     )
     if is_edit and not reference_bytes:
         raise RuntimeError("A reference image is required for editing requests.")
+    if is_edit and _is_text_only_model(model):
+        raise RuntimeError(REFERENCE_EDIT_RETRY_MESSAGE)
 
     resolved_prompt = _enhance_prompt(prompt, api_key) if enhance else prompt
     resolved_prompt = _sanitize_prompt(resolved_prompt)
@@ -573,17 +593,25 @@ def generate_image(
                 )
             else:
                 hosted_url = ""
-                if is_edit:
-                    hosted_url = reference_url or _host_reference_image(reference_bytes, mime)
-                pollinations_model = "kontext" if is_edit else "flux"
                 own_model = engine_models["pollinations"]
-                if own_model:
-                    if "kontext" in own_model.lower():
-                        pollinations_model = "kontext"
-                    elif "schnell" in own_model.lower() or own_model.lower() == "flux":
-                        pollinations_model = "flux"
-                    else:
-                        pollinations_model = own_model
+                if is_edit:
+                    # The text-only host ignores the reference image and would
+                    # return an unrelated person. Never call it for an edit.
+                    if not _pollinations_api_key():
+                        raise RuntimeError(REFERENCE_EDIT_RETRY_MESSAGE)
+                    if _is_text_only_model(own_model):
+                        raise RuntimeError(REFERENCE_EDIT_RETRY_MESSAGE)
+                    hosted_url = reference_url or _host_reference_image(reference_bytes, mime)
+                    pollinations_model = "kontext"
+                else:
+                    pollinations_model = "flux"
+                    if own_model:
+                        if "kontext" in own_model.lower():
+                            pollinations_model = "kontext"
+                        elif "schnell" in own_model.lower() or own_model.lower() == "flux":
+                            pollinations_model = "flux"
+                        else:
+                            pollinations_model = own_model
                 data, content_type = _call_pollinations(
                     effective_prompt,
                     hosted_url or None,
@@ -606,4 +634,6 @@ def generate_image(
             retryable = is_retryable_provider_error(exc)
             print(f"[IMAGE FLOW] {engine} attempt failed (retryable={retryable}): {exc}")
 
+    if is_edit:
+        raise RuntimeError(REFERENCE_EDIT_RETRY_MESSAGE)
     raise RuntimeError(GENERIC_PROVIDER_ERROR)
