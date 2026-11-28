@@ -14,11 +14,52 @@ heavy media assets.
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from core import r2_storage
 
 _KINDS = ("image", "video", "audio")
+
+# Chat-side sticker placement vocabulary. The picker uses human labels while the
+# render engine uses compact corner codes; normalising in one place keeps both
+# surfaces in agreement.
+_STICKER_POSITION_ALIASES = {
+    "tl": "tl", "top left": "tl", "upper left": "tl", "top-left": "tl",
+    "tr": "tr", "top right": "tr", "upper right": "tr", "top-right": "tr",
+    "bl": "bl", "bottom left": "bl", "lower left": "bl", "bottom-left": "bl",
+    "br": "br", "bottom right": "br", "lower right": "br", "bottom-right": "br",
+    "center": "center", "centre": "center", "middle": "center",
+}
+_POSITION_EXPRESSIONS = {
+    "tl": lambda m: (str(m), str(m)),
+    "tr": lambda m: (f"main_w-overlay_w-{m}", str(m)),
+    "bl": lambda m: (str(m), f"main_h-overlay_h-{m}"),
+    "br": lambda m: (f"main_w-overlay_w-{m}", f"main_h-overlay_h-{m}"),
+    "center": lambda m: ("(main_w-overlay_w)/2", "(main_h-overlay_h)/2"),
+}
+
+
+def normalize_sticker_position(value: Any, default: str = "br") -> str:
+    """Return the canonical ``tl|tr|bl|br|center`` code for a placement label.
+
+    Accepts compact codes plus the chat picker labels (``Top Left``,
+    ``Upper Right``, ``Lower Left``, ``Lower Right``, ``Center``), with or without
+    hyphens. Unknown values fall back to ``default`` (also normalised).
+    """
+    fallback = str(default or "br").strip().lower()
+    fallback = _STICKER_POSITION_ALIASES.get(fallback, "br")
+    raw = re.sub(r"[\s_\-]+", " ", str(value or "").strip().lower())
+    return _STICKER_POSITION_ALIASES.get(raw, fallback)
+
+
+def sticker_overlay_expressions(value: Any, margin: int = 24) -> tuple[str, str]:
+    """FFmpeg ``overlay=x:y`` expressions for a canonical placement label."""
+    try:
+        m = max(0, int(margin))
+    except (TypeError, ValueError):
+        m = 24
+    return _POSITION_EXPRESSIONS[normalize_sticker_position(value)](m)
 
 
 def _manual_num(value: Any, default: float, low: float, high: float) -> float:
@@ -84,6 +125,12 @@ def parse_manual_overrides(raw: Any) -> dict:
         names = [str(e).strip() for e in effects if str(e or "").strip()]
         if names:
             out["effects"] = names[:20]
+
+    canvas = data.get("canvas")
+    if isinstance(canvas, dict):
+        aspect = str(canvas.get("aspect") or "").strip()
+        if aspect in ("9:16", "16:9", "1:1"):
+            out["canvas"] = {"aspect": aspect}
 
     for field in ("overlay", "transition", "sticker_text", "sticker_anim"):
         value = str(data.get(field) or "").strip()

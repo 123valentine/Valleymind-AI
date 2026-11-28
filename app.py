@@ -5900,9 +5900,8 @@ def api_editing_run():
     voice_transcript = str(request.form.get("voice_transcript", "")).strip()
     sticker_url = str(request.form.get("sticker_url", "")).strip()
     sticker_name = str(request.form.get("sticker_name", "")).strip()
-    sticker_pos = str(request.form.get("sticker_pos", "")).strip().lower()
-    if sticker_pos not in ("br", "bl", "tr", "tl", "center"):
-        sticker_pos = "br"
+    sticker_pos = massive_storage.normalize_sticker_position(
+        request.form.get("sticker_pos", ""))
     if sticker_url and not sticker_url.startswith("/static/"):
         sticker_url = ""
 
@@ -6011,7 +6010,8 @@ def api_editing_refine():
         media_assets=prev_job.get("media_assets") or [],
         sticker_source=prev_job.get("sticker_source", ""),
         sticker_name=prev_job.get("sticker_name", ""),
-        sticker_pos=prev_job.get("sticker_pos", "br"),
+        sticker_pos=massive_storage.normalize_sticker_position(
+            prev_job.get("sticker_pos", "br")),
         manual=manual,
         keep_plan=keep_plan,
         prev_plan=prev_plan)

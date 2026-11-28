@@ -1,10 +1,9 @@
-"""Massive Editing workspace + upload-routing tests.
+"""Chat editing + upload-routing tests.
 
-Covers the sidebar-led tablet/desktop layout (permanent asset rail, adjacent
-slide-over drawers, stacked multi-track timeline, docked speed properties and
-the bottom multimedia composer) and the storage gateway that routes reference
-photos, custom stickers and reaction clips through the media manager (object
-storage when configured, temporary local storage only when it is unset).
+Covers the conversational hand-off (no manual workspace or timeline), the
+storage gateway that routes reference photos, custom stickers and reaction
+clips through the media manager, and the shared sticker-placement vocabulary
+used by the chat picker and the real render engine.
 
 Run with: python -m pytest tests/test_massive_editing_phase1.py -v
 """
@@ -28,116 +27,63 @@ class Phase1StaticTestCase(unittest.TestCase):
     def _read(self, rel):
         return (ROOT / rel).read_text(encoding="utf-8")
 
-    def test_top_bar_has_projects_mode_and_export(self):
-        js = self._read("static/massive_editing.js")
-        for label in ("Projects", "Mode", "Export", "meProjectsBtn",
-                      "meModeSelect", "meExportBtn"):
-            self.assertIn(label, js)
-        for mode in ("Auto AI Director", "Skit & Meme Cutaways",
-                     "Sports / Beat-Sync", "Tutorial Pop-Ups", "Character Fusion"):
-            self.assertIn(mode, js)
-
-    def test_preview_and_compact_timeline_are_present(self):
-        js = self._read("static/massive_editing.js")
+    def test_manual_timeline_ui_is_removed(self):
         html = self._read("index.html")
-        for marker in ("me-preview", "meTimeline", "me-timeline-strip",
-                       "me-tl-base-track", "me-tl-marker", "16:9", "9:16"):
-            self.assertIn(marker, js)
-        self.assertIn(".me-timeline-strip", html)
-        self.assertIn(".me-preview", html)
-
-    def test_single_composer_has_plus_upload_and_apply(self):
-        js = self._read("static/massive_editing.js")
-        self.assertIn('placeholder="Describe your AI edit..."', js)
-        self.assertIn('id="meFilesInput" accept="video/*,image/*,audio/*" multiple', js)
-        self.assertIn("me-composer-plus", js)
-        self.assertIn("me-attachment-chips", js)
-        self.assertIn(">Apply</button>", js)
-        self.assertIn('title="Start AI Edit"', js)
-        self.assertIn('postJSON("/api/editing/run"', js)
-
-    def test_sidebar_tools_and_slide_over_drawers(self):
-        js = self._read("static/massive_editing.js")
-        html = self._read("index.html")
-        for label in ("Stickers", "Overlays", "Transitions", "FX"):
-            self.assertIn(label, js)
-        for drawer in ("stickersTool", "overlaysTool", "transitionsTool",
-                       "fxTool", "meDrawer", "openDrawer", "toggleTool"):
-            self.assertIn(drawer, js)
-        self.assertIn(".me-sidebar", html)
-        self.assertIn(".me-flyout.open", html)
-        self.assertNotIn(".me-bottom-tabs", html)
-
-    def test_drawer_categories_and_empty_state_presets(self):
-        settings = self._read("static/settings.js")
-        js = self._read("static/massive_editing.js")
-        for label in ("Velocity & Beat", "Color & Vibe", "Framing",
-                      "Beat Flash", "Zoom Punch", "Velocity Slow-Mo",
-                      "Camera Shake", "Phonk Contrast", "Cinematic Warm", "Vignette"):
-            self.assertTrue(label in settings or label in js, label)
-        for label in ("Asset Stickers", "Emojis", "Uploaded", "Animated",
-                      "YES!", "NO WAY", "TOO REAL", "GOAT", "🔥", "😂", "⚽"):
-            self.assertTrue(label in settings or label in js, label)
-        self.assertIn('"Asset Stickers", "Emojis"', settings)
-        self.assertIn('"All", "Uploaded", "Animated"', settings)
-        self.assertIn("/api/editing/stickers?", js)
-        self.assertIn("setStickerFilter", js)
-        for label in ("Clean Border", "Neon Frame", "Picture Card", "PIP Window",
-                      "Cut", "Whip Pan", "Fade", "Glitch"):
-            self.assertTrue(label in settings or label in js, label)
-        self.assertIn('<strong>Add</strong>', js)
-        self.assertIn("Ready for sync", js)
-        for label in ("Word-by-Word Pop", "Clean Subtitle", "Off",
-                      "Keep Original Audio", "Add Background Track"):
-            self.assertTrue(label in settings or label in js, label)
-
-    def test_no_heavy_asset_bundle_is_wired_into_the_workspace(self):
-        js = self._read("static/massive_editing.js")
-        self.assertNotIn("reaction-clips", js.lower())
-        self.assertNotIn("sticker-pack", js.lower())
-
-    def test_responsive_layout_rules_and_properties_toggle(self):
-        html = self._read("index.html")
-        js = self._read("static/massive_editing.js")
-        self.assertIn("@media (min-width: 993px)", html)
-        self.assertIn(".me-sidebar { width:40px; min-width:40px;", html)
-        self.assertIn("position: absolute; left: 40px; top: 0; height: 100%; z-index: 999;", html)
-        self.assertIn("width: min(280px, 80vw); box-shadow: 4px 0 15px rgba(0,0,0,0.5);", html)
-        self.assertIn("height:clamp(24px,3.2vw,28px)", html)
-        self.assertIn(".me-tl-track { height:24px;", html)
-        self.assertIn(".me-composer-dock { flex-shrink:0; display:flex; justify-content:center;", html)
-        self.assertIn("Properties - Velocity (1.00x) ▾", js)
-        self.assertIn("data-overlay", js)
-        self.assertIn(">Trim</button>", js)
-
-    def test_sidebar_feeds_stacked_timeline_and_properties(self):
         js = self._read("static/massive_editing.js")
         settings = self._read("static/settings.js")
-        html = self._read("index.html")
-        for marker in ("meSidebar", "meDrawer", "meWorkspace", "me-tl-multitrack",
-                       "me-tl-track-label", "me-tl-marker", "me-tl-playhead",
-                       "meProperties", "Speed Control", "sliceAtPlayhead",
-                       "trimAtPlayhead", "alignToBeat", "Beat Sync", "Vocal",
-                       "collectTimelineBlocks"):
-            self.assertIn(marker, js)
-        for label in ("VIDEO", "AUDIO", "FX", "STICKERS"):
-            self.assertIn(label, js)
-        for marker in ("me-sidebar", "me-flyout.open", "me-tl-multitrack",
-                       "me-tl-trim-handle", "me-properties", "me-composer-dock"):
-            self.assertIn(marker, html)
-        for tool in ("stickers", "overlays", "transitions", "fx"):
-            self.assertIn('id: "%s"' % tool, settings)
+        markers = (
+            "me-timeline", "me-playhead", "me-tl-", "meSidebar", "meDrawer",
+            "meWorkspace", "meProperties", "me-composer-dock", "me-flyout",
+            "Properties - Velocity", "Beat Sync", "VIDEO/AUDIO/FX/STICKERS",
+            "sliceAtPlayhead", "trimAtPlayhead", "alignToBeat",
+            "collectTimelineBlocks", "Start AI Edit", "meProjectsBtn",
+            "meModeSelect", "meExportBtn",
+        )
+        for marker in markers:
+            for name, source in (("index", html), ("module", js)):
+                self.assertNotIn(marker, source, f"{name} still carries {marker}")
+        self.assertNotIn("key: \"editing\"", settings)
+        self.assertNotIn("Massive Editing", settings)
 
-    def test_apply_payload_carries_sidebar_selections_and_speed_controls(self):
+    def test_chat_picker_replaces_manual_drawers(self):
+        html = self._read("index.html")
         js = self._read("static/massive_editing.js")
-        for field in ('fd.append("instruction", text)', 'fd.append("mode", ME.modeName)',
-                      'fd.append("manual", JSON.stringify(manualOverrides()))',
-                      'speed_curve:', 'ramp_in:', 'ramp_out:', 'trim_start:', 'trim_end:',
-                      'beat_sync:', 'sticker_anim:', 'fd.append("overlay", ME.overlay)',
-                      'fd.append("transition", ME.preview.transition)',
-                      'fd.append("sticker_text", ME.sticker.text)',
-                      'postJSON("/api/editing/run"'):
-            self.assertIn(field, js)
+        settings = self._read("static/settings.js")
+        for field_id in ("chatVideoInput", "chatImageInput", "chatAudioInput",
+                         "chatStickerInput"):
+            self.assertIn('id="' + field_id + '"', html)
+        self.assertIn("#vmStickerPicker{", html)
+        self.assertIn(".vm-sticker-places{", html)
+        self.assertIn("window.VM_MASSIVE_STICKER_PLACEMENTS", settings)
+        self.assertIn('requestJson("/api/editing/stickers?', js)
+        self.assertIn("uploadStickers(files)", js)
+        for label in ("Top Left", "Upper Right", "Lower Left", "Lower Right",
+                      "Center"):
+            self.assertIn(label, settings)
+            self.assertIn(label, js)
+
+    def test_chat_payload_carries_brief_media_sticker_and_canvas(self):
+        js = self._read("static/massive_editing.js")
+        for field in (
+            'fd.append("video", state.video',
+            'fd.append("media", m.file',
+            'fd.append("instruction", state.instruction',
+            'fd.append("sticker_url", state.sticker.url)',
+            'fd.append("sticker_name", state.sticker.name',
+            'fd.append("sticker_pos", state.placement)',
+            'JSON.stringify({ canvas: { aspect: aspect } })',
+            'requestJson("/api/editing/run"',
+            '"/api/studio/job/"',
+        ):
+            self.assertIn(field, js, field)
+        self.assertNotIn('"tts"', js)
+        self.assertNotIn("voice_over", js.lower())
+        self.assertNotIn("voiceover", js.lower())
+
+    def test_no_heavy_asset_bundle_is_wired_into_chat(self):
+        js = self._read("static/massive_editing.js").lower()
+        self.assertNotIn("reaction-clips", js)
+        self.assertNotIn("sticker-pack", js)
 
 
 class BaseFakeManager:
@@ -261,6 +207,40 @@ class ManualOverrideGatewayTestCase(unittest.TestCase):
         self.assertEqual(manual["sticker_anim"], "beat")
         self.assertEqual(manual["overlay"], "Clean Border")
         self.assertEqual(manual["effects"], ["boost", "vignette"])
+
+
+class StickerPlacementTestCase(unittest.TestCase):
+    """Chat picker labels and render-engine codes share one mapping."""
+
+    def test_human_labels_normalize_to_render_codes(self):
+        self.assertEqual(
+            [massive_storage.normalize_sticker_position(v) for v in (
+                "Top Left", "upper right", "Lower-Left", "bottom right", "Centre")],
+            ["tl", "tr", "bl", "br", "center"])
+        self.assertEqual(massive_storage.normalize_sticker_position(""), "br")
+        self.assertEqual(massive_storage.normalize_sticker_position(
+            "nowhere", default="Top Left"), "tl")
+
+    def test_overlay_expressions_follow_the_normalized_placement(self):
+        self.assertEqual(massive_storage.sticker_overlay_expressions("Top Left"),
+                         ("24", "24"))
+        self.assertEqual(massive_storage.sticker_overlay_expressions("Upper Right"),
+                         ("main_w-overlay_w-24", "24"))
+        self.assertEqual(massive_storage.sticker_overlay_expressions("Lower Left"),
+                         ("24", "main_h-overlay_h-24"))
+        self.assertEqual(massive_storage.sticker_overlay_expressions("Lower Right"),
+                         ("main_w-overlay_w-24", "main_h-overlay_h-24"))
+        self.assertEqual(massive_storage.sticker_overlay_expressions("Center"),
+                         ("(main_w-overlay_w)/2", "(main_h-overlay_h)/2"))
+
+    def test_canvas_aspect_override_survives_manual_parsing(self):
+        self.assertEqual(
+            massive_storage.parse_manual_overrides(
+                json.dumps({"canvas": {"aspect": "16:9"}})),
+            {"canvas": {"aspect": "16:9"}})
+        self.assertEqual(
+            massive_storage.parse_manual_overrides(
+                json.dumps({"canvas": {"aspect": "4:3"}})), {})
 
 
 class _AuthMixin:

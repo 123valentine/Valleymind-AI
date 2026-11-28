@@ -14,6 +14,8 @@ from __future__ import annotations
 import os
 import re
 
+from core.video_editor import normalize_sticker_position, sticker_overlay_expressions
+
 # ── Config (env-overridable) ────────────────────────────────────────────────
 
 # Single-token fillers and multi-word filler phrases cut from the edit.
@@ -599,13 +601,7 @@ def overlay_sticker(video_path: str, sticker_path: str, out_path: str, *,
     w = int(p.get("width", 1280) or 1280)
     sw = max(48, int(w * max(0.05, min(0.9, scale))))
     m = max(8, int(w * 0.03))
-    pos = {
-        "br": (f"main_w-overlay_w-{m}", f"main_h-overlay_h-{m}"),
-        "bl": (f"{m}", f"main_h-overlay_h-{m}"),
-        "tr": (f"main_w-overlay_w-{m}", f"{m}"),
-        "tl": (f"{m}", f"{m}"),
-        "center": ("(main_w-overlay_w)/2", "(main_h-overlay_h)/2"),
-    }.get(position, (f"main_w-overlay_w-{m}", f"main_h-overlay_h-{m}"))
+    pos = sticker_overlay_expressions(normalize_sticker_position(position), m)
     enable = ""
     if end is not None:
         enable = f":enable='between(t,{start},{end})'"
@@ -907,8 +903,7 @@ def build_instruction_plan(*, instruction: str = "", voice_transcript: str = "",
         sw.append({
             "at": at,
             "duration": max(1.0, float(_fnum(w.get("duration"), 3.0) or 3.0)),
-            "position": str(w.get("position") or "br") if str(w.get("position") or "br").lower()
-                        in ("br", "bl", "tr", "tl", "center") else "br",
+            "position": normalize_sticker_position(w.get("position")),
             "fade": max(0.0, float(_fnum(w.get("fade"), 0.0) or 0.0)),
             "anim": anim,
             "reason": str(w.get("reason") or "")[:120],
@@ -918,7 +913,7 @@ def build_instruction_plan(*, instruction: str = "", voice_transcript: str = "",
     if sticker and sticker.get("url") and not sw:
         first_at = _fnum((words[0].get("start") if words else None), 0.0) if words else 0.0
         sw = [{"at": _clamp_time(first_at), "duration": 3.0,
-               "position": str(sticker.get("position") or "br"), "fade": 0.5,
+               "position": normalize_sticker_position(sticker.get("position")), "fade": 0.5,
                "anim": "pop", "reason": ""}]
     sw = sw[:max(1, caps["stickers"])]
 

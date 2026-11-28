@@ -1,8 +1,7 @@
-// Sidebar-led Massive Editing workspace integrity.
-// Executes settings.js + massive_editing.js in a stub DOM, then verifies the
-// rendered shell: permanent asset rail, adjacent slide-over drawers, stacked
-// multi-track timeline, docked speed properties and the bottom multimedia
-// composer (including the real Apply FormData). No network or disk is touched.
+// Conversational video editing in the main chat.
+// Executes settings.js + massive_editing.js in a stub DOM and verifies the
+// chat-side asset picker, pending-edit state, real /api/editing/run submission,
+// job polling and MP4 result card. Also locks removal of the old manual timeline.
 const fs = require('fs');
 const vm = require('vm');
 
@@ -35,11 +34,17 @@ function makeElement(tag) {
       contains(n) { return !!this.flags[n]; }
     },
     appendChild(child) { this.children.push(child); child.parentNode = this; return child; },
+    removeChild(child) {
+      const i = this.children.indexOf(child);
+      if (i >= 0) this.children.splice(i, 1);
+      return child;
+    },
     setAttribute(name, value) { this.attrs[name] = String(value); },
     getAttribute(name) { return Object.prototype.hasOwnProperty.call(this.attrs, name) ? this.attrs[name] : ''; },
+    contains() { return false; },
     querySelector() { return null; },
     querySelectorAll() { return []; },
-    addEventListener() {}, focus() {}, click() {}, scrollIntoView() {}, play() {}, pause() {}
+    addEventListener() {}, focus() {}, click() {}, scrollIntoView() {}
   };
 }
 
@@ -48,14 +53,11 @@ function byId(id) {
   if (!cache[id]) cache[id] = makeElement('div');
   return cache[id];
 }
+byId('vmStickerPicker').style.display = 'none';
+byId('plusBtn');
+byId('chatStickerInput');
+byId('messages');
 
-// Width-aware matchMedia lets the runtime checks exercise mobile and laptop
-// behaviour without a real browser.
-let viewportWidth = 1280;
-function setViewportWidth(px) { viewportWidth = Number(px) || 1280; }
-
-// settings.js runs with a null-returning DOM first; that keeps its unrelated
-// persona hydration out of the way. Then the lookup is enabled for the editor.
 let domReady = false;
 const documentListeners = {};
 const documentStub = {
@@ -63,6 +65,7 @@ const documentStub = {
   hidden: false,
   createElement: makeElement,
   body: makeElement('body'),
+  documentElement: makeElement('html'),
   getElementById(id) { return domReady ? byId(id) : null; },
   querySelector() { return null; },
   querySelectorAll() { return []; },
@@ -78,33 +81,41 @@ FakeFormData.prototype.append = function (key, value, name) {
   this.entries.push({ key: String(key), value: value, name: name });
 };
 
+let jobPolls = 0;
 function fakeApiFetch(url, opts) {
   captured.api.push({ url: String(url), method: opts && opts.method, body: opts && opts.body });
   const u = String(url);
   let data = { status: 'success' };
+  if (u.indexOf('/api/editing/stickers') >= 0) {
+    data.stickers = u.indexOf('type=gifs') >= 0
+      ? [{ name: 'Dance GIF', kind: 'gif', url: '/static/assets/gifs/dance.gif' }]
+      : [{ name: 'Fire Sticker', kind: 'sticker', url: '/static/assets/stickers/fire.png' }];
+  }
   if (u.indexOf('/api/editing/assets') >= 0) {
     data.assets = [{
       name: 'My Upload.png', kind: 'image', category: 'sticker',
       local_path: '/static/media/users/u/images/mine.png'
     }];
   }
-  if (u.indexOf('/api/editing/stickers') >= 0) {
-    data.stickers = u.indexOf('type=gifs') >= 0
-      ? [{ name: 'Dance GIF', kind: 'gif', url: '/static/assets/gifs/dance.gif' }]
-      : [{ name: 'Fire Sticker', kind: 'sticker', url: '/static/assets/stickers/fire.png' }];
-  }
-  if (u.indexOf('/api/editing/storage') >= 0) { data.storage = 'r2'; data.ready = true; }
-  if (u.indexOf('/api/studio/job/') >= 0) {
-    data = { status: 'success', job: { job_id: 'job-sidebar', status: 'queued' } };
-  }
   if (u.indexOf('/api/editing/run') >= 0) {
-    data = { status: 'success', job: { job_id: 'job-sidebar' } };
+    data = { status: 'success', job: { job_id: 'job-chat-1', status: 'queued' } };
+  }
+  if (u.indexOf('/api/studio/job/') >= 0) {
+    jobPolls += 1;
+    data = {
+      status: 'success',
+      job: {
+        job_id: 'job-chat-1',
+        status: jobPolls === 1 ? 'done' : 'queued',
+        final_video: '/static/media/users/u/edits/finished.mp4',
+        edit_plan: [{ status: 'done' }]
+      }
+    };
   }
   return Promise.resolve({ ok: true, json() { return Promise.resolve(data); } });
 }
 
 const store = {};
-const noopInterval = function () { return 0; };
 const win = {
   document: documentStub,
   navigator: {},
@@ -115,12 +126,10 @@ const win = {
     setItem(k, v) { store[k] = String(v); },
     removeItem(k) { delete store[k]; }
   },
-  matchMedia(query) {
-    const m = /max-width:\s*(\d+)px/.exec(String(query));
-    return { matches: !!m && viewportWidth <= Number(m[1]), addListener() {}, removeListener() {} };
-  },
   console, Promise, Object, Date, Blob: function () {}, FormData: FakeFormData,
-  setTimeout, clearTimeout, setInterval: noopInterval, clearInterval() {},
+  // Immediate timers keep the poll test synchronous without changing the module.
+  setTimeout(fn) { if (typeof fn === 'function') fn(); return 0; },
+  clearTimeout() {}, setInterval() { return 0; }, clearInterval() {},
   fetch: fakeApiFetch, apiFetch: fakeApiFetch,
   open() {}
 };
@@ -131,7 +140,7 @@ const ctx = {
   URL: win.URL,
   console, Promise, Object, Date, AbortController: win.AbortController,
   FormData: FakeFormData,
-  setTimeout, clearTimeout, setInterval: noopInterval, clearInterval() {},
+  setTimeout: win.setTimeout, clearTimeout() {}, setInterval() { return 0; }, clearInterval() {},
   fetch: fakeApiFetch, apiFetch: fakeApiFetch
 };
 vm.createContext(ctx);
@@ -144,324 +153,194 @@ try { vm.runInContext(meSrc, ctx); } catch (e) { moduleError = e; }
 check('settings.js evaluates cleanly', !settingsError, settingsError && settingsError.message);
 check('massive_editing.js initializes cleanly', !moduleError, moduleError && moduleError.message);
 if (settingsError || moduleError) {
-  console.log('MASSIVE_EDITING_WORKSPACE_TESTS: ' + ok + ' passed, ' + fail + ' failed');
+  console.log('VM_CHAT_EDIT_TESTS: ' + ok + ' passed, ' + fail + ' failed');
   process.exitCode = 1;
   return;
 }
 
 async function runTests() {
-// Let the built-in sticker and asset fetches settle before inspecting drawers.
-await new Promise(function (resolve) { setTimeout(resolve, 0); });
-const API = win.VMEditing;
-check('workspace exposes the VMEditing API',
-  !!API && typeof API.openDrawer === 'function' &&
-  typeof API.submit === 'function' && typeof API.pickFiles === 'function' &&
-  typeof API.sliceAtPlayhead === 'function' && typeof API.alignToBeat === 'function' &&
-  typeof API.toggleProperties === 'function' &&
-  typeof API.setStickerFilter === 'function' && typeof API.isMobile === 'function');
+  const API = win.VMChatEdit;
+  check('chat edit bridge exposes the expected API',
+    !!API && ['VERSION', 'PLACEMENTS', 'init', 'prepare', 'marker', 'isConfirmation',
+      'isDetailed', 'normalizePlacement', 'setPlacement', 'selectSticker',
+      'refreshStickers', 'uploadStickers', 'openStickerPicker', 'buildFormData',
+      'resultCardHtml', 'start', 'poll', 'download', 'regenerate', 'reset']
+      .every(function (k) { return typeof API[k] !== 'undefined'; }));
 
-// ── Shared vocabularies ──────────────────────────────────────────────────────
-const modes = win.VM_MASSIVE_MODES || [];
-const effectGroups = win.VM_MASSIVE_EFFECT_GROUPS || [];
-const stickerGroups = win.VM_MASSIVE_STICKER_GROUPS || [];
-const captionStyles = win.VM_MASSIVE_CAPTION_STYLES || [];
-const audioModes = win.VM_MASSIVE_AUDIO_MODES || [];
-const tools = win.VM_MASSIVE_TOOLS || [];
-const speedCurves = win.VM_MASSIVE_SPEED_CURVES || [];
-check('settings shares the five compact modes',
-  modes.length === 5 && modes[0] === 'Auto AI Director' &&
-  modes[4] === 'Character Fusion', modes);
-check('settings shares the three effect categories',
-  effectGroups.map(function (g) { return g.name; }).join('|') ===
-  'Velocity & Beat|Color & Vibe|Framing', effectGroups);
-check('settings shares all seven effect presets',
-  effectGroups.reduce(function (n, g) { return n + g.items.length; }, 0) === 7 &&
-  effectGroups[0].items.join('|') === 'Beat Flash|Zoom Punch|Velocity Slow-Mo|Camera Shake', effectGroups);
-check('settings shares asset-first sticker categories and list options',
-  stickerGroups.join('|') === 'Asset Stickers|Emojis' &&
-  (win.VM_MASSIVE_STICKER_LIST_OPTIONS || []).join('|') === 'All|Uploaded|Animated',
-  [stickerGroups, win.VM_MASSIVE_STICKER_LIST_OPTIONS]);
-check('settings shares caption + audio controls',
-  captionStyles.join('|') === 'Word-by-Word Pop|Clean Subtitle|Off' &&
-  audioModes.join('|') === 'Keep Original Audio|Add Background Track');
-check('settings shares the sidebar tool ids',
-  tools.map(function (t) { return t.id; }).join('|') === 'stickers|overlays|transitions|fx', tools);
-check('settings shares the slow-mo speed curves',
-  speedCurves.join('|') === 'Linear|Ease In|Ease Out|S-Curve', speedCurves);
+  // ── Removed manual workspace ────────────────────────────────────────────────
+  const forbidden = [
+    'data-ws="editing"', 'vmWsPanelEditing', 'id="meRoot"', '.me-root',
+    'me-timeline', 'me-playhead', 'Properties - Velocity', 'Beat Sync',
+    'VIDEO/AUDIO/FX/STICKERS', 'me-sidebar', 'me-composer-dock',
+    'massive_editing.js?v=6', 'settings.js?v=22'
+  ];
+  forbidden.forEach(function (marker) {
+    check('manual workspace marker removed: ' + marker, html.indexOf(marker) < 0);
+  });
+  check('script versions are bumped',
+    html.indexOf('settings.js?v=23') >= 0 && html.indexOf('massive_editing.js?v=7') >= 0);
+  check('openEditing returns the user to chat',
+    /function openEditing\(\)\s*\{[^}]*closeStudio\(\);[^}]*focusChatInput\(\);/s.test(html));
+  check('legacy VMEditing shim is a no-op',
+    /win\(\)\.VMEditing\s*=\s*\{/.test(meSrc) && /hide:\s*function\s*\(\)\s*\{\}/.test(meSrc));
 
-// ── Rendered shell ───────────────────────────────────────────────────────────
-const topbar = decode(byId('meTopbar').innerHTML);
-check('top bar has a Projects drawer trigger',
-  /meProjectsBtn/.test(topbar) && /Projects/.test(topbar), topbar);
-check('top bar has a compact Mode pill with every mode',
-  /me-mode-pill/.test(topbar) && modes.every(function (m) { return topbar.indexOf(m) >= 0; }), topbar);
-check('top bar has Export',
-  /meExportBtn/.test(topbar) && /Export/.test(topbar), topbar);
+  // ── Composer contract ───────────────────────────────────────────────────────
+  const avatarBlock = /#personaBtnAvatar\s*\{([\s\S]*?)\}/.exec(html);
+  const avatarCss = avatarBlock ? avatarBlock[1].replace(/\s+/g, ' ') : '';
+  check('composer persona avatar is locked to a 24px circle',
+    ['width: 24px', 'height: 24px', 'max-width: 24px', 'max-height: 24px',
+      'border-radius: 9999px', 'object-fit: cover', 'flex-shrink: 0']
+      .every(function (decl) { return avatarCss.indexOf(decl) >= 0; }), avatarCss);
+  ['chatVideoInput', 'chatImageInput', 'chatAudioInput', 'chatStickerInput'].forEach(function (id) {
+    check('composer has hidden ' + id,
+      new RegExp('id="' + id + '"[^>]*class="vm-file-input"').test(html));
+  });
+  check('+ menu attaches video, reference pictures and funny audio',
+    html.indexOf("vmPlusMenuPick('chatVideoInput')") >= 0 &&
+    html.indexOf("vmPlusMenuPick('chatImageInput')") >= 0 &&
+    html.indexOf("vmPlusMenuPick('chatAudioInput')") >= 0);
+  check('+ menu opens the Studio Asset Stickers picker',
+    html.indexOf('VMChatEdit.openStickerPicker()') >= 0 &&
+    html.indexOf('Studio Asset Stickers') >= 0);
+  check('picker DOM and placement controls are styled',
+    html.indexOf('#vmStickerPicker{') >= 0 && html.indexOf('.vm-sticker-places{') >= 0 &&
+    html.indexOf('.vm-sticker-place.active') >= 0);
+  check('result card buttons are circular and icon-only',
+    html.indexOf('.vm-edit-icon-btn{') >= 0 &&
+    /border-radius:9999px/.test((html.match(/\.vm-edit-icon-btn\{[\s\S]*?\}/) || [''])[0]));
+  check('send flow prepares the edit before cleanup',
+    html.indexOf('_vmEditPlan = window.VMChatEdit.prepare(text, vmChatAttachments)') >= 0 &&
+    html.indexOf('textToSend += "\\n" + _vmEditPlan.marker') >= 0);
+  check('send flow shows the marker only in the outbound text',
+    html.indexOf('addMessage(text, "user", sentImage);') >= 0 &&
+    html.indexOf('text = textToSend;') >= 0);
+  check('confirmed edit launches after the stream finishes',
+    html.indexOf('window.VMChatEdit.start().catch(') >= 0 &&
+    html.indexOf('_vmEditPlan.shouldRun') >= 0);
+  check('audio attachments are mirrored as File objects',
+    html.indexOf('var pendingAudioFiles = []') >= 0 &&
+    html.indexOf("a.kind==='audio'") >= 0 && html.indexOf("kind: 'audio'") >= 0);
 
-const sidebar = decode(byId('meSidebar').innerHTML);
-check('permanent sidebar exposes Stickers, Overlays, Transitions and FX',
-  tools.every(function (t) { return sidebar.indexOf(t.label) >= 0; }) &&
-  (sidebar.match(/me-sidebar-item/g) || []).length >= 4 && /toggleTool/.test(sidebar), sidebar);
-check('drawer is mounted immediately beside the sidebar',
-  /'<nav class="me-sidebar" id="meSidebar"[^>]*><\/nav>'\s*\+\s*'<aside class="me-flyout" id="meDrawer"><\/aside>'/.test(meSrc));
+  // ── Shared placement vocabulary ────────────────────────────────────────────
+  const placements = win.VM_MASSIVE_STICKER_PLACEMENTS || [];
+  check('settings shares the five requested placement labels',
+    placements.map(function (p) { return p.label; }).join('|') ===
+    'Top Left|Upper Right|Lower Left|Lower Right|Center', placements);
+  check('placement values are render-engine codes',
+    placements.map(function (p) { return p.value; }).join('|') === 'tl|tr|bl|br|center', placements);
+  check('picker normalises human placement labels',
+    ['Top Left', 'upper right', 'Lower-Left', 'bottom right', 'centre']
+      .map(API.normalizePlacement).join('|') === 'tl|tr|bl|br|center');
 
-const workspace = decode(byId('meWorkspace').innerHTML);
-const composer = decode(byId('meComposerDock').innerHTML);
-check('preview offers 16:9 and 9:16 frames',
-  /data-aspect="16:9"/.test(workspace) && /data-aspect="9:16"/.test(workspace));
-check('preview leads with a highlighted viral caption',
-  /me-preview-caption/.test(meSrc) && /YES!/.test(meSrc));
-check('one bottom composer uses the Describe your AI edit placeholder',
-  /placeholder="Describe your AI edit\.\.\."/.test(composer));
-check('composer + accepts videos, audio files and pictures',
-  /id="meFilesInput"[^>]*accept="video\/\*,image\/\*,audio\/\*"[^>]*multiple/.test(composer) &&
-  /me-plus-mark">\+/.test(composer) && /Add Asset/.test(composer));
-check('composer Apply is the explicit submit control',
-  /me-composer-apply/.test(composer) && />Apply<\/button>/.test(composer) &&
-  /title="Start AI Edit"/.test(composer));
-check('composer has a microphone button',
-  /me-composer-voice/.test(composer) && /VMEditing\.toggleRec/.test(composer));
+  // ── Pending edit state ──────────────────────────────────────────────────────
+  API.reset();
+  const video = { name: 'clip 2026.mp4' };
+  const image = { name: 'ref.png' };
+  const audio = { name: 'funny.mp3' };
+  const atts = [
+    { kind: 'video', name: 'clip 2026.mp4', file: video, status: 'ready' },
+    { kind: 'image', name: 'ref.png', file: image, status: 'ready' },
+    { kind: 'audio', name: 'funny.mp3', file: audio, status: 'ready' }
+  ];
+  let plan = API.prepare('make this viral', atts);
+  check('first vague turn stores the video without rendering',
+    plan.active && !plan.shouldRun && plan.marker === '[VIDEO_ATTACHED: clip 2026.mp4]', plan);
+  check('pending state keeps all companion media',
+    API.state.video === video && API.state.media.length === 2, API.state.media);
+  check('first turn instruction is preserved verbatim',
+    API.state.instruction === 'make this viral', API.state.instruction);
 
-const props = decode(byId('meProperties').innerHTML);
-check('docked properties include velocity curve and speed ramps',
-  ['Properties', 'Speed Control', 'Velocity', 'Slow-mo curve', 'Ramp in', 'Ramp out',
-    'S-Curve'].every(function (label) { return props.indexOf(label) >= 0; }), props);
-check('properties collapse to a compact velocity toggle',
-  /mePropsToggle/.test(meSrc) &&
-  /Properties - Velocity \(/.test(byId('mePropsToggle').textContent),
-  byId('mePropsToggle').textContent);
-API.toggleProperties(true);
-check('properties toggle expands the overlay on demand',
-  byId('mePropsToggle').getAttribute('aria-expanded') === 'true' &&
-  byId('meProperties').classList.contains('open'));
-API.toggleProperties(false);
+  plan = API.prepare('hype reel, sticker Upper Right, zoom punches', []);
+  check('a detailed answer arms the real render', plan.shouldRun && !plan.active === false, plan);
+  check('answers extend the brief instead of replacing it',
+    /Additional direction from the user: hype reel/.test(API.state.instruction), API.state.instruction);
 
-// ── Attachments ──────────────────────────────────────────────────────────────
-API.sbUploadMedia([
-  { name: 'clip.mp4', type: 'video/mp4', size: 1024 },
-  { name: 'beat.mp3', type: 'audio/mpeg', size: 1024 },
-  { name: 'sticker.png', type: 'image/png', size: 1024 }
-]);
-const chips = decode(byId('meUploads').innerHTML);
-check('one composer shows removable chips for every attachment type',
-  ['clip.mp4', 'beat.mp3', 'sticker.png'].every(function (name) { return chips.indexOf(name) >= 0; }) &&
-  (chips.match(/VMEditing\.removeFile/g) || []).length === 3, chips);
-check('composer chip labels include Video and Pic prefixes',
-  /Video: clip\.mp4/.test(decode(chips)) && /Pic: sticker\.png/.test(decode(chips)), chips);
-check('preview picks the attached video',
-  byId('meCanvasVideo').getAttribute('src') === 'blob:vm-test');
+  API.reset();
+  plan = API.prepare('edit it now', [{ kind: 'video', name: 'team.mp4', file: { name: 'team.mp4' }, status: 'ready' }]);
+  check('explicit confirmation arms the render immediately', plan.shouldRun, plan);
+  check('confirmation text is recognised', API.isConfirmation('make it viral now'));
+  check('detailed brief is recognised', API.isDetailed('cinematic reel with lower left sticker and slow motion captions'));
 
-// ── Drawers ──────────────────────────────────────────────────────────────────
-API.openDrawer('effects');
-check('opening a tool slides the adjacent drawer in',
-  byId('meDrawer').classList.contains('open'));
-let effects = '';
-effectGroups.forEach(function (group) {
-  API.setDrawerCategory('effects', group.name);
-  effects += decode(byId('meDrawer').innerHTML);
-});
-check('Effects drawer shows all three categories',
-  effectGroups.every(function (g) { return effects.indexOf(g.name) >= 0; }), effects);
-check('Effects drawer shows all seven presets across its categories',
-  effectGroups.every(function (g) {
-    return g.items.every(function (item) { return effects.indexOf(item) >= 0; });
-  }), effects);
+  API.reset();
+  plan = API.prepare('just this', [{ kind: 'video', name: 'clip [1]\n.mp4', file: { name: 'x' }, status: 'ready' }]);
+  check('attachment marker is safe for the log and line protocol',
+    !/\[[^\]]*\]/.test(plan.marker.slice(13, -1)) && !/[\r\n]/.test(plan.marker), plan.marker);
 
-API.openDrawer('stickers');
-let stickers = decode(byId('meDrawer').innerHTML);
-check('Stickers drawer offers Asset Stickers and Emojis categories',
-  stickerGroups.every(function (g) { return stickers.indexOf(g) >= 0; }) &&
-  stickers.indexOf('Asset Stickers') < stickers.indexOf('Emoji shelf'), stickers);
-check('Asset Sticker row merges built-in and uploaded assets',
-  ['Fire Sticker', '/static/assets/stickers/fire.png',
-    'My Upload.png', '/static/media/users/u/images/mine.png'].every(function (label) {
-    return stickers.indexOf(label) >= 0;
-  }), stickers);
-check('Sticker drawer exposes customizable list options',
-  ['All', 'Uploaded', 'Animated'].every(function (label) {
-    return stickers.indexOf('>' + label + '</button>') >= 0 || stickers.indexOf(label) >= 0;
-  }), stickers);
-check('Stickers drawer has a prominent blue Add button',
-  /me-add-tile/.test(stickers) && /me-add-mark">\+/.test(stickers) &&
-  /<strong>Add<\/strong>/.test(stickers), stickers);
-check('Emoji reactions are a secondary scrolling shelf',
-  /me-sticker-shelf/.test(stickers) &&
-  ['YES!', 'NO WAY', 'TOO REAL', 'GOAT', '🔥', '😂', '⚽'].every(function (label) {
-    return stickers.indexOf(label) >= 0;
-  }), stickers);
-API.setDrawerCategory('stickers', 'Emojis');
-const emojiTab = decode(byId('meDrawer').innerHTML);
-check('Emojis category keeps the lightweight reaction set',
-  /Emoji reactions/.test(emojiTab) && emojiTab.indexOf('Fire Sticker') < 0, emojiTab);
-API.setDrawerCategory('stickers', 'Asset Stickers');
-API.setStickerFilter('Uploaded');
-const uploadedOnly = decode(byId('meDrawer').innerHTML);
-check('Uploaded filter narrows the asset list',
-  uploadedOnly.indexOf('My Upload.png') >= 0 && uploadedOnly.indexOf('Fire Sticker') < 0,
-  uploadedOnly);
-API.setStickerFilter('All');
-check('Stickers drawer bundles no sticker packs or reaction clips',
-  !/sticker-pack/i.test(stickers) && !/reaction-clips/i.test(stickers));
+  // ── Sticker picker ──────────────────────────────────────────────────────────
+  API.reset();
+  await API.refreshStickers();
+  check('picker merges built-ins, GIFs and uploads',
+    API.state.stickers.length === 3 &&
+    API.state.stickers.map(function (s) { return s.name; }).join('|') ===
+    'Fire Sticker|Dance GIF|My Upload.png', API.state.stickers);
+  API.setPlacement('Upper Right');
+  API.selectSticker(0);
+  const pickerHtml = decode(byId('vmStickerPicker').innerHTML);
+  check('picker renders all placement labels and current selection',
+    ['Top Left', 'Upper Right', 'Lower Left', 'Lower Right', 'Center']
+      .every(function (label) { return pickerHtml.indexOf(label) >= 0; }) &&
+    /vm-sticker-place active[^>]*>Upper Right</.test(pickerHtml), pickerHtml);
+  check('picker exposes custom upload control',
+    pickerHtml.indexOf('chatStickerInput') >= 0 && pickerHtml.indexOf('+ Custom') >= 0, pickerHtml);
 
-// ── Responsive runtime ───────────────────────────────────────────────────────
-setViewportWidth(360);
-check('runtime detects a mobile viewport', API.isMobile() && API.isOverlayLayout());
-API.openDrawer('stickers');
-check('below 768px the drawer is a modal overlay',
-  byId('meDrawer').getAttribute('data-overlay') === 'true' &&
-  byId('meScrim').classList.contains('show'));
-const outsideTarget = makeElement('div');
-(documentListeners.pointerdown || []).forEach(function (fn) {
-  fn({ target: outsideTarget });
-});
-check('an outside pointer closes the overlay drawer',
-  !byId('meDrawer').classList.contains('open'));
-setViewportWidth(1024);
-check('laptop viewport returns to the inline drawer',
-  !API.isMobile() && !API.isOverlayLayout());
-API.openDrawer('stickers');
-check('above 768px the drawer does not use the modal scrim',
-  byId('meDrawer').getAttribute('data-overlay') === 'false' &&
-  !byId('meScrim').classList.contains('show'));
-API.closeDrawer();
+  // ── Real pipeline payload ───────────────────────────────────────────────────
+  API.reset();
+  API.prepare('make a widescreen hype reel', [
+    { kind: 'video', name: 'game.mp4', file: { name: 'game.mp4' }, status: 'ready' },
+    { kind: 'image', name: 'ref.png', file: image, status: 'ready' },
+    { kind: 'audio', name: 'funny.mp3', file: audio, status: 'ready' }
+  ]);
+  API.selectSticker(0);
+  API.setPlacement('Lower Left');
+  const fd = API.buildFormData();
+  const entries = fd.entries;
+  const values = function (key) {
+    return entries.filter(function (e) { return e.key === key; }).map(function (e) { return e.value; });
+  };
+  check('payload posts the real source video and companion media',
+    values('video').length === 1 && values('media').length === 2, entries);
+  check('payload carries the user brief with no voiceover request',
+    values('instruction')[0] === 'make a widescreen hype reel' &&
+    !entries.some(function (e) { return /tts|voiceover|voice_over/i.test(e.key); }), entries);
+  check('payload carries the chosen sticker and mapped placement',
+    values('sticker_url')[0] === '/static/assets/stickers/fire.png' &&
+    values('sticker_name')[0] === 'Fire Sticker' && values('sticker_pos')[0] === 'bl', entries);
+  check('widescreen brief maps to the real canvas override',
+    (function () {
+      try { return JSON.parse(values('manual')[0] || '{}').canvas.aspect === '16:9'; }
+      catch (e) { return false; }
+    })(), values('manual')[0]);
 
-API.openDrawer('overlays');
-let overlays = '';
-['Borders', 'Pictures', 'PIP'].forEach(function (cat) {
-  API.setDrawerCategory('overlays', cat);
-  overlays += decode(byId('meDrawer').innerHTML);
-});
-check('Overlays drawer has border, picture and PIP presets',
-  ['Clean Border', 'Neon Frame', 'Picture Card', 'PIP Window'].every(function (label) {
-    return overlays.indexOf(label) >= 0;
-  }), overlays);
+  // ── Render start, poll and MP4 card ─────────────────────────────────────────
+  const beforeApi = captured.api.length;
+  const job = await API.start();
+  const newCalls = captured.api.slice(beforeApi);
+  check('start submits to /api/editing/run',
+    newCalls.some(function (c) { return c.url.indexOf('/api/editing/run') >= 0 && c.method === 'POST'; }) ||
+    newCalls.some(function (c) { return c.url.indexOf('/api/editing/run') >= 0; }), newCalls.map(function (c) { return c.url; }));
+  check('start polls the real studio job endpoint',
+    newCalls.some(function (c) { return c.url.indexOf('/api/studio/job/job-chat-1') >= 0; }),
+    newCalls.map(function (c) { return c.url; }));
+  check('finished job resolves with the MP4 URL',
+    !!job && job.final_video === '/static/media/users/u/edits/finished.mp4', job);
+  const cards = byId('messages').children;
+  const finalCard = cards[cards.length - 1];
+  const cardHtml = decode(finalCard ? finalCard.innerHTML : '');
+  check('finished edit renders an MP4 card in chat',
+    cardHtml.indexOf('/static/media/users/u/edits/finished.mp4') >= 0 &&
+    /<video[^>]*controls/.test(cardHtml), cardHtml);
+  check('MP4 card has icon-only Download and Regenerate controls',
+    (cardHtml.match(/vm-edit-icon-btn/g) || []).length === 2 &&
+    cardHtml.indexOf('VMChatEdit.download(this)') >= 0 &&
+    cardHtml.indexOf('VMChatEdit.regenerate(this)') >= 0 &&
+    cardHtml.indexOf('>Download<') < 0 && cardHtml.indexOf('>Regenerate<') < 0, cardHtml);
+  check('no provider names leak into user-facing copy',
+    !/cloudflare|\br2\b|\bs3\b|boto/i.test(cardHtml + pickerHtml), cardHtml + pickerHtml);
 
-API.openDrawer('transitions');
-const transitions = decode(byId('meDrawer').innerHTML);
-check('Transitions drawer has graphical preset cards',
-  /me-preset-card/.test(transitions) &&
-  ['Cut', 'Zoom Punch', 'Whip Pan', 'Fade', 'Glitch'].every(function (label) {
-    return transitions.indexOf(label) >= 0;
-  }), transitions);
-
-API.openDrawer('fx');
-let fx = '';
-effectGroups.forEach(function (group) {
-  API.setDrawerCategory('effects', group.name);
-  fx += decode(byId('meDrawer').innerHTML);
-});
-check('FX drawer reuses the shared effect groups',
-  /me-preset-card/.test(fx) &&
-  effectGroups.every(function (g) {
-    return g.items.every(function (item) { return fx.indexOf(item) >= 0; });
-  }), fx);
-
-API.openDrawer('captions');
-const captions = decode(byId('meDrawer').innerHTML);
-check('Captions drawer offers all three caption styles',
-  captionStyles.every(function (s) { return captions.indexOf(s) >= 0; }), captions);
-
-API.openDrawer('audio');
-const audio = decode(byId('meDrawer').innerHTML);
-check('Audio drawer offers keep-original and background-track modes',
-  audioModes.every(function (m) { return audio.indexOf(m) >= 0; }), audio);
-
-API.openDrawer('projects');
-const projects = decode(byId('meDrawer').innerHTML);
-check('Projects drawer has a clean empty state', /No saved edits yet/.test(projects), projects);
-API.closeDrawer();
-check('drawer closes cleanly', !byId('meDrawer').classList.contains('open'));
-
-API.toggleTool('stickers');
-check('tapping a sidebar tool reopens its drawer', byId('meDrawer').classList.contains('open'));
-API.toggleTool('stickers');
-check('tapping the active tool collapses the drawer', !byId('meDrawer').classList.contains('open'));
-
-// ── Timeline interactions + Apply payload ───────────────────────────────────
-API.setAspect('16:9');
-check('aspect control switches the preview frame',
-  byId('mePreview').getAttribute('data-aspect') === '16:9');
-API.setMode('Sports / Beat-Sync');
-check('mode pill reflects the selected mode',
-  byId('meModeSelect').value === 'Sports / Beat-Sync');
-
-API.selectOverlay('Clean Border');
-API.selectTransition('Zoom Punch');
-API.setSpeedCurve('S-Curve');
-API.setManual('rampIn', 0.5);
-API.setManual('rampOut', 1.2);
-API.alignToBeat();
-const timeline = decode(byId('meTimeline').innerHTML);
-check('stacked timeline has four labeled tracks',
-  ['VIDEO', 'AUDIO', 'FX', 'STICKERS'].every(function (label) {
-    return timeline.indexOf(label) >= 0;
-  }) && (timeline.match(/me-tl-track"/g) || []).length === 4, timeline);
-check('timeline exposes compact slice, trim, beat-sync and playhead controls',
-  ['sliceAtPlayhead', 'trimAtPlayhead', 'alignToBeat', 'Beat Sync',
-    '>Trim</button>', 'me-tl-trim-handle', 'me-tl-marker', 'me-tl-playhead',
-    'Clean Border'].every(function (marker) {
-    return timeline.indexOf(marker) >= 0;
-  }), timeline);
-
-byId('meText').value = 'slow-mo the goal and add YES!';
-API.submit();
-const runCall = captured.api.filter(function (c) { return c.url === '/api/editing/run'; })[0];
-check('Apply posts to the real editing pipeline', !!runCall && runCall.method === 'POST');
-const entries = (runCall && runCall.body && runCall.body.entries) || [];
-const values = function (key) {
-  return entries.filter(function (e) { return e.key === key; }).map(function (e) { return e.value; });
-};
-check('Apply FormData carries instruction, mode and attachments',
-  values('instruction')[0] === 'slow-mo the goal and add YES!' &&
-  values('mode')[0] === 'Sports / Beat-Sync' &&
-  values('video').length === 1 && values('media').length === 2, entries);
-check('Apply manual payload carries speed curves, ramps, trim and beat sync',
-  (function () {
-    let manual = {};
-    try { manual = JSON.parse(values('manual')[0] || '{}'); } catch (e) { manual = {}; }
-    return manual.speed_curve === 'S-Curve' && manual.ramp_in === 0.5 &&
-      manual.ramp_out === 1.2 && manual.trim_start === 0 && manual.trim_end === 0 &&
-      manual.beat_sync === true && manual.sticker_anim === 'beat';
-  })(), values('manual')[0]);
-check('Apply payload carries sidebar overlay and transition selections',
-  values('overlay')[0] === 'Clean Border' && values('transition')[0] === 'Zoom Punch', entries);
-
-check('workspace CSS is loaded from index.html',
-  /\.me-sidebar/.test(html) && /\.me-flyout\.open/.test(html) &&
-  /\.me-tl-multitrack/.test(html) && /\.me-properties/.test(html) &&
-  /\.me-scrim/.test(html) && /\.me-composer-dock/.test(html) &&
-  /\.me-preview\[data-aspect="9:16"\]/.test(html));
-check('workspace script versions are bumped',
-  /settings\.js\?v=22/.test(html) && /massive_editing\.js\?v=6/.test(html));
-check('mobile rail collapses to 40px icons',
-  html.indexOf('@media (max-width: 768px)') >= 0 &&
-  html.indexOf('.me-sidebar { width:40px; min-width:40px;') >= 0 &&
-  html.indexOf('.me-sidebar-label { display:none; }') >= 0);
-check('mobile drawer matches the requested modal overlay geometry',
-  html.indexOf('position: absolute; left: 40px; top: 0; height: 100%; z-index: 999;') >= 0 &&
-  html.indexOf('width: min(280px, 80vw); box-shadow: 4px 0 15px rgba(0,0,0,0.5);') >= 0 &&
-  html.indexOf('.me-scrim { z-index:998; }') >= 0);
-check('timeline lanes stay 24-28px with compact actions',
-  html.indexOf('height:clamp(24px,3.2vw,28px)') >= 0 &&
-  html.indexOf('.me-tl-track { height:24px;') >= 0 &&
-  html.indexOf('.me-tl-track-content { height:20px; }') >= 0);
-check('laptop keeps the stage/properties side-by-side split',
-  html.indexOf('@media (min-width: 993px)') >= 0 &&
-  html.indexOf('.me-stage-grid { grid-template-columns:minmax(0,1fr) 258px; }') >= 0);
-check('the text composer is prominently centered',
-  html.indexOf('.me-composer-dock { flex-shrink:0; display:flex; justify-content:center;') >= 0 &&
-  html.indexOf('.me-composer { width:min(100%,1120px); margin:0 auto;') >= 0);
-check('old bottom-tab layout is gone', !/\.me-bottom-tabs/.test(html));
-
-const visibleCopy = [topbar, sidebar, workspace, composer, timeline, props,
-  effects, stickers, overlays, transitions, fx, captions, audio, projects, chips].join(' ');
-check('no storage provider names leak into user-facing copy',
-  !/cloudflare|\br2\b|\bs3\b|boto/i.test(visibleCopy), visibleCopy);
-
-console.log('MASSIVE_EDITING_WORKSPACE_TESTS: ' + ok + ' passed, ' + fail + ' failed');
-if (fail) process.exitCode = 1;
+  console.log('VM_CHAT_EDIT_TESTS: ' + ok + ' passed, ' + fail + ' failed');
+  if (fail) process.exitCode = 1;
 }
 runTests().catch(function (e) {
-  console.log('FAIL: workspace test runner :: ' + (e && e.stack ? e.stack : e));
+  console.log('FAIL: chat edit test runner :: ' + (e && e.stack ? e.stack : e));
   process.exitCode = 1;
 });

@@ -22,16 +22,17 @@ def _face_js() -> str:
     return (ROOT / "vrm_preview" / "face.js").read_text(encoding="utf-8")
 
 
-def test_studio_tabbar_has_companion_card_next_to_massive_editing():
+def test_studio_tabbar_has_companion_card_after_music_studio():
     html = _html()
     tabbar = html[html.index('<nav class="vm-ws-tabbar"'):html.index('data-ws-panel="studio"')]
-    editing = tabbar.index('data-ws="editing"')
+    music = tabbar.index('data-ws="music"')
     companion = tabbar.index('data-ws="companion"')
     assert "3D Companion" in tabbar
     assert "vmWsGo('companion')" in tabbar
     assert 'class="vm-ws-tab' in tabbar
+    assert 'data-ws="editing"' not in tabbar
     # No other tab sits between the two cards.
-    between = tabbar[editing + len('data-ws="editing"'):companion]
+    between = tabbar[music + len('data-ws="music"'):companion]
     assert 'data-ws="' not in between
 
 

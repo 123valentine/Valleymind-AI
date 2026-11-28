@@ -3070,6 +3070,105 @@ def asset_clarification_message(message: str, kind: str, fmt: str = "", referenc
     return _privacy_guard("\n\n".join(parts))
 
 
+# ── Conversational video editing (chat attachments) ─────────────────────────
+VIDEO_ATTACHED_MARKER = "VIDEO_ATTACHED:"
+VIDEO_EDIT_ASK_MARKER = "Quick questions before I edit"
+_VIDEO_ATTACHED_RE = re.compile(
+    r"\[VIDEO_ATTACHED:\s*([^\]\n]+)\]", re.IGNORECASE)
+_VIDEO_EDIT_SKIP_RE = re.compile(
+    r"\b(?:edit|make)\s+it\s+now\b|\bmake\s+it\s+viral\s+now\b|"
+    r"\b(?:make|do|run|start)\s+it\s+(?:now|already)\b|"
+    r"\bskip\s+(?:the\s+)?questions?\b|\bno\s+questions?\b|"
+    r"\bwithout\s+questions?\b",
+    re.IGNORECASE,
+)
+_VIDEO_EDIT_STYLE_RE = re.compile(
+    r"\b(?:style|trend|viral|hype|hypebeast|cinematic|funny|meme|comedy|"
+    r"aesthetic|reel|shorts|tiktok|phonk|energetic|clean|dramatic|sports)\b",
+    re.IGNORECASE,
+)
+_VIDEO_EDIT_STICKER_RE = re.compile(
+    r"\b(?:sticker|stickers|emoji|gif|overlay|reference|picture|photo|"
+    r"top\s+left|upper\s+right|lower\s+left|lower\s+right|bottom\s+left|"
+    r"bottom\s+right|center|centre)\b",
+    re.IGNORECASE,
+)
+_VIDEO_EDIT_CAMERA_RE = re.compile(
+    r"\b(?:zoom|punch|slow[\s-]?mo|slow[\s-]?motion|angle|camera|captions?|"
+    r"subtitles?|text|cutaway|reaction|beat|transition|widescreen|vertical|"
+    r"16:9|9:16)\b",
+    re.IGNORECASE,
+)
+
+
+def video_edit_attachment_name(message: str) -> str:
+    """Return the filename from the chat's private ``[VIDEO_ATTACHED: ...]`` marker."""
+    match = _VIDEO_ATTACHED_RE.search(str(message or ""))
+    return match.group(1).strip() if match else ""
+
+
+def has_video_edit_attachment(message: str) -> bool:
+    """True when the request carries the chat-side video attachment marker."""
+    return bool(video_edit_attachment_name(message))
+
+
+def _had_prior_video_edit_clarification(history: list | None) -> bool:
+    for msg in reversed(list(history or [])[-8:]):
+        if str(msg.get("role", "")).lower() != "assistant":
+            continue
+        if VIDEO_EDIT_ASK_MARKER in str(msg.get("content", "")):
+            return True
+    return False
+
+
+def needs_video_edit_clarification(message: str, history: list | None = None) -> bool:
+    """Ask brief structured questions before editing an attached video.
+
+    Only requests carrying the client's private attachment marker are gated.
+    Explicit confirmations ("edit it now", "make it viral now"), detailed briefs
+    and replies to an earlier edit clarification go straight to the pipeline.
+    """
+    text = str(message or "").strip()
+    if not has_video_edit_attachment(text):
+        return False
+    if VIDEO_EDIT_ASK_MARKER in text:
+        return False
+    if _VIDEO_EDIT_SKIP_RE.search(text) or _CONFIRMATION_RE.search(text):
+        return False
+    if _had_prior_video_edit_clarification(history):
+        return False
+    # The client puts the private marker before any vision-analysis findings, so
+    # only the user's own words should count toward the "detailed brief" check.
+    marker_match = _VIDEO_ATTACHED_RE.search(text)
+    brief = text[:marker_match.start()] if marker_match else text
+    brief = brief.strip()
+    if len(brief.split()) >= 14:
+        return False
+    categories = sum(bool(regex.search(brief)) for regex in (
+        _VIDEO_EDIT_STYLE_RE, _VIDEO_EDIT_STICKER_RE, _VIDEO_EDIT_CAMERA_RE))
+    return categories < 2
+
+
+def video_edit_clarification_message(message: str = "") -> str:
+    """Short consultative reply for a vague attached-video edit request."""
+    name = video_edit_attachment_name(message)
+    subject = f' "{name}"' if name and name.lower() not in ("video", "clip") else " your video"
+    parts = [
+        f"{VIDEO_EDIT_ASK_MARKER}{subject}.",
+        "I'll keep the original footage and its audio, add bold word-synced captions, "
+        "and return a finished MP4 right here in chat.",
+        "1. Style/trend: hype reel, clean cinematic, funny meme cut, or something else?",
+        "2. Stickers: which ones, and where — Top Left, Upper Right, Lower Left, "
+        "Lower Right, or Center?",
+        "3. Camera treatment: zoom punches, slow-motion, angle changes, captions, "
+        "or a mix?",
+        "I won't add an AI voiceover unless you explicitly ask for one.",
+        'Reply with your choices, or say "edit it now" / "make it viral now" '
+        "and I'll use my suggested defaults.",
+    ]
+    return _privacy_guard("\n\n".join(parts))
+
+
 def asset_generation_copy(kind: str, message: str = "", fmt: str = "", reference: bool = False) -> tuple[str, str]:
     """Before/after conversational copy for generated files, images and videos."""
     key = str(fmt or kind or "asset").lower()
@@ -4123,6 +4222,10 @@ class MarcusBrain:
         )
         return self._record_direct_reply(cid, reply, timestamp, "asset_clarification", "ask")
 
+    def _video_edit_clarification_reply(self, cid: str, message: str, timestamp: str) -> str:
+        reply = video_edit_clarification_message(message)
+        return self._record_direct_reply(cid, reply, timestamp, "video_edit_clarification", "ask")
+
     def respond(self, message: str, chat_id: str = "", image_data: str = "", mongo_history: list = None, persist_image_data: bool = True, route=None) -> str:
         try:
             self.memory.reload()
@@ -4180,6 +4283,12 @@ class MarcusBrain:
 
             # ── Shared activity indicator: begin processing ─────────────
             _emit_activity("general", "processing", detail="Starting request")
+
+            # A vague attached-video edit pauses for three short choices. The
+            # client keeps the footage in memory and starts the real render once
+            # the user answers; no unrequested voiceover is ever generated.
+            if needs_video_edit_clarification(message, self.memory.get_chat(cid)):
+                return self._video_edit_clarification_reply(cid, message, timestamp)
 
             # File requests go through a dedicated drafting step first: live
             # grounding when needed, otherwise the LLM plus chat context. The
@@ -4484,6 +4593,14 @@ class MarcusBrain:
                         self.memory.set_title(cid, title)
                 except Exception as exc:
                     print(f"[ERROR] Auto-title failed: {exc}")
+
+            # Vague attached-video edits get a three-question gate. The client
+            # retains the footage and submits /api/editing/run after the answer.
+            if needs_video_edit_clarification(message, self.memory.get_chat(cid)):
+                reply = self._video_edit_clarification_reply(cid, message, timestamp)
+                yield reply
+                yield {"animation": self.last_animation}
+                return
 
             # Draft complete content before writing the real file so the
             # FILE_CARD reaches the PWA/Android WebView with a working link and

@@ -38,6 +38,7 @@ import core.video_i2v as i2v
 from core.cost_control import BLOCKED_MESSAGE as _QUOTA_MESSAGE
 from core.cost_control import provider_blocked
 from core.db import studio_jobs_collection, studio_runs_collection, video_spend_collection
+from core.video_editor import normalize_sticker_position
 
 # Clip states
 PENDING, RUNNING, DONE, FAILED, ABORTED = "pending", "running", "done", "failed", "aborted"
@@ -519,8 +520,7 @@ def new_autoedit_job(user_id: str, source_video_url: str, *, test_mode: bool = F
         ],
         "sticker_source": str(sticker_source or ""),   # /static/... sticker URL
         "sticker_name": str(sticker_name or ""),
-        "sticker_pos": str(sticker_pos or "br").lower() if str(sticker_pos or "br").lower()
-                       in ("br", "bl", "tr", "tl", "center") else "br",
+        "sticker_pos": normalize_sticker_position(sticker_pos),
         "manual": manual or {},                         # professional sidebar overrides
         "keep_plan": bool(keep_plan),                   # replay prev AI plan
         "prev_plan": prev_plan or {},                   # the plan to replay

@@ -16,9 +16,9 @@ function VMStatusSpinner() {
   return '<span class="vm-inline-spinner" aria-hidden="true">' + VM_DOWNLOAD_SPINNER_SVG + '</span>';
 }
 
-// Massive Editing workspace vocabulary. Kept here so the renderer and the
-// structural tests share one source of truth. These are labels only — no
-// sticker packs, reaction clips or other heavy assets are bundled.
+// Chat-side editing vocabulary shared by the picker and the render bridge.
+// These are labels only — no sticker packs, reaction clips or other heavy
+// assets are bundled.
 var VM_MASSIVE_MODES = [
   "Auto AI Director",
   "Skit & Meme Cutaways",
@@ -35,6 +35,14 @@ var VM_MASSIVE_EFFECT_GROUPS = [
 // the existing emoji set stays available as a secondary scrolling shelf.
 var VM_MASSIVE_STICKER_GROUPS = ["Asset Stickers", "Emojis"];
 var VM_MASSIVE_STICKER_LIST_OPTIONS = ["All", "Uploaded", "Animated"];
+// Placement labels shared by the chat sticker picker and the render backend.
+var VM_MASSIVE_STICKER_PLACEMENTS = [
+  { value: "tl", label: "Top Left" },
+  { value: "tr", label: "Upper Right" },
+  { value: "bl", label: "Lower Left" },
+  { value: "br", label: "Lower Right" },
+  { value: "center", label: "Center" }
+];
 var VM_MASSIVE_CAPTION_STYLES = ["Word-by-Word Pop", "Clean Subtitle", "Off"];
 var VM_MASSIVE_AUDIO_MODES = ["Keep Original Audio", "Add Background Track"];
 var VM_MASSIVE_TOOLS = [
@@ -122,6 +130,7 @@ if (typeof window !== "undefined") {
   window.VM_MASSIVE_EFFECT_GROUPS = VM_MASSIVE_EFFECT_GROUPS;
   window.VM_MASSIVE_STICKER_GROUPS = VM_MASSIVE_STICKER_GROUPS;
   window.VM_MASSIVE_STICKER_LIST_OPTIONS = VM_MASSIVE_STICKER_LIST_OPTIONS;
+  window.VM_MASSIVE_STICKER_PLACEMENTS = VM_MASSIVE_STICKER_PLACEMENTS;
   window.VM_MASSIVE_CAPTION_STYLES = VM_MASSIVE_CAPTION_STYLES;
   window.VM_MASSIVE_AUDIO_MODES = VM_MASSIVE_AUDIO_MODES;
   window.VM_MASSIVE_TOOLS = VM_MASSIVE_TOOLS;

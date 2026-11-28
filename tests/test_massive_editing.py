@@ -1,16 +1,15 @@
-"""Massive Editing tests.
+"""Conversational video-edit tests.
 
 Covers:
-  1. Static guarantees about the frontend wiring in index.html: the Massive
-     Editing workspace tab, its panel div, the vmWsGo hook that fires
-     VMEditing.onShow + the first-look guide, the massive_editing.js script
-     tag, the legacy entry points forwarding to the module, and that the old
-     standalone overlay is gone.
-  2. The /api/editing/transcribe and /api/editing/run + /api/editing/stickers
+  1. Static guarantees that the manual Massive Editing workspace is gone and
+     that chat owns the composer attachments, sticker picker, clarification flow
+     and confirmed /api/editing/run hand-off.
+  2. The brain's clarification gate for vague attached-video prompts.
+  3. The /api/editing/transcribe and /api/editing/run + /api/editing/stickers
      routes exercised through the real Flask client with an authenticated
      session: login gating, input validation, and that instruction + voice +
      media + sticker + position all reach the created job.
-  3. The AI plan engine (build_instruction_plan): an LLM failure must never
+  4. The AI plan engine (build_instruction_plan): an LLM failure must never
      break an edit (default plan), timestamps the LLM invents are clamped to
      the transcript, and a selected sticker's default position survives.
 
@@ -18,10 +17,12 @@ Run with: python -m pytest tests/test_massive_editing.py -v
 """
 import io
 import json
+import re
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -33,8 +34,8 @@ import core.video_edit as ve
 from core import brain as brain_module
 
 
-class MassiveEditingStaticTestCase(unittest.TestCase):
-    """Structural checks on index.html + massive_editing.js (logic is client-side)."""
+class ChatEditingStaticTestCase(unittest.TestCase):
+    """Structural checks on chat-side editing in index.html + massive_editing.js."""
 
     def _index_html(self):
         return (ROOT / "index.html").read_text(encoding="utf-8")
@@ -42,65 +43,81 @@ class MassiveEditingStaticTestCase(unittest.TestCase):
     def _module_js(self):
         return (ROOT / "static" / "massive_editing.js").read_text(encoding="utf-8")
 
-    def test_editing_workspace_tab_present(self):
+    def test_manual_workspace_is_gone(self):
         html = self._index_html()
-        self.assertIn('data-ws="editing"', html)
-        self.assertIn("Massive Editing", html)
-        self.assertIn('onclick="vmWsGo(\'editing\')"', html)
+        js = self._module_js()
+        for marker in (
+            'data-ws="editing"', 'data-ws-panel="editing"', "vmWsPanelEditing",
+            "id=\"meRoot\"", ".me-root", "me-timeline", "me-playhead",
+            "Properties - Velocity", "Beat Sync", "VIDEO/AUDIO/FX/STICKERS",
+            "me-sidebar", "me-composer-dock", "sliceAtPlayhead",
+            "collectTimelineBlocks", "Start AI Edit",
+        ):
+            self.assertNotIn(marker, html, marker)
+            self.assertNotIn(marker, js, marker)
 
-    def test_editing_workspace_panel_present(self):
+    def test_chat_script_and_composer_inputs(self):
         html = self._index_html()
-        self.assertIn('data-ws-panel="editing"', html)
-        self.assertIn('id="vmWsPanelEditing"', html)
+        self.assertIn('<script src="/static/massive_editing.js?v=7"', html)
+        for field_id in ("chatVideoInput", "chatImageInput", "chatAudioInput",
+                         "chatStickerInput"):
+            self.assertRegex(
+                html, r'id="' + field_id + r'"[^>]*class="vm-file-input"')
+        for label in ("Video to Edit", "Reference Pictures", "Funny Audio Clips",
+                      "Studio Asset Stickers"):
+            self.assertIn(label, html)
 
-    def test_editing_panel_lives_inside_studio_overlay(self):
+    def test_composer_persona_avatar_is_locked_to_24px_circle(self):
         html = self._index_html()
-        start = html.index('<div id="studioOverlay">')
-        end = html.index("</div><!-- /Studio overlay -->")
-        inside = html[start:end]
-        self.assertIn('id="vmWsPanelEditing"', inside)
+        match = re.search(r"#personaBtnAvatar\s*\{([^}]*)\}", html)
+        self.assertIsNotNone(match, "missing #personaBtnAvatar CSS lock")
+        css = re.sub(r"\s+", " ", match.group(1))
+        for declaration in (
+            "width: 24px", "height: 24px", "max-width: 24px",
+            "max-height: 24px", "border-radius: 9999px", "object-fit: cover",
+            "flex-shrink: 0",
+        ):
+            self.assertIn(declaration, css, declaration)
 
-    def test_vm_ws_go_hooks_editing_onshow(self):
+    def test_confirmed_edit_hands_off_to_the_real_pipeline(self):
         html = self._index_html()
-        block = html[html.index("function vmWsGo("):]
-        self.assertIn('ws === "editing" && typeof VMEditing !== "undefined"', block)
-        self.assertIn("VMEditing.onShow()", block)
-        self.assertIn('vmGuideMaybeShow("editing")', block)
+        self.assertIn(
+            "_vmEditPlan = window.VMChatEdit.prepare(text, vmChatAttachments)",
+            html)
+        self.assertIn(r'textToSend += "\n" + _vmEditPlan.marker', html)
+        self.assertIn("_vmEditPlan.shouldRun", html)
+        self.assertIn("window.VMChatEdit.start().catch(", html)
+        self.assertIn('requestJson("/api/editing/run"', self._module_js())
+        self.assertIn('.vm-edit-icon-btn{', html)
+        self.assertIn("border-radius:9999px", html)
 
-    def test_editing_script_loaded(self):
+    def test_legacy_entry_points_return_to_chat(self):
         html = self._index_html()
-        self.assertIn('<script src="/static/massive_editing.js', html)
-
-    def test_legacy_entry_points_forward_to_module(self):
-        html = self._index_html()
-        self.assertIn("function openEditing()", html)
-        self.assertIn("VMEditing.launch", html)
-        self.assertIn("function closeEditing()", html)
-        self.assertIn("function editReset()", html)
-        self.assertIn("VMEditing.reset", html)
-        self.assertEqual(html.count("editingOverlay"), 0)
-
-    def test_feature_tiles_launch_editing(self):
-        html = self._index_html()
-        self.assertIn("action: function () { openEditing(); }", html)
-
-    def test_guide_registered(self):
+        self.assertRegex(
+            html,
+            r"function openEditing\(\)\s*\{[^}]*closeStudio\(\);[^}]*focusChatInput\(\);")
+        self.assertIn("window.VMChatEdit.reset", html)
+        self.assertNotIn('vmWsGo("editing")', html)
         guide = (ROOT / "static" / "tutorials.js").read_text(encoding="utf-8")
-        self.assertIn("editing", guide)
-        self.assertIn("Massive Editing", guide)
+        self.assertNotIn("key: \"editing\"", guide)
+        self.assertNotIn("Massive Editing", guide)
 
-    def test_module_exposes_api(self):
+    def test_module_exposes_chat_api(self):
         js = self._module_js()
-        self.assertIn("window.VMEditing = API", js)
-        for method in ("launch", "onShow", "reset", "submit", "toggleRec",
-                        "pickSticker", "clearVoice", "toDashboard"):
-            self.assertIn(method, js)
-
-    def test_start_is_explicit(self):
-        # No auto-start: the "Start AI Edit" tap is the only submit path.
-        js = self._module_js()
-        self.assertIn("Start AI Edit", js)
-        self.assertIn('postJSON("/api/editing/run"', js)
+        self.assertIn("win().VMChatEdit = API", js)
+        for method in (
+            "VERSION", "PLACEMENTS", "state", "init", "prepare", "marker",
+            "isConfirmation", "isDetailed", "normalizePlacement", "setPlacement",
+            "selectSticker", "refreshStickers", "uploadStickers",
+            "openStickerPicker", "buildFormData", "resultCardHtml", "start",
+            "poll", "download", "regenerate", "reset",
+        ):
+            self.assertIn(method, js, method)
+        self.assertIn('requestJson("/api/editing/run"', js)
+        self.assertIn('"/api/studio/job/"', js)
+        for label in ("Top Left", "Upper Right", "Lower Left", "Lower Right",
+                      "Center"):
+            self.assertIn(label, js, label)
 
 
 class _AuthHelpersMixin:
@@ -326,6 +343,18 @@ class RunApiTestCase(_AuthHelpersMixin, unittest.TestCase):
         self.assertEqual(stored["sticker_name"], "fire")
         self.assertEqual(stored["sticker_pos"], "tl")
 
+    def test_picker_placement_label_is_normalized_for_the_engine(self):
+        client = self._auth("run_picker_pos@example.com")
+        data = self._upload() | {
+            "sticker_url": "/static/assets/stickers/sticker_0002.png",
+            "sticker_name": "fire", "sticker_pos": "Upper Right",
+        }
+        resp = client.post("/api/editing/run", data=data,
+                           content_type="multipart/form-data")
+        self.assertEqual(resp.status_code, 200)
+        stored = list(sj.studio_jobs_collection().docs.values())[0]
+        self.assertEqual(stored["sticker_pos"], "tr")
+
     def test_rejects_remote_sticker_url(self):
         client = self._auth("run_ssrf@example.com")
         data = self._upload() | {"sticker_url": "https://evil.example.com/x.png"}
@@ -359,6 +388,96 @@ class StickersApiTestCase(_AuthHelpersMixin, unittest.TestCase):
         for s in body["stickers"]:
             self.assertIn("name", s)
             self.assertTrue(str(s.get("url", "")).startswith("/static/"))
+
+
+class _FakeBrainMemory:
+    """Minimal memory surface used by the deterministic clarification gate."""
+
+    def __init__(self, history=None):
+        self.history = list(history or [])
+        self.messages = []
+        self.long_term = {}
+        self.user_id = "brain-test"
+
+    def reload(self):
+        return None
+
+    def get_message_count(self, chat_id):
+        return 1
+
+    def get_chat(self, chat_id):
+        return self.history
+
+    def add_message(self, chat_id, role, content, timestamp=None, **kwargs):
+        self.messages.append({"role": role, "content": content})
+
+    def save_memory(self):
+        return None
+
+    def get_active_facts(self):
+        return []
+
+    def get_full_memory(self):
+        return ""
+
+
+def _clarifying_brain(history=None):
+    brain = object.__new__(brain_module.MarcusBrain)
+    brain.memory = _FakeBrainMemory(history)
+    brain.profile = SimpleNamespace(
+        key="marcus", name="Marcus", to_prompt=lambda: "")
+    return brain
+
+
+class VideoEditClarificationTestCase(unittest.TestCase):
+    """Vague attached-video prompts get three questions, never a voiceover."""
+
+    VAGUE = "make this viral [VIDEO_ATTACHED: clip.mp4]"
+
+    def test_only_attached_videos_are_gated(self):
+        self.assertFalse(brain_module.needs_video_edit_clarification("make this viral"))
+        self.assertTrue(brain_module.needs_video_edit_clarification(self.VAGUE))
+
+    def test_detailed_brief_skips_the_gate_before_vision_findings(self):
+        detailed = (
+            "hype reel, upper right sticker, zoom punches "
+            "[VIDEO_ATTACHED: clip.mp4]\n[Visual Analysis Findings]\n"
+            + ("Observed frame detail. " * 20)
+        )
+        self.assertFalse(brain_module.needs_video_edit_clarification(detailed))
+
+    def test_confirmations_and_prior_clarifications_skip_the_gate(self):
+        self.assertFalse(brain_module.needs_video_edit_clarification(
+            "edit it now [VIDEO_ATTACHED: clip.mp4]"))
+        self.assertFalse(brain_module.needs_video_edit_clarification(
+            "make it viral now [VIDEO_ATTACHED: clip.mp4]"))
+        history = [{"role": "assistant",
+                    "content": "Quick questions before I edit your video. 1. Style..."}]
+        self.assertFalse(brain_module.needs_video_edit_clarification(
+            self.VAGUE, history))
+
+    def test_clarification_copy_is_brief_and_never_adds_a_voiceover(self):
+        message = brain_module.video_edit_clarification_message(self.VAGUE)
+        self.assertIn("Quick questions before I edit", message)
+        self.assertIn("clip.mp4", message)
+        for fragment in ("Style/trend", "Stickers", "Top Left", "Upper Right",
+                         "Lower Left", "Lower Right", "Center", "Camera treatment"):
+            self.assertIn(fragment, message, fragment)
+        self.assertIn(
+            "I won't add an AI voiceover unless you explicitly ask for one.",
+            message)
+        self.assertIn("edit it now", message)
+        self.assertIn("make it viral now", message)
+
+    def test_respond_and_stream_respond_both_pause_for_questions(self):
+        reply = _clarifying_brain().respond(
+            self.VAGUE, chat_id="video-clarify-respond")
+        self.assertIn("Quick questions before I edit", reply)
+        chunks = list(_clarifying_brain().stream_respond(
+            self.VAGUE, chat_id="video-clarify-stream"))
+        self.assertTrue(chunks)
+        self.assertIn("Quick questions before I edit", str(chunks[0]))
+        self.assertIn("animation", str(chunks[-1]))
 
 
 class PlanEngineTestCase(unittest.TestCase):
