@@ -69,7 +69,7 @@ def _patch_hf(monkeypatch, failure, captured=None):
             raise requests.exceptions.Timeout("upstream timed out")
         status = failure.get("status", 200)
         if status == 200:
-            return MP4_BYTES
+            return MP4_BYTES, "Lightricks/LTX-2.5"
         error = RuntimeError(f"Space HTTP {status}: {failure.get('text', 'quota exhausted')}")
         error.status_code = status
         raise error
@@ -201,6 +201,84 @@ def test_ltx_space_maps_live_gradio_schema_to_call_arguments(monkeypatch):
     assert data == b"generated-video-bytes" * 8
 
 
+def test_distilled_ltx_schema_prefers_real_video_endpoints(monkeypatch):
+    """Helper upload/dimension functions must never shadow I2V/T2V generation."""
+    def parameter(name, label, description=None):
+        item = {"label": label, "parameter_name": name}
+        if description:
+            item["type"] = {"description": description}
+        return item
+
+    api = {
+        "named_endpoints": {
+            "/handle_image_upload_for_dims": {
+                "parameters": [parameter("image_filepath", "Input Image")],
+                "returns": [{"label": "Height"}, {"label": "Width"}],
+            },
+            "/text_to_video": {
+                "parameters": [
+                    parameter("prompt", "Prompt"),
+                    parameter("input_image_filepath", "image_n"),
+                    parameter("input_video_filepath", "video_n"),
+                    parameter("height_ui", "Height", "between 256 and 1280"),
+                    parameter("width_ui", "Width", "between 256 and 1280"),
+                ],
+                "returns": [{"label": "Generated Video"}],
+            },
+            "/image_to_video": {
+                "parameters": [
+                    parameter("prompt", "Prompt"),
+                    parameter("input_image_filepath", "Input Image"),
+                    parameter("input_video_filepath", "video_i"),
+                    parameter("height_ui", "Height", "between 256 and 1280"),
+                    parameter("width_ui", "Width", "between 256 and 1280"),
+                    parameter("duration_ui", "Video Duration (seconds)", "between 0.3 and 8.5"),
+                ],
+                "returns": [{"label": "Generated Video"}],
+            },
+        }
+    }
+
+    def patch_client(captured):
+        class FakeSpaceClient:
+            def view_api(self, return_format=None, print_info=False):
+                return api
+
+            def predict(self, api_name=None, **kwargs):
+                captured.update({"api_name": api_name, "kwargs": kwargs})
+                return MP4_BYTES * 5
+
+        monkeypatch.setattr(
+            hf_connectors, "space_client",
+            lambda space, token=None, verbose=False: FakeSpaceClient(),
+        )
+
+    i2v = {}
+    patch_client(i2v)
+    hf_connectors.space_media(
+        "Lightricks/ltx-video-distilled",
+        prompt="Animate this photo",
+        image_bytes=b"reference-frame",
+        size=(576, 320),
+        timeout=10,
+    )
+    assert i2v["api_name"] == "/image_to_video"
+    assert isinstance(i2v["kwargs"]["input_image_filepath"], dict)
+    assert i2v["kwargs"]["prompt"] == "Animate this photo"
+    assert "video_i" not in i2v["kwargs"]
+
+    t2v = {}
+    patch_client(t2v)
+    hf_connectors.space_media(
+        "Lightricks/ltx-video-distilled",
+        prompt="A drone shot over the coast",
+        size=(576, 320),
+        timeout=10,
+    )
+    assert t2v["api_name"] == "/text_to_video"
+    assert t2v["kwargs"].get("input_image_filepath") is None
+
+
 @pytest.mark.parametrize(
     "failure",
     [
@@ -287,3 +365,40 @@ def test_public_video_error_is_provider_neutral():
     assert "hugging" not in message.lower()
     assert "402" not in message
     assert video_dispatcher.GENERIC_VIDEO_ERROR == message
+
+
+def test_ltx_stops_after_first_shared_quota_error(monkeypatch):
+    """A global ZeroGPU quota failure must not retry every video Space."""
+    _prepare(monkeypatch)
+    attempts = []
+
+    def fake_space_media(space, **kwargs):
+        attempts.append(space)
+        raise RuntimeError("You have exceeded your free ZeroGPU quota. Try again later.")
+
+    monkeypatch.setattr(hf_connectors, "space_media", fake_space_media)
+
+    with pytest.raises(RuntimeError, match="ZeroGPU quota"):
+        hf_module._call_ltx_space("A drone shot over the coast")
+
+    assert len(attempts) == 1, attempts
+    assert attempts[0] == hf_module.HF_VIDEO_SPACES[0]
+
+
+def test_ltx_retries_non_quota_errors_across_spaces(monkeypatch):
+    _prepare(monkeypatch)
+    attempts = []
+
+    def fake_space_media(space, **kwargs):
+        attempts.append(space)
+        if len(attempts) < len(hf_module.HF_VIDEO_SPACES):
+            raise RuntimeError("temporary queue busy")
+        return MP4_BYTES
+
+    monkeypatch.setattr(hf_connectors, "space_media", fake_space_media)
+
+    data, space = hf_module._call_ltx_space("A drone shot over the coast")
+
+    assert data == MP4_BYTES
+    assert space == hf_module.HF_VIDEO_SPACES[-1]
+    assert len(attempts) == len(hf_module.HF_VIDEO_SPACES)

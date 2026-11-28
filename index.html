@@ -332,6 +332,7 @@
   .vm-spinner-track { opacity:0.25; }
   .vm-spinner-arc { opacity:0.95; }
   @keyframes vmDownloadSpin { to { transform:rotate(360deg); } }
+  .vm-inline-spinner { display:inline-flex; align-items:center; justify-content:center; vertical-align:middle; margin-right:6px; }
 
   /* Studio photo tool: before/after comparison. */
   .vm-photo-compare {
@@ -412,10 +413,11 @@
 
   /* â”€â”€ Premium Image Result Card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
   .img-result-card {
-    max-width:420px; border-radius:16px; overflow:hidden;
+    width:100%; max-width:100%; border-radius:16px; overflow:hidden;
     background:rgba(15,23,42,0.7); border:1px solid rgba(255,255,255,0.06);
     backdrop-filter:blur(8px);
     animation:cardFadeIn 0.5s ease-out;
+    box-sizing:border-box;
   }
   .img-result-card .card-image {
     width:100%; display:block; cursor:pointer;
@@ -427,7 +429,10 @@
     display:flex; align-items:center; justify-content:space-between;
     font-size:11px; color:#475569; margin-bottom:12px;
   }
-  .img-result-card .card-actions { display:flex; gap:8px; }
+  /* Actions live in their own row under the image: icon-only circles, never
+     overlaid on the picture or on any caption text. */
+  .img-result-card .card-actions,
+  .img-result-card .card-actions-row { display:flex; gap:8px; justify-content:flex-end; align-items:center; flex-wrap:wrap; }
   .img-result-card .card-actions a,
   .img-result-card .card-actions button {
     flex:1; display:flex; align-items:center; justify-content:center; gap:6px;
@@ -7946,20 +7951,12 @@ function addMessage(text, type = "ai", imageData, mediaUrl, videoUrl, images, so
         }
     }
 
-    // AI-generated or history-restored image URL
-    if (finalImageUrl && (type === "ai" || !imageData)) {
-        var chatImgThumb = document.createElement("div");
-        chatImgThumb.className = "vm-chat-attach-thumb vm-standalone-media";
-        chatImgThumb.title = "Tap to open image";
-        var chatImg = document.createElement("img");
-        chatImg.src = finalImageUrl;
-        chatImg.alt = "Generated image";
-        chatImg.loading = "lazy";
-        chatImg.onclick = function(ev){ ev.stopPropagation(); if (typeof openImageViewer === 'function') openImageViewer(finalImageUrl); };
-        chatImgThumb.onclick = function(ev){ ev.stopPropagation(); if (typeof openImageViewer === 'function') openImageViewer(finalImageUrl); };
-        chatImgThumb.appendChild(chatImg);
-        attachRow.appendChild(chatImgThumb);
-        hasAttachments = true;
+    // AI-generated / history-restored image URL. Render the full card once;
+    // the old small thumbnail above it produced a duplicate bubble on reload.
+    if (finalImageUrl && type !== "user" && !imageData) {
+        if (typeof renderImageResultCard === "function") {
+            renderImageResultCard(finalImageUrl, displayText, "", true);
+        }
     }
 
     // Video preview: first frame, centred play icon, duration corner label.
@@ -13194,6 +13191,19 @@ document.addEventListener("keydown", function (e) {
 var _imgGenStartTime = 0;
 var _imgGenSkeletonEl = null;
 
+// Bring the finished media card into view without yanking the mobile header.
+function vmScrollToFinishedCard(el) {
+    if (!el) return;
+    if (typeof el.scrollIntoView === "function") {
+        try { el.scrollIntoView({ behavior: "smooth", block: "nearest" }); return; } catch (e) {}
+    }
+    var container = document.getElementById("messages");
+    if (container && typeof container.scrollTo === "function") {
+        try { container.scrollTo({ top: container.scrollHeight, behavior: "smooth" }); return; } catch (e) {}
+    }
+    if (container) container.scrollTop = container.scrollHeight;
+}
+
 function showGenerationSkeleton(kind) {
     var mode = String(kind || "image").toLowerCase();
     var isVideo = /video|video_progress/i.test(mode);
@@ -13226,8 +13236,8 @@ function showGenerationSkeleton(kind) {
     var badge = document.createElement("div");
     badge.className = "skel-badge";
     badge.textContent = isVideo
-        ? "Generating video..."
-        : (isEdit ? "Editing your photo..." : "Generating image...");
+        ? "Generating video (~30–60s)..."
+        : (isEdit ? "Editing your photo with AI (~15–30s)..." : "Generating image...");
     body.appendChild(line1);
     body.appendChild(line2);
     body.appendChild(line3);
@@ -13258,12 +13268,14 @@ function removeImageGenSkeleton() {
     }
 }
 
-function renderImageResultCard(imageUrl, prompt, revisedPrompt) {
-    removeImageGenSkeleton();
+function renderImageResultCard(imageUrl, prompt, revisedPrompt, instant) {
+    // History replay calls this with instant=true: no skeleton to remove and
+    // no artificial wait, so a restored image appears exactly once.
+    if (!instant) removeImageGenSkeleton();
 
     var elapsed = Date.now() - _imgGenStartTime;
     var minWait = 8000;
-    var remaining = Math.max(0, minWait - elapsed);
+    var remaining = instant ? 0 : Math.max(0, minWait - elapsed);
 
     setTimeout(function () {
         var wrapper = document.createElement("div");
@@ -13370,6 +13382,7 @@ function renderImageResultCard(imageUrl, prompt, revisedPrompt) {
         var container = document.getElementById("messages");
         container.appendChild(wrapper);
         container.scrollTop = container.scrollHeight;
+        if (typeof vmScrollToFinishedCard === "function") vmScrollToFinishedCard(wrapper);
 
         if (typeof lucide !== "undefined") lucide.createIcons();
         if (typeof window.applyIconFallback === "function") window.applyIconFallback();
@@ -14914,6 +14927,7 @@ window.send = async function () {
                     vidDiv.appendChild(vidBubble);
                     document.getElementById("messages").appendChild(vidDiv);
                     document.getElementById("messages").scrollTop = document.getElementById("messages").scrollHeight;
+                    if (typeof vmScrollToFinishedCard === "function") vmScrollToFinishedCard(vidDiv);
                     continue;
                 }
 
@@ -16433,6 +16447,7 @@ window.addEventListener("pageshow", function (event) {
 var vmPhotoToolSource = "";
 var vmPhotoToolMode = "auto";
 var vmPhotoToolResult = "";
+var vmPhotoToolBusy = false;
 
 function launchPhotoTool(title) {
     studioLaunchOverlay("vmPhotoToolOverlay", function () { openPhotoTool(title); });
@@ -16442,6 +16457,7 @@ function openPhotoTool(title) {
     closeSidebar();
     vmPhotoToolSource = "";
     vmPhotoToolResult = "";
+    vmPhotoToolBusy = false;
     var toolTitle = String(title || "");
     if (/remove.?background|remove.?bg|cutout|transparent/i.test(toolTitle)) {
         vmPhotoToolMode = "remove-bg";
@@ -16520,6 +16536,11 @@ function vmPhotoToolLoad() {
         if (slider) slider.style.display = "block";
         if (download) download.disabled = true;
         if (status) status.textContent = "";
+        if (vmPhotoToolMode === "remove-bg") {
+            // Remove Background is a one-click tool: process as soon as the
+            // photo is selected, then again if the button is tapped.
+            vmPhotoToolApply();
+        }
     };
     reader.onerror = function () { if (status) status.textContent = "That photo could not be opened. Please try another."; };
     reader.readAsDataURL(file);
@@ -16538,7 +16559,14 @@ async function vmPhotoToolApply() {
         if (status) status.textContent = "Please choose a photo first.";
         return;
     }
-    if (status) status.textContent = "";
+    if (vmPhotoToolBusy) return;
+    vmPhotoToolBusy = true;
+    if (status) {
+        var spinner = typeof window.VMStatusSpinner === "function"
+            ? window.VMStatusSpinner() : "";
+        status.innerHTML = spinner + (vmPhotoToolMode === "remove-bg"
+            ? "Removing background..." : "Finishing photo...");
+    }
     if (runBtn) runBtn.disabled = true;
     if (download) download.disabled = true;
     try {
@@ -16566,7 +16594,11 @@ async function vmPhotoToolApply() {
     } catch (err) {
         if (status) status.textContent = (err && err.message) || "Photo finishing is temporarily unavailable. Please try again.";
     } finally {
+        vmPhotoToolBusy = false;
         if (runBtn) runBtn.disabled = false;
+        if (status && status.textContent.indexOf("Removing background...") !== -1) {
+            status.textContent = "";
+        }
     }
 }
 

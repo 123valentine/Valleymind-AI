@@ -2,15 +2,16 @@
 
 Automatic chain:
     1. Google AI Studio ``gemini-2.5-flash-image`` when a Google key is present
-    2. Hugging Face (FLUX.1 Kontext for edits, FLUX.1 schnell for text)
-       when ``HF_TOKEN`` is available
-    3. Pollinations ``kontext`` (edits) or ``flux`` (text) as the permanent
-       backup
+    2. Hugging Face (Inference Providers, then free ZeroGPU Kontext/schnell
+       Spaces inspected through ``gradio_client.view_api``) when ``HF_TOKEN``
+       is available
+    3. Pollinations ``kontext`` (edits, authenticated only) or ``flux`` (text)
+       as the last backup
 
-An edit never falls back to a text-only model: without an authenticated
-identity-preserving path the reference photo is preserved and a clean retry
-message is returned. Provider names never appear in user-facing copy; all
-provider detail is internal and only logged server-side.
+An edit never falls back to a text-only model or an unauthenticated image host:
+without an identity-preserving path the reference photo is preserved and a
+clean retry message is returned. Provider names never appear in user-facing
+copy; all provider detail is internal and only logged server-side.
 """
 
 import base64
@@ -46,10 +47,18 @@ GEMINI_IMAGE_BASE = os.getenv(
 GEMINI_IMAGE_MODEL = os.getenv("GEMINI_IMAGE_MODEL", "gemini-2.5-flash-image")
 HF_KONTEXT_MODEL = "black-forest-labs/FLUX.1-Kontext-dev"
 HF_SCHNELL_MODEL = "black-forest-labs/FLUX.1-schnell"
-# Free ZeroGPU editing Spaces tried when Inference Providers exhausts credits.
+# Free ZeroGPU editing Spaces tried before any authenticated backup. Each is
+# inspected with view_api() at call time so handle_file/prompt/seed/guidance
+# match the live Space signature.
 HF_ZEROGPU_IMAGE_SPACES = (
     os.getenv("HF_IMAGE_ZEROGPU_SPACE", "prithivMLmods/FLUX.1-Kontext-Photo-Mate-v2"),
     "black-forest-labs/FLUX.1-Kontext-Dev",
+    "Qwen/Qwen-Image-Edit",
+)
+# Watermark-free text-to-image Spaces tried before the free image host.
+HF_ZEROGPU_TEXT_SPACES = (
+    os.getenv("HF_IMAGE_TEXT_ZEROGPU_SPACE", "black-forest-labs/FLUX.1-schnell"),
+    "black-forest-labs/FLUX.1-dev",
 )
 
 # Anonymous, key-free hosting used only to give the no-key image-to-image
@@ -419,7 +428,35 @@ def _call_zerogpu_image(
         except Exception as exc:
             last_error = exc
             print(f"[IMAGE FLOW] ZeroGPU edit attempt failed: {exc}")
+            if hf_connectors.is_zero_gpu_quota_error(exc):
+                break  # one shared quota; remaining Spaces cannot succeed
     raise last_error or RuntimeError("ZeroGPU editing unavailable")
+
+
+def _call_zerogpu_text_image(
+    prompt: str,
+    size=(1024, 1024),
+) -> bytes:
+    """Free ZeroGPU text-to-image tier used before the image backup host."""
+    last_error: Exception | None = None
+    for space in HF_ZEROGPU_TEXT_SPACES:
+        try:
+            data = hf_connectors.space_media(
+                space,
+                prompt=prompt,
+                image_bytes=None,
+                size=(int(size[0]), int(size[1])),
+                timeout=int(os.getenv("HF_IMAGE_ZEROGPU_TIMEOUT", "240")),
+            )
+            if data:
+                print("[IMAGE FLOW] ZeroGPU text-to-image completed")
+                return data
+        except Exception as exc:
+            last_error = exc
+            print(f"[IMAGE FLOW] ZeroGPU text attempt failed: {exc}")
+            if hf_connectors.is_zero_gpu_quota_error(exc):
+                break  # one shared quota; remaining Spaces cannot succeed
+    raise last_error or RuntimeError("ZeroGPU text-to-image unavailable")
 
 
 def _call_hf_image(
@@ -429,16 +466,19 @@ def _call_hf_image(
     model_id: str | None = None,
     timeout: int = 120,
 ) -> tuple[bytes, str]:
-    """Router inference first; free ZeroGPU edits, then Pollinations upstream."""
+    """Router inference first, then free ZeroGPU Spaces before any backup host."""
     if not hf_connectors.hf_token():
         raise RuntimeError("Cloud editing token unavailable")
     try:
         return _call_inference_image(prompt, image_bytes, size, model_id), "image/png"
     except Exception as exc:
-        # Text-to-image hands straight off to the free backup (outer chain).
-        # Reference edits get the free ZeroGPU tier for any retryable outage,
-        # not only credit failures, before the authenticated edit backup.
-        if image_bytes is None or not is_retryable_provider_error(exc):
+        # Text requests use the free watermark-free ZeroGPU tier before the
+        # outer Pollinations backup. Reference edits use the free Kontext tier
+        # for any retryable outage, never a text-only image host.
+        if image_bytes is None:
+            print(f"[IMAGE FLOW] Router text unavailable, trying ZeroGPU: {exc}")
+            return _call_zerogpu_text_image(prompt, size), "image/png"
+        if not is_retryable_provider_error(exc):
             raise
         print(f"[IMAGE FLOW] Router edit unavailable, trying ZeroGPU: {exc}")
     return _call_zerogpu_image(prompt, image_bytes, size), "image/png"
@@ -452,6 +492,10 @@ def _call_pollinations(
     timeout: int = 90,
 ) -> tuple[bytes, str]:
     model = model_id or ("kontext" if reference_url else "flux")
+    if reference_url and not _pollinations_api_key():
+        # The unauthenticated host ignores the image and returns a watermarked
+        # stranger. Refuse before building a URL so no request can escape.
+        raise RuntimeError(REFERENCE_EDIT_RETRY_MESSAGE)
     params = {
         "model": model,
         "width": size[0],

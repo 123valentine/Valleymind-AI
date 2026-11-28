@@ -104,6 +104,9 @@ function functionSource(source, signature) {
 // ── Shared circular SVG icons ───────────────────────────────────────────────
 check('settings exports a regenerate icon helper',
   /window\.VMRegenerateIconSvg = VMRegenerateIconSvg;/.test(settingsSrc));
+check('settings exports a shared status spinner',
+  /function VMStatusSpinner\(\)/.test(settingsSrc) &&
+  /window\.VMStatusSpinner = VMStatusSpinner;/.test(settingsSrc));
 check('renderer exposes a regenerate icon helper',
   typeof ctx.window.VMRichRenderAddons.regenerateIconSvg === 'function' &&
   /<svg[\s\S]*vm-regenerate-icon/.test(ctx.window.VMRichRenderAddons.regenerateIconSvg()));
@@ -132,12 +135,14 @@ function badge(wrapper) {
 function skeletonCard(wrapper) { return findByClass(wrapper, 'img-gen-skeleton'); }
 
 const editSkeleton = ctx.showImageGenSkeleton(true);
-check('reference edit skeleton says Editing your photo...', badge(editSkeleton) === 'Editing your photo...', badge(editSkeleton));
+check('reference edit skeleton shows honest progress timing',
+  badge(editSkeleton) === 'Editing your photo with AI (~15–30s)...', badge(editSkeleton));
 check('reference edit skeleton uses 4/5 frame', skeletonCard(editSkeleton).classList.contains('vm-gen-edit') && editSkeleton.dataset.generationKind === 'edit');
-check('reference flag from SSE selects edit skeleton', badge(ctx.showImageGenSkeleton('reference')) === 'Editing your photo...');
+check('reference flag from SSE selects edit skeleton', badge(ctx.showImageGenSkeleton('reference')) === 'Editing your photo with AI (~15–30s)...');
 
 const videoSkeleton = ctx.showVideoGenSkeleton();
-check('video skeleton says Generating video...', badge(videoSkeleton) === 'Generating video...', badge(videoSkeleton));
+check('video skeleton shows honest progress timing',
+  badge(videoSkeleton) === 'Generating video (~30–60s)...', badge(videoSkeleton));
 check('video skeleton uses 16/9 frame', skeletonCard(videoSkeleton).classList.contains('vm-gen-video') && videoSkeleton.dataset.generationKind === 'video');
 
 const imageSkeleton = ctx.showImageGenSkeleton(false);
@@ -160,6 +165,10 @@ const editCard = ctx.window.VMRichRenderAddons.imageCardHtml(
   '/api/images/edit-1.png | Edited photo | valleymind_image.png | edit | Change my outfit'
 );
 check('edit card renders at 4/5', /width:160px/.test(editCard) && /height:200px/.test(editCard) && /aspect-ratio:4\/5/.test(editCard));
+check('edit card is one full-width card with a separate action bar',
+  /display:block;width:100%;max-width:100%/.test(editCard) &&
+  /vm-media-card-actions/.test(editCard) &&
+  !/position:absolute;bottom:10px/.test(editCard));
 check('edit card has circular regenerate and download controls',
   /aria-label="Regenerate"/.test(editCard) && /aria-label="Download"/.test(editCard) &&
   /vm-regenerate-icon/.test(editCard) && /vm-download-icon/.test(editCard) &&
@@ -237,6 +246,14 @@ check('Studio toggles the checkerboard for the transparent result',
   html.includes('compare.classList.toggle("vm-transparent", transparent)') &&
   html.includes('compare.classList.toggle("vm-transparent", vmPhotoToolMode === "remove-bg")'));
 check('Studio downloads a transparent PNG cutout', html.includes('valleymind_cutout.png'));
+check('Remove Background auto-processes on file selection',
+  /if \(vmPhotoToolMode === "remove-bg"\) \{[\s\S]{0,260}vmPhotoToolApply\(\);/.test(html));
+check('Remove Background shows a spinner while processing',
+  /status\.innerHTML = spinner \+ \(vmPhotoToolMode === "remove-bg"[\s\S]{0,120}"Removing background\.\.\."/.test(html));
+check('finished media cards scroll smoothly into view',
+  /function vmScrollToFinishedCard/.test(html) &&
+  /scrollIntoView\(\{ behavior: "smooth", block: "nearest" \}\)/.test(html) &&
+  /vmScrollToFinishedCard\(wrapper\)/.test(html));
 
 console.log('REFERENCE_UI_INTEGRITY_TESTS: ' + ok + ' passed, ' + fail + ' failed');
 if (fail) process.exitCode = 1;

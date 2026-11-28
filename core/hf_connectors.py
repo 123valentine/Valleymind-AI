@@ -69,6 +69,16 @@ def is_credit_error(error: Any) -> bool:
     return bool(_CREDIT_TEXT_RE.search(str(error)))
 
 
+_ZEROGPU_QUOTA_RE = re.compile(
+    r"(exceeded your free zero.?gpu quota|zero.?gpu quota)", re.IGNORECASE
+)
+
+
+def is_zero_gpu_quota_error(error: Any) -> bool:
+    """True when the shared free GPU quota is exhausted for this token."""
+    return bool(_ZEROGPU_QUOTA_RE.search(str(error)))
+
+
 def is_handoff_error(error: Any) -> bool:
     """True when this failure should advance to the next availability tier."""
     if is_credit_error(error):
@@ -94,6 +104,12 @@ def space_client(space: str, token: str | None = None, verbose: bool = False):
     return Client(space, token=token or hf_token(), verbose=verbose)
 
 
+def space_api(space: str, token: str | None = None) -> dict[str, Any]:
+    """Return the Space's live Gradio schema for endpoint inspection/probes."""
+    client = space_client(space, token=token, verbose=False)
+    return client.view_api(return_format="dict", print_info=False) or {}
+
+
 def pil_to_bytes(image: Any) -> bytes:
     """Normalise an InferenceClient image result into PNG bytes."""
     if isinstance(image, (bytes, bytearray)):
@@ -111,26 +127,70 @@ def _is_image_param(parameter: Any) -> bool:
     if not isinstance(parameter, dict):
         return False
     key = _normalise(str(parameter.get("label") or parameter.get("name") or ""))
-    return any(word in key for word in ("image", "photo", "upload", "reference"))
+    return any(word in key for word in (
+        "image", "photo", "upload", "reference", "first frame", "input frame"
+    ))
+
+
+def _is_prompt_param(parameter: Any) -> bool:
+    if not isinstance(parameter, dict):
+        return False
+    key = _normalise(str(parameter.get("label") or parameter.get("name") or ""))
+    if key in ("prompt", "edit prompt", "text prompt", "instruction", "caption"):
+        return True
+    return key.startswith("prompt") and not any(
+        word in key for word in ("negative", "enhance", "rewrite")
+    )
+
+
+def _endpoint_score(name: str, info: dict[str, Any], prefer_image: bool) -> int:
+    """Rank real generation endpoints above upload/dimension helper functions."""
+    lowered = name.lower()
+    if any(word in lowered for word in (
+        "handle", "upload", "update", "set_dims", "lambda", "config", "login", "status", "dims"
+    )):
+        return -1
+    parameters = info.get("parameters") or []
+    if not any(_is_prompt_param(p) for p in parameters):
+        return -1
+    has_image = any(_is_image_param(p) for p in parameters)
+    if prefer_image and not has_image:
+        return -1
+    score = 0
+    for word in ("generate", "infer", "run", "predict"):
+        if word in lowered:
+            score += 5
+    if "text_to_video" in lowered:
+        score += 6 if not prefer_image else 1
+    if "image_to_video" in lowered:
+        score += 6 if prefer_image else 1
+    if "video" in lowered:
+        score += 2
+    if has_image and prefer_image:
+        score += 3
+    return score
 
 
 def _pick_endpoint(api: dict[str, Any], prefer_image: bool = False) -> tuple[str | None, dict[str, Any]]:
-    """Choose a generation endpoint from the Space's current Gradio schema."""
+    """Choose a generation endpoint from the Space's current Gradio schema.
+
+    Helper functions such as ``/handle_image_upload_for_dims`` appear before the
+    real generators in several LTX Spaces. Only endpoints with a prompt (and,
+    for edits, an image input) qualify, so an attached photo always reaches the
+    image-to-video endpoint rather than a dimension helper or text-only path.
+    """
     endpoints = (api or {}).get("named_endpoints") or {}
-    names = list(endpoints)
-    if not names:
-        return None, {}
-    generation = [
-        name for name in names
-        if any(word in name.lower() for word in ("run", "generate", "infer", "predict"))
+    ranked = [
+        (_endpoint_score(name, info, prefer_image), name, info)
+        for name, info in endpoints.items()
+        if isinstance(info, dict)
     ]
-    if prefer_image:
-        for name in generation + names:
-            if any(_is_image_param(p) for p in (endpoints[name].get("parameters") or [])):
-                return name, endpoints[name]
-    for name in generation or names:
-        return name, endpoints[name]
-    return None, {}
+    ranked = [item for item in ranked if item[0] >= 0]
+    if not ranked:
+        return None, {}
+    ranked.sort(key=lambda item: item[0], reverse=True)
+    _, name, info = ranked[0]
+    return name, info
 
 
 def _param_key(parameter: dict[str, Any], label: str) -> str:
@@ -149,7 +209,7 @@ def _image_input(path: str | None):
     return handle_file(path)
 
 
-def _bounded_number(parameter: dict[str, Any], value: int) -> int:
+def _bounded_number(parameter: dict[str, Any], value: float) -> float | int:
     """Honor numeric ranges Gradio publishes in the parameter schema."""
     schema_type = parameter.get("type")
     description = schema_type.get("description", "") if isinstance(schema_type, dict) else ""
@@ -160,8 +220,10 @@ def _bounded_number(parameter: dict[str, Any], value: int) -> int:
     )
     if match:
         low, high = (float(match.group(1)), float(match.group(2)))
-        value = int(min(high, max(low, value)))
-    return int(value)
+        value = min(high, max(low, float(value)))
+    if float(value).is_integer():
+        return int(value)
+    return round(float(value), 3)
 
 
 def _predict_kwargs(
@@ -192,8 +254,14 @@ def _predict_kwargs(
             kwargs[name] = _bounded_number(parameter, size[0])
         elif key.startswith("duration"):
             kwargs[name] = _bounded_number(parameter, 4)
-        elif key == "seed":
+        elif key.startswith("randomize"):
+            kwargs[name] = True
+        elif key.startswith("seed"):
             kwargs[name] = _bounded_number(parameter, 0)
+        elif "guidance" in key:
+            kwargs[name] = _bounded_number(parameter, 7.0)
+        elif "inference steps" in key or key in ("steps", "num steps"):
+            kwargs[name] = _bounded_number(parameter, 24)
         elif parameter.get("required") is True:
             return None
         # Optional knobs (LoRA, decoder, guidance, booleans) keep their defaults.

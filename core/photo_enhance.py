@@ -138,8 +138,31 @@ def _border_connected(seed: np.ndarray) -> np.ndarray:
     return visited
 
 
+def _sobel_magnitude(grey: np.ndarray) -> np.ndarray:
+    """Numpy Sobel gradient magnitude for a normalised grey image."""
+    if min(grey.shape) < 3:
+        return np.zeros_like(grey)
+    magnitude = np.zeros_like(grey)
+    magnitude[1:-1, 1:-1] = np.hypot(
+        (
+            -grey[:-2, :-2] - 2.0 * grey[1:-1, :-2] - grey[2:, :-2]
+            + grey[:-2, 2:] + 2.0 * grey[1:-1, 2:] + grey[2:, 2:]
+        ) / 4.0,
+        (
+            -grey[:-2, :-2] - 2.0 * grey[:-2, 1:-1] - grey[:-2, 2:]
+            + grey[2:, :-2] + 2.0 * grey[2:, 1:-1] + grey[2:, 2:]
+        ) / 4.0,
+    )
+    return magnitude
+
+
 def _local_alpha_matte(image: Image.Image) -> Image.Image:
-    """Edge-aware foreground segmentation with Pillow/numpy only."""
+    """Multi-pass foreground cutout using Pillow and numpy only.
+
+    Passes: border colour sampling, flood-filled background prior, GrabCut-style
+    hole repair, Sobel edge refinement, and a soft alpha feather. It handles
+    solid and studio-style backgrounds without downloading any model weights.
+    """
     rgba = image.convert("RGBA")
     scale = min(1.0, MAX_SEGMENT_SIDE / max(rgba.size))
     work_size = (max(1, int(rgba.width * scale)), max(1, int(rgba.height * scale)))
@@ -147,7 +170,8 @@ def _local_alpha_matte(image: Image.Image) -> Image.Image:
     pixels = np.asarray(work.convert("RGB"), dtype=np.float32)
     height, width = pixels.shape[:2]
 
-    border = max(2, int(min(height, width) * 0.05))
+    # 1. Border sampling sets the background colour and its noise tolerance.
+    border = max(3, int(min(height, width) * 0.06))
     ring = np.concatenate((
         pixels[:border, :, :].reshape(-1, 3),
         pixels[-border:, :, :].reshape(-1, 3),
@@ -155,39 +179,52 @@ def _local_alpha_matte(image: Image.Image) -> Image.Image:
         pixels[:, -border:, :].reshape(-1, 3),
     ))
     background = np.median(ring, axis=0)
-    # Colour distance in 0-255 space. The sampled border sets the background
-    # tolerance, so a textured background cannot swallow the subject.
-    distance = np.sqrt(np.sum((pixels - background) ** 2, axis=2))
     ring_distance = np.sqrt(np.sum((ring - background) ** 2, axis=1))
-    tolerance = max(16.0, float(np.percentile(ring_distance, 95)) * 1.6)
-    alpha = np.clip((distance - tolerance) / 45.0, 0.0, 1.0)
+    tolerance = max(22.0, float(np.percentile(ring_distance, 90)) * 1.4)
+    distance = np.sqrt(np.sum((pixels - background) ** 2, axis=2))
+    alpha = np.clip((distance - tolerance) / max(20.0, tolerance * 0.9), 0.0, 1.0)
 
-    # GrabCut-style background prior: only background-coloured pixels connected
-    # to the image border are forced transparent.
-    border_background = _border_connected(distance < tolerance * 1.35)
+    # 2. Flood-fill only background-coloured pixels reachable from the border.
+    background_seed = distance < tolerance * 1.25
+    border_background = _border_connected(background_seed)
     alpha[border_background] = 0.0
 
-    # Hole repair: low-alpha pixels enclosed by foreground are part of the
-    # subject (eyes, shadows, dark clothing), not the background.
-    enclosed = (alpha < 0.2) & ~_border_connected(alpha < 0.2)
+    # 3. Repair holes inside the subject (eyes, shadows, dark clothing).
+    hole_seed = (distance < tolerance * 1.05) & ~border_background
+    enclosed = hole_seed & ~_border_connected(hole_seed)
     alpha[enclosed] = 1.0
 
-    # Edge-aware matting: preserve crisp edges, feather only gradual ramps.
-    grey = ImageOps.grayscale(work)
-    edges = np.asarray(grey.filter(ImageFilter.FIND_EDGES), dtype=np.float32) / 255.0
+    # 4. Sobel refinement: snap ambiguous pixels on strong edges to the nearer
+    # of the sampled background and learned foreground colours.
+    foreground_seed = (alpha > 0.85) & ~border_background
+    if foreground_seed.any():
+        foreground = np.median(pixels[foreground_seed], axis=0)
+        distance_foreground = np.sqrt(np.sum((pixels - foreground) ** 2, axis=2))
+        grey = np.asarray(ImageOps.grayscale(work), dtype=np.float32) / 255.0
+        edges = _sobel_magnitude(grey)
+        edge_cut = float(np.percentile(edges[alpha > 0.05], 70)) if np.any(alpha > 0.05) else 0.2
+        ambiguous = (alpha > 0.02) & (alpha < 0.98)
+        strong_edge = ambiguous & (edges >= max(0.12, edge_cut))
+        alpha[strong_edge] = np.where(
+            distance_foreground[strong_edge] < distance[strong_edge], 1.0, 0.0
+        )
+
+    # 5. Soft feather only the boundary ramp; flat background stays fully
+    # transparent and the subject interior stays fully opaque.
     soft = Image.fromarray((alpha * 255).astype(np.uint8), "L")
-    feathered = np.asarray(soft.filter(ImageFilter.GaussianBlur(0.8)), dtype=np.float32) / 255.0
-    edge_strength = np.clip((edges - 0.10) / 0.28, 0.0, 1.0)
-    alpha = np.maximum(alpha, np.minimum(feathered, alpha + 0.18) * (1.0 - edge_strength * 0.35))
+    feathered = np.asarray(
+        soft.filter(ImageFilter.GaussianBlur(0.7)), dtype=np.float32
+    ) / 255.0
+    edge_zone = (alpha > 0.02) & (alpha < 0.98)
+    alpha[edge_zone] = np.maximum(alpha[edge_zone], feathered[edge_zone] * 0.85)
+    alpha[border_background & (distance < tolerance)] = 0.0
     alpha = np.clip(alpha, 0.0, 1.0)
 
     alpha_full = Image.fromarray((alpha * 255).astype(np.uint8), "L")
     if alpha_full.size != rgba.size:
         alpha_full = alpha_full.resize(rgba.size, RESAMPLE.BILINEAR)
     original_alpha = np.asarray(rgba.getchannel("A"), dtype=np.uint8)
-    combined = np.minimum(
-        np.asarray(alpha_full, dtype=np.uint8), original_alpha
-    )
+    combined = np.minimum(np.asarray(alpha_full, dtype=np.uint8), original_alpha)
     result = rgba.copy()
     result.putalpha(Image.fromarray(combined, "L"))
     return result

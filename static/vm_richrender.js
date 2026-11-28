@@ -197,19 +197,25 @@
       "f.className='vm-media-fallback';f.textContent='Preview unavailable';" +
       "f.style.cssText='position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:8px;text-align:center;font-size:10px;color:rgba(15,23,42,0.65);';" +
       "if(this.parentNode)this.parentNode.appendChild(f);";
-    var buttonStyle = "position:absolute;bottom:10px;width:36px;height:36px;display:flex;align-items:center;justify-content:center;border-radius:50%;border:1px solid rgba(255,255,255,0.45);background:rgba(15,23,42,0.72);color:#fff;cursor:pointer;";
-    return '<div class="vm-image-card vm-chat-media-card" data-vm-card="image" style="position:relative;display:inline-block;width:' + geo.width + 'px;height:' + geo.height + 'px;aspect-ratio:' + geo.aspect + ';max-width:100%;margin:8px 0;border-radius:14px;overflow:hidden;border:1px solid rgba(148,163,184,0.28);background:#f8fafc;">' +
-      '<img src="' + escapeHtml(url) + '" alt="' + escapeHtml(alt) + '" loading="lazy" onload="' + onload + '" onerror="' + onerror + '" style="display:block;width:100%;height:100%;max-width:100%;object-fit:contain;">' +
-      '<button type="button" class="vm-file-download vm-icon-download vm-media-regenerate" title="Regenerate" aria-label="Regenerate" ' +
-        'data-regenerate-url="' + escapeHtml(url) + '" data-regenerate-prompt="' + escapeHtml(prompt) + '" ' +
-        'style="' + buttonStyle + 'left:10px;">' +
-        regenerateIconSvg() +
-      '</button>' +
-      '<button type="button" class="vm-file-download vm-icon-download vm-media-download" title="Download" aria-label="Download" ' +
-        'data-download-url="' + escapeHtml(url) + '" data-download-name="' + escapeHtml(fileName) + '" ' +
-        'style="' + buttonStyle + 'right:10px;">' +
-        downloadIconSvg() +
-      '</button>' +
+    var buttonStyle = "width:36px;height:36px;min-width:36px;padding:0;display:flex;align-items:center;justify-content:center;border-radius:50%;border:1px solid rgba(255,255,255,0.45);background:rgba(15,23,42,0.72);color:#fff;cursor:pointer;";
+    // One card: image frame first, then a dedicated action bar. Overlaying the
+    // circles on the picture caused overlap with captions on narrow screens.
+    return '<div class="vm-image-card vm-chat-media-card" data-vm-card="image" style="display:block;width:100%;max-width:100%;margin:8px 0;border-radius:16px;box-sizing:border-box;">' +
+      '<div class="vm-media-frame" style="position:relative;width:' + geo.width + 'px;height:' + geo.height + 'px;aspect-ratio:' + geo.aspect + ';max-width:100%;border-radius:16px;overflow:hidden;border:1px solid rgba(148,163,184,0.28);background:#f8fafc;">' +
+        '<img src="' + escapeHtml(url) + '" alt="' + escapeHtml(alt) + '" loading="lazy" onload="' + onload + '" onerror="' + onerror + '" style="display:block;width:100%;height:100%;max-width:100%;object-fit:contain;">' +
+      '</div>' +
+      '<div class="vm-media-card-actions" style="display:flex;gap:8px;justify-content:flex-end;align-items:center;flex-wrap:wrap;margin-top:8px;">' +
+        '<button type="button" class="vm-file-download vm-icon-download vm-media-regenerate" title="Regenerate" aria-label="Regenerate" ' +
+          'data-regenerate-url="' + escapeHtml(url) + '" data-regenerate-prompt="' + escapeHtml(prompt) + '" ' +
+          'style="' + buttonStyle + '">' +
+          regenerateIconSvg() +
+        '</button>' +
+        '<button type="button" class="vm-file-download vm-icon-download vm-media-download" title="Download" aria-label="Download" ' +
+          'data-download-url="' + escapeHtml(url) + '" data-download-name="' + escapeHtml(fileName) + '" ' +
+          'style="' + buttonStyle + '">' +
+          downloadIconSvg() +
+        '</button>' +
+      '</div>' +
     '</div>';
   }
 

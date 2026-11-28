@@ -12,6 +12,9 @@ function VMDownloadIconSvg() { return VM_DOWNLOAD_ICON_SVG; }
 function VMDownloadSpinnerSvg() { return VM_DOWNLOAD_SPINNER_SVG; }
 function VMRegenerateIconSvg() { return VM_REGENERATE_ICON_SVG; }
 function VMEditIconSvg() { return VM_EDIT_ICON_SVG; }
+function VMStatusSpinner() {
+  return '<span class="vm-inline-spinner" aria-hidden="true">' + VM_DOWNLOAD_SPINNER_SVG + '</span>';
+}
 
 // Follow-up chips shown under a generated image card. Kept here (next to the
 // shared download chrome) so the chat UI and any WebView mirror use one list.
@@ -66,6 +69,7 @@ if (typeof window !== "undefined") {
   window.VMDownloadSpinnerSvg = VMDownloadSpinnerSvg;
   window.VMRegenerateIconSvg = VMRegenerateIconSvg;
   window.VMEditIconSvg = VMEditIconSvg;
+  window.VMStatusSpinner = VMStatusSpinner;
   window.VM_IMAGE_FOLLOWUP_SUGGESTIONS = VM_IMAGE_FOLLOWUP_SUGGESTIONS;
   window.VMWithDownloadSpinner = VMWithDownloadSpinner;
   window.VMEscapeHtmlAttr = VMEscapeHtmlAttr;

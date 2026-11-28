@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 import requests
 
-from core import brain, image_gen
+from core import brain, hf_connectors, image_gen
 from core.brain import needs_reference_edit_clarification, wants_reference_image_edit
 from core.failover import GENERIC_PROVIDER_ERROR
 from core.provider_manager import Capability, ProviderManager
@@ -71,16 +71,21 @@ def _response(spec, ok_content=b"", ok_payload=None):
     )
 
 
-def _mock_chain(monkeypatch, gemini=None, hf=None, zerogpu=None, pollinations=None):
+def _mock_chain(monkeypatch, gemini=None, hf=None, zerogpu=None, zerogpu_text=None, pollinations=None):
     """Patch the full chain and return captured requests.
 
-    ``hf`` and ``zerogpu`` are outcome specs for the new Router/ZeroGPU seams;
-    Gemini and Pollinations remain HTTP-level so the outer chain is exercised.
+    ``hf``, ``zerogpu`` and ``zerogpu_text`` are outcome specs for the
+    Router/ZeroGPU seams; Gemini and Pollinations remain HTTP-level so the outer
+    chain is exercised.
     """
-    captured = {"gemini": None, "hf": None, "zerogpu": None, "pollinations": None}
+    captured = {
+        "gemini": None, "hf": None, "zerogpu": None,
+        "zerogpu_text": None, "pollinations": None,
+    }
     gemini = gemini or {}
     hf = hf or {}
     zerogpu = zerogpu or {}
+    zerogpu_text = zerogpu_text or {}
     pollinations = pollinations or {}
 
     def fake_post(url, headers=None, json=None, timeout=None, **kwargs):
@@ -112,6 +117,13 @@ def _mock_chain(monkeypatch, gemini=None, hf=None, zerogpu=None, pollinations=No
             raise FakeInferenceError(response.status_code, response.text)
         return response.content
 
+    def fake_zerogpu_text(prompt, size=(1024, 1024)):
+        captured["zerogpu_text"] = {"prompt": prompt, "size": size}
+        response = _response(zerogpu_text, ok_content=PNG_BYTES + b"-zerogpu-text")
+        if response.status_code != 200:
+            raise FakeInferenceError(response.status_code, response.text)
+        return response.content
+
     def fake_get(url, params=None, headers=None, timeout=None, **kwargs):
         captured["pollinations"] = {"url": url, "params": params or {}, "headers": headers}
         return _response(pollinations, ok_content=PNG_BYTES + b"-backup")
@@ -120,6 +132,7 @@ def _mock_chain(monkeypatch, gemini=None, hf=None, zerogpu=None, pollinations=No
     monkeypatch.setattr(image_gen.requests, "get", fake_get)
     monkeypatch.setattr(image_gen, "_call_inference_image", fake_inference)
     monkeypatch.setattr(image_gen, "_call_zerogpu_image", fake_zerogpu)
+    monkeypatch.setattr(image_gen, "_call_zerogpu_text_image", fake_zerogpu_text)
     monkeypatch.setattr(image_gen, "_save_image", lambda data, ext: "/static/generated/result.png")
     monkeypatch.setattr(
         image_gen, "_host_reference_image",
@@ -174,7 +187,7 @@ def test_gemini_reference_edit_sends_inline_reference_with_guardrail(monkeypatch
 
 
 @pytest.mark.parametrize("failure", [{"status": 402}, {"status": 429}, {"timeout": True}])
-def test_gemini_failure_falls_back_to_hf_then_pollinations(monkeypatch, failure):
+def test_gemini_failure_uses_hf_then_free_zero_gpu_text(monkeypatch, failure):
     monkeypatch.setenv("HF_TOKEN", "hf_test_token")
     captured = _mock_chain(monkeypatch, gemini=failure, hf={"status": 402})
 
@@ -185,12 +198,13 @@ def test_gemini_failure_falls_back_to_hf_then_pollinations(monkeypatch, failure)
     assert captured["hf"] is not None
     assert captured["hf"]["model_id"] is None  # default Router text model
     assert captured["zerogpu"] is None  # text generation never needs a ZeroGPU edit
-    assert captured["pollinations"]["params"]["model"] == "flux"
+    assert captured["zerogpu_text"] is not None
+    assert captured["pollinations"] is None
     assert result["image_url"] == "/static/generated/result.png"
 
 
 @pytest.mark.parametrize("failure", [{"status": 402}, {"status": 429}, {"timeout": True}])
-def test_hf_failure_falls_back_to_pollinations(monkeypatch, failure):
+def test_hf_failure_falls_back_to_zero_gpu_text_before_backup(monkeypatch, failure):
     _disable_google(monkeypatch)
     monkeypatch.setenv("HF_TOKEN", "hf_test_token")
     captured = _mock_chain(monkeypatch, hf=failure)
@@ -200,8 +214,26 @@ def test_hf_failure_falls_back_to_pollinations(monkeypatch, failure):
     assert captured["gemini"] is None
     assert captured["hf"] is not None
     assert captured["zerogpu"] is None
-    assert captured["pollinations"]["params"]["model"] == "flux"
+    assert captured["zerogpu_text"] is not None
+    assert captured["pollinations"] is None
     assert result["image_url"] == "/static/generated/result.png"
+
+
+def test_zero_gpu_text_failure_then_authenticated_backup(monkeypatch):
+    _disable_google(monkeypatch)
+    monkeypatch.setenv("HF_TOKEN", "hf_test_token")
+    monkeypatch.setenv("POLLINATIONS_API_KEY", "test-backup-key")
+    captured = _mock_chain(
+        monkeypatch,
+        hf={"status": 402, "text": "payment required"},
+        zerogpu_text={"status": 429, "text": "queue busy"},
+    )
+
+    image_gen.generate_image("A quiet garden", enhance=False)
+
+    assert captured["zerogpu_text"] is not None
+    assert captured["pollinations"]["params"]["model"] == "flux"
+    assert captured["pollinations"]["url"].startswith(image_gen.POLLINATIONS_GEN_BASE)
 
 
 def test_hf_kontext_edit_and_schnell_text_when_google_key_absent(monkeypatch):
@@ -324,6 +356,26 @@ def test_busy_edit_chain_never_uses_keyless_text_fallback(monkeypatch):
     assert captured["zerogpu"] is not None
 
 
+def test_unauthenticated_backup_never_accepts_a_reference_photo(monkeypatch):
+    """Keyless Pollinations must never receive an edit: it returns a stranger."""
+    _disable_google(monkeypatch)
+    monkeypatch.delenv("HF_TOKEN", raising=False)
+    monkeypatch.delenv("POLLINATIONS_API_KEY", raising=False)
+    captured = _mock_chain(monkeypatch)
+
+    with pytest.raises(RuntimeError) as exc:
+        image_gen.generate_image(
+            "Change my outfit to blue",
+            enhance=False,
+            reference_image={"data": TINY_REFERENCE, "mimeType": "image/png"},
+        )
+
+    assert str(exc.value) == image_gen.REFERENCE_EDIT_RETRY_MESSAGE
+    assert captured["pollinations"] is None
+    assert captured["zerogpu"] is None
+    assert captured["zerogpu_text"] is None
+
+
 def test_persist_chat_message_keeps_uploaded_reference(monkeypatch):
     from app import _persist_chat_message
 
@@ -368,6 +420,7 @@ def test_exhausted_chain_raises_generic_error_only(monkeypatch):
     _mock_chain(
         monkeypatch,
         hf={"status": 402, "text": "HF quota exhausted"},
+        zerogpu_text={"status": 429, "text": "ZeroGPU queue busy"},
         pollinations={"status": 429, "text": "Pollinations rate limit"},
     )
 
@@ -503,3 +556,204 @@ def test_no_deprecated_api_inference_endpoint_remains():
     )
     assert result.returncode == 1, result.stdout
     assert result.stdout.strip() == ""
+
+
+def _fake_space_client(captured, api_schema):
+    class FakeSpaceClient:
+        def view_api(self, return_format=None, print_info=False):
+            captured["return_format"] = return_format
+            return api_schema
+
+        def predict(self, api_name=None, **kwargs):
+            captured["api_name"] = api_name
+            captured["kwargs"] = kwargs
+            return PNG_BYTES * 5
+
+    return FakeSpaceClient()
+
+
+def test_kontext_and_qwen_edit_signatures_map_to_live_parameter_names(monkeypatch):
+    schema = {
+        "named_endpoints": {
+            "/infer": {
+                "parameters": [
+                    {"label": "Upload Image", "parameter_name": "input_image"},
+                    {"label": "Edit Prompt", "parameter_name": "prompt"},
+                    {"label": "Chosen LoRA", "parameter_name": "lora_adapter"},
+                    {"label": "Seed", "parameter_name": "seed"},
+                    {"label": "Randomize seed", "parameter_name": "randomize_seed"},
+                    {"label": "Guidance Scale", "parameter_name": "guidance_scale"},
+                    {"label": "Steps", "parameter_name": "steps"},
+                ],
+                "returns": [{"label": "Output Image"}],
+            }
+        }
+    }
+    captured = {}
+    monkeypatch.setattr(
+        hf_connectors, "space_client",
+        lambda space, token=None, verbose=False: _fake_space_client(captured, schema),
+    )
+
+    data = hf_connectors.space_media(
+        "prithivMLmods/FLUX.1-Kontext-Photo-Mate-v2",
+        prompt="Keep the same face, change the background",
+        image_bytes=b"reference-frame",
+        timeout=10,
+    )
+
+    assert data == PNG_BYTES * 5
+    assert captured["return_format"] == "dict"
+    assert captured["api_name"] == "/infer"
+    kwargs = captured["kwargs"]
+    assert kwargs["prompt"] == "Keep the same face, change the background"
+    assert isinstance(kwargs["input_image"], dict) and kwargs["input_image"].get("path")
+    assert kwargs["guidance_scale"] == 7.0
+    assert kwargs["steps"] == 24
+    assert "lora_adapter" not in kwargs
+
+    qwen_schema = {
+        "named_endpoints": {
+            "/infer": {
+                "parameters": [
+                    {"label": "Input Image", "parameter_name": "image"},
+                    {"label": "Prompt", "parameter_name": "prompt"},
+                    {"label": "True guidance scale", "parameter_name": "true_guidance_scale"},
+                    {"label": "Number of inference steps", "parameter_name": "num_inference_steps"},
+                    {"label": "Rewrite prompt", "parameter_name": "rewrite_prompt"},
+                ],
+                "returns": [{"label": "Result"}],
+            }
+        }
+    }
+    qwen_captured = {}
+    monkeypatch.setattr(
+        hf_connectors, "space_client",
+        lambda space, token=None, verbose=False: _fake_space_client(qwen_captured, qwen_schema),
+    )
+    hf_connectors.space_media(
+        "Qwen/Qwen-Image-Edit",
+        prompt="Change the jacket",
+        image_bytes=b"reference-frame",
+        timeout=10,
+    )
+    assert qwen_captured["api_name"] == "/infer"
+    assert isinstance(qwen_captured["kwargs"]["image"], dict)
+    assert qwen_captured["kwargs"]["true_guidance_scale"] == 7.0
+    assert qwen_captured["kwargs"]["num_inference_steps"] == 24
+    assert "rewrite_prompt" not in qwen_captured["kwargs"]
+
+
+def test_zero_gpu_text_signatures_map_width_height_and_steps(monkeypatch):
+    schema = {
+        "named_endpoints": {
+            "/infer": {
+                "parameters": [
+                    {"label": "Prompt", "parameter_name": "prompt"},
+                    {
+                        "label": "Width", "parameter_name": "width",
+                        "type": {"description": "between 256 and 2048"},
+                    },
+                    {
+                        "label": "Height", "parameter_name": "height",
+                        "type": {"description": "between 256 and 2048"},
+                    },
+                    {"label": "Guidance Scale", "parameter_name": "guidance_scale"},
+                    {"label": "Number of inference steps", "parameter_name": "num_inference_steps"},
+                ],
+                "returns": [{"label": "Result"}],
+            }
+        }
+    }
+    captured = {}
+    monkeypatch.setattr(
+        hf_connectors, "space_client",
+        lambda space, token=None, verbose=False: _fake_space_client(captured, schema),
+    )
+
+    hf_connectors.space_media(
+        "black-forest-labs/FLUX.1-schnell",
+        prompt="A quiet garden",
+        size=(64, 4096),
+        timeout=10,
+    )
+
+    kwargs = captured["kwargs"]
+    assert captured["api_name"] == "/infer"
+    assert kwargs["width"] == 256
+    assert kwargs["height"] == 2048
+    assert kwargs["num_inference_steps"] == 24
+    assert not any("image" in key for key in kwargs)
+
+
+def test_prefer_image_refuses_text_only_endpoint():
+    api = {
+        "named_endpoints": {
+            "/infer": {
+                "parameters": [{"label": "Prompt", "parameter_name": "prompt"}],
+                "returns": [{"label": "Result"}],
+            }
+        }
+    }
+    assert hf_connectors._pick_endpoint(api, prefer_image=True) == (None, {})
+
+
+def test_helper_detects_zero_gpu_quota_exhaustion():
+    quota_error = (
+        "You have exceeded your free ZeroGPU quota (240s requested vs. -58s left). "
+        "Try again in 5:23:30. Subscribe to Hugging Face PRO."
+    )
+    assert hf_connectors.is_zero_gpu_quota_error(quota_error)
+    assert hf_connectors.is_zero_gpu_quota_error(RuntimeError("free zero gpu quota exceeded"))
+    assert not hf_connectors.is_zero_gpu_quota_error(RuntimeError("payment required"))
+    assert not hf_connectors.is_zero_gpu_quota_error(RuntimeError("queue busy"))
+
+
+def test_zerogpu_edit_stops_after_first_shared_quota_error(monkeypatch):
+    """A global quota failure must not retry every remaining Space."""
+    attempts = []
+
+    def fake_space_media(space, **kwargs):
+        attempts.append(space)
+        raise RuntimeError("You have exceeded your free ZeroGPU quota. Try again later.")
+
+    monkeypatch.setattr(hf_connectors, "space_media", fake_space_media)
+
+    with pytest.raises(RuntimeError, match="ZeroGPU quota"):
+        image_gen._call_zerogpu_image("Change the background", b"reference-frame")
+
+    assert len(attempts) == 1, attempts
+    assert attempts[0] == image_gen.HF_ZEROGPU_IMAGE_SPACES[0]
+
+
+def test_zerogpu_text_stops_after_first_shared_quota_error(monkeypatch):
+    attempts = []
+
+    def fake_space_media(space, **kwargs):
+        attempts.append(space)
+        raise RuntimeError("You have exceeded your free ZeroGPU quota. Try again later.")
+
+    monkeypatch.setattr(hf_connectors, "space_media", fake_space_media)
+
+    with pytest.raises(RuntimeError, match="ZeroGPU quota"):
+        image_gen._call_zerogpu_text_image("A quiet garden")
+
+    assert len(attempts) == 1, attempts
+    assert attempts[0] == image_gen.HF_ZEROGPU_TEXT_SPACES[0]
+
+
+def test_zerogpu_edit_retries_non_quota_errors_across_spaces(monkeypatch):
+    attempts = []
+
+    def fake_space_media(space, **kwargs):
+        attempts.append(space)
+        if len(attempts) < len(image_gen.HF_ZEROGPU_IMAGE_SPACES):
+            raise RuntimeError("temporary queue busy")
+        return PNG_BYTES
+
+    monkeypatch.setattr(hf_connectors, "space_media", fake_space_media)
+
+    data = image_gen._call_zerogpu_image("Change the background", b"reference-frame")
+
+    assert data == PNG_BYTES
+    assert len(attempts) == len(image_gen.HF_ZEROGPU_IMAGE_SPACES)
